@@ -36,6 +36,12 @@ export const create = mutation({
     prompt: v.string(),
     llmProvider: v.string(),
     llmModel: v.string(),
+    lyricsLanguage: v.optional(v.string()),
+    targetBpm: v.optional(v.number()),
+    targetKey: v.optional(v.string()),
+    timeSignature: v.optional(v.string()),
+    audioDuration: v.optional(v.number()),
+    inferenceSteps: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sessions", {
@@ -43,6 +49,31 @@ export const create = mutation({
       status: "active",
       songsGenerated: 0,
     })
+  },
+})
+
+export const updateParams = mutation({
+  args: {
+    id: v.id("sessions"),
+    lyricsLanguage: v.optional(v.string()),
+    targetBpm: v.optional(v.number()),
+    targetKey: v.optional(v.string()),
+    timeSignature: v.optional(v.string()),
+    audioDuration: v.optional(v.number()),
+    inferenceSteps: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...params } = args
+    // Only patch fields that were actually provided
+    const patch: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        patch[key] = value
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(id, patch)
+    }
   },
 })
 
@@ -87,5 +118,20 @@ export const remove = mutation({
       await ctx.db.delete(song._id)
     }
     await ctx.db.delete(args.id)
+  },
+})
+
+export const listActive = query({
+  handler: async (ctx) => {
+    const sessions = await ctx.db.query("sessions").collect()
+    return sessions.filter((s) => s.status === "active")
+  },
+})
+
+// Returns sessions that the worker should process (active + closing)
+export const listWorkerSessions = query({
+  handler: async (ctx) => {
+    const sessions = await ctx.db.query("sessions").collect()
+    return sessions.filter((s) => s.status === "active" || s.status === "closing")
   },
 })

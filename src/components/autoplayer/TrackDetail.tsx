@@ -4,18 +4,18 @@ import { CoverArt } from './CoverArt'
 
 interface Song {
   _id: string
-  title: string
-  artistName: string
-  genre: string
-  subGenre: string
-  lyrics: string
-  caption: string
+  title?: string
+  artistName?: string
+  genre?: string
+  subGenre?: string
+  lyrics?: string
+  caption?: string
   coverPrompt?: string | null
   coverUrl?: string | null
-  bpm: number
-  keyScale: string
-  timeSignature: string
-  audioDuration: number
+  bpm?: number
+  keyScale?: string
+  timeSignature?: string
+  audioDuration?: number
   status: string
   aceTaskId?: string | null
   audioUrl?: string | null
@@ -50,7 +50,9 @@ function formatElapsed(ms: number) {
 }
 
 const STATUS_LABELS: Record<string, string> = {
+  pending: 'QUEUED — WAITING FOR WORKER',
   generating_metadata: 'WRITING LYRICS & METADATA',
+  metadata_ready: 'METADATA READY — QUEUED FOR AUDIO',
   submitting_to_ace: 'COVER ART + SUBMITTING TO ENGINE',
   generating_audio: 'AUDIO SYNTHESIS IN PROGRESS',
   saving: 'SAVING TO LIBRARY',
@@ -76,7 +78,9 @@ function LiveTimer({ startedAt }: { startedAt: number }) {
 
 export function TrackDetail({ song, onClose }: TrackDetailProps) {
   const isGenerating = [
+    'pending',
     'generating_metadata',
+    'metadata_ready',
     'submitting_to_ace',
     'generating_audio',
     'saving',
@@ -111,24 +115,24 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
           <div className="flex gap-6">
             <div className="w-48 shrink-0">
               <CoverArt
-                title={song.title}
-                artistName={song.artistName}
+                title={song.title || 'Generating...'}
+                artistName={song.artistName || '...'}
                 coverUrl={song.coverUrl}
                 size="md"
               />
             </div>
             <div className="flex-1 space-y-3">
               <div>
-                <h2 className="text-2xl font-black uppercase">{song.title}</h2>
-                <p className="text-sm font-bold uppercase text-white/50">{song.artistName}</p>
+                <h2 className="text-2xl font-black uppercase">{song.title || 'Generating...'}</h2>
+                <p className="text-sm font-bold uppercase text-white/50">{song.artistName || '...'}</p>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <span className="border-2 border-white/20 px-2 py-1 text-xs font-black uppercase">
-                  {song.genre}
+                  {song.genre || '...'}
                 </span>
                 <span className="border-2 border-white/20 px-2 py-1 text-xs font-black uppercase text-white/60">
-                  {song.subGenre}
+                  {song.subGenre || '...'}
                 </span>
                 {song.isInterrupt && (
                   <span className="border-2 border-yellow-500 px-2 py-1 text-xs font-black uppercase text-yellow-500">
@@ -196,19 +200,19 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
             <div className="grid grid-cols-2 sm:grid-cols-4 divide-x-2 divide-white/10">
               <div className="p-3 text-center">
                 <p className="text-[10px] font-bold uppercase text-white/30">BPM</p>
-                <p className="text-lg font-black">{song.bpm}</p>
+                <p className="text-lg font-black">{song.bpm ?? '--'}</p>
               </div>
               <div className="p-3 text-center">
                 <p className="text-[10px] font-bold uppercase text-white/30">KEY</p>
-                <p className="text-lg font-black uppercase">{song.keyScale}</p>
+                <p className="text-lg font-black uppercase">{song.keyScale ?? '--'}</p>
               </div>
               <div className="p-3 text-center">
                 <p className="text-[10px] font-bold uppercase text-white/30">TIME SIG</p>
-                <p className="text-lg font-black">{song.timeSignature}</p>
+                <p className="text-lg font-black">{song.timeSignature ?? '--'}</p>
               </div>
               <div className="p-3 text-center">
                 <p className="text-[10px] font-bold uppercase text-white/30">DURATION</p>
-                <p className="text-lg font-black">{formatDuration(song.audioDuration)}</p>
+                <p className="text-lg font-black">{song.audioDuration ? formatDuration(song.audioDuration) : '--'}</p>
               </div>
             </div>
           </div>
@@ -220,7 +224,7 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
                 AUDIO CAPTION (ACE-STEP INPUT)
               </span>
             </div>
-            <p className="px-4 py-3 text-sm font-bold uppercase text-white/70">{song.caption}</p>
+            <p className="px-4 py-3 text-sm font-bold uppercase text-white/70">{song.caption || 'Pending...'}</p>
           </div>
 
           {/* Cover Prompt */}
@@ -261,7 +265,7 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
               </span>
             </div>
             <pre className="px-4 py-3 text-xs font-bold text-white/60 whitespace-pre-wrap max-h-64 overflow-y-auto">
-              {song.lyrics}
+              {song.lyrics || 'Pending...'}
             </pre>
           </div>
 

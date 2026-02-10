@@ -13,7 +13,9 @@ interface GenerationBannerProps {
 
 export function GenerationBanner({ songs }: GenerationBannerProps) {
   const activeStatuses = [
+    'pending',
     'generating_metadata',
+    'metadata_ready',
     'submitting_to_ace',
     'generating_audio',
     'saving',
@@ -26,7 +28,9 @@ export function GenerationBanner({ songs }: GenerationBannerProps) {
 
   const current = generating[0]
   const statusMap: Record<string, string> = {
+    pending: 'QUEUED — WAITING FOR WORKER',
     generating_metadata: 'STEP 1/4 — WRITING LYRICS & METADATA',
+    metadata_ready: 'STEP 2/4 — METADATA READY, QUEUED FOR AUDIO',
     submitting_to_ace: 'STEP 2/4 — SUBMITTING TO ENGINE + COVER ART',
     generating_audio: 'STEP 3/4 — AUDIO SYNTHESIS IN PROGRESS',
     saving: 'STEP 4/4 — SAVING TO LIBRARY',

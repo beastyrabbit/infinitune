@@ -4,10 +4,10 @@ import { CoverArt } from './CoverArt'
 
 interface Song {
   _id: string
-  title: string
-  artistName: string
-  genre: string
-  subGenre: string
+  title?: string
+  artistName?: string
+  genre?: string
+  subGenre?: string
   coverUrl?: string | null
   status: string
   orderIndex: number
@@ -27,8 +27,12 @@ function getStatusLabel(status: string, isCurrent: boolean) {
   switch (status) {
     case 'ready':
       return { text: '[READY]', className: 'text-white font-bold' }
+    case 'pending':
+      return { text: '[QUEUED]', className: 'text-blue-400 animate-pulse font-bold' }
     case 'generating_metadata':
       return { text: '[WRITING...]', className: 'text-yellow-500 animate-pulse font-bold' }
+    case 'metadata_ready':
+      return { text: '[METADATA OK]', className: 'text-cyan-400 font-bold' }
     case 'generating_cover':
       return { text: '[COVER...]', className: 'text-yellow-500 animate-pulse font-bold' }
     case 'submitting_to_ace':
@@ -74,7 +78,7 @@ function LiveTimer({ startedAt }: { startedAt: number }) {
 export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: QueueGridProps) {
   const sorted = [...songs].sort((a, b) => a.orderIndex - b.orderIndex)
 
-  const activeStatuses = ['generating_metadata', 'generating_cover', 'submitting_to_ace', 'generating_audio', 'saving']
+  const activeStatuses = ['pending', 'generating_metadata', 'metadata_ready', 'generating_cover', 'submitting_to_ace', 'generating_audio', 'saving']
   const generating = sorted.filter((s) => activeStatuses.includes(s.status)).length
   const retryPending = sorted.filter((s) => s.status === 'retry_pending').length
   const ready = sorted.filter((s) => s.status === 'ready').length
@@ -98,7 +102,7 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
         {sorted.map((song, i) => {
           const isCurrent = song._id === currentSongId
           const isPlayed = song.status === 'played'
-          const isGenerating = song.status.startsWith('generating') || song.status === 'submitting_to_ace' || song.status === 'saving'
+          const isGenerating = song.status === 'pending' || song.status.startsWith('generating') || song.status === 'metadata_ready' || song.status === 'submitting_to_ace' || song.status === 'saving'
           const status = getStatusLabel(song.status, isCurrent)
 
           const totalGenTime =
@@ -123,8 +127,8 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
             >
               <div className="relative">
                 <CoverArt
-                  title={song.title}
-                  artistName={song.artistName}
+                  title={song.title || 'Generating...'}
+                  artistName={song.artistName || '...'}
                   coverUrl={song.coverUrl}
                   size="sm"
                 />
@@ -139,7 +143,9 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
                 {isGenerating && (
                   <div className="absolute bottom-0 left-0 right-0 bg-yellow-500 text-black text-center text-xs font-black py-1 uppercase flex items-center justify-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    {song.status === 'generating_metadata' ? 'WRITING' :
+                    {song.status === 'pending' ? 'QUEUED' :
+                     song.status === 'generating_metadata' ? 'WRITING' :
+                     song.status === 'metadata_ready' ? 'READY' :
                      song.status === 'generating_cover' ? 'COVER' :
                      song.status === 'submitting_to_ace' ? 'SUBMITTING' :
                      song.status === 'generating_audio' ? 'AUDIO' :
@@ -159,10 +165,10 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
               </div>
               <div className="p-2">
                 <p className={`text-xs font-black uppercase truncate ${isPlayed ? 'line-through' : ''}`}>
-                  {song.title}
+                  {song.title || 'Generating...'}
                 </p>
                 <p className="text-[10px] uppercase text-white/30 truncate">
-                  {song.artistName}
+                  {song.artistName || '...'}
                 </p>
                 <div className="flex items-center justify-between mt-1">
                   <p className={`text-[10px] uppercase ${status.className}`}>

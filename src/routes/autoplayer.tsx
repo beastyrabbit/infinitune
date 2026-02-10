@@ -6,7 +6,6 @@ import { useCallback, useState } from "react";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
 import { NowPlaying } from "@/components/autoplayer/NowPlaying";
-import { PlaylistConfig } from "@/components/autoplayer/PlaylistConfig";
 import { QueueGrid } from "@/components/autoplayer/QueueGrid";
 import { QuickRequest } from "@/components/autoplayer/QuickRequest";
 import { SessionCreator } from "@/components/autoplayer/SessionCreator";
@@ -29,19 +28,10 @@ function AutoplayerPage() {
 	const currentSession = useQuery(api.sessions.getCurrent);
 	const sessionId = currentSession?._id ?? null;
 
-	const settings = useQuery(api.settings.getAll);
 	const createSession = useMutation(api.sessions.create);
-	const updatePrompt = useMutation(api.sessions.updatePrompt);
 	const updateStatus = useMutation(api.sessions.updateStatus);
 
-	const rawImageProvider = settings?.imageProvider;
-	const modelSettings = {
-		imageProvider: rawImageProvider === "ollama" ? "comfyui" : rawImageProvider,
-		imageModel: settings?.imageModel,
-		aceModel: settings?.aceModel,
-	};
-
-	const cancelAllGenerating = useMutation(api.songs.cancelAllGenerating);
+	const revertTransientStatuses = useMutation(api.songs.revertTransientStatuses);
 
 	const {
 		songs,
@@ -51,8 +41,7 @@ function AutoplayerPage() {
 		skipToNext,
 		requestSong,
 		loadAndPlay,
-		abortGeneration,
-	} = useAutoplayer(sessionId, modelSettings);
+	} = useAutoplayer(sessionId);
 
 	const { currentSongId } = useStore(playerStore);
 
@@ -66,43 +55,41 @@ function AutoplayerPage() {
 			prompt: string;
 			provider: string;
 			model: string;
+			lyricsLanguage?: string;
+			targetBpm?: number;
+			targetKey?: string;
+			timeSignature?: string;
+			audioDuration?: number;
+			inferenceSteps?: number;
 		}) => {
 			await createSession({
 				name: data.name,
 				prompt: data.prompt,
 				llmProvider: data.provider,
 				llmModel: data.model,
+				lyricsLanguage: data.lyricsLanguage,
+				targetBpm: data.targetBpm,
+				targetKey: data.targetKey,
+				timeSignature: data.timeSignature,
+				audioDuration: data.audioDuration,
+				inferenceSteps: data.inferenceSteps,
 			});
 		},
 		[createSession],
 	);
 
-	const handleUpdatePrompt = useCallback(
-		async (prompt: string) => {
-			if (!sessionId) return;
-			await updatePrompt({ id: sessionId as any, prompt });
-		},
-		[sessionId, updatePrompt],
-	);
-
 	// Graceful close: stop new generations, let current song finish
 	const handleCloseSession = useCallback(async () => {
 		if (!sessionId) return;
-		// Set to 'closing' — pipeline won't start new generations
-		// Currently running pipeline will finish its current song
 		await updateStatus({ id: sessionId as any, status: "closing" });
 	}, [sessionId, updateStatus]);
 
-	// Force close: cancel everything immediately
+	// Force close: revert transient statuses and close immediately
 	const handleForceClose = useCallback(async () => {
 		if (!sessionId) return;
-		// Abort the client-side pipeline
-		abortGeneration();
-		// Mark all in-progress songs as cancelled in the DB
-		await cancelAllGenerating({ sessionId: sessionId as any });
-		// Close the session
+		await revertTransientStatuses({ sessionId: sessionId as any });
 		await updateStatus({ id: sessionId as any, status: "closed" });
-	}, [sessionId, updateStatus, abortGeneration, cancelAllGenerating]);
+	}, [sessionId, updateStatus, revertTransientStatuses]);
 
 	const handleResumeSession = useCallback(
 		async (id: string) => {
@@ -185,7 +172,6 @@ function AutoplayerPage() {
 									setForceCloseArmed(false);
 								} else {
 									setForceCloseArmed(true);
-									// Auto-disarm after 2 seconds
 									setTimeout(() => setForceCloseArmed(false), 2000);
 								}
 							}}
@@ -206,7 +192,7 @@ function AutoplayerPage() {
 						onSeek={seek}
 					/>
 				</div>
-				<GenerationControls />
+				{session && <GenerationControls session={session} />}
 			</div>
 
 			{/* GENERATION BANNER */}
@@ -222,22 +208,12 @@ function AutoplayerPage() {
 				/>
 			)}
 
-			{/* QUICK REQUEST + PLAYLIST CONFIG */}
-			<div className="grid grid-cols-1 md:grid-cols-2 border-b-4 border-white/20">
-				<div className="border-b-4 md:border-b-0 md:border-r-4 border-white/20">
-					<QuickRequest
-						onRequest={requestSong}
-						disabled={!session || session.status !== "active"}
-					/>
-				</div>
-				{session && (
-					<PlaylistConfig
-						prompt={session.prompt}
-						provider={session.llmProvider}
-						model={session.llmModel}
-						onUpdatePrompt={handleUpdatePrompt}
-					/>
-				)}
+			{/* QUICK REQUEST */}
+			<div className="border-b-4 border-white/20">
+				<QuickRequest
+					onRequest={requestSong}
+					disabled={!session || session.status !== "active"}
+				/>
 			</div>
 
 			{/* FOOTER */}

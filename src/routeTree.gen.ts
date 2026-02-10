@@ -39,6 +39,8 @@ import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplaye
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
 import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
+import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
+import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
@@ -206,6 +208,18 @@ const ApiAutoplayerGenerateCoverRoute =
     path: '/api/autoplayer/generate-cover',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAutoplayerEnhanceSessionRoute =
+  ApiAutoplayerEnhanceSessionRouteImport.update({
+    id: '/api/autoplayer/enhance-session',
+    path: '/api/autoplayer/enhance-session',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerEnhancePromptRoute =
+  ApiAutoplayerEnhancePromptRouteImport.update({
+    id: '/api/autoplayer/enhance-prompt',
+    path: '/api/autoplayer/enhance-prompt',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutoplayerAceModelsRoute = ApiAutoplayerAceModelsRouteImport.update({
   id: '/api/autoplayer/ace-models',
   path: '/api/autoplayer/ace-models',
@@ -276,6 +290,8 @@ export interface FileRoutesByFullPath {
   '/demo/mcp-todos': typeof DemoMcpTodosRoute
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
+  '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -318,6 +334,8 @@ export interface FileRoutesByTo {
   '/demo/mcp-todos': typeof DemoMcpTodosRoute
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
+  '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -362,6 +380,8 @@ export interface FileRoutesById {
   '/demo/mcp-todos': typeof DemoMcpTodosRoute
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
+  '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -407,6 +427,8 @@ export interface FileRouteTypes {
     | '/demo/mcp-todos'
     | '/demo/store'
     | '/api/autoplayer/ace-models'
+    | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -449,6 +471,8 @@ export interface FileRouteTypes {
     | '/demo/mcp-todos'
     | '/demo/store'
     | '/api/autoplayer/ace-models'
+    | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -492,6 +516,8 @@ export interface FileRouteTypes {
     | '/demo/mcp-todos'
     | '/demo/store'
     | '/api/autoplayer/ace-models'
+    | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -536,6 +562,8 @@ export interface RootRouteChildren {
   DemoMcpTodosRoute: typeof DemoMcpTodosRoute
   DemoStoreRoute: typeof DemoStoreRoute
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
+  ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
+  ApiAutoplayerEnhanceSessionRoute: typeof ApiAutoplayerEnhanceSessionRoute
   ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
@@ -773,6 +801,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerGenerateCoverRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/autoplayer/enhance-session': {
+      id: '/api/autoplayer/enhance-session'
+      path: '/api/autoplayer/enhance-session'
+      fullPath: '/api/autoplayer/enhance-session'
+      preLoaderRoute: typeof ApiAutoplayerEnhanceSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/enhance-prompt': {
+      id: '/api/autoplayer/enhance-prompt'
+      path: '/api/autoplayer/enhance-prompt'
+      fullPath: '/api/autoplayer/enhance-prompt'
+      preLoaderRoute: typeof ApiAutoplayerEnhancePromptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/autoplayer/ace-models': {
       id: '/api/autoplayer/ace-models'
       path: '/api/autoplayer/ace-models'
@@ -888,6 +930,8 @@ const rootRouteChildren: RootRouteChildren = {
   DemoMcpTodosRoute: DemoMcpTodosRoute,
   DemoStoreRoute: DemoStoreRoute,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,
+  ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,
+  ApiAutoplayerEnhanceSessionRoute: ApiAutoplayerEnhanceSessionRoute,
   ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
-import { Music, Settings, RotateCcw } from 'lucide-react'
+import { Music, Settings, RotateCcw, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -25,6 +25,12 @@ interface SessionCreatorProps {
     prompt: string
     provider: string
     model: string
+    lyricsLanguage?: string
+    targetBpm?: number
+    targetKey?: string
+    timeSignature?: string
+    audioDuration?: number
+    inferenceSteps?: number
   }) => void
   onResumeSession: (id: string) => void
   onOpenSettings: () => void
@@ -36,8 +42,24 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
   const [model, setModel] = useState('')
   const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([])
   const [loading, setLoading] = useState(false)
+  const [enhancing, setEnhancing] = useState(false)
+  const [loadingState, setLoadingState] = useState('')
+  const modelSetByUserOrSettings = useRef(false)
 
   const closedSessions = useQuery(api.sessions.listClosed)
+  const settings = useQuery(api.settings.getAll)
+
+  // Apply defaults from settings once loaded — takes priority over ollama fallback
+  const settingsApplied = useRef(false)
+  useEffect(() => {
+    if (!settings || settingsApplied.current) return
+    settingsApplied.current = true
+    if (settings.textProvider) setProvider(settings.textProvider)
+    if (settings.textModel) {
+      setModel(settings.textModel)
+      modelSetByUserOrSettings.current = true
+    }
+  }, [settings])
 
   useEffect(() => {
     fetch('/api/autoplayer/ollama-models')
@@ -45,10 +67,13 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
       .then((d) => {
         const allModels = d.models || []
         setOllamaModels(allModels)
-        const textOnly = allModels.filter((m: ModelOption) => m.type === 'text' || (!m.type && !m.vision))
-        if (textOnly.length > 0 && !model) {
-          const preferred = textOnly.find((m: ModelOption) => m.name === 'gpt-oss:20b')
-          setModel(preferred ? preferred.name : textOnly[0].name)
+        // Only auto-pick a model if settings didn't already provide one
+        if (!modelSetByUserOrSettings.current) {
+          const textOnly = allModels.filter((m: ModelOption) => m.type === 'text' || (!m.type && !m.vision))
+          if (textOnly.length > 0) {
+            const preferred = textOnly.find((m: ModelOption) => m.name === 'gpt-oss:20b')
+            setModel(preferred ? preferred.name : textOnly[0].name)
+          }
         }
       })
       .catch(() => {})
@@ -56,11 +81,66 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
 
   const textModels = ollamaModels.filter((m) => m.type === 'text' || (!m.type && !m.vision))
 
+  const handleEnhancePrompt = async () => {
+    if (!prompt.trim() || !model.trim() || enhancing) return
+    setEnhancing(true)
+    try {
+      const res = await fetch('/api/autoplayer/enhance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.enhancedPrompt) {
+          setPrompt(data.enhancedPrompt.toUpperCase())
+        }
+      }
+    } catch {
+      // Silently fail — user still has original prompt
+    } finally {
+      setEnhancing(false)
+    }
+  }
+
   const handleStart = async () => {
     if (!prompt.trim() || !model.trim()) return
     setLoading(true)
-    const name = prompt.trim().slice(0, 50)
-    onCreateSession({ name, prompt: prompt.trim(), provider, model })
+    setLoadingState('>>> ANALYZING PROMPT <<<')
+
+    try {
+      // Call enhance-session to get AI-determined params
+      const res = await fetch('/api/autoplayer/enhance-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
+      })
+
+      let sessionParams: Record<string, unknown> = {}
+      if (res.ok) {
+        sessionParams = await res.json()
+      }
+
+      setLoadingState('>>> INITIALIZING <<<')
+
+      const name = prompt.trim().slice(0, 50)
+      onCreateSession({
+        name,
+        prompt: prompt.trim(),
+        provider,
+        model,
+        lyricsLanguage: sessionParams.lyricsLanguage as string | undefined,
+        targetBpm: sessionParams.targetBpm as number | undefined,
+        targetKey: sessionParams.targetKey as string | undefined,
+        timeSignature: sessionParams.timeSignature as string | undefined,
+        audioDuration: sessionParams.audioDuration as number | undefined,
+        inferenceSteps: sessionParams.inferenceSteps as number | undefined,
+      })
+    } catch {
+      // If enhance-session fails, still create session without params
+      const name = prompt.trim().slice(0, 50)
+      onCreateSession({ name, prompt: prompt.trim(), provider, model })
+    }
   }
 
   return (
@@ -106,6 +186,18 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value.toUpperCase())}
               />
+              <button
+                className={`mt-2 flex items-center gap-1 font-mono text-xs font-bold uppercase transition-colors ${
+                  enhancing
+                    ? 'text-yellow-500 animate-pulse'
+                    : 'text-white/40 hover:text-red-500'
+                }`}
+                onClick={handleEnhancePrompt}
+                disabled={!prompt.trim() || !model.trim() || enhancing}
+              >
+                <Sparkles className="h-3 w-3" />
+                {enhancing ? '[ENHANCING...]' : '[ENHANCE PROMPT]'}
+              </button>
             </div>
 
             {/* Model selection */}
@@ -176,7 +268,7 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
               onClick={handleStart}
               disabled={!prompt.trim() || !model.trim() || loading}
             >
-              {loading ? '>>> INITIALIZING <<<' : '>>> START LISTENING <<<'}
+              {loading ? loadingState || '>>> INITIALIZING <<<' : '>>> START LISTENING <<<'}
             </Button>
           </div>
         </div>

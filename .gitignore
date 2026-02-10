@@ -17,3 +17,5 @@ scripts/results/
 .cta.json
 .cursorrules
 .playwright-mcp/
+temp-nas/*
+!temp-nas/.gitkeep

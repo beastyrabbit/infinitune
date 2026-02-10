@@ -82,7 +82,7 @@ export function NowPlaying({
 	return (
 		<div>
 			{/* Overlay container — cover art as background, controls on top */}
-			<div className="relative aspect-[2/1] md:aspect-[3/1] overflow-hidden">
+			<div className="relative aspect-square overflow-hidden">
 				{/* Cover art background */}
 				<div className="absolute inset-0">
 					<CoverArt
