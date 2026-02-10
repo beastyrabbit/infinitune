@@ -11,16 +11,23 @@ Field guidance:
 - subGenre: Specific sub-genre (e.g. Synthwave, Acid Jazz, Lo-Fi Hip-Hop, Shoegaze, Post-Punk)
 - lyrics: Complete song lyrics with structural markers like [Verse 1], [Chorus], [Bridge], [Outro]. Include at least 2 verses and a chorus. Lyrics should match the mood and genre.
 - caption: A concise description of the musical style for an AI audio generator — instruments, mood, tempo feel, production style. Max 200 characters.
-- coverPrompt: Write this as a direct image generation prompt (not a description of what to create). Start with the subject/scene, then layer in details. Structure it like: "[art style], [main subject/scene], [composition details], [lighting], [color palette], [mood]". Examples of good styles: "cinematic matte painting", "35mm film photography", "risograph print", "90s anime cel art", "baroque oil painting", "vaporwave digital collage", "woodblock print", "infrared photograph". Be SPECIFIC — not "a city" but "rain-soaked Tokyo alley at 2am with neon reflections on wet asphalt". NEVER include any text, words, letters, band names, or typography in the prompt. Max 400 characters.
+- coverPrompt: A direct image generation prompt for album cover art. CRITICAL RULES FOR VARIATION:
+  1. NEVER repeat the same art style across songs. Pick ONE from this pool AT RANDOM — do NOT favor any: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, architectural blueprint overlay, thermal imaging photograph, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, satellite imagery, medical illustration style, stained glass window, brutalist concrete photography, watercolor bleed on wet paper, vintage scientific diagram, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, Gustave Doré engraving style, spray paint stencil on brick wall, infrared landscape photography
+  2. The SUBJECT must be a vivid, specific scene inspired by the song's lyrics/mood — NOT generic "person with headphones" or "abstract waves". Think: a flooded cathedral with fish swimming through pews, a grandmother's kitchen table covered in star maps, two astronauts slow-dancing on a derelict space station, a fox wearing a crown sleeping in a field of satellite dishes
+  3. Include ONE unexpected/surreal element that doesn't literally match the genre (a classical piece could have cyberpunk visuals, a punk song could have delicate botanical art)
+  4. Specify a CONCRETE color palette — not "warm colors" but "burnt sienna, cadmium yellow, lamp black"
+  5. NEVER include text, words, letters, typography, or band/song names
+  Format: "[art style], [specific vivid scene], [surreal detail], [lighting], [exact color palette]". Max 400 chars.
 - bpm: Beats per minute appropriate for the genre (e.g. 70-90 for ballads, 120-130 for house, 140-170 for drum & bass)
 - keyScale: Musical key (e.g. "C major", "A minor", "F# minor", "Bb major")
 - timeSignature: Time signature (usually "4/4", but "3/4" for waltzes, "6/8" for compound time, etc.)
 - audioDuration: Length in seconds, between 180 and 300 (3-5 minutes)
 
 Rules:
-- Be creative and varied — avoid generic or repetitive outputs
-- Match everything to the user's description and the genre conventions
-- genre should be a broad category, subGenre should be specific`
+- Be WILDLY creative and varied — you are generating songs for a continuous playlist, so every song MUST feel distinct from the last. Vary the artist names, genres, moods, tempos, lyrical themes, and visual styles aggressively.
+- Match the overall vibe to the user's description but interpret it broadly — find different angles, subgenres, and emotional facets each time
+- genre should be a broad category, subGenre should be specific and different each time
+- For coverPrompt: you MUST pick a DIFFERENT art style every time. If you've been generating synth-pop, don't keep using neon/cyberpunk visuals — try botanical prints, oil paintings, satellite imagery, etc.`
 
 const SONG_SCHEMA = {
   type: 'object' as const,
@@ -31,7 +38,7 @@ const SONG_SCHEMA = {
     subGenre: { type: 'string', description: 'Specific sub-genre' },
     lyrics: { type: 'string', description: 'Full song lyrics with [Verse 1], [Chorus], etc.' },
     caption: { type: 'string', description: 'Audio generation caption, max 200 chars' },
-    coverPrompt: { type: 'string', description: 'Direct image generation prompt: [art style], [subject/scene], [composition], [lighting], [colors], [mood]. No text/words/typography. Max 400 chars.' },
+    coverPrompt: { type: 'string', description: 'Album cover image prompt. Use a unique art style each time from the pool in the system prompt. Vivid specific scene with one surreal element, concrete color palette. No text/words/typography. Max 400 chars.' },
     bpm: { type: 'number', description: 'Beats per minute (60-200)' },
     keyScale: { type: 'string', description: 'Musical key, e.g. "C major"' },
     timeSignature: { type: 'string', description: 'Time signature, e.g. "4/4"' },
