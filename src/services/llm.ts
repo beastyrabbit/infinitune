@@ -137,8 +137,9 @@ export async function generateSongMetadata(options: {
         ],
         stream: false,
         format: SONG_SCHEMA,
+        think: false,
         keep_alive: '10m',
-        options: { temperature: 0.8 },
+        options: { temperature: 1.0 },
       }),
       signal,
     })
