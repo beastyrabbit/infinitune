@@ -10,9 +10,15 @@ import {
 export function useAudioPlayer(onEnded?: () => void) {
 	const audioRef = useRef<HTMLAudioElement | null>(null);
 	const currentUrlRef = useRef<string | null>(null);
+	const onEndedRef = useRef(onEnded);
 	const { isPlaying, volume, isMuted } = useStore(playerStore);
 
-	// Create audio element on mount
+	// Keep onEnded ref up to date without recreating Audio element
+	useEffect(() => {
+		onEndedRef.current = onEnded;
+	}, [onEnded]);
+
+	// Create audio element once on mount
 	useEffect(() => {
 		const audio = new Audio();
 		audioRef.current = audio;
@@ -27,7 +33,7 @@ export function useAudioPlayer(onEnded?: () => void) {
 
 		audio.addEventListener("ended", () => {
 			setPlaying(false);
-			onEnded?.();
+			onEndedRef.current?.();
 		});
 
 		audio.addEventListener("error", (e) => {
@@ -38,12 +44,8 @@ export function useAudioPlayer(onEnded?: () => void) {
 		return () => {
 			audio.pause();
 			audio.src = "";
-			audio.removeEventListener("timeupdate", () => {});
-			audio.removeEventListener("loadedmetadata", () => {});
-			audio.removeEventListener("ended", () => {});
-			audio.removeEventListener("error", () => {});
 		};
-	}, [onEnded]);
+	}, []);
 
 	// Sync volume
 	useEffect(() => {

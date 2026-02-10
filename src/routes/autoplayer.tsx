@@ -30,7 +30,7 @@ function AutoplayerPage() {
 
 	const createSession = useMutation(api.sessions.create);
 	const updateStatus = useMutation(api.sessions.updateStatus);
-
+	const updateSongStatus = useMutation(api.songs.updateStatus);
 	const revertTransientStatuses = useMutation(api.songs.revertTransientStatuses);
 
 	const {
@@ -103,10 +103,11 @@ function AutoplayerPage() {
 			const song = songs?.find((s) => s._id === songId);
 			if (song?.audioUrl) {
 				setCurrentSong(songId);
+				updateSongStatus({ id: songId as any, status: "playing" });
 				loadAndPlay(song.audioUrl);
 			}
 		},
-		[songs, loadAndPlay],
+		[songs, loadAndPlay, updateSongStatus],
 	);
 
 	// Loading state while Convex query resolves

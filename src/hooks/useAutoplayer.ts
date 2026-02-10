@@ -17,17 +17,25 @@ export function useAutoplayer(sessionId: string | null) {
 
   const { currentSongId } = useStore(playerStore)
   const updateSessionStatus = useMutation(api.sessions.updateStatus)
+  const updateSongStatus = useMutation(api.songs.updateStatus)
   const createPending = useMutation(api.songs.createPending)
 
   const handleSongEnded = useCallback(() => {
     if (!songs) return
     const currentIndex = songs.findIndex((s) => s._id === currentSongId)
     if (currentIndex === -1) return
+
+    // Mark ended song as played
+    const endedSong = songs[currentIndex]
+    if (endedSong) {
+      updateSongStatus({ id: endedSong._id as any, status: 'played' })
+    }
+
     const nextSong = songs.slice(currentIndex + 1).find((s) => s.status === 'ready')
     if (nextSong) {
       setCurrentSong(nextSong._id)
     }
-  }, [songs, currentSongId])
+  }, [songs, currentSongId, updateSongStatus])
 
   const { loadAndPlay, seek, play, pause, toggle } = useAudioPlayer(handleSongEnded)
 
@@ -49,19 +57,21 @@ export function useAutoplayer(sessionId: string | null) {
       const nextReady = songs.find((s) => s.status === 'ready')
       if (nextReady && nextReady.audioUrl) {
         setCurrentSong(nextReady._id)
+        updateSongStatus({ id: nextReady._id as any, status: 'playing' })
         loadAndPlay(nextReady.audioUrl)
       }
     }
-  }, [songs, currentSongId, sessionId, loadAndPlay])
+  }, [songs, currentSongId, sessionId, loadAndPlay, updateSongStatus])
 
   // Auto-play when current song changes and has audio
   useEffect(() => {
     if (!currentSongId || !songs) return
     const song = songs.find((s) => s._id === currentSongId)
     if (song?.status === 'ready' && song.audioUrl) {
+      updateSongStatus({ id: song._id as any, status: 'playing' })
       loadAndPlay(song.audioUrl)
     }
-  }, [currentSongId, songs, loadAndPlay])
+  }, [currentSongId, songs, loadAndPlay, updateSongStatus])
 
   // Auto-close: when session is 'closing' and no songs are in transient state, set to 'closed'
   useEffect(() => {
