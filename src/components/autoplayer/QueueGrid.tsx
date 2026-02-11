@@ -1,5 +1,6 @@
-import { Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Loader2, ThumbsDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import LikeIcon from "@/components/ui/like-icon";
 import type { Song } from "@/types/convex";
 import type { SongStatus } from "../../../convex/types";
 import { CoverArt } from "./CoverArt";
@@ -9,6 +10,7 @@ interface QueueGridProps {
 	currentSongId: string | null;
 	onSelectSong: (songId: string) => void;
 	onOpenDetail: (songId: string) => void;
+	onRate: (songId: string, rating: "up" | "down") => void;
 }
 
 function getStatusLabel(status: SongStatus, isCurrent: boolean) {
@@ -82,6 +84,7 @@ export function QueueGrid({
 	currentSongId,
 	onSelectSong,
 	onOpenDetail,
+	onRate,
 }: QueueGridProps) {
 	const sorted = [...songs].sort((a, b) => a.orderIndex - b.orderIndex);
 
@@ -235,11 +238,37 @@ export function QueueGrid({
 										<p className={`text-[10px] uppercase ${status.className}`}>
 											{status.text}
 										</p>
-										{song.userRating === "up" && (
-											<ThumbsUp className="h-2.5 w-2.5 text-green-400" />
-										)}
-										{song.userRating === "down" && (
-											<ThumbsDown className="h-2.5 w-2.5 text-red-400" />
+										{isReady && (
+											<>
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														onRate(song._id, "up");
+													}}
+													className={`p-0.5 transition-colors ${
+														song.userRating === "up"
+															? "text-green-400"
+															: "text-white/20 hover:text-green-400"
+													}`}
+												>
+													<LikeIcon size={10} />
+												</button>
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														onRate(song._id, "down");
+													}}
+													className={`p-0.5 transition-colors ${
+														song.userRating === "down"
+															? "text-red-400"
+															: "text-white/20 hover:text-red-400"
+													}`}
+												>
+													<ThumbsDown className="h-2.5 w-2.5" />
+												</button>
+											</>
 										)}
 										{(song.listenCount ?? 0) > 0 && (
 											<span className="text-[10px] text-white/30">

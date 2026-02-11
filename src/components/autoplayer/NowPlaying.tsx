@@ -1,18 +1,12 @@
 import { useStore } from "@tanstack/react-store";
-import {
-	Download,
-	FileText,
-	Pause,
-	Play,
-	SkipForward,
-	ThumbsDown,
-	ThumbsUp,
-	Volume2,
-	VolumeX,
-	X,
-} from "lucide-react";
+import { Download, Pause, Play, SkipForward, ThumbsDown } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import FileDescriptionIcon from "@/components/ui/file-description-icon";
+import LikeIcon from "@/components/ui/like-icon";
+import Volume2Icon from "@/components/ui/volume-2-icon";
+import VolumeXIcon from "@/components/ui/volume-x-icon";
+import XIcon from "@/components/ui/x-icon";
 import { playerStore, setVolume, toggleMute } from "@/lib/player-store";
 import type { Song } from "@/types/convex";
 import { CoverArt } from "./CoverArt";
@@ -125,7 +119,7 @@ export function NowPlaying({
 					<div className="absolute inset-0 bg-black/85 backdrop-blur-sm z-10 flex flex-col">
 						<div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
 							<span className="text-xs font-black uppercase tracking-widest text-white/60">
-								<FileText className="h-3 w-3 inline mr-2" />
+								<FileDescriptionIcon size={12} className="inline mr-2" />
 								LYRICS
 							</span>
 							<button
@@ -133,7 +127,7 @@ export function NowPlaying({
 								onClick={() => setShowLyrics(false)}
 								className="text-white/60 hover:text-white"
 							>
-								<X className="h-4 w-4" />
+								<XIcon size={16} />
 							</button>
 						</div>
 						<div
@@ -272,7 +266,7 @@ export function NowPlaying({
 										: "border-white/30 bg-white/10 text-white hover:bg-white hover:text-black"
 								}`}
 							>
-								<FileText className="mr-1 h-4 w-4" />
+								<FileDescriptionIcon size={16} className="mr-1" />
 								LYR
 							</Button>
 						)}
@@ -287,7 +281,7 @@ export function NowPlaying({
 									: "border-white/30 bg-white/10 text-white hover:bg-green-500/20 hover:text-green-400 hover:border-green-500"
 							}`}
 						>
-							<ThumbsUp className="h-4 w-4" />
+							<LikeIcon size={16} />
 						</Button>
 						<Button
 							variant="outline"
@@ -309,9 +303,9 @@ export function NowPlaying({
 								className="text-white/70 hover:text-white"
 							>
 								{isMuted ? (
-									<VolumeX className="h-4 w-4" />
+									<VolumeXIcon size={16} />
 								) : (
-									<Volume2 className="h-4 w-4" />
+									<Volume2Icon size={16} />
 								)}
 							</button>
 							<div

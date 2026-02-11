@@ -5,16 +5,13 @@ import { generateCover } from '../../src/services/cover'
 
 type SongNeedingCover = Pick<Doc<"songs">, "_id" | "coverPrompt">
 
-export async function processCover(
+async function processOneCover(
   convex: ConvexHttpClient,
-  songs: SongNeedingCover[],
-  imageProvider: string | undefined,
+  song: SongNeedingCover,
+  imageProvider: string,
   imageModel: string | undefined,
   signal: AbortSignal,
 ): Promise<void> {
-  if (songs.length === 0 || !imageProvider) return
-
-  const song = songs[0]
   if (!song.coverPrompt) return
 
   console.log(`  [cover] Generating cover for ${song._id}`)
@@ -63,5 +60,26 @@ export async function processCover(
     if (signal.aborted) return
     console.error(`  [cover] Error for ${song._id}:`, error instanceof Error ? error.message : error)
     // Cover is best-effort, don't mark song as error
+  }
+}
+
+export async function processCover(
+  convex: ConvexHttpClient,
+  songs: SongNeedingCover[],
+  imageProvider: string | undefined,
+  imageModel: string | undefined,
+  signal: AbortSignal,
+  concurrent = false,
+): Promise<void> {
+  if (songs.length === 0 || !imageProvider) return
+
+  if (concurrent) {
+    // Fire all covers concurrently (safe for comfyui which has its own queue)
+    await Promise.all(
+      songs.map((song) => processOneCover(convex, song, imageProvider, imageModel, signal)),
+    )
+  } else {
+    // Process one at a time (for providers without internal queuing)
+    await processOneCover(convex, songs[0], imageProvider, imageModel, signal)
   }
 }

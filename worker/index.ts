@@ -61,11 +61,12 @@ async function tick() {
 
     if (workerSessions.length === 0) return
 
-    // 2. Get settings for image provider
+    // 2. Get settings for providers
     const settings = await convex.query(api.settings.getAll)
     const rawImageProvider = settings.imageProvider
     const imageProvider = rawImageProvider === 'ollama' ? 'comfyui' : rawImageProvider
     const imageModel = settings.imageModel
+    const effectiveTextProvider = settings.textProvider || 'ollama'
 
     // 3. Process each session
     for (const session of workerSessions) {
@@ -99,17 +100,19 @@ async function tick() {
 
         // === Both active and closing: finish in-flight work ===
 
-        // Metadata Processor: one at a time per session
-        if (workQueue.pending.length > 0 && !state.llmBusy) {
+        // Metadata Processor: one at a time for ollama (local), concurrent for openrouter (remote)
+        const llmConcurrent = effectiveTextProvider !== 'ollama'
+        if (workQueue.pending.length > 0 && (llmConcurrent || !state.llmBusy)) {
           state.llmBusy = true
-          processMetadata(convex, session, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal)
+          processMetadata(convex, session, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal, llmConcurrent)
             .finally(() => { state.llmBusy = false })
         }
 
-        // Cover Processor: one at a time per session
-        if (workQueue.needsCover.length > 0 && !state.coverBusy) {
+        // Cover Processor: one at a time for local providers, concurrent for comfyui (has its own queue)
+        const coverConcurrent = imageProvider === 'comfyui'
+        if (workQueue.needsCover.length > 0 && (coverConcurrent || !state.coverBusy)) {
           state.coverBusy = true
-          processCover(convex, workQueue.needsCover, imageProvider, imageModel, signal)
+          processCover(convex, workQueue.needsCover, imageProvider, imageModel, signal, coverConcurrent)
             .finally(() => { state.coverBusy = false })
         }
 

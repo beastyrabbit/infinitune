@@ -136,3 +136,13 @@ code {
     @apply bg-background text-foreground;
   }
 }
+
+/* Text selection for dark autoplayer pages (bg-gray-950 + text-white) */
+.bg-gray-950 ::selection {
+  background: rgba(234, 179, 8, 0.4);
+  color: white;
+}
+.bg-gray-950::selection {
+  background: rgba(234, 179, 8, 0.4);
+  color: white;
+}

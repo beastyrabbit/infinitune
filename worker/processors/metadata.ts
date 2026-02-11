@@ -18,17 +18,14 @@ function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean
   })
 }
 
-export async function processMetadata(
+async function processOneSong(
   convex: ConvexHttpClient,
   session: Session,
-  pendingSongs: PendingSong[],
+  song: PendingSong,
   recentSongs: RecentSong[],
   recentDescriptions: string[],
   signal: AbortSignal,
 ): Promise<void> {
-  if (pendingSongs.length === 0) return
-
-  const song = pendingSongs[0]
   const claimed = await convex.mutation(api.songs.claimForMetadata, {
     id: song._id,
   })
@@ -121,5 +118,29 @@ export async function processMetadata(
       errorMessage: msg || 'Metadata generation failed',
       erroredAtStatus: 'generating_metadata',
     })
+  }
+}
+
+export async function processMetadata(
+  convex: ConvexHttpClient,
+  session: Session,
+  pendingSongs: PendingSong[],
+  recentSongs: RecentSong[],
+  recentDescriptions: string[],
+  signal: AbortSignal,
+  concurrent = false,
+): Promise<void> {
+  if (pendingSongs.length === 0) return
+
+  if (concurrent) {
+    // Fire all pending songs concurrently (safe for remote providers like openrouter)
+    await Promise.all(
+      pendingSongs.map((song) =>
+        processOneSong(convex, session, song, recentSongs, recentDescriptions, signal)
+      ),
+    )
+  } else {
+    // Process one at a time (for local providers like ollama)
+    await processOneSong(convex, session, pendingSongs[0], recentSongs, recentDescriptions, signal)
   }
 }

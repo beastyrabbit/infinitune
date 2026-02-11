@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
-import { Music, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
@@ -12,6 +12,7 @@ import { QuickRequest } from "@/components/autoplayer/QuickRequest";
 import { SessionCreator } from "@/components/autoplayer/SessionCreator";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
 import { Badge } from "@/components/ui/badge";
+import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
@@ -233,6 +234,7 @@ function AutoplayerPage() {
 					currentSongId={currentSongId}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
+					onRate={rateSong}
 				/>
 			)}
 
@@ -257,7 +259,7 @@ function AutoplayerPage() {
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
 					<span>{"AUTOPLAYER V1.0 // BRUTALIST INTERFACE"}</span>
 					<span className="flex items-center gap-2">
-						<Music className="h-3 w-3" />
+						<VinylIcon size={12} />
 						{songs?.length ?? 0} {"TRACKS // "}
 						{songs?.filter((s) => s.status === "ready" || s.status === "played")
 							.length ?? 0}{" "}

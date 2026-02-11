@@ -1,15 +1,10 @@
 import { useQuery } from "convex/react";
-import {
-	Library,
-	Music,
-	RotateCcw,
-	Settings,
-	Sparkles,
-	Zap,
-} from "lucide-react";
+import { Library, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import GearIcon from "@/components/ui/gear-icon";
 import { Input } from "@/components/ui/input";
+import RefreshIcon from "@/components/ui/refresh-icon";
 import {
 	Select,
 	SelectContent,
@@ -17,7 +12,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
+import VinylIcon from "@/components/ui/vinyl-icon";
 import { api } from "../../../convex/_generated/api";
 import type { LlmProvider } from "../../../convex/types";
 
@@ -183,7 +180,7 @@ export function SessionCreator({
 				<div className="border-4 border-white/20 bg-black">
 					<div className="border-b-4 border-white/20 px-4 py-3 flex items-center justify-between">
 						<div className="flex items-center gap-2">
-							<Music className="h-4 w-4 text-red-500" />
+							<VinylIcon size={16} className="text-red-500" />
 							<span className="text-sm font-black uppercase tracking-widest">
 								NEW SESSION
 							</span>
@@ -214,7 +211,7 @@ export function SessionCreator({
 								className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
 								onClick={onOpenSettings}
 							>
-								<Settings className="h-4 w-4" />
+								<GearIcon size={16} />
 								[SETTINGS]
 							</button>
 						</div>
@@ -243,7 +240,7 @@ export function SessionCreator({
 								onClick={handleEnhancePrompt}
 								disabled={!prompt.trim() || !model.trim() || enhancing}
 							>
-								<Sparkles className="h-3 w-3" />
+								<SparklesIcon size={12} />
 								{enhancing ? "[ENHANCING...]" : "[ENHANCE PROMPT]"}
 							</button>
 						</div>
@@ -335,7 +332,7 @@ export function SessionCreator({
 				{closedSessions && closedSessions.length > 0 && (
 					<div className="mt-6 border-4 border-white/20 bg-black">
 						<div className="border-b-4 border-white/20 px-4 py-3 flex items-center gap-2">
-							<RotateCcw className="h-4 w-4 text-white/40" />
+							<RefreshIcon size={16} className="text-white/40" />
 							<span className="text-sm font-black uppercase tracking-widest text-white/60">
 								PREVIOUS SESSIONS
 							</span>

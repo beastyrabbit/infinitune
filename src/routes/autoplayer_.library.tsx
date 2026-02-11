@@ -1,20 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useQuery } from "convex/react";
-import {
-	ArrowLeft,
-	Music,
-	Pause,
-	Play,
-	Search,
-	SlidersHorizontal,
-	Volume2,
-	VolumeX,
-	X,
-} from "lucide-react";
+import { Pause, Play, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
+import ArrowBackIcon from "@/components/ui/arrow-back-icon";
+import VinylIcon from "@/components/ui/vinyl-icon";
+import Volume2Icon from "@/components/ui/volume-2-icon";
+import VolumeXIcon from "@/components/ui/volume-x-icon";
+import XIcon from "@/components/ui/x-icon";
 import {
 	getGlobalAudio,
 	playerStore,
@@ -225,11 +220,7 @@ function MiniPlayer({
 					onClick={toggleMute}
 					className="text-white/50 hover:text-white"
 				>
-					{isMuted ? (
-						<VolumeX className="h-3.5 w-3.5" />
-					) : (
-						<Volume2 className="h-3.5 w-3.5" />
-					)}
+					{isMuted ? <VolumeXIcon size={14} /> : <Volume2Icon size={14} />}
 				</button>
 				{/* biome-ignore lint/a11y/useSemanticElements: div used for custom volume bar layout */}
 				<div
@@ -502,7 +493,7 @@ function LibraryPage() {
 							className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
 							onClick={() => setSearch("")}
 						>
-							<X className="h-3.5 w-3.5" />
+							<XIcon size={14} />
 						</button>
 					)}
 				</div>
@@ -583,7 +574,7 @@ function LibraryPage() {
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-white"
 							onClick={() => navigate({ to: "/autoplayer" })}
 						>
-							<ArrowLeft className="h-5 w-5" />
+							<ArrowBackIcon size={20} />
 						</button>
 						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
 							LIBRARY
@@ -644,7 +635,7 @@ function LibraryPage() {
 									className="text-white/60 hover:text-white"
 									onClick={() => setMobileFiltersOpen(false)}
 								>
-									<X className="h-5 w-5" />
+									<XIcon size={20} />
 								</button>
 							</div>
 							{filterSidebar}
@@ -656,7 +647,7 @@ function LibraryPage() {
 				<main className="flex-1 overflow-y-auto">
 					{filtered.length === 0 ? (
 						<div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center px-4">
-							<Music className="h-16 w-16 text-white/10 mb-4" />
+							<VinylIcon size={64} className="text-white/10 mb-4" />
 							<p className="text-lg font-black uppercase text-white/30">
 								{songs.length === 0 ? "NO SONGS YET" : "NO MATCHES"}
 							</p>
@@ -743,7 +734,7 @@ function LibraryPage() {
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
 					<span>{"LIBRARY // ALL SESSIONS"}</span>
 					<span className="flex items-center gap-2">
-						<Music className="h-3 w-3" />
+						<VinylIcon size={12} />
 						{filtered.length} SHOWN / {songs.length} TOTAL
 					</span>
 				</div>

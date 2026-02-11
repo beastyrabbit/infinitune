@@ -1,18 +1,13 @@
 import { useMutation } from "convex/react";
-import {
-	Clock,
-	Disc3,
-	FileText,
-	Loader2,
-	Music,
-	Palette,
-	RotateCcw,
-	ThumbsDown,
-	ThumbsUp,
-	Trash2,
-	X,
-} from "lucide-react";
+import { Loader2, Palette, ThumbsDown } from "lucide-react";
 import { useEffect, useState } from "react";
+import ClockIcon from "@/components/ui/clock-icon";
+import FileDescriptionIcon from "@/components/ui/file-description-icon";
+import LikeIcon from "@/components/ui/like-icon";
+import RefreshIcon from "@/components/ui/refresh-icon";
+import TrashIcon from "@/components/ui/trash-icon";
+import VinylIcon from "@/components/ui/vinyl-icon";
+import XIcon from "@/components/ui/x-icon";
 import type { Song } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 import { CoverArt } from "./CoverArt";
@@ -110,7 +105,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 				{/* Header */}
 				<div className="sticky top-0 z-10 border-b-4 border-white/20 bg-black px-4 py-3 flex items-center justify-between">
 					<div className="flex items-center gap-2">
-						<Disc3 className="h-4 w-4 text-red-500" />
+						<VinylIcon size={16} className="text-red-500" />
 						<span className="text-sm font-black uppercase tracking-widest">
 							TRACK {String(Math.round(song.orderIndex)).padStart(2, "0")} —
 							DETAILS
@@ -121,7 +116,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 						className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
 						onClick={onClose}
 					>
-						<X className="h-5 w-5" />
+						<XIcon size={20} />
 					</button>
 				</div>
 
@@ -208,7 +203,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 											className="flex items-center gap-1 border-2 border-yellow-500/40 px-3 py-1.5 text-xs font-black uppercase text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors"
 											onClick={handleReset}
 										>
-											<RotateCcw className="h-3 w-3" />
+											<RefreshIcon size={12} />
 											RESET
 										</button>
 									)}
@@ -228,7 +223,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 											}
 										}}
 									>
-										<Trash2 className="h-3 w-3" />
+										<TrashIcon size={12} />
 										{confirmDelete ? "CONFIRM REMOVE" : "REMOVE"}
 									</button>
 								</div>
@@ -236,7 +231,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 
 							{/* Generation Time */}
 							<div className="flex items-center gap-2 text-xs font-bold uppercase text-white/40">
-								<Clock className="h-3 w-3" />
+								<ClockIcon size={12} />
 								{isGenerating && song.generationStartedAt ? (
 									<span className="text-yellow-500">
 										RUNNING: <LiveTimer startedAt={song.generationStartedAt} />
@@ -254,7 +249,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 									<div className="flex items-center gap-1 text-xs font-bold uppercase">
 										{song.userRating === "up" ? (
 											<>
-												<ThumbsUp className="h-3 w-3 text-green-400" />
+												<LikeIcon size={12} className="text-green-400" />
 												<span className="text-green-400">LIKED</span>
 											</>
 										) : (
@@ -284,7 +279,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 					<div className="border-4 border-white/10 bg-black">
 						<div className="border-b-2 border-white/10 px-4 py-2">
 							<span className="text-xs font-black uppercase tracking-widest text-white/40">
-								<Music className="h-3 w-3 inline mr-2" />
+								<VinylIcon size={12} className="inline mr-2" />
 								MUSIC PROPERTIES
 							</span>
 						</div>
@@ -458,7 +453,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 					<div className="border-4 border-white/10 bg-black">
 						<div className="border-b-2 border-white/10 px-4 py-2">
 							<span className="text-xs font-black uppercase tracking-widest text-white/40">
-								<FileText className="h-3 w-3 inline mr-2" />
+								<FileDescriptionIcon size={12} className="inline mr-2" />
 								LYRICS
 							</span>
 						</div>

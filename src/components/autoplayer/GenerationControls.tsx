@@ -1,15 +1,11 @@
 import { useMutation } from "convex/react";
-import {
-	Clock,
-	Gauge,
-	Globe,
-	Music,
-	Piano,
-	Sliders,
-	Wand2,
-} from "lucide-react";
+import { Piano, Sliders, Wand2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import ClockIcon from "@/components/ui/clock-icon";
+import GaugeIcon from "@/components/ui/gauge-icon";
+import GlobeIcon from "@/components/ui/globe-icon";
+import VinylIcon from "@/components/ui/vinyl-icon";
 import type { Session } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
@@ -170,7 +166,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 			<div className="mb-6">
 				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-sm font-bold uppercase text-white/60 mb-2">
-					<Music className="h-4 w-4" />
+					<VinylIcon size={16} />
 					SESSION PROMPT
 				</label>
 				<textarea
@@ -197,7 +193,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 			<div className="mb-4">
 				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
-					<Globe className="h-3 w-3" />
+					<GlobeIcon size={12} />
 					LYRICS LANGUAGE
 				</label>
 				<select
@@ -218,7 +214,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 				<div>
 					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
-						<Gauge className="h-3 w-3" />
+						<GaugeIcon size={12} />
 						BPM
 					</label>
 					<input
@@ -265,7 +261,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 				<div>
 					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
-						<Clock className="h-3 w-3" />
+						<ClockIcon size={12} />
 						DURATION (S)
 					</label>
 					<input
