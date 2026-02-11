@@ -22,6 +22,7 @@ export default defineSchema({
     lmCfgScale: v.optional(v.number()),
     inferMethod: v.optional(v.string()),
     currentOrderIndex: v.optional(v.number()),
+    lastSeenAt: v.optional(v.number()),
   }).index("by_playlist_key", ["playlistKey"]),
 
   songs: defineTable({
@@ -69,6 +70,9 @@ export default defineSchema({
     userRating: v.optional(v.union(v.literal("up"), v.literal("down"))),
     playDurationMs: v.optional(v.number()),
     listenCount: v.optional(v.number()),
+    metadataProcessingMs: v.optional(v.number()),
+    coverProcessingMs: v.optional(v.number()),
+    audioProcessingMs: v.optional(v.number()),
   }).index("by_playlist", ["playlistId"])
     .index("by_playlist_status", ["playlistId", "status"])
     .index("by_playlist_order", ["playlistId", "orderIndex"]),

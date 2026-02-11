@@ -130,13 +130,18 @@ export const markReady = mutation({
   args: {
     id: v.id("songs"),
     audioUrl: v.string(),
+    audioProcessingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, {
+    const patch: Record<string, unknown> = {
       audioUrl: args.audioUrl,
       status: "ready",
       generationCompletedAt: Date.now(),
-    })
+    }
+    if (args.audioProcessingMs !== undefined) {
+      patch.audioProcessingMs = args.audioProcessingMs
+    }
+    await ctx.db.patch(args.id, patch)
   },
 })
 
@@ -186,6 +191,16 @@ export const updateCoverStorage = mutation({
       coverStorageId: args.coverStorageId,
       coverUrl: url ?? undefined,
     })
+  },
+})
+
+export const updateCoverProcessingMs = mutation({
+  args: {
+    id: v.id("songs"),
+    coverProcessingMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { coverProcessingMs: args.coverProcessingMs })
   },
 })
 
@@ -332,6 +347,7 @@ export const completeMetadata = mutation({
     description: v.optional(v.string()),
     llmProvider: v.optional(llmProviderValidator),
     llmModel: v.optional(v.string()),
+    metadataProcessingMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { id, ...metadata } = args
@@ -480,6 +496,13 @@ export const getWorkQueue = query({
     const generatingAudio = songs.filter((s) => s.status === "generating_audio")
     const retryPending = songs.filter((s) => s.status === "retry_pending")
 
+    // Songs in transient processing states that need recovery (e.g. after worker restart)
+    const needsRecovery = songs.filter((s) =>
+      s.status === "generating_metadata" ||
+      s.status === "submitting_to_ace" ||
+      s.status === "saving"
+    )
+
     // Calculate buffer deficit based on current playing position
     const playlist = await ctx.db.get(args.playlistId)
     const currentOrderIndex = playlist?.currentOrderIndex ?? 0
@@ -538,6 +561,7 @@ export const getWorkQueue = query({
       needsCover,
       generatingAudio,
       retryPending,
+      needsRecovery,
       bufferDeficit,
       maxOrderIndex,
       totalSongs: songs.length,

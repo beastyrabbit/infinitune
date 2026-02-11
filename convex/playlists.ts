@@ -173,6 +173,29 @@ export const listAll = query({
   },
 })
 
+export const updateHeartbeat = mutation({
+  args: { id: v.id("playlists") },
+  handler: async (ctx, args) => {
+    const playlist = await ctx.db.get(args.id)
+    if (!playlist) return
+    const now = Date.now()
+    const patch: Record<string, unknown> = {}
+    // Only update if new value is greater (supports multiple listeners)
+    if (!playlist.lastSeenAt || now > playlist.lastSeenAt) {
+      patch.lastSeenAt = now
+    }
+    // Re-activate closing/closed playlists when user returns
+    // (user-initiated close navigates away, so no heartbeats — this only
+    // fires when someone is actually viewing the playlist page)
+    if (playlist.status === 'closing' || playlist.status === 'closed') {
+      patch.status = 'active'
+    }
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(args.id, patch)
+    }
+  },
+})
+
 // Returns playlists that the worker should process (active + closing)
 export const listWorkerPlaylists = query({
   handler: async (ctx) => {

@@ -15,7 +15,10 @@ import { TrackDetail } from "@/components/autoplayer/TrackDetail";
 import { Badge } from "@/components/ui/badge";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
+import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
+import type { EndpointStatus } from "@/hooks/useWorkerStatus";
+import { useWorkerStatus } from "@/hooks/useWorkerStatus";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -23,6 +26,24 @@ import {
 } from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 import type { LlmProvider } from "../../convex/types";
+
+function EndpointDot({
+	label,
+	status,
+}: {
+	label: string;
+	status?: EndpointStatus | null;
+}) {
+	let dotClass = "bg-white/30"; // idle/grey
+	if (status?.active && status.active > 0) dotClass = "bg-green-500";
+	if (status?.errors && status.errors > 0) dotClass = "bg-red-500";
+	return (
+		<span className="flex items-center gap-1">
+			{label}:
+			<span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+		</span>
+	);
+}
 
 export const Route = createFileRoute("/autoplayer")({
 	component: AutoplayerPage,
@@ -45,9 +66,7 @@ function AutoplayerPage() {
 
 	const createPlaylist = useMutation(api.playlists.create);
 	const updateStatus = useMutation(api.playlists.updateStatus);
-	const revertTransientStatuses = useMutation(
-		api.songs.revertTransientStatuses,
-	);
+	// revertTransientStatuses is no longer needed — the worker handles recovery on restart
 
 	const {
 		songs,
@@ -63,6 +82,8 @@ function AutoplayerPage() {
 	const { currentSongId } = useStore(playerStore);
 
 	useVolumeSync();
+	usePlaylistHeartbeat(playlistId);
+	const { status: workerStatus } = useWorkerStatus();
 
 	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;
 
@@ -107,12 +128,11 @@ function AutoplayerPage() {
 		await updateStatus({ id: playlistId, status: "closing" });
 	}, [playlistId, updateStatus]);
 
-	// Force close: revert transient statuses and close immediately
+	// Force close: close immediately — worker will cancel in-flight work
 	const handleForceClose = useCallback(async () => {
 		if (!playlistId) return;
-		await revertTransientStatuses({ playlistId });
 		await updateStatus({ id: playlistId, status: "closed" });
-	}, [playlistId, updateStatus, revertTransientStatuses]);
+	}, [playlistId, updateStatus]);
 
 	const handleSelectSong = useCallback(
 		(songId: string) => {
@@ -195,6 +215,15 @@ function AutoplayerPage() {
 							}
 						>
 							[LIBRARY]
+						</button>
+						<button
+							type="button"
+							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500"
+							onClick={() =>
+								navigate({ to: "/autoplayer/queue", search: (prev) => prev })
+							}
+						>
+							[QUEUE]
 						</button>
 						<button
 							type="button"
@@ -285,6 +314,11 @@ function AutoplayerPage() {
 			<footer className="bg-black px-4 py-2 border-t border-white/10">
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
 					<span>{"AUTOPLAYER V1.0 // BRUTALIST INTERFACE"}</span>
+					<span className="flex items-center gap-3">
+						<EndpointDot label="LLM" status={workerStatus?.queues.llm} />
+						<EndpointDot label="IMG" status={workerStatus?.queues.image} />
+						<EndpointDot label="AUD" status={workerStatus?.queues.audio} />
+					</span>
 					<span className="flex items-center gap-2">
 						<VinylIcon size={12} />
 						{songs?.length ?? 0} {"TRACKS // "}

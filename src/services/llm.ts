@@ -55,17 +55,17 @@ Field guidance:
 
 JSON OUTPUT: NEVER use double-quote characters (") inside any string value — use single quotes (') instead. All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
 
-/** Close prompt — stays near the session theme, like a radio station that stays on-brand */
+/** Close prompt — stays near the playlist theme, like a radio station that stays on-brand */
 const SYSTEM_PROMPT_CLOSE = `You are a music producer AI. Generate a song that fits naturally in this playlist.
 
-Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, different specific instruments, but the overall feel should be cohesive with the session theme.
+Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, different specific instruments, but the overall feel should be cohesive with the playlist theme.
 
 ${FIELD_GUIDANCE}`;
 
 /** General prompt — explores further, like a DJ who plays something unexpected but it still works */
-const SYSTEM_PROMPT_GENERAL = `You are a music producer AI. Generate a song inspired by this session's theme but from a different angle.
+const SYSTEM_PROMPT_GENERAL = `You are a music producer AI. Generate a song inspired by this playlist's theme but from a different angle.
 
-Pick an adjacent genre, shift the mood, change the energy level, try a different era. Like a DJ who plays something unexpected but it still works in the set. The session theme is your starting point — venture outward from it. Explore the full musical spectrum while keeping a thread of connection to the original vibe.
+Pick an adjacent genre, shift the mood, change the energy level, try a different era. Like a DJ who plays something unexpected but it still works in the set. The playlist theme is your starting point — venture outward from it. Explore the full musical spectrum while keeping a thread of connection to the original vibe.
 
 ${FIELD_GUIDANCE}`;
 

@@ -8,7 +8,7 @@
  * @module
  */
 
-import type * as sessions from "../sessions.js";
+import type * as playlists from "../playlists.js";
 import type * as settings from "../settings.js";
 import type * as songs from "../songs.js";
 import type * as types from "../types.js";
@@ -20,7 +20,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  sessions: typeof sessions;
+  playlists: typeof playlists;
   settings: typeof settings;
   songs: typeof songs;
   types: typeof types;

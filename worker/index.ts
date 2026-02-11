@@ -1,142 +1,152 @@
 import { getConvexClient } from './convex-client'
 import { api } from '../convex/_generated/api'
-import type { Id } from '../convex/_generated/dataModel'
-import { processQueueKeeper } from './processors/queue-keeper'
-import { processMetadata } from './processors/metadata'
-import { processCover } from './processors/cover'
-import { processAudioSubmit, processAudioPoll } from './processors/audio'
-import { processRetry } from './processors/retry'
+import type { Doc, Id } from '../convex/_generated/dataModel'
+import { pollAce } from '../src/services/ace'
+import { EndpointQueues } from './queues'
+import { SongWorker } from './song-worker'
+import { startHttpServer } from './http-server'
+import type { RecentSong } from '../src/services/llm'
 
 const POLL_INTERVAL = 2000 // 2 seconds
+const HEARTBEAT_STALE_MS = 90_000 // 90 seconds = 3 missed 30s heartbeats
 
-// Per-playlist concurrency flags
-const playlistState = new Map<Id<"playlists">, {
-  llmBusy: boolean
-  coverBusy: boolean
-  submitBusy: boolean
-  saveBusy: boolean
-  abortController: AbortController
-}>()
+// ─── State ───────────────────────────────────────────────────────────
 
-function getPlaylistState(playlistId: Id<"playlists">) {
-  let state = playlistState.get(playlistId)
-  if (!state) {
-    state = {
-      llmBusy: false,
-      coverBusy: false,
-      submitBusy: false,
-      saveBusy: false,
-      abortController: new AbortController(),
-    }
-    playlistState.set(playlistId, state)
+/** Active song workers keyed by songId */
+const songWorkers = new Map<Id<"songs">, SongWorker>()
+
+/** Tracked playlist IDs from last tick */
+const trackedPlaylists = new Set<Id<"playlists">>()
+
+let queues: EndpointQueues
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+async function getSettings(): Promise<{ textProvider: string; textModel: string; imageProvider: string; imageModel?: string }> {
+  const convex = getConvexClient()
+  const settings = await convex.query(api.settings.getAll)
+  return {
+    textProvider: settings.textProvider || 'ollama',
+    textModel: settings.textModel || '',
+    imageProvider: settings.imageProvider || 'comfyui',
+    imageModel: settings.imageModel,
   }
-  return state
 }
+
+// ─── Tick ────────────────────────────────────────────────────────────
 
 async function tick() {
   const convex = getConvexClient()
 
   try {
-    // 1. Get playlists the worker should process (active + closing)
+    // 1. Fetch active + closing playlists
     const workerPlaylists = await convex.query(api.playlists.listWorkerPlaylists)
-    const workerPlaylistIds = new Set(workerPlaylists.map((s) => s._id))
+    const workerPlaylistIds = new Set(workerPlaylists.map((p) => p._id))
 
-    // Clean up playlists that fully disappeared (force-closed or deleted)
-    for (const [playlistId, state] of playlistState.entries()) {
-      if (!workerPlaylistIds.has(playlistId)) {
-        console.log(`[worker] Playlist ${playlistId} gone, aborting in-flight work`)
-        state.abortController.abort()
-        playlistState.delete(playlistId)
+    // 2. Fetch settings, refresh queue concurrency
+    const settings = await getSettings()
+    queues.refreshAll(settings)
 
-        // Revert transient statuses as safety net
-        try {
-          await convex.mutation(api.songs.revertTransientStatuses, {
-            playlistId,
+    // 3. Check heartbeats — flag stale playlists as closing
+    for (const playlist of workerPlaylists) {
+      if (playlist.status === 'active' && playlist.lastSeenAt) {
+        const elapsed = Date.now() - playlist.lastSeenAt
+        if (elapsed > HEARTBEAT_STALE_MS) {
+          console.log(`[worker] Playlist ${playlist._id} stale (no heartbeat for ${Math.round(elapsed / 1000)}s), setting to closing`)
+          await convex.mutation(api.playlists.updateStatus, {
+            id: playlist._id,
+            status: 'closing',
           })
-        } catch (e: unknown) {
-          console.error(`[worker] Failed to revert statuses for ${playlistId}:`, e instanceof Error ? e.message : e)
         }
       }
     }
 
-    if (workerPlaylists.length === 0) return
+    // 4. Cleanup disappeared playlists (cancel song workers + queued requests)
+    for (const playlistId of trackedPlaylists) {
+      if (!workerPlaylistIds.has(playlistId)) {
+        console.log(`[worker] Playlist ${playlistId} gone, cancelling workers`)
+        cancelPlaylistWorkers(playlistId)
+        trackedPlaylists.delete(playlistId)
+      }
+    }
 
-    // 2. Get settings for providers
-    const settings = await convex.query(api.settings.getAll)
-    const rawImageProvider = settings.imageProvider
-    const imageProvider = rawImageProvider === 'ollama' ? 'comfyui' : rawImageProvider
-    const imageModel = settings.imageModel
-    const effectiveTextProvider = settings.textProvider || 'ollama'
-
-    // 3. Process each playlist
+    // 5. Process each playlist
     for (const playlist of workerPlaylists) {
+      trackedPlaylists.add(playlist._id)
       const playlistId = playlist._id
       const isClosing = playlist.status === 'closing'
-      const state = getPlaylistState(playlistId)
-      const signal = state.abortController.signal
+      const isOneshot = playlist.mode === 'oneshot'
 
       try {
-        const workQueue = await convex.query(api.songs.getWorkQueue, {
-          playlistId,
-        })
+        const workQueue = await convex.query(api.songs.getWorkQueue, { playlistId })
 
-        // === Active playlists only: create new pending songs ===
-        const isOneshot = playlist.mode === 'oneshot'
+        // === Active playlists only: buffer management + retry ===
         if (!isClosing) {
-          // Queue Keeper: maintain buffer
-          // Oneshot mode: only create 1 song total
+          // Queue Keeper: maintain buffer (create 1 pending song per tick)
           const shouldCreateSong = isOneshot
             ? workQueue.totalSongs === 0
             : workQueue.bufferDeficit > 0
           if (shouldCreateSong) {
-            await processQueueKeeper(convex, playlistId, isOneshot ? 1 : workQueue.bufferDeficit, workQueue.maxOrderIndex)
+            const orderIndex = Math.ceil(workQueue.maxOrderIndex) + 1
+            await convex.mutation(api.songs.createPending, {
+              playlistId,
+              orderIndex,
+            })
+            console.log(`  [queue-keeper] Created pending song at order ${orderIndex} (deficit: ${workQueue.bufferDeficit})`)
           }
 
-          // Retry Processor: revert retry_pending songs (only active — closing playlists shouldn't retry)
+          // Retry: revert retry_pending songs
           if (workQueue.retryPending.length > 0) {
-            await processRetry(convex, workQueue.retryPending)
+            for (const song of workQueue.retryPending) {
+              console.log(`  [retry] Reverting song ${song._id} (retry ${(song.retryCount || 0) + 1}/3)`)
+              await convex.mutation(api.songs.retryErroredSong, { id: song._id })
+            }
           }
         }
 
-        // === Both active and closing: finish in-flight work ===
+        // === Both active and closing: create SongWorkers for actionable songs ===
+        const actionableSongs = [
+          ...workQueue.pending,
+          ...workQueue.metadataReady,
+          ...workQueue.generatingAudio,
+          ...workQueue.needsRecovery,
+        ]
 
-        // Metadata Processor: one at a time for ollama (local), concurrent for openrouter (remote)
-        const llmConcurrent = effectiveTextProvider !== 'ollama'
-        if (workQueue.pending.length > 0 && (llmConcurrent || !state.llmBusy)) {
-          state.llmBusy = true
-          processMetadata(convex, playlist, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal, llmConcurrent)
-            .finally(() => { state.llmBusy = false })
+        for (const song of actionableSongs) {
+          if (songWorkers.has(song._id)) continue // Already tracked
+
+          const worker = new SongWorker(song as Doc<"songs">, {
+            convex,
+            queues,
+            playlist: playlist as Doc<"playlists">,
+            recentSongs: workQueue.recentCompleted as RecentSong[],
+            recentDescriptions: workQueue.recentDescriptions,
+            getPlaylistActive: async () => {
+              const pl = await convex.query(api.playlists.get, { id: playlistId })
+              return pl?.status === 'active'
+            },
+            getSettings,
+          })
+          songWorkers.set(song._id, worker)
+
+          // Fire-and-forget
+          worker.run().finally(() => {
+            songWorkers.delete(song._id)
+          })
         }
 
-        // Cover Processor: one at a time for local providers, concurrent for comfyui (has its own queue)
-        const coverConcurrent = imageProvider === 'comfyui'
-        if (workQueue.needsCover.length > 0 && (coverConcurrent || !state.coverBusy)) {
-          state.coverBusy = true
-          processCover(convex, workQueue.needsCover, imageProvider, imageModel, signal, coverConcurrent)
-            .finally(() => { state.coverBusy = false })
-        }
-
-        // Audio Submit: only when no songs are already generating audio (1 at a time)
-        if (workQueue.metadataReady.length > 0 && !state.submitBusy && workQueue.generatingAudio.length === 0) {
-          state.submitBusy = true
-          processAudioSubmit(convex, playlist, workQueue.metadataReady, signal)
-            .finally(() => { state.submitBusy = false })
-        }
-
-        // Audio Poll: poll all generating_audio songs (concurrent)
-        if (workQueue.generatingAudio.length > 0) {
-          processAudioPoll(convex, playlistId, workQueue.generatingAudio, signal)
-        }
-
-        // === Stale song cleanup: remove songs stuck in transient states ===
+        // === Stale song cleanup ===
         if (workQueue.staleSongs.length > 0) {
           for (const stale of workQueue.staleSongs) {
             console.log(`  [stale] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`)
+            // Cancel any worker for this song
+            const w = songWorkers.get(stale._id)
+            if (w) w.cancel()
             await convex.mutation(api.songs.deleteSong, { id: stale._id })
           }
         }
 
-        // === Oneshot auto-close: when the single song is done ===
+        // === Oneshot auto-close ===
         if (isOneshot && !isClosing && workQueue.transientCount === 0 && workQueue.totalSongs > 0) {
           console.log(`[worker] Oneshot playlist ${playlistId} complete, setting to closing`)
           await convex.mutation(api.playlists.updateStatus, {
@@ -152,60 +162,77 @@ async function tick() {
             id: playlistId,
             status: 'closed',
           })
-          state.abortController.abort()
-          playlistState.delete(playlistId)
+          cancelPlaylistWorkers(playlistId)
+          trackedPlaylists.delete(playlistId)
         }
       } catch (error: unknown) {
         console.error(`[worker] Error processing playlist ${playlistId}:`, error instanceof Error ? error.message : error)
       }
     }
+
+    // 6. Tick audio polls (only tick-driven endpoint)
+    await queues.audio.tickPolls()
   } catch (error: unknown) {
     console.error('[worker] Tick error:', error instanceof Error ? error.message : error)
   }
 }
 
+function cancelPlaylistWorkers(_playlistId: Id<"playlists">): void {
+  // Song workers check playlist activity before each major step.
+  // When a playlist disappears, their getPlaylistActive() returns false
+  // and they'll abort. The queues will also reject cancelled items.
+  // No explicit per-playlist tracking needed — workers self-terminate.
+}
+
+// ─── Startup ─────────────────────────────────────────────────────────
+
 async function main() {
   console.log('[worker] Starting song generation worker...')
-  console.log(`[worker] Polling interval: ${POLL_INTERVAL}ms`)
+  console.log(`[worker] Poll interval: ${POLL_INTERVAL}ms`)
 
-  // Verify Convex connection and recover from any previous crash
   const convex = getConvexClient()
+
+  // Verify Convex connection
   try {
     const playlists = await convex.query(api.playlists.listWorkerPlaylists)
     console.log(`[worker] Connected to Convex. ${playlists.length} worker playlist(s)`)
-
-    // Recover songs stuck in transient statuses from previous worker instance
-    for (const playlist of playlists) {
-      try {
-        const recovered = await convex.mutation(api.songs.recoverFromWorkerRestart, {
-          playlistId: playlist._id,
-        })
-        if (recovered > 0) {
-          console.log(`[worker] Recovered ${recovered} song(s) in playlist ${playlist._id}`)
-        }
-      } catch (e: unknown) {
-        console.error(`[worker] Recovery failed for playlist ${playlist._id}:`, e instanceof Error ? e.message : e)
-      }
-    }
   } catch (error: unknown) {
     console.error('[worker] Failed to connect to Convex:', error instanceof Error ? error.message : error)
     process.exit(1)
   }
 
+  // Initialize endpoint queues
+  queues = new EndpointQueues(
+    (taskId, signal) => pollAce(taskId, signal),
+  )
+
+  // Start HTTP server for queue status API
+  const port = Number(process.env.WORKER_API_PORT) || 3099
+  const startTime = Date.now()
+  startHttpServer({
+    queues,
+    getSongWorkerCount: () => songWorkers.size,
+    getPlaylistInfo: () => {
+      // Return basic playlist info
+      return [...trackedPlaylists].map((id) => ({
+        id: id as string,
+        name: id as string,
+        activeSongWorkers: 0, // TODO: count per-playlist
+      }))
+    },
+    startTime,
+  }, port)
+
   console.log('[worker] Worker started')
 
   // Main loop
-  const loop = async () => {
-    while (true) {
-      await tick()
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL))
-    }
+  while (true) {
+    await tick()
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL))
   }
-
-  loop().catch((error) => {
-    console.error('[worker] Fatal error:', error)
-    process.exit(1)
-  })
 }
 
-main()
+main().catch((error) => {
+  console.error('[worker] Fatal error:', error)
+  process.exit(1)
+})
