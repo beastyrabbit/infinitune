@@ -1,0 +1,7 @@
+{
+  "setup": [
+    "cp $ROOT_WORKTREE_PATH/.env.local .env.local",
+    "ln -sf $ROOT_WORKTREE_PATH/.ref .ref",
+    "pnpm install"
+  ]
+}

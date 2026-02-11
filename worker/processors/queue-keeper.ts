@@ -1,9 +1,10 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
+import type { Id } from '../../convex/_generated/dataModel'
 
 export async function processQueueKeeper(
   convex: ConvexHttpClient,
-  sessionId: string,
+  sessionId: Id<"sessions">,
   bufferDeficit: number,
   maxOrderIndex: number,
 ) {
@@ -12,7 +13,7 @@ export async function processQueueKeeper(
   // Create at most 1 song per tick to prevent burst creation
   const orderIndex = Math.ceil(maxOrderIndex) + 1
   await convex.mutation(api.songs.createPending, {
-    sessionId: sessionId as any,
+    sessionId,
     orderIndex,
   })
   console.log(`  [queue-keeper] Created pending song at order ${orderIndex} (deficit: ${bufferDeficit})`)

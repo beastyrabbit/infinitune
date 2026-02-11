@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { Session } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
 const LANGUAGES = [
@@ -23,24 +24,8 @@ const LANGUAGES = [
 	{ value: "russian", label: "Russian" },
 ] as const;
 
-interface SessionData {
-	_id: string;
-	prompt: string;
-	llmProvider: string;
-	llmModel: string;
-	lyricsLanguage?: string;
-	targetBpm?: number;
-	targetKey?: string;
-	timeSignature?: string;
-	audioDuration?: number;
-	inferenceSteps?: number;
-	lmTemperature?: number;
-	lmCfgScale?: number;
-	inferMethod?: string;
-}
-
 interface GenerationControlsProps {
-	session: SessionData;
+	session: Session;
 }
 
 export function GenerationControls({ session }: GenerationControlsProps) {
@@ -62,12 +47,8 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 	const [lmTemp, setLmTemp] = useState(
 		session.lmTemperature?.toString() || "0.85",
 	);
-	const [lmCfg, setLmCfg] = useState(
-		session.lmCfgScale?.toString() || "2.5",
-	);
-	const [inferMeth, setInferMeth] = useState(
-		session.inferMethod || "ode",
-	);
+	const [lmCfg, setLmCfg] = useState(session.lmCfgScale?.toString() || "2.5");
+	const [inferMeth, setInferMeth] = useState(session.inferMethod || "ode");
 
 	const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>(
 		{},
@@ -85,13 +66,23 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 		setLmTemp(session.lmTemperature?.toString() || "0.85");
 		setLmCfg(session.lmCfgScale?.toString() || "2.5");
 		setInferMeth(session.inferMethod || "ode");
-	}, [session._id, session.inferenceSteps, session.lmTemperature, session.lmCfgScale, session.inferMethod, session.lyricsLanguage, session.targetBpm, session.targetKey, session.timeSignature, session.audioDuration]);
+	}, [
+		session.inferenceSteps,
+		session.lmTemperature,
+		session.lmCfgScale,
+		session.inferMethod,
+		session.lyricsLanguage,
+		session.targetBpm,
+		session.targetKey,
+		session.timeSignature,
+		session.audioDuration,
+		session.prompt,
+	]);
 
 	const debouncedUpdate = (field: string, value: unknown) => {
-		if (debounceRefs.current[field])
-			clearTimeout(debounceRefs.current[field]);
+		if (debounceRefs.current[field]) clearTimeout(debounceRefs.current[field]);
 		debounceRefs.current[field] = setTimeout(() => {
-			updateParams({ id: session._id as any, [field]: value });
+			updateParams({ id: session._id, [field]: value });
 		}, 500);
 	};
 
@@ -160,13 +151,13 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 		setLmCfg("2.5");
 		setInferMeth("ode");
 		setLanguage("auto");
-		resetDefaults({ id: session._id as any });
+		resetDefaults({ id: session._id });
 	};
 
 	const handleUpdatePrompt = () => {
 		const trimmed = prompt.trim();
 		if (!trimmed || trimmed === session.prompt) return;
-		updatePrompt({ id: session._id as any, prompt: trimmed });
+		updatePrompt({ id: session._id, prompt: trimmed });
 	};
 
 	return (
@@ -177,6 +168,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 
 			{/* Prompt editor (absorbed from PlaylistConfig) */}
 			<div className="mb-6">
+				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-sm font-bold uppercase text-white/60 mb-2">
 					<Music className="h-4 w-4" />
 					SESSION PROMPT
@@ -194,9 +186,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 					<Button
 						className="h-8 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
 						onClick={handleUpdatePrompt}
-						disabled={
-							!prompt.trim() || prompt.trim() === session.prompt
-						}
+						disabled={!prompt.trim() || prompt.trim() === session.prompt}
 					>
 						UPDATE
 					</Button>
@@ -205,6 +195,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 
 			{/* Language */}
 			<div className="mb-4">
+				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 					<Globe className="h-3 w-3" />
 					LYRICS LANGUAGE
@@ -225,6 +216,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 			{/* BPM + Key — side by side */}
 			<div className="grid grid-cols-2 gap-3 mb-4">
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						<Gauge className="h-3 w-3" />
 						BPM
@@ -239,6 +231,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 					/>
 				</div>
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						<Piano className="h-3 w-3" />
 						KEY
@@ -256,6 +249,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 			{/* Time Sig + Duration — side by side */}
 			<div className="grid grid-cols-2 gap-3 mb-4">
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						<Sliders className="h-3 w-3" />
 						TIME SIG
@@ -269,6 +263,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 					/>
 				</div>
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						<Clock className="h-3 w-3" />
 						DURATION (S)
@@ -286,6 +281,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 
 			{/* Inference Steps */}
 			<div className="mb-4">
+				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 					<Wand2 className="h-3 w-3" />
 					INFERENCE STEPS
@@ -306,6 +302,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 			{/* LM Temperature + CFG Scale — side by side */}
 			<div className="grid grid-cols-2 gap-3 mb-4">
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						LM TEMP
 					</label>
@@ -322,6 +319,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 					</p>
 				</div>
 				<div>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 					<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 						LM CFG
 					</label>
@@ -341,11 +339,13 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 
 			{/* Infer Method */}
 			<div className="mb-4">
+				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-xs font-bold uppercase text-white/50 mb-1">
 					DIFFUSION METHOD
 				</label>
 				<div className="flex gap-0">
 					<button
+						type="button"
 						className={`flex-1 h-9 border-2 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
 							inferMeth === "ode"
 								? "bg-white text-black"
@@ -356,6 +356,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 						ODE (FASTER)
 					</button>
 					<button
+						type="button"
 						className={`flex-1 h-9 border-2 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
 							inferMeth === "sde"
 								? "bg-white text-black"
@@ -374,6 +375,7 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 					Changes apply to all future songs
 				</div>
 				<button
+					type="button"
 					className="text-[10px] font-black uppercase text-white/30 hover:text-red-500 transition-colors"
 					onClick={handleResetDefaults}
 				>

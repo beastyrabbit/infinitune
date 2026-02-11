@@ -1,18 +1,13 @@
 import { useMutation } from "convex/react";
 import { Compass } from "lucide-react";
 import { useState } from "react";
-import type { LlmProvider } from "../../../convex/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { Session } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
 interface DirectionSteeringProps {
-	session: {
-		_id: string;
-		prompt: string;
-		llmProvider: LlmProvider;
-		llmModel: string;
-	};
+	session: Pick<Session, "_id" | "prompt" | "llmProvider" | "llmModel">;
 	disabled?: boolean;
 }
 
@@ -43,7 +38,7 @@ export function DirectionSteering({
 			const data = await res.json();
 			if (data.updatedPrompt) {
 				await updatePrompt({
-					id: session._id as any,
+					id: session._id,
 					prompt: data.updatedPrompt,
 				});
 				setValue("");

@@ -1,11 +1,9 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
+import type { Doc } from '../../convex/_generated/dataModel'
 import { generateCover } from '../../src/services/cover'
 
-interface SongNeedingCover {
-  _id: string
-  coverPrompt?: string
-}
+type SongNeedingCover = Pick<Doc<"songs">, "_id" | "coverPrompt">
 
 export async function processCover(
   convex: ConvexHttpClient,
@@ -46,7 +44,7 @@ export async function processCover(
       if (uploadRes.ok) {
         const { storageId } = await uploadRes.json()
         await convex.mutation(api.songs.updateCoverStorage, {
-          id: song._id as any,
+          id: song._id,
           coverStorageId: storageId,
         })
         console.log(`  [cover] Uploaded cover for ${song._id}`)
@@ -57,7 +55,7 @@ export async function processCover(
     }
 
     await convex.mutation(api.songs.updateCover, {
-      id: song._id as any,
+      id: song._id,
       coverUrl: `data:image/png;base64,${result.imageBase64}`,
     })
     console.log(`  [cover] Saved cover as data URL for ${song._id}`)

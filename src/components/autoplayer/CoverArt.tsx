@@ -70,10 +70,7 @@ export function CoverArt({
 				className={`w-[85%] aspect-square rounded-full overflow-hidden relative flex items-center justify-center shadow-[0_0_60px_rgba(0,0,0,0.8)] ${spinClass}`}
 				style={{ backgroundColor: bg }}
 			>
-				<div
-					className="absolute inset-0 rounded-full"
-					style={patternStyle}
-				/>
+				<div className="absolute inset-0 rounded-full" style={patternStyle} />
 				<div
 					className="absolute inset-0 rounded-full opacity-20"
 					style={{

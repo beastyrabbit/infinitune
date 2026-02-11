@@ -254,7 +254,7 @@ async function main() {
 
   for (let i = 0; i < MODELS.length; i++) {
     const model = MODELS[i];
-    const displayLabel = model.label || model.name;
+    const displayLabel = ("label" in model ? model.label : undefined) || model.name;
     log(
       `[${i + 1}/${MODELS.length}] Generating with ${displayLabel} (${model.params}, tier: ${model.tier})...`
     );

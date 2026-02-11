@@ -1,24 +1,11 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
+import type { Doc } from '../../convex/_generated/dataModel'
 import type { LlmProvider } from '../../convex/types'
 import { generateSongMetadata, type PromptDistance, type RecentSong, type SongMetadata } from '../../src/services/llm'
 
-interface PendingSong {
-  _id: string
-  interruptPrompt?: string
-}
-
-interface Session {
-  _id: string
-  prompt: string
-  llmProvider: LlmProvider
-  llmModel: string
-  lyricsLanguage?: string
-  targetBpm?: number
-  targetKey?: string
-  timeSignature?: string
-  audioDuration?: number
-}
+type PendingSong = Pick<Doc<"songs">, "_id" | "interruptPrompt">
+type Session = Pick<Doc<"sessions">, "_id" | "prompt" | "llmProvider" | "llmModel" | "lyricsLanguage" | "targetBpm" | "targetKey" | "timeSignature" | "audioDuration">
 
 /** Check if the generated title is too similar to any recent song */
 function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean {
@@ -43,7 +30,7 @@ export async function processMetadata(
 
   const song = pendingSongs[0]
   const claimed = await convex.mutation(api.songs.claimForMetadata, {
-    id: song._id as any,
+    id: song._id,
   })
   if (!claimed) return
 
@@ -99,7 +86,7 @@ export async function processMetadata(
     if (signal.aborted) return
 
     await convex.mutation(api.songs.completeMetadata, {
-      id: song._id as any,
+      id: song._id,
       title: metadata.title,
       artistName: metadata.artistName,
       genre: metadata.genre,
@@ -129,7 +116,7 @@ export async function processMetadata(
     if (signal.aborted) return
     console.error(`  [metadata] Error for ${song._id}:`, error.message)
     await convex.mutation(api.songs.markError, {
-      id: song._id as any,
+      id: song._id,
       errorMessage: error.message || 'Metadata generation failed',
       erroredAtStatus: 'generating_metadata',
     })

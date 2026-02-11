@@ -3,18 +3,6 @@ import { v } from 'convex/values'
 import { llmProviderValidator, sessionStatusValidator, songStatusValidator } from './types'
 
 export default defineSchema({
-  // EXISTING
-  products: defineTable({
-    title: v.string(),
-    imageId: v.string(),
-    price: v.number(),
-  }),
-  todos: defineTable({
-    text: v.string(),
-    completed: v.boolean(),
-  }),
-
-  // NEW tables
   sessions: defineTable({
     name: v.string(),
     prompt: v.string(),
@@ -66,7 +54,7 @@ export default defineSchema({
     storagePath: v.optional(v.string()),
     aceAudioPath: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
-    cancelledAtStatus: v.optional(v.string()), // deprecated, kept for existing data
+
     retryCount: v.optional(v.number()),
     erroredAtStatus: v.optional(songStatusValidator),
     generationStartedAt: v.optional(v.number()),

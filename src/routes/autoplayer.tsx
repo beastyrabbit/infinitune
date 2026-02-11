@@ -3,7 +3,6 @@ import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { Music } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { LlmProvider } from "../../convex/types";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
@@ -16,7 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
+import type { Id } from "@/types/convex";
 import { api } from "../../convex/_generated/api";
+import type { LlmProvider } from "../../convex/types";
 
 export const Route = createFileRoute("/autoplayer")({
 	component: AutoplayerPage,
@@ -32,7 +33,9 @@ function AutoplayerPage() {
 
 	const createSession = useMutation(api.sessions.create);
 	const updateStatus = useMutation(api.sessions.updateStatus);
-	const revertTransientStatuses = useMutation(api.songs.revertTransientStatuses);
+	const revertTransientStatuses = useMutation(
+		api.songs.revertTransientStatuses,
+	);
 
 	const {
 		songs,
@@ -83,19 +86,19 @@ function AutoplayerPage() {
 	// Graceful close: stop new generations, let current song finish
 	const handleCloseSession = useCallback(async () => {
 		if (!sessionId) return;
-		await updateStatus({ id: sessionId as any, status: "closing" });
+		await updateStatus({ id: sessionId, status: "closing" });
 	}, [sessionId, updateStatus]);
 
 	// Force close: revert transient statuses and close immediately
 	const handleForceClose = useCallback(async () => {
 		if (!sessionId) return;
-		await revertTransientStatuses({ sessionId: sessionId as any });
-		await updateStatus({ id: sessionId as any, status: "closed" });
+		await revertTransientStatuses({ sessionId: sessionId });
+		await updateStatus({ id: sessionId, status: "closed" });
 	}, [sessionId, updateStatus, revertTransientStatuses]);
 
 	const handleResumeSession = useCallback(
 		async (id: string) => {
-			await updateStatus({ id: id as any, status: "active" });
+			await updateStatus({ id: id as Id<"sessions">, status: "active" });
 		},
 		[updateStatus],
 	);
@@ -152,24 +155,28 @@ function AutoplayerPage() {
 							)}
 						</span>
 						<button
+							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
 							onClick={() => navigate({ to: "/autoplayer/library" })}
 						>
 							[LIBRARY]
 						</button>
 						<button
+							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
 							onClick={() => navigate({ to: "/autoplayer/settings" })}
 						>
 							[SETTINGS]
 						</button>
 						<button
+							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
 							onClick={handleCloseSession}
 						>
 							[CLOSE]
 						</button>
 						<button
+							type="button"
 							className={`font-mono text-sm font-bold uppercase transition-colors ${
 								forceCloseArmed
 									? "text-red-500 animate-pulse"
@@ -195,7 +202,7 @@ function AutoplayerPage() {
 			<div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] border-b-4 border-white/20">
 				<div className="border-b-4 md:border-b-0 md:border-r-4 border-white/20">
 					<NowPlaying
-						song={currentSong as any}
+						song={currentSong}
 						onToggle={toggle}
 						onSkip={skipToNext}
 						onSeek={seek}
@@ -208,12 +215,12 @@ function AutoplayerPage() {
 			</div>
 
 			{/* GENERATION BANNER */}
-			{songs && <GenerationBanner songs={songs as any} />}
+			{songs && <GenerationBanner songs={songs} />}
 
 			{/* QUEUE GRID */}
 			{songs && songs.length > 0 && (
 				<QueueGrid
-					songs={songs as any}
+					songs={songs}
 					currentSongId={currentSongId}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
@@ -239,11 +246,13 @@ function AutoplayerPage() {
 			{/* FOOTER */}
 			<footer className="bg-black px-4 py-2 border-t border-white/10">
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
-					<span>AUTOPLAYER V1.0 // BRUTALIST INTERFACE</span>
+					<span>{"AUTOPLAYER V1.0 // BRUTALIST INTERFACE"}</span>
 					<span className="flex items-center gap-2">
 						<Music className="h-3 w-3" />
-						{songs?.length ?? 0} TRACKS //{"  "}
-						{songs?.filter((s) => s.status === "ready" || s.status === "played").length ?? 0} READY
+						{songs?.length ?? 0} {"TRACKS // "}
+						{songs?.filter((s) => s.status === "ready" || s.status === "played")
+							.length ?? 0}{" "}
+						{"READY"}
 					</span>
 					<span className="animate-pulse text-red-500">[LIVE]</span>
 				</div>
@@ -257,7 +266,7 @@ function AutoplayerPage() {
 					if (!detailSong) return null;
 					return (
 						<TrackDetail
-							song={detailSong as any}
+							song={detailSong}
 							onClose={() => setDetailSongId(null)}
 						/>
 					);

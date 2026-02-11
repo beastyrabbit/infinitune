@@ -133,10 +133,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 					return new Response(JSON.stringify(params), {
 						headers: { "Content-Type": "application/json" },
 					});
-				} catch (error: any) {
+				} catch (error: unknown) {
 					return new Response(
 						JSON.stringify({
-							error: error.message || "Failed to analyze session params",
+							error:
+								error instanceof Error
+									? error.message
+									: "Failed to analyze session params",
 						}),
 						{
 							status: 500,

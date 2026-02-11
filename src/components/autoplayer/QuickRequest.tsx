@@ -1,8 +1,8 @@
 import { Zap } from "lucide-react";
 import { useState } from "react";
-import type { LlmProvider } from "../../../convex/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { LlmProvider } from "../../../convex/types";
 
 interface QuickRequestProps {
 	onRequest: (prompt: string) => void;

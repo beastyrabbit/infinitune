@@ -2,12 +2,6 @@ import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
 import { llmProviderValidator, sessionStatusValidator } from './types'
 
-export const list = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("sessions").collect()
-  },
-})
-
 export const get = query({
   args: { id: v.id("sessions") },
   handler: async (ctx, args) => {
@@ -158,13 +152,6 @@ export const remove = mutation({
 export const listAll = query({
   handler: async (ctx) => {
     return await ctx.db.query("sessions").collect()
-  },
-})
-
-export const listActive = query({
-  handler: async (ctx) => {
-    const sessions = await ctx.db.query("sessions").collect()
-    return sessions.filter((s) => s.status === "active")
   },
 })
 

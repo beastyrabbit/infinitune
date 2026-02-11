@@ -1,5 +1,6 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
+import type { Doc, Id } from '../../convex/_generated/dataModel'
 import { submitToAce, pollAce } from '../../src/services/ace'
 import { saveSongToNfs } from '../../src/services/storage'
 
@@ -16,64 +17,23 @@ function mapLanguageToCode(language?: string): string | undefined {
 // Grace period before treating "not_found" as a lost task (2 minutes)
 const NOT_FOUND_GRACE_MS = 2 * 60 * 1000
 
-interface MetadataReadySong {
-  _id: string
-  title?: string
-  artistName?: string
-  genre?: string
-  subGenre?: string
-  lyrics?: string
-  caption?: string
-  vocalStyle?: string
-  coverPrompt?: string
-  mood?: string
-  energy?: string
-  era?: string
-  instruments?: string[]
-  tags?: string[]
-  themes?: string[]
-  language?: string
-  bpm?: number
-  keyScale?: string
-  timeSignature?: string
-  audioDuration?: number
-  aceTaskId?: string
-}
+type MetadataReadySong = Pick<Doc<"songs">,
+  "_id" | "title" | "artistName" | "genre" | "subGenre" | "lyrics" | "caption" |
+  "vocalStyle" | "coverPrompt" | "mood" | "energy" | "era" | "instruments" |
+  "tags" | "themes" | "language" | "bpm" | "keyScale" | "timeSignature" |
+  "audioDuration" | "aceTaskId"
+>
 
-interface GeneratingAudioSong {
-  _id: string
-  aceTaskId?: string
-  aceSubmittedAt?: number
-  title?: string
-  artistName?: string
-  genre?: string
-  subGenre?: string
-  lyrics?: string
-  caption?: string
-  vocalStyle?: string
-  coverPrompt?: string
-  mood?: string
-  energy?: string
-  era?: string
-  instruments?: string[]
-  tags?: string[]
-  themes?: string[]
-  language?: string
-  bpm?: number
-  keyScale?: string
-  timeSignature?: string
-  audioDuration?: number
-}
+type GeneratingAudioSong = Pick<Doc<"songs">,
+  "_id" | "aceTaskId" | "aceSubmittedAt" | "title" | "artistName" | "genre" |
+  "subGenre" | "lyrics" | "caption" | "vocalStyle" | "coverPrompt" | "mood" |
+  "energy" | "era" | "instruments" | "tags" | "themes" | "language" |
+  "bpm" | "keyScale" | "timeSignature" | "audioDuration"
+>
 
-interface SessionInfo {
-  _id: string
-  aceModel?: string
-  inferenceSteps?: number
-  lyricsLanguage?: string
-  lmTemperature?: number
-  lmCfgScale?: number
-  inferMethod?: string
-}
+type SessionInfo = Pick<Doc<"sessions">,
+  "_id" | "inferenceSteps" | "lyricsLanguage" | "lmTemperature" | "lmCfgScale" | "inferMethod"
+> & { aceModel?: string }
 
 // Track active polls so we don't double-poll
 const activePolls = new Set<string>()
@@ -88,7 +48,7 @@ export async function processAudioSubmit(
 
   const song = metadataReadySongs[0]
   const claimed = await convex.mutation(api.songs.claimForAudio, {
-    id: song._id as any,
+    id: song._id,
   })
   if (!claimed) return
 
@@ -115,7 +75,7 @@ export async function processAudioSubmit(
     if (signal.aborted) return
 
     await convex.mutation(api.songs.updateAceTask, {
-      id: song._id as any,
+      id: song._id,
       aceTaskId: result.taskId,
     })
 
@@ -124,7 +84,7 @@ export async function processAudioSubmit(
     if (signal.aborted) return
     console.error(`  [audio] Submit error for ${song._id}:`, error.message)
     await convex.mutation(api.songs.markError, {
-      id: song._id as any,
+      id: song._id,
       errorMessage: error.message || 'ACE-Step submission failed',
       erroredAtStatus: 'submitting_to_ace',
     })
@@ -133,7 +93,7 @@ export async function processAudioSubmit(
 
 export async function processAudioPoll(
   convex: ConvexHttpClient,
-  sessionId: string,
+  sessionId: Id<"sessions">,
   generatingAudioSongs: GeneratingAudioSong[],
   signal: AbortSignal,
 ): Promise<void> {
@@ -145,7 +105,7 @@ export async function processAudioPoll(
     if (!song.aceTaskId) {
       console.log(`  [audio] Song ${song._id} has no aceTaskId, reverting to metadata_ready`)
       await convex.mutation(api.songs.revertToMetadataReady, {
-        id: song._id as any,
+        id: song._id,
       })
       continue
     }
@@ -161,7 +121,7 @@ export async function processAudioPoll(
 
 async function pollSongAudio(
   convex: ConvexHttpClient,
-  sessionId: string,
+  sessionId: Id<"sessions">,
   song: GeneratingAudioSong,
   signal: AbortSignal,
 ): Promise<void> {
@@ -174,7 +134,7 @@ async function pollSongAudio(
       console.log(`  [audio] ACE completed for "${song.title}", saving...`)
 
       await convex.mutation(api.songs.updateStatus, {
-        id: song._id as any,
+        id: song._id,
         status: 'saving',
       })
 
@@ -204,7 +164,7 @@ async function pollSongAudio(
           aceAudioPath: result.audioPath,
         })
         await convex.mutation(api.songs.updateStoragePath, {
-          id: song._id as any,
+          id: song._id,
           storagePath: saveResult.storagePath,
           aceAudioPath: result.audioPath,
         })
@@ -217,18 +177,18 @@ async function pollSongAudio(
       const encodedAudioPath = encodeURIComponent(result.audioPath)
       const audioUrl = `/api/autoplayer/audio/${song._id}?aceAudioPath=${encodedAudioPath}`
       await convex.mutation(api.songs.markReady, {
-        id: song._id as any,
+        id: song._id,
         audioUrl,
       })
       await convex.mutation(api.sessions.incrementSongsGenerated, {
-        id: sessionId as any,
+        id: sessionId,
       })
 
       console.log(`  [audio] Song "${song.title}" is READY`)
     } else if (result.status === 'failed') {
       console.error(`  [audio] ACE failed for ${song._id}: ${result.error}`)
       await convex.mutation(api.songs.markError, {
-        id: song._id as any,
+        id: song._id,
         errorMessage: result.error || 'Audio generation failed',
         erroredAtStatus: 'generating_audio',
       })
@@ -244,7 +204,7 @@ async function pollSongAudio(
         // Past grace period, task is truly lost — revert to re-submit
         console.log(`  [audio] ACE task ${song.aceTaskId} lost for "${song.title}", reverting to metadata_ready for re-submission`)
         await convex.mutation(api.songs.revertToMetadataReady, {
-          id: song._id as any,
+          id: song._id,
         })
       }
     }

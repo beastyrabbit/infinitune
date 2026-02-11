@@ -22,7 +22,11 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 			POST: async ({ request }) => {
 				try {
 					const body = await request.json();
-					const { request: songRequest, provider, model } = body as {
+					const {
+						request: songRequest,
+						provider,
+						model,
+					} = body as {
 						request: string;
 						provider: string;
 						model: string;
@@ -86,10 +90,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 						JSON.stringify({ enhancedRequest: fullText.trim() }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
-				} catch (error: any) {
+				} catch (error: unknown) {
 					return new Response(
 						JSON.stringify({
-							error: error.message || "Failed to enhance request",
+							error:
+								error instanceof Error
+									? error.message
+									: "Failed to enhance request",
 						}),
 						{
 							status: 500,

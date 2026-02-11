@@ -14,23 +14,8 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { playerStore, setVolume, toggleMute } from "@/lib/player-store";
-import type { SongStatus } from "../../../convex/types";
+import type { Song } from "@/types/convex";
 import { CoverArt } from "./CoverArt";
-
-interface Song {
-	_id: string;
-	title: string;
-	artistName: string;
-	genre: string;
-	subGenre: string;
-	bpm: number;
-	keyScale: string;
-	coverUrl?: string | null;
-	audioUrl?: string | null;
-	lyrics?: string | null;
-	status: SongStatus;
-	userRating?: "up" | "down" | null;
-}
 
 interface NowPlayingProps {
 	song: Song | null;
@@ -123,8 +108,8 @@ export function NowPlaying({
 				{/* Cover art background */}
 				<div className="absolute inset-0">
 					<CoverArt
-						title={song.title}
-						artistName={song.artistName}
+						title={song.title || "Unknown"}
+						artistName={song.artistName || "Unknown"}
 						coverUrl={song.coverUrl}
 						size="lg"
 						fill
@@ -144,6 +129,7 @@ export function NowPlaying({
 								LYRICS
 							</span>
 							<button
+								type="button"
 								onClick={() => setShowLyrics(false)}
 								className="text-white/60 hover:text-white"
 							>
@@ -155,6 +141,7 @@ export function NowPlaying({
 							className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
 						>
 							{lyricsSections.map((section, i) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: lyrics sections don't have stable IDs
 								<div key={i}>
 									{section.heading && (
 										<p className="text-xs font-black uppercase tracking-wider text-red-500/80 mb-1">
@@ -163,6 +150,7 @@ export function NowPlaying({
 									)}
 									{section.lines.map((line, j) => (
 										<p
+											// biome-ignore lint/suspicious/noArrayIndexKey: lyrics lines don't have stable IDs
 											key={j}
 											className="text-sm font-bold text-white/80 leading-relaxed"
 										>
@@ -194,7 +182,7 @@ export function NowPlaying({
 					</div>
 					<div className="mt-2 flex gap-4 text-xs uppercase text-white/50">
 						<span>{song.bpm} BPM</span>
-						<span>{song.keyScale.toUpperCase()}</span>
+						<span>{(song.keyScale || "C major").toUpperCase()}</span>
 					</div>
 				</div>
 
@@ -207,11 +195,26 @@ export function NowPlaying({
 							<span>{formatTime(duration)}</span>
 						</div>
 						<div
+							role="slider"
+							tabIndex={0}
+							aria-label="Seek"
+							aria-valuenow={Math.round(progress)}
+							aria-valuemin={0}
+							aria-valuemax={100}
 							className="border-2 border-white/30 bg-black/40 cursor-pointer backdrop-blur-sm"
 							onClick={(e) => {
 								const rect = e.currentTarget.getBoundingClientRect();
 								const pct = (e.clientX - rect.left) / rect.width;
 								onSeek(pct * duration);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "ArrowRight") {
+									e.preventDefault();
+									onSeek(Math.min(duration, currentTime + 5));
+								} else if (e.key === "ArrowLeft") {
+									e.preventDefault();
+									onSeek(Math.max(0, currentTime - 5));
+								}
 							}}
 						>
 							<div
@@ -301,6 +304,7 @@ export function NowPlaying({
 						{/* Volume — pushed to the right */}
 						<div className="ml-auto flex items-center gap-2 bg-black/40 backdrop-blur-sm border-2 border-white/30 px-3 py-1">
 							<button
+								type="button"
 								onClick={toggleMute}
 								className="text-white/70 hover:text-white"
 							>
@@ -311,6 +315,12 @@ export function NowPlaying({
 								)}
 							</button>
 							<div
+								role="slider"
+								tabIndex={0}
+								aria-label="Volume"
+								aria-valuenow={Math.round((isMuted ? 0 : volume) * 100)}
+								aria-valuemin={0}
+								aria-valuemax={100}
 								className="h-3 w-20 border border-white/30 bg-black/40 cursor-pointer"
 								onClick={(e) => {
 									const rect = e.currentTarget.getBoundingClientRect();
@@ -319,6 +329,15 @@ export function NowPlaying({
 										Math.min(1, (e.clientX - rect.left) / rect.width),
 									);
 									setVolume(pct);
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "ArrowRight") {
+										e.preventDefault();
+										setVolume(Math.min(1, volume + 0.05));
+									} else if (e.key === "ArrowLeft") {
+										e.preventDefault();
+										setVolume(Math.max(0, volume - 0.05));
+									}
 								}}
 							>
 								<div

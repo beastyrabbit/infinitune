@@ -1,4 +1,4 @@
-import { getServiceUrls, getSetting } from '@/lib/server-settings'
+import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
 /** Shared field guidance used across all prompt modes */
 const FIELD_GUIDANCE = `Your response must conform to the provided JSON schema. Fill in every field.
@@ -53,291 +53,413 @@ Field guidance:
 - language: Language of the lyrics. e.g. "English", "German", "Mixed (English/Spanish)"
 - description: Short 1-2 sentence music journalist description. Max 200 chars.
 
-JSON OUTPUT: NEVER use double-quote characters (") inside any string value — use single quotes (') instead. All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`
+JSON OUTPUT: NEVER use double-quote characters (") inside any string value — use single quotes (') instead. All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
 
 /** Close prompt — stays near the session theme, like a radio station that stays on-brand */
 const SYSTEM_PROMPT_CLOSE = `You are a music producer AI. Generate a song that fits naturally in this playlist.
 
 Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, different specific instruments, but the overall feel should be cohesive with the session theme.
 
-${FIELD_GUIDANCE}`
+${FIELD_GUIDANCE}`;
 
 /** General prompt — explores further, like a DJ who plays something unexpected but it still works */
 const SYSTEM_PROMPT_GENERAL = `You are a music producer AI. Generate a song inspired by this session's theme but from a different angle.
 
 Pick an adjacent genre, shift the mood, change the energy level, try a different era. Like a DJ who plays something unexpected but it still works in the set. The session theme is your starting point — venture outward from it. Explore the full musical spectrum while keeping a thread of connection to the original vibe.
 
-${FIELD_GUIDANCE}`
+${FIELD_GUIDANCE}`;
 
 /** Faithful prompt — for specific user requests (interrupts), follow exactly what was asked */
 const SYSTEM_PROMPT_FAITHFUL = `You are a music producer AI. This is a SPECIFIC user request — follow it exactly.
 
 Be creative within the bounds of what was asked. If they say "German cover of Bohemian Rhapsody", make exactly that. If they say "chill lo-fi beat", make exactly that. Do not explore adjacent genres or add unexpected twists — deliver what was requested with high quality and attention to detail.
 
-${FIELD_GUIDANCE}`
+${FIELD_GUIDANCE}`;
 
-export type PromptDistance = 'close' | 'general' | 'faithful'
+export type PromptDistance = "close" | "general" | "faithful";
 
 /** Pick which system prompt to use based on mode */
 function getSystemPrompt(distance: PromptDistance): string {
-  switch (distance) {
-    case 'faithful': return SYSTEM_PROMPT_FAITHFUL
-    case 'general': return SYSTEM_PROMPT_GENERAL
-    case 'close':
-    default: return SYSTEM_PROMPT_CLOSE
-  }
+	switch (distance) {
+		case "faithful":
+			return SYSTEM_PROMPT_FAITHFUL;
+		case "general":
+			return SYSTEM_PROMPT_GENERAL;
+		default:
+			return SYSTEM_PROMPT_CLOSE;
+	}
 }
 
 /** For backward compatibility */
-const SYSTEM_PROMPT = SYSTEM_PROMPT_CLOSE
+const SYSTEM_PROMPT = SYSTEM_PROMPT_CLOSE;
 
 const SONG_SCHEMA = {
-  type: 'object' as const,
-  properties: {
-    title: { type: 'string', description: 'Song title' },
-    artistName: { type: 'string', description: 'Fictional artist name' },
-    genre: { type: 'string', description: 'Main genre' },
-    subGenre: { type: 'string', description: 'Specific sub-genre' },
-    vocalStyle: { type: 'string', description: 'Vocal description: gender + quality + style, e.g. "female breathy intimate vocal"' },
-    lyrics: { type: 'string', description: 'Full song lyrics with rich section tags like [Verse 1 - intimate], [Chorus - anthemic], instrumental sections, and dynamic markers' },
-    caption: { type: 'string', description: 'Audio generation caption: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. No vocals, BPM, key, or duration. Max 300 chars.' },
-    coverPrompt: { type: 'string', description: 'Art description only — do NOT include CD/disc framing (added automatically). Include: art style from pool, cinematic scene with specific materials/textures, spatial depth, surreal element, precise lighting, exact pigment color palette. Circular composition. No text/typography. Max 600 chars.' },
-    bpm: { type: 'number', description: 'Beats per minute (60-200)' },
-    keyScale: { type: 'string', description: 'Musical key, e.g. "C major"' },
-    timeSignature: { type: 'string', description: 'Time signature, e.g. "4/4"' },
-    audioDuration: { type: 'number', description: 'Duration in seconds (180-300)' },
-    mood: { type: 'string', description: 'Dominant mood: euphoric, melancholic, aggressive, dreamy, playful, dark, nostalgic, futuristic, romantic, anxious, triumphant, serene, mysterious, rebellious, bittersweet, whimsical, haunting, empowering, contemplative, chaotic' },
-    energy: { type: 'string', description: 'Energy level: low, medium, high, extreme' },
-    era: { type: 'string', description: 'Musical era/decade: 1960s, 1970s, 1980s, 1990s, 2000s, 2010s, 2020s, timeless, futuristic' },
-    instruments: { type: 'array', items: { type: 'string' }, description: '3-5 specific instruments featured, e.g. "Fender Rhodes", "TR-808 drum machine"' },
-    tags: { type: 'array', items: { type: 'string' }, description: '3-5 searchable tags mixing atmosphere, use case, sonic quality' },
-    themes: { type: 'array', items: { type: 'string' }, description: '2-3 lyrical themes, e.g. "love", "rebellion", "nostalgia"' },
-    language: { type: 'string', description: 'Language of the lyrics, e.g. "English", "German", "Mixed (English/Spanish)"' },
-    description: { type: 'string', description: 'Short 1-2 sentence music journalist description of the song story/vibe. Max 200 chars.' },
-  },
-  required: ['title', 'artistName', 'genre', 'subGenre', 'vocalStyle', 'lyrics', 'caption', 'coverPrompt', 'bpm', 'keyScale', 'timeSignature', 'audioDuration', 'mood', 'energy', 'era', 'instruments', 'tags', 'themes', 'language', 'description'],
-}
+	type: "object" as const,
+	properties: {
+		title: { type: "string", description: "Song title" },
+		artistName: { type: "string", description: "Fictional artist name" },
+		genre: { type: "string", description: "Main genre" },
+		subGenre: { type: "string", description: "Specific sub-genre" },
+		vocalStyle: {
+			type: "string",
+			description:
+				'Vocal description: gender + quality + style, e.g. "female breathy intimate vocal"',
+		},
+		lyrics: {
+			type: "string",
+			description:
+				"Full song lyrics with rich section tags like [Verse 1 - intimate], [Chorus - anthemic], instrumental sections, and dynamic markers",
+		},
+		caption: {
+			type: "string",
+			description:
+				"Audio generation caption: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. No vocals, BPM, key, or duration. Max 300 chars.",
+		},
+		coverPrompt: {
+			type: "string",
+			description:
+				"Art description only — do NOT include CD/disc framing (added automatically). Include: art style from pool, cinematic scene with specific materials/textures, spatial depth, surreal element, precise lighting, exact pigment color palette. Circular composition. No text/typography. Max 600 chars.",
+		},
+		bpm: { type: "number", description: "Beats per minute (60-200)" },
+		keyScale: { type: "string", description: 'Musical key, e.g. "C major"' },
+		timeSignature: {
+			type: "string",
+			description: 'Time signature, e.g. "4/4"',
+		},
+		audioDuration: {
+			type: "number",
+			description: "Duration in seconds (180-300)",
+		},
+		mood: {
+			type: "string",
+			description:
+				"Dominant mood: euphoric, melancholic, aggressive, dreamy, playful, dark, nostalgic, futuristic, romantic, anxious, triumphant, serene, mysterious, rebellious, bittersweet, whimsical, haunting, empowering, contemplative, chaotic",
+		},
+		energy: {
+			type: "string",
+			description: "Energy level: low, medium, high, extreme",
+		},
+		era: {
+			type: "string",
+			description:
+				"Musical era/decade: 1960s, 1970s, 1980s, 1990s, 2000s, 2010s, 2020s, timeless, futuristic",
+		},
+		instruments: {
+			type: "array",
+			items: { type: "string" },
+			description:
+				'3-5 specific instruments featured, e.g. "Fender Rhodes", "TR-808 drum machine"',
+		},
+		tags: {
+			type: "array",
+			items: { type: "string" },
+			description:
+				"3-5 searchable tags mixing atmosphere, use case, sonic quality",
+		},
+		themes: {
+			type: "array",
+			items: { type: "string" },
+			description: '2-3 lyrical themes, e.g. "love", "rebellion", "nostalgia"',
+		},
+		language: {
+			type: "string",
+			description:
+				'Language of the lyrics, e.g. "English", "German", "Mixed (English/Spanish)"',
+		},
+		description: {
+			type: "string",
+			description:
+				"Short 1-2 sentence music journalist description of the song story/vibe. Max 200 chars.",
+		},
+	},
+	required: [
+		"title",
+		"artistName",
+		"genre",
+		"subGenre",
+		"vocalStyle",
+		"lyrics",
+		"caption",
+		"coverPrompt",
+		"bpm",
+		"keyScale",
+		"timeSignature",
+		"audioDuration",
+		"mood",
+		"energy",
+		"era",
+		"instruments",
+		"tags",
+		"themes",
+		"language",
+		"description",
+	],
+};
 
-export { SYSTEM_PROMPT, SONG_SCHEMA }
+export { SYSTEM_PROMPT, SONG_SCHEMA };
 
 export interface SongMetadata {
-  title: string
-  artistName: string
-  genre: string
-  subGenre: string
-  vocalStyle: string
-  lyrics: string
-  caption: string
-  coverPrompt?: string
-  bpm: number
-  keyScale: string
-  timeSignature: string
-  audioDuration: number
-  mood: string
-  energy: string
-  era: string
-  instruments: string[]
-  tags: string[]
-  themes: string[]
-  language: string
-  description: string
+	title: string;
+	artistName: string;
+	genre: string;
+	subGenre: string;
+	vocalStyle: string;
+	lyrics: string;
+	caption: string;
+	coverPrompt?: string;
+	bpm: number;
+	keyScale: string;
+	timeSignature: string;
+	audioDuration: number;
+	mood: string;
+	energy: string;
+	era: string;
+	instruments: string[];
+	tags: string[];
+	themes: string[];
+	language: string;
+	description: string;
 }
 
 export interface RecentSong {
-  title: string
-  artistName: string
-  genre: string
-  subGenre: string
-  vocalStyle?: string
-  mood?: string
-  energy?: string
+	title: string;
+	artistName: string;
+	genre: string;
+	subGenre: string;
+	vocalStyle?: string;
+	mood?: string;
+	energy?: string;
 }
 
 /** Repair common LLM JSON output issues: unescaped control chars, markdown artifacts, internal quotes */
 function repairJson(raw: string): string {
-  // Strip markdown bold/italic markers that some LLMs inject
-  let s = raw.replace(/\*\*/g, '')
+	// Strip markdown bold/italic markers that some LLMs inject
+	const s = raw.replace(/\*\*/g, "");
 
-  // Walk character-by-character to fix issues inside JSON strings
-  let result = ''
-  let inString = false
-  let escaped = false
+	// Walk character-by-character to fix issues inside JSON strings
+	let result = "";
+	let inString = false;
+	let escaped = false;
 
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]
+	for (let i = 0; i < s.length; i++) {
+		const ch = s[i];
 
-    if (escaped) {
-      result += ch
-      escaped = false
-      continue
-    }
+		if (escaped) {
+			result += ch;
+			escaped = false;
+			continue;
+		}
 
-    if (ch === '\\' && inString) {
-      result += ch
-      escaped = true
-      continue
-    }
+		if (ch === "\\" && inString) {
+			result += ch;
+			escaped = true;
+			continue;
+		}
 
-    if (ch === '"') {
-      if (!inString) {
-        inString = true
-        result += ch
-      } else {
-        // Determine if this quote ends the string or is an unescaped internal quote
-        // Look ahead: if next non-whitespace is a JSON structural char, it's the real end
-        let j = i + 1
-        while (j < s.length && (s[j] === ' ' || s[j] === '\t' || s[j] === '\r' || s[j] === '\n')) j++
-        const next = s[j]
-        if (next === ',' || next === '}' || next === ']' || next === ':' || next === undefined) {
-          inString = false
-          result += ch
-        } else {
-          // Internal quote — escape it
-          result += '\\"'
-        }
-      }
-      continue
-    }
+		if (ch === '"') {
+			if (!inString) {
+				inString = true;
+				result += ch;
+			} else {
+				// Determine if this quote ends the string or is an unescaped internal quote
+				// Look ahead: if next non-whitespace is a JSON structural char, it's the real end
+				let j = i + 1;
+				while (
+					j < s.length &&
+					(s[j] === " " || s[j] === "\t" || s[j] === "\r" || s[j] === "\n")
+				)
+					j++;
+				const next = s[j];
+				if (
+					next === "," ||
+					next === "}" ||
+					next === "]" ||
+					next === ":" ||
+					next === undefined
+				) {
+					inString = false;
+					result += ch;
+				} else {
+					// Internal quote — escape it
+					result += '\\"';
+				}
+			}
+			continue;
+		}
 
-    if (inString) {
-      if (ch === '\n') { result += '\\n'; continue }
-      if (ch === '\r') { result += '\\r'; continue }
-      if (ch === '\t') { result += '\\t'; continue }
-    }
+		if (inString) {
+			if (ch === "\n") {
+				result += "\\n";
+				continue;
+			}
+			if (ch === "\r") {
+				result += "\\r";
+				continue;
+			}
+			if (ch === "\t") {
+				result += "\\t";
+				continue;
+			}
+		}
 
-    result += ch
-  }
+		result += ch;
+	}
 
-  return result
+	return result;
 }
 
 export async function generateSongMetadata(options: {
-  prompt: string
-  provider: 'ollama' | 'openrouter'
-  model: string
-  lyricsLanguage?: string
-  targetBpm?: number
-  targetKey?: string
-  timeSignature?: string
-  audioDuration?: number
-  recentSongs?: RecentSong[]
-  recentDescriptions?: string[]
-  isInterrupt?: boolean
-  promptDistance?: PromptDistance
-  signal?: AbortSignal
+	prompt: string;
+	provider: "ollama" | "openrouter";
+	model: string;
+	lyricsLanguage?: string;
+	targetBpm?: number;
+	targetKey?: string;
+	timeSignature?: string;
+	audioDuration?: number;
+	recentSongs?: RecentSong[];
+	recentDescriptions?: string[];
+	isInterrupt?: boolean;
+	promptDistance?: PromptDistance;
+	signal?: AbortSignal;
 }): Promise<SongMetadata> {
-  const { prompt, provider, model, lyricsLanguage, targetBpm, targetKey, timeSignature, audioDuration, recentSongs, recentDescriptions, isInterrupt, promptDistance, signal } = options
+	const {
+		prompt,
+		provider,
+		model,
+		lyricsLanguage,
+		targetBpm,
+		targetKey,
+		timeSignature,
+		audioDuration,
+		recentSongs,
+		recentDescriptions,
+		isInterrupt,
+		promptDistance,
+		signal,
+	} = options;
 
-  // Determine prompt distance: explicit > interrupt flag > default close
-  const distance: PromptDistance = promptDistance ?? (isInterrupt ? 'faithful' : 'close')
-  const temperature = distance === 'faithful' ? 0.7 : 0.85
+	// Determine prompt distance: explicit > interrupt flag > default close
+	const distance: PromptDistance =
+		promptDistance ?? (isInterrupt ? "faithful" : "close");
+	const temperature = distance === "faithful" ? 0.7 : 0.85;
 
-  let systemPrompt = getSystemPrompt(distance)
+	let systemPrompt = getSystemPrompt(distance);
 
-  if (lyricsLanguage && lyricsLanguage !== 'auto') {
-    systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${lyricsLanguage.charAt(0).toUpperCase() + lyricsLanguage.slice(1)}.`
-  }
-  if (targetKey) {
-    systemPrompt += `\n\nUse the musical key: ${targetKey}.`
-  }
-  if (timeSignature) {
-    systemPrompt += `\n\nUse time signature: ${timeSignature}.`
-  }
-  if (audioDuration) {
-    systemPrompt += `\n\nTarget audio duration: ${audioDuration} seconds.`
-  }
+	if (lyricsLanguage && lyricsLanguage !== "auto") {
+		systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${lyricsLanguage.charAt(0).toUpperCase() + lyricsLanguage.slice(1)}.`;
+	}
+	if (targetKey) {
+		systemPrompt += `\n\nUse the musical key: ${targetKey}.`;
+	}
+	if (timeSignature) {
+		systemPrompt += `\n\nUse time signature: ${timeSignature}.`;
+	}
+	if (audioDuration) {
+		systemPrompt += `\n\nTarget audio duration: ${audioDuration} seconds.`;
+	}
 
-  // Build user message with soft recent-song awareness (no bans, no forced switches)
-  let userMessage = prompt
-  if (distance !== 'faithful' && recentSongs && recentSongs.length > 0) {
-    const historyLines = recentSongs.map(
-      (s, i) => `  ${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre} / ${s.subGenre}${s.vocalStyle ? ` (${s.vocalStyle})` : ''}${s.mood ? ` [${s.mood}]` : ''}`
-    ).join('\n')
+	// Build user message with soft recent-song awareness (no bans, no forced switches)
+	let userMessage = prompt;
+	if (distance !== "faithful" && recentSongs && recentSongs.length > 0) {
+		const historyLines = recentSongs
+			.map(
+				(s, i) =>
+					`  ${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre} / ${s.subGenre}${s.vocalStyle ? ` (${s.vocalStyle})` : ""}${s.mood ? ` [${s.mood}]` : ""}`,
+			)
+			.join("\n");
 
-    userMessage += `\n\n--- Recent songs in this playlist (for awareness — avoid duplicate titles/artists) ---\n${historyLines}`
-    userMessage += `\nCreate a fresh song with a different title, different artist, and ideally a different vocal style from the most recent entries.`
-  }
+		userMessage += `\n\n--- Recent songs in this playlist (for awareness — avoid duplicate titles/artists) ---\n${historyLines}`;
+		userMessage += `\nCreate a fresh song with a different title, different artist, and ideally a different vocal style from the most recent entries.`;
+	}
 
-  // Append broader description history for thematic variety
-  if (distance !== 'faithful' && recentDescriptions && recentDescriptions.length > 0) {
-    userMessage += `\n\n--- Recent song themes (try a different story/angle) ---\n${recentDescriptions.map((d, i) => `  ${i + 1}. ${d}`).join('\n')}`
-  }
+	// Append broader description history for thematic variety
+	if (
+		distance !== "faithful" &&
+		recentDescriptions &&
+		recentDescriptions.length > 0
+	) {
+		userMessage += `\n\n--- Recent song themes (try a different story/angle) ---\n${recentDescriptions.map((d, i) => `  ${i + 1}. ${d}`).join("\n")}`;
+	}
 
-  let fullText: string
+	let fullText: string;
 
-  if (provider === 'openrouter') {
-    const apiKey = (await getSetting('openrouterApiKey')) || process.env.OPENROUTER_API_KEY || ''
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'song_specification',
-            strict: true,
-            schema: SONG_SCHEMA,
-          },
-        },
-      }),
-      signal,
-    })
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`OpenRouter error ${res.status}: ${errText}`)
-    }
-    const data = await res.json()
-    fullText = data.choices?.[0]?.message?.content || ''
-  } else {
-    const urls = await getServiceUrls()
-    const ollamaUrl = urls.ollamaUrl
-    const res = await fetch(`${ollamaUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        stream: false,
-        format: SONG_SCHEMA,
-        think: false,
-        keep_alive: '10m',
-        options: { temperature, seed: Math.floor(Math.random() * 2147483647) },
-      }),
-      signal,
-    })
-    if (!res.ok) {
-      const errText = await res.text()
-      throw new Error(`Ollama error ${res.status}: ${errText}`)
-    }
-    const data = await res.json()
-    fullText = data.message?.content || ''
-  }
+	if (provider === "openrouter") {
+		const apiKey =
+			(await getSetting("openrouterApiKey")) ||
+			process.env.OPENROUTER_API_KEY ||
+			"";
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({
+				model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userMessage },
+				],
+				temperature,
+				response_format: {
+					type: "json_schema",
+					json_schema: {
+						name: "song_specification",
+						strict: true,
+						schema: SONG_SCHEMA,
+					},
+				},
+			}),
+			signal,
+		});
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error(`OpenRouter error ${res.status}: ${errText}`);
+		}
+		const data = await res.json();
+		fullText = data.choices?.[0]?.message?.content || "";
+	} else {
+		const urls = await getServiceUrls();
+		const ollamaUrl = urls.ollamaUrl;
+		const res = await fetch(`${ollamaUrl}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userMessage },
+				],
+				stream: false,
+				format: SONG_SCHEMA,
+				think: false,
+				keep_alive: "10m",
+				options: { temperature, seed: Math.floor(Math.random() * 2147483647) },
+			}),
+			signal,
+		});
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error(`Ollama error ${res.status}: ${errText}`);
+		}
+		const data = await res.json();
+		fullText = data.message?.content || "";
+	}
 
-  let jsonStr = fullText.trim()
-  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (jsonMatch) {
-    jsonStr = jsonMatch[1].trim()
-  }
+	let jsonStr = fullText.trim();
+	const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+	if (jsonMatch) {
+		jsonStr = jsonMatch[1].trim();
+	}
 
-  jsonStr = repairJson(jsonStr)
+	jsonStr = repairJson(jsonStr);
 
-  const songData = JSON.parse(jsonStr) as SongMetadata
+	const songData = JSON.parse(jsonStr) as SongMetadata;
 
-  if (targetBpm && targetBpm >= 60 && targetBpm <= 220) {
-    songData.bpm = targetBpm
-  }
+	if (targetBpm && targetBpm >= 60 && targetBpm <= 220) {
+		songData.bpm = targetBpm;
+	}
 
-  return songData
+	return songData;
 }

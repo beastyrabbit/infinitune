@@ -1,5 +1,6 @@
 import { getConvexClient } from './convex-client'
 import { api } from '../convex/_generated/api'
+import type { Id } from '../convex/_generated/dataModel'
 import { processQueueKeeper } from './processors/queue-keeper'
 import { processMetadata } from './processors/metadata'
 import { processCover } from './processors/cover'
@@ -9,7 +10,7 @@ import { processRetry } from './processors/retry'
 const POLL_INTERVAL = 2000 // 2 seconds
 
 // Per-session concurrency flags
-const sessionState = new Map<string, {
+const sessionState = new Map<Id<"sessions">, {
   llmBusy: boolean
   coverBusy: boolean
   submitBusy: boolean
@@ -17,7 +18,7 @@ const sessionState = new Map<string, {
   abortController: AbortController
 }>()
 
-function getSessionState(sessionId: string) {
+function getSessionState(sessionId: Id<"sessions">) {
   let state = sessionState.get(sessionId)
   if (!state) {
     state = {
@@ -38,7 +39,7 @@ async function tick() {
   try {
     // 1. Get sessions the worker should process (active + closing)
     const workerSessions = await convex.query(api.sessions.listWorkerSessions)
-    const workerSessionIds = new Set(workerSessions.map((s: any) => s._id))
+    const workerSessionIds = new Set(workerSessions.map((s) => s._id))
 
     // Clean up sessions that fully disappeared (force-closed or deleted)
     for (const [sessionId, state] of sessionState.entries()) {
@@ -50,7 +51,7 @@ async function tick() {
         // Revert transient statuses as safety net
         try {
           await convex.mutation(api.songs.revertTransientStatuses, {
-            sessionId: sessionId as any,
+            sessionId,
           })
         } catch (e: any) {
           console.error(`[worker] Failed to revert statuses for ${sessionId}:`, e.message)
@@ -75,7 +76,7 @@ async function tick() {
 
       try {
         const workQueue = await convex.query(api.songs.getWorkQueue, {
-          sessionId: sessionId as any,
+          sessionId,
         })
 
         // === Active sessions only: create new pending songs ===
@@ -123,7 +124,7 @@ async function tick() {
         if (workQueue.staleSongs.length > 0) {
           for (const stale of workQueue.staleSongs) {
             console.log(`  [stale] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`)
-            await convex.mutation(api.songs.deleteSong, { id: stale._id as any })
+            await convex.mutation(api.songs.deleteSong, { id: stale._id })
           }
         }
 
@@ -131,7 +132,7 @@ async function tick() {
         if (isClosing && workQueue.transientCount === 0) {
           console.log(`[worker] Session ${sessionId} closing complete, setting to closed`)
           await convex.mutation(api.sessions.updateStatus, {
-            id: sessionId as any,
+            id: sessionId,
             status: 'closed',
           })
           state.abortController.abort()
@@ -160,7 +161,7 @@ async function main() {
     for (const session of sessions) {
       try {
         const recovered = await convex.mutation(api.songs.recoverFromWorkerRestart, {
-          sessionId: session._id as any,
+          sessionId: session._id,
         })
         if (recovered > 0) {
           console.log(`[worker] Recovered ${recovered} song(s) in session ${session._id}`)

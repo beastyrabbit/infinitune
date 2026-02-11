@@ -92,10 +92,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 						JSON.stringify({ enhancedPrompt: fullText.trim() }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
-				} catch (error: any) {
+				} catch (error: unknown) {
 					return new Response(
 						JSON.stringify({
-							error: error.message || "Failed to enhance prompt",
+							error:
+								error instanceof Error
+									? error.message
+									: "Failed to enhance prompt",
 						}),
 						{
 							status: 500,

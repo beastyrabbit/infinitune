@@ -1,0 +1,10 @@
+pre-commit:
+  commands:
+    gitleaks:
+      run: gitleaks protect --staged --no-banner
+    biome-check:
+      glob: "*.{ts,tsx,js,jsx,json}"
+      run: npx @biomejs/biome check --no-errors-on-unmatched {staged_files}
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: npx tsc --noEmit
