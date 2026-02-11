@@ -1,6 +1,7 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
-import { generateSongMetadata } from '../../src/services/llm'
+import type { LlmProvider } from '../../convex/types'
+import { generateSongMetadata, type RecentSong, type SongMetadata } from '../../src/services/llm'
 
 interface PendingSong {
   _id: string
@@ -10,7 +11,7 @@ interface PendingSong {
 interface Session {
   _id: string
   prompt: string
-  llmProvider: string
+  llmProvider: LlmProvider
   llmModel: string
   lyricsLanguage?: string
   targetBpm?: number
@@ -19,10 +20,23 @@ interface Session {
   audioDuration?: number
 }
 
+/** Check if the generated title is too similar to any recent song */
+function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean {
+  const newTitle = metadata.title.toLowerCase().trim()
+  const newArtist = metadata.artistName.toLowerCase().trim()
+  return recentSongs.some((s) => {
+    const existingTitle = s.title.toLowerCase().trim()
+    const existingArtist = s.artistName.toLowerCase().trim()
+    return existingTitle === newTitle || existingArtist === newArtist
+  })
+}
+
 export async function processMetadata(
   convex: ConvexHttpClient,
   session: Session,
   pendingSongs: PendingSong[],
+  recentSongs: RecentSong[],
+  recentDescriptions: string[],
   signal: AbortSignal,
 ): Promise<void> {
   if (pendingSongs.length === 0) return
@@ -36,18 +50,41 @@ export async function processMetadata(
   console.log(`  [metadata] Processing song ${song._id}`)
 
   try {
+    // Query live settings — allows switching provider without restarting session
+    const textProvider = await convex.query(api.settings.get, { key: 'textProvider' })
+    const textModel = await convex.query(api.settings.get, { key: 'textModel' })
+    const effectiveProvider = (textProvider as LlmProvider) || session.llmProvider
+    const effectiveModel = textModel || session.llmModel
+
+    console.log(`  [metadata] Using LLM: ${effectiveProvider} / ${effectiveModel}`)
+
     const prompt = song.interruptPrompt || session.prompt
-    const metadata = await generateSongMetadata({
+    const genOptions = {
       prompt,
-      provider: session.llmProvider,
-      model: session.llmModel,
+      provider: effectiveProvider,
+      model: effectiveModel,
       lyricsLanguage: session.lyricsLanguage,
       targetBpm: session.targetBpm,
       targetKey: session.targetKey,
       timeSignature: session.timeSignature,
       audioDuration: session.audioDuration,
+      recentSongs,
+      recentDescriptions,
+      isInterrupt: !!song.interruptPrompt,
       signal,
-    })
+    }
+
+    let metadata = await generateSongMetadata(genOptions)
+
+    // Hard dedup: if title or artist matches a recent song, retry once
+    if (isDuplicate(metadata, recentSongs)) {
+      console.log(`  [metadata] Duplicate detected: "${metadata.title}" by ${metadata.artistName} — retrying`)
+      metadata = await generateSongMetadata(genOptions)
+
+      if (isDuplicate(metadata, recentSongs)) {
+        console.log(`  [metadata] Still duplicate after retry: "${metadata.title}" — accepting anyway`)
+      }
+    }
 
     if (signal.aborted) return
 
@@ -59,11 +96,22 @@ export async function processMetadata(
       subGenre: metadata.subGenre || metadata.genre,
       lyrics: metadata.lyrics,
       caption: metadata.caption,
+      vocalStyle: metadata.vocalStyle,
       coverPrompt: metadata.coverPrompt,
       bpm: metadata.bpm,
       keyScale: metadata.keyScale,
       timeSignature: metadata.timeSignature,
       audioDuration: metadata.audioDuration,
+      mood: metadata.mood,
+      energy: metadata.energy,
+      era: metadata.era,
+      instruments: metadata.instruments,
+      tags: metadata.tags,
+      themes: metadata.themes,
+      language: metadata.language,
+      description: metadata.description,
+      llmProvider: effectiveProvider,
+      llmModel: effectiveModel,
     })
 
     console.log(`  [metadata] Completed: "${metadata.title}" by ${metadata.artistName}`)

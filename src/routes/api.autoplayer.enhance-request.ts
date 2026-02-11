@@ -1,31 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
-const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a rich, evocative music THEME that will inspire an AI music producer to create a DIVERSE playlist of songs.
+const SYSTEM_PROMPT = `You are a music request enhancer. The user has typed a short song request. Expand it into a richer description for an AI music producer.
 
-IMPORTANT: Do NOT be overly specific about a single sub-genre or style. Instead, describe a broad MUSICAL UNIVERSE — a mood, era, cultural vibe, or emotional landscape that could spawn many different genres and styles.
+CRITICAL RULES:
+- PRESERVE the user's original intent EXACTLY. If they say "german cover of bohemian rhapsody", the result MUST be about a german cover of bohemian rhapsody.
+- If they reference a specific song, artist, style, or concept — keep it front and center.
+- Add production details, mood, instrumentation, and atmosphere — but keep it about THIS specific request.
+- Do NOT redirect to a different genre or concept. "jazz ballad" must stay jazz, "punk cover" must stay punk.
+- Keep under 500 characters.
+- Return ONLY the enhanced request text, nothing else.`;
 
-Good example: "2000s German pop" → "The sound of early 2000s Germany — the pop charts, club nights, hip-hop blocks, indie cafés, and festival stages. Energetic, nostalgic, sometimes sentimental, sometimes aggressive. German lyrics mixed with English hooks. From radio-friendly pop to underground beats."
-
-Bad example: "2000s German pop" → "Upbeat Eurodance pop with synthesizers, four-on-the-floor beats at 128 BPM, catchy vocal hooks, and bright major key melodies" (TOO SPECIFIC — this locks every song into the same style)
-
-Guidelines:
-- Describe a WORLD of music, not a single song
-- Mention the emotional RANGE (happy AND sad, energetic AND chill)
-- Reference the era/culture broadly, not specific instruments or BPM
-- Leave room for genre exploration: pop, rock, hip-hop, electronic, ballads, etc.
-- Keep under 500 characters
-
-Return ONLY the enhanced prompt text, nothing else.`;
-
-export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
+export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
 				try {
 					const body = await request.json();
-					const { prompt, provider, model } = body as {
-						prompt: string;
+					const { request: songRequest, provider, model } = body as {
+						request: string;
 						provider: string;
 						model: string;
 					};
@@ -49,7 +42,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 									model,
 									messages: [
 										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: prompt },
+										{ role: "user", content: songRequest },
 									],
 								}),
 							},
@@ -69,11 +62,11 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 								model,
 								messages: [
 									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: prompt },
+									{ role: "user", content: songRequest },
 								],
 								stream: false,
 								keep_alive: "10m",
-								options: { temperature: 0.8 },
+								options: { temperature: 0.7 },
 							}),
 						});
 						if (!res.ok) {
@@ -85,13 +78,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 					}
 
 					return new Response(
-						JSON.stringify({ enhancedPrompt: fullText.trim() }),
+						JSON.stringify({ enhancedRequest: fullText.trim() }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: any) {
 					return new Response(
 						JSON.stringify({
-							error: error.message || "Failed to enhance prompt",
+							error: error.message || "Failed to enhance request",
 						}),
 						{
 							status: 500,

@@ -1,15 +1,20 @@
 import { useStore } from "@tanstack/react-store";
 import {
 	Download,
+	FileText,
 	Pause,
 	Play,
 	SkipForward,
+	ThumbsDown,
+	ThumbsUp,
 	Volume2,
 	VolumeX,
+	X,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { playerStore, setVolume, toggleMute } from "@/lib/player-store";
+import type { SongStatus } from "../../../convex/types";
 import { CoverArt } from "./CoverArt";
 
 interface Song {
@@ -22,7 +27,9 @@ interface Song {
 	keyScale: string;
 	coverUrl?: string | null;
 	audioUrl?: string | null;
-	status: string;
+	lyrics?: string | null;
+	status: SongStatus;
+	userRating?: "up" | "down" | null;
 }
 
 interface NowPlayingProps {
@@ -30,6 +37,7 @@ interface NowPlayingProps {
 	onToggle: () => void;
 	onSkip: () => void;
 	onSeek: (time: number) => void;
+	onRate: (rating: "up" | "down") => void;
 }
 
 function formatTime(seconds: number): string {
@@ -38,15 +46,42 @@ function formatTime(seconds: number): string {
 	return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Parse lyrics into structured sections */
+function parseLyrics(raw: string) {
+	const lines = raw.split("\n");
+	const sections: { heading?: string; lines: string[] }[] = [];
+	let current: { heading?: string; lines: string[] } = { lines: [] };
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (/^\[.+\]$/.test(trimmed)) {
+			// Start new section
+			if (current.heading || current.lines.length > 0) {
+				sections.push(current);
+			}
+			current = { heading: trimmed.slice(1, -1), lines: [] };
+		} else if (trimmed) {
+			current.lines.push(trimmed);
+		}
+	}
+	if (current.heading || current.lines.length > 0) {
+		sections.push(current);
+	}
+	return sections;
+}
+
 export function NowPlaying({
 	song,
 	onToggle,
 	onSkip,
 	onSeek,
+	onRate,
 }: NowPlayingProps) {
 	const { isPlaying, currentTime, duration, volume, isMuted } =
 		useStore(playerStore);
 	const [isDownloading, setIsDownloading] = useState(false);
+	const [showLyrics, setShowLyrics] = useState(false);
+	const lyricsRef = useRef<HTMLDivElement>(null);
 
 	const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -79,6 +114,8 @@ export function NowPlaying({
 		);
 	}
 
+	const lyricsSections = song.lyrics ? parseLyrics(song.lyrics) : [];
+
 	return (
 		<div>
 			{/* Overlay container — cover art as background, controls on top */}
@@ -91,11 +128,52 @@ export function NowPlaying({
 						coverUrl={song.coverUrl}
 						size="lg"
 						fill
+						spinning={isPlaying}
 					/>
 				</div>
 
 				{/* Gradient overlay for readability */}
 				<div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+
+				{/* Lyrics overlay */}
+				{showLyrics && song.lyrics && (
+					<div className="absolute inset-0 bg-black/85 backdrop-blur-sm z-10 flex flex-col">
+						<div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+							<span className="text-xs font-black uppercase tracking-widest text-white/60">
+								<FileText className="h-3 w-3 inline mr-2" />
+								LYRICS
+							</span>
+							<button
+								onClick={() => setShowLyrics(false)}
+								className="text-white/60 hover:text-white"
+							>
+								<X className="h-4 w-4" />
+							</button>
+						</div>
+						<div
+							ref={lyricsRef}
+							className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+						>
+							{lyricsSections.map((section, i) => (
+								<div key={i}>
+									{section.heading && (
+										<p className="text-xs font-black uppercase tracking-wider text-red-500/80 mb-1">
+											[{section.heading}]
+										</p>
+									)}
+									{section.lines.map((line, j) => (
+										<p
+											key={j}
+											className="text-sm font-bold text-white/80 leading-relaxed"
+										>
+											{line}
+										</p>
+									))}
+								</div>
+							))}
+						</div>
+					</div>
+				)}
 
 				{/* Top info overlay */}
 				<div className="absolute top-0 left-0 right-0 p-4 md:p-6">
@@ -121,7 +199,7 @@ export function NowPlaying({
 				</div>
 
 				{/* Bottom controls overlay */}
-				<div className="absolute bottom-0 left-0 right-0 p-4 md:p-6">
+				<div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20">
 					{/* Progress bar */}
 					<div className="mb-3">
 						<div className="flex items-center justify-between text-xs font-bold uppercase mb-1 text-white/70">
@@ -178,6 +256,46 @@ export function NowPlaying({
 						>
 							<Download className="mr-1 h-4 w-4" />
 							{isDownloading ? "DL..." : "DL"}
+						</Button>
+
+						{/* Lyrics toggle */}
+						{song.lyrics && (
+							<Button
+								variant="outline"
+								onClick={() => setShowLyrics(!showLyrics)}
+								className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
+									showLyrics
+										? "border-yellow-500 bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30"
+										: "border-white/30 bg-white/10 text-white hover:bg-white hover:text-black"
+								}`}
+							>
+								<FileText className="mr-1 h-4 w-4" />
+								LYR
+							</Button>
+						)}
+
+						{/* Rating buttons */}
+						<Button
+							variant="outline"
+							onClick={() => onRate("up")}
+							className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
+								song.userRating === "up"
+									? "border-green-500 bg-green-500/20 text-green-400 hover:bg-green-500/30 hover:text-green-300"
+									: "border-white/30 bg-white/10 text-white hover:bg-green-500/20 hover:text-green-400 hover:border-green-500"
+							}`}
+						>
+							<ThumbsUp className="h-4 w-4" />
+						</Button>
+						<Button
+							variant="outline"
+							onClick={() => onRate("down")}
+							className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
+								song.userRating === "down"
+									? "border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300"
+									: "border-white/30 bg-white/10 text-white hover:bg-red-500/20 hover:text-red-400 hover:border-red-500"
+							}`}
+						>
+							<ThumbsDown className="h-4 w-4" />
 						</Button>
 
 						{/* Volume — pushed to the right */}

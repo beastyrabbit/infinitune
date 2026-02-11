@@ -1,34 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
-const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a rich, evocative music THEME that will inspire an AI music producer to create a DIVERSE playlist of songs.
+const SYSTEM_PROMPT = `You are a music session director. You will receive a current session prompt and a user direction. Merge them into an updated prompt.
 
-IMPORTANT: Do NOT be overly specific about a single sub-genre or style. Instead, describe a broad MUSICAL UNIVERSE — a mood, era, cultural vibe, or emotional landscape that could spawn many different genres and styles.
+Rules:
+- If the user says "no more X" or "less X" — remove or de-emphasize X from the prompt
+- If the user says "more Y" or "add Y" — add or emphasize Y in the prompt
+- If the user gives a new style/mood/genre — weave it into the existing prompt naturally
+- Keep the same approximate format and length as the original prompt
+- The result should read as a coherent music description, not a list of edits
+- Return ONLY the updated prompt text, nothing else`;
 
-Good example: "2000s German pop" → "The sound of early 2000s Germany — the pop charts, club nights, hip-hop blocks, indie cafés, and festival stages. Energetic, nostalgic, sometimes sentimental, sometimes aggressive. German lyrics mixed with English hooks. From radio-friendly pop to underground beats."
-
-Bad example: "2000s German pop" → "Upbeat Eurodance pop with synthesizers, four-on-the-floor beats at 128 BPM, catchy vocal hooks, and bright major key melodies" (TOO SPECIFIC — this locks every song into the same style)
-
-Guidelines:
-- Describe a WORLD of music, not a single song
-- Mention the emotional RANGE (happy AND sad, energetic AND chill)
-- Reference the era/culture broadly, not specific instruments or BPM
-- Leave room for genre exploration: pop, rock, hip-hop, electronic, ballads, etc.
-- Keep under 500 characters
-
-Return ONLY the enhanced prompt text, nothing else.`;
-
-export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
+export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 	server: {
 		handlers: {
 			POST: async ({ request }) => {
 				try {
 					const body = await request.json();
-					const { prompt, provider, model } = body as {
-						prompt: string;
+					const { currentPrompt, direction, provider, model } = body as {
+						currentPrompt: string;
+						direction: string;
 						provider: string;
 						model: string;
 					};
+
+					const userMessage = `Current session prompt:\n"${currentPrompt}"\n\nUser direction:\n"${direction}"\n\nReturn the updated prompt:`;
 
 					let fullText: string;
 
@@ -49,7 +45,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 									model,
 									messages: [
 										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: prompt },
+										{ role: "user", content: userMessage },
 									],
 								}),
 							},
@@ -69,11 +65,11 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 								model,
 								messages: [
 									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: prompt },
+									{ role: "user", content: userMessage },
 								],
 								stream: false,
 								keep_alive: "10m",
-								options: { temperature: 0.8 },
+								options: { temperature: 0.7 },
 							}),
 						});
 						if (!res.ok) {
@@ -85,13 +81,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 					}
 
 					return new Response(
-						JSON.stringify({ enhancedPrompt: fullText.trim() }),
+						JSON.stringify({ updatedPrompt: fullText.trim() }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: any) {
 					return new Response(
 						JSON.stringify({
-							error: error.message || "Failed to enhance prompt",
+							error: error.message || "Failed to refine prompt",
 						}),
 						{
 							status: 500,

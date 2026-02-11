@@ -1,16 +1,15 @@
 import { useStore } from "@tanstack/react-store";
 import { useCallback, useEffect, useRef } from "react";
 import {
+	getGlobalAudio,
 	playerStore,
 	setCurrentTime,
-	setDuration,
 	setPlaying,
 } from "@/lib/player-store";
 
 export function useAudioPlayer(onEnded?: () => void) {
-	const audioRef = useRef<HTMLAudioElement | null>(null);
-	const currentUrlRef = useRef<string | null>(null);
 	const onEndedRef = useRef(onEnded);
+	const currentUrlRef = useRef<string | null>(null);
 	const { isPlaying, volume, isMuted } = useStore(playerStore);
 
 	// Keep onEnded ref up to date without recreating Audio element
@@ -18,72 +17,49 @@ export function useAudioPlayer(onEnded?: () => void) {
 		onEndedRef.current = onEnded;
 	}, [onEnded]);
 
-	// Create audio element once on mount
+	// Attach/detach the ended listener when this hook mounts/unmounts
 	useEffect(() => {
-		const audio = new Audio();
-		audioRef.current = audio;
-
-		audio.addEventListener("timeupdate", () => {
-			setCurrentTime(audio.currentTime);
-		});
-
-		audio.addEventListener("loadedmetadata", () => {
-			setDuration(audio.duration);
-		});
-
-		audio.addEventListener("ended", () => {
+		const audio = getGlobalAudio();
+		const handleEnded = () => {
 			setPlaying(false);
 			onEndedRef.current?.();
-		});
-
-		audio.addEventListener("error", (e) => {
-			console.error("Audio error:", e);
-			setPlaying(false);
-		});
-
+		};
+		audio.addEventListener("ended", handleEnded);
 		return () => {
-			audio.pause();
-			audio.src = "";
+			audio.removeEventListener("ended", handleEnded);
 		};
 	}, []);
 
 	// Sync volume
 	useEffect(() => {
-		if (audioRef.current) {
-			audioRef.current.volume = isMuted ? 0 : volume;
-		}
+		const audio = getGlobalAudio();
+		audio.volume = isMuted ? 0 : volume;
 	}, [volume, isMuted]);
 
 	// Sync play/pause
 	useEffect(() => {
-		if (!audioRef.current) return;
+		const audio = getGlobalAudio();
 		if (isPlaying) {
-			audioRef.current.play().catch(console.error);
+			audio.play().catch(console.error);
 		} else {
-			audioRef.current.pause();
+			audio.pause();
 		}
 	}, [isPlaying]);
 
 	const loadAndPlay = useCallback((url: string) => {
-		if (!audioRef.current) return;
-		// Skip reload if already playing this URL (prevents Convex reactivity from resetting playback)
-		if (url === currentUrlRef.current) {
-			if (audioRef.current.paused) {
-				audioRef.current.play().catch(console.error);
-				setPlaying(true);
-			}
-			return;
-		}
+		const audio = getGlobalAudio();
+		// Skip if already loaded with this URL (prevents Convex reactivity from resetting playback)
+		if (url === currentUrlRef.current) return;
 		currentUrlRef.current = url;
-		audioRef.current.src = url;
-		audioRef.current.load();
-		audioRef.current.play().catch(console.error);
+		audio.src = url;
+		audio.load();
+		audio.play().catch(console.error);
 		setPlaying(true);
 	}, []);
 
 	const seek = useCallback((time: number) => {
-		if (!audioRef.current) return;
-		audioRef.current.currentTime = time;
+		const audio = getGlobalAudio();
+		audio.currentTime = time;
 		setCurrentTime(time);
 	}, []);
 
@@ -99,5 +75,5 @@ export function useAudioPlayer(onEnded?: () => void) {
 		setPlaying(!playerStore.state.isPlaying);
 	}, []);
 
-	return { loadAndPlay, seek, play, pause, toggle, audioRef };
+	return { loadAndPlay, seek, play, pause, toggle };
 }

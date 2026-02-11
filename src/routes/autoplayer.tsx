@@ -3,6 +3,8 @@ import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { Music } from "lucide-react";
 import { useCallback, useState } from "react";
+import type { LlmProvider } from "../../convex/types";
+import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
 import { NowPlaying } from "@/components/autoplayer/NowPlaying";
@@ -30,7 +32,6 @@ function AutoplayerPage() {
 
 	const createSession = useMutation(api.sessions.create);
 	const updateStatus = useMutation(api.sessions.updateStatus);
-	const updateSongStatus = useMutation(api.songs.updateStatus);
 	const revertTransientStatuses = useMutation(api.songs.revertTransientStatuses);
 
 	const {
@@ -41,6 +42,7 @@ function AutoplayerPage() {
 		skipToNext,
 		requestSong,
 		loadAndPlay,
+		rateSong,
 	} = useAutoplayer(sessionId);
 
 	const { currentSongId } = useStore(playerStore);
@@ -53,7 +55,7 @@ function AutoplayerPage() {
 		async (data: {
 			name: string;
 			prompt: string;
-			provider: string;
+			provider: LlmProvider;
 			model: string;
 			lyricsLanguage?: string;
 			targetBpm?: number;
@@ -103,11 +105,10 @@ function AutoplayerPage() {
 			const song = songs?.find((s) => s._id === songId);
 			if (song?.audioUrl) {
 				setCurrentSong(songId);
-				updateSongStatus({ id: songId as any, status: "playing" });
 				loadAndPlay(song.audioUrl);
 			}
 		},
-		[songs, loadAndPlay, updateSongStatus],
+		[songs, loadAndPlay],
 	);
 
 	// Loading state while Convex query resolves
@@ -191,6 +192,9 @@ function AutoplayerPage() {
 						onToggle={toggle}
 						onSkip={skipToNext}
 						onSeek={seek}
+						onRate={(rating) => {
+							if (currentSongId) rateSong(currentSongId, rating);
+						}}
 					/>
 				</div>
 				{session && <GenerationControls session={session} />}
@@ -209,11 +213,19 @@ function AutoplayerPage() {
 				/>
 			)}
 
-			{/* QUICK REQUEST */}
+			{/* DIRECTION STEERING + QUICK REQUEST */}
 			<div className="border-b-4 border-white/20">
+				{session && (
+					<DirectionSteering
+						session={session}
+						disabled={session.status !== "active"}
+					/>
+				)}
 				<QuickRequest
 					onRequest={requestSong}
 					disabled={!session || session.status !== "active"}
+					provider={session?.llmProvider}
+					model={session?.llmModel}
 				/>
 			</div>
 
@@ -223,8 +235,8 @@ function AutoplayerPage() {
 					<span>AUTOPLAYER V1.0 // BRUTALIST INTERFACE</span>
 					<span className="flex items-center gap-2">
 						<Music className="h-3 w-3" />
-						{songs?.filter((s) => s.status !== "played").length ?? 0} TRACKS IN
-						PIPELINE
+						{songs?.length ?? 0} TRACKS //{"  "}
+						{songs?.filter((s) => s.status === "ready" || s.status === "played").length ?? 0} READY
 					</span>
 					<span className="animate-pulse text-red-500">[LIVE]</span>
 				</div>

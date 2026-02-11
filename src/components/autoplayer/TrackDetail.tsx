@@ -1,5 +1,8 @@
+import { useMutation } from 'convex/react'
 import { useEffect, useState } from 'react'
-import { X, Music, Clock, Disc3, FileText, Palette, Loader2 } from 'lucide-react'
+import { X, Music, Clock, Disc3, FileText, Palette, Loader2, ThumbsUp, ThumbsDown, Trash2, RotateCcw } from 'lucide-react'
+import type { SongStatus } from '../../../convex/types'
+import { api } from '../../../convex/_generated/api'
 import { CoverArt } from './CoverArt'
 
 interface Song {
@@ -16,23 +19,37 @@ interface Song {
   keyScale?: string
   timeSignature?: string
   audioDuration?: number
-  status: string
+  status: SongStatus
   aceTaskId?: string | null
   audioUrl?: string | null
   storagePath?: string | null
   errorMessage?: string | null
   retryCount?: number | null
-  erroredAtStatus?: string | null
+  erroredAtStatus?: SongStatus | null
   generationStartedAt?: number | null
   generationCompletedAt?: number | null
   isInterrupt?: boolean
   interruptPrompt?: string | null
   orderIndex: number
+  userRating?: 'up' | 'down' | null
+  playDurationMs?: number | null
+  listenCount?: number | null
+  mood?: string | null
+  energy?: string | null
+  era?: string | null
+  instruments?: string[] | null
+  tags?: string[] | null
+  themes?: string[] | null
+  language?: string | null
+  description?: string | null
+  llmProvider?: string | null
+  llmModel?: string | null
 }
 
 interface TrackDetailProps {
   song: Song
   onClose: () => void
+  onDeleted?: () => void
 }
 
 function formatDuration(seconds: number) {
@@ -57,7 +74,6 @@ const STATUS_LABELS: Record<string, string> = {
   generating_audio: 'AUDIO SYNTHESIS IN PROGRESS',
   saving: 'SAVING TO LIBRARY',
   ready: 'READY TO PLAY',
-  playing: 'NOW PLAYING',
   played: 'PLAYED',
   retry_pending: 'RETRY PENDING',
   error: 'ERROR',
@@ -76,7 +92,11 @@ function LiveTimer({ startedAt }: { startedAt: number }) {
   return <>{formatElapsed(elapsed)}</>
 }
 
-export function TrackDetail({ song, onClose }: TrackDetailProps) {
+export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
+  const deleteSong = useMutation(api.songs.deleteSong)
+  const revertStatuses = useMutation(api.songs.revertSingleSong)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
   const isGenerating = [
     'pending',
     'generating_metadata',
@@ -85,6 +105,20 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
     'generating_audio',
     'saving',
   ].includes(song.status)
+
+  const ACTIVE_PROCESSING = ['generating_metadata', 'submitting_to_ace', 'generating_audio', 'saving']
+  const isActivelyProcessing = ACTIVE_PROCESSING.includes(song.status)
+  const isStuck = isActivelyProcessing && song.generationStartedAt && (Date.now() - song.generationStartedAt) > 2 * 60 * 1000
+
+  const handleDelete = async () => {
+    await deleteSong({ id: song._id as any })
+    onDeleted?.()
+    onClose()
+  }
+
+  const handleReset = async () => {
+    await revertStatuses({ id: song._id as any })
+  }
 
   const totalGenTime =
     song.generationStartedAt && song.generationCompletedAt
@@ -125,6 +159,9 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
               <div>
                 <h2 className="text-2xl font-black uppercase">{song.title || 'Generating...'}</h2>
                 <p className="text-sm font-bold uppercase text-white/50">{song.artistName || '...'}</p>
+                {song.description && (
+                  <p className="mt-1 text-xs font-bold text-white/40 italic normal-case">{song.description}</p>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -173,6 +210,39 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
                 </span>
               )}
 
+              {/* Actions for stuck/error songs — only when actively processing too long */}
+              {(isStuck || song.status === 'error') && (
+                <div className="flex items-center gap-2">
+                  {isStuck && (
+                    <button
+                      className="flex items-center gap-1 border-2 border-yellow-500/40 px-3 py-1.5 text-xs font-black uppercase text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors"
+                      onClick={handleReset}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      RESET
+                    </button>
+                  )}
+                  <button
+                    className={`flex items-center gap-1 border-2 px-3 py-1.5 text-xs font-black uppercase transition-colors ${
+                      confirmDelete
+                        ? 'border-red-500 bg-red-500 text-black animate-pulse'
+                        : 'border-red-500/40 text-red-500 hover:bg-red-500 hover:text-black'
+                    }`}
+                    onClick={() => {
+                      if (confirmDelete) {
+                        handleDelete()
+                      } else {
+                        setConfirmDelete(true)
+                        setTimeout(() => setConfirmDelete(false), 2000)
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    {confirmDelete ? 'CONFIRM REMOVE' : 'REMOVE'}
+                  </button>
+                </div>
+              )}
+
               {/* Generation Time */}
               <div className="flex items-center gap-2 text-xs font-bold uppercase text-white/40">
                 <Clock className="h-3 w-3" />
@@ -184,6 +254,29 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
                   <span>GENERATED IN {formatElapsed(totalGenTime)}</span>
                 ) : (
                   <span>--</span>
+                )}
+              </div>
+
+              {/* Rating + Listens + Play Duration */}
+              <div className="flex items-center gap-4">
+                {song.userRating && (
+                  <div className="flex items-center gap-1 text-xs font-bold uppercase">
+                    {song.userRating === 'up' ? (
+                      <><ThumbsUp className="h-3 w-3 text-green-400" /><span className="text-green-400">LIKED</span></>
+                    ) : (
+                      <><ThumbsDown className="h-3 w-3 text-red-400" /><span className="text-red-400">DISLIKED</span></>
+                    )}
+                  </div>
+                )}
+                {(song.listenCount ?? 0) > 0 && (
+                  <span className="text-xs font-bold uppercase text-white/40">
+                    {song.listenCount} {song.listenCount === 1 ? 'LISTEN' : 'LISTENS'}
+                  </span>
+                )}
+                {song.playDurationMs != null && song.playDurationMs > 0 && (
+                  <span className="text-xs font-bold uppercase text-white/40">
+                    TOTAL: {formatElapsed(song.playDurationMs)}
+                  </span>
                 )}
               </div>
             </div>
@@ -216,6 +309,77 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
               </div>
             </div>
           </div>
+
+          {/* Tags & Metadata */}
+          {(song.mood || song.energy || song.era || song.language) && (
+            <div className="border-4 border-white/10 bg-black">
+              <div className="border-b-2 border-white/10 px-4 py-2">
+                <span className="text-xs font-black uppercase tracking-widest text-white/40">
+                  METADATA
+                </span>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {song.mood && (
+                    <span className="border-2 border-purple-500/40 px-2 py-1 text-xs font-black uppercase text-purple-400">
+                      {song.mood}
+                    </span>
+                  )}
+                  {song.energy && (
+                    <span className="border-2 border-cyan-500/40 px-2 py-1 text-xs font-black uppercase text-cyan-400">
+                      {song.energy} ENERGY
+                    </span>
+                  )}
+                  {song.era && (
+                    <span className="border-2 border-amber-500/40 px-2 py-1 text-xs font-black uppercase text-amber-400">
+                      {song.era}
+                    </span>
+                  )}
+                  {song.language && (
+                    <span className="border-2 border-white/20 px-2 py-1 text-xs font-black uppercase text-white/50">
+                      {song.language}
+                    </span>
+                  )}
+                </div>
+                {song.instruments && song.instruments.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-white/30 mb-1">INSTRUMENTS</p>
+                    <div className="flex flex-wrap gap-1">
+                      {song.instruments.map((inst, i) => (
+                        <span key={i} className="border border-white/10 px-2 py-0.5 text-xs font-bold uppercase text-white/50">
+                          {inst}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {song.themes && song.themes.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-white/30 mb-1">THEMES</p>
+                    <div className="flex flex-wrap gap-1">
+                      {song.themes.map((theme, i) => (
+                        <span key={i} className="border border-pink-500/30 px-2 py-0.5 text-xs font-bold uppercase text-pink-400/70">
+                          {theme}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {song.tags && song.tags.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-white/30 mb-1">TAGS</p>
+                    <div className="flex flex-wrap gap-1">
+                      {song.tags.map((tag, i) => (
+                        <span key={i} className="border border-green-500/30 px-2 py-0.5 text-xs font-bold uppercase text-green-400/70">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Caption */}
           <div className="border-4 border-white/10 bg-black">
@@ -277,6 +441,9 @@ export function TrackDetail({ song, onClose }: TrackDetailProps) {
               </span>
             </div>
             <div className="px-4 py-3 space-y-1 text-[10px] font-bold uppercase text-white/20 font-mono">
+              {song.llmProvider && (
+                <p>LLM: {song.llmProvider.toUpperCase()} / {(song.llmModel || 'unknown').toUpperCase()}</p>
+              )}
               <p>SONG ID: {song._id}</p>
               {song.aceTaskId && <p>ACE TASK: {song.aceTaskId}</p>}
               {song.storagePath && <p>NFS PATH: {song.storagePath}</p>}

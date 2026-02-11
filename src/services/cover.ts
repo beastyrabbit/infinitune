@@ -15,6 +15,9 @@ export async function generateCover(options: {
 }): Promise<CoverResult | null> {
   const { coverPrompt, provider, model, signal } = options
 
+  // Always frame the prompt as circular CD disc artwork
+  const fullPrompt = `Circular CD disc artwork, printed directly on a compact disc surface. ${coverPrompt}`
+
   if (provider === 'comfyui' || provider === 'ollama') {
     const urls = await getServiceUrls()
     const comfyuiUrl = urls.comfyuiUrl
@@ -39,7 +42,7 @@ export async function generateCover(options: {
       }
     }
     if (!promptNodeId && firstClipNode) promptNodeId = firstClipNode
-    if (promptNodeId) workflow[promptNodeId]["inputs"]["text"] = coverPrompt
+    if (promptNodeId) workflow[promptNodeId]["inputs"]["text"] = fullPrompt
     if (samplerNodeId) workflow[samplerNodeId]["inputs"]["seed"] = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
     const WS_SAVE_NODES = ['SaveImageWebsocket', 'Websocket_Image_Save']
@@ -172,7 +175,7 @@ export async function generateCover(options: {
       },
       body: JSON.stringify({
         model,
-        prompt: coverPrompt,
+        prompt: fullPrompt,
         n: 1,
         size: '512x512',
         response_format: 'b64_json',

@@ -9,14 +9,11 @@ export async function processQueueKeeper(
 ) {
   if (bufferDeficit <= 0) return
 
-  const baseOrder = Math.ceil(maxOrderIndex) + 1
-
-  for (let i = 0; i < bufferDeficit; i++) {
-    const orderIndex = baseOrder + i
-    await convex.mutation(api.songs.createPending, {
-      sessionId: sessionId as any,
-      orderIndex,
-    })
-    console.log(`  [queue-keeper] Created pending song at order ${orderIndex}`)
-  }
+  // Create at most 1 song per tick to prevent burst creation
+  const orderIndex = Math.ceil(maxOrderIndex) + 1
+  await convex.mutation(api.songs.createPending, {
+    sessionId: sessionId as any,
+    orderIndex,
+  })
+  console.log(`  [queue-keeper] Created pending song at order ${orderIndex} (deficit: ${bufferDeficit})`)
 }

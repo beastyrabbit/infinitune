@@ -1,5 +1,30 @@
 import { Store } from '@tanstack/store'
 
+// ─── Global Audio Singleton ──────────────────────────────────────────
+// Lives outside React lifecycle so it survives route changes
+let globalAudio: HTMLAudioElement | null = null
+let globalAudioInitialized = false
+
+export function getGlobalAudio(): HTMLAudioElement {
+  if (!globalAudio) {
+    globalAudio = new Audio()
+  }
+  if (!globalAudioInitialized) {
+    globalAudioInitialized = true
+    globalAudio.addEventListener('timeupdate', () => {
+      setCurrentTime(globalAudio!.currentTime)
+    })
+    globalAudio.addEventListener('loadedmetadata', () => {
+      setDuration(globalAudio!.duration)
+    })
+    globalAudio.addEventListener('error', (e) => {
+      console.error('Audio error:', e)
+      setPlaying(false)
+    })
+  }
+  return globalAudio
+}
+
 export interface PlayerState {
   isPlaying: boolean
   volume: number // 0-1

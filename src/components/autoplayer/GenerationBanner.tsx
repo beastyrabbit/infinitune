@@ -1,9 +1,10 @@
 import { Loader2 } from 'lucide-react'
+import { TRANSIENT_STATUSES, type SongStatus } from '../../../convex/types'
 
 interface Song {
   _id: string
   title: string
-  status: string
+  status: SongStatus
   orderIndex: number
 }
 
@@ -12,22 +13,12 @@ interface GenerationBannerProps {
 }
 
 export function GenerationBanner({ songs }: GenerationBannerProps) {
-  const activeStatuses = [
-    'pending',
-    'generating_metadata',
-    'metadata_ready',
-    'submitting_to_ace',
-    'generating_audio',
-    'saving',
-    'retry_pending',
-  ]
-
-  const generating = songs.filter((s) => activeStatuses.includes(s.status))
+  const generating = songs.filter((s) => (TRANSIENT_STATUSES as string[]).includes(s.status))
 
   if (generating.length === 0) return null
 
   const current = generating[0]
-  const statusMap: Record<string, string> = {
+  const statusMap: Partial<Record<SongStatus, string>> = {
     pending: 'QUEUED — WAITING FOR WORKER',
     generating_metadata: 'STEP 1/4 — WRITING LYRICS & METADATA',
     metadata_ready: 'STEP 2/4 — METADATA READY, QUEUED FOR AUDIO',

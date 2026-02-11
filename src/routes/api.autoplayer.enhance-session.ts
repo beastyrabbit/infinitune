@@ -11,7 +11,6 @@ Field guidance:
 - targetKey: Musical key that fits the mood (e.g. "A minor" for dark/aggressive, "C major" for bright/happy, "F# minor" for melancholic)
 - timeSignature: Time signature (usually "4/4", "3/4" for waltzes, "6/8" for compound time)
 - audioDuration: Length in seconds between 180 and 300 (3-5 minutes). Shorter for energetic tracks, longer for atmospheric ones.
-- inferenceSteps: Audio generation quality steps (4-16). Use 8 for standard, 12-16 for complex/detailed genres, 4-6 for simple/lo-fi.
 
 Be specific and match parameters to the genre conventions described.`;
 
@@ -38,10 +37,6 @@ const SESSION_PARAMS_SCHEMA = {
 			type: "number",
 			description: "Duration in seconds (180-300)",
 		},
-		inferenceSteps: {
-			type: "number",
-			description: "Audio generation quality steps (4-16)",
-		},
 	},
 	required: [
 		"lyricsLanguage",
@@ -49,7 +44,6 @@ const SESSION_PARAMS_SCHEMA = {
 		"targetKey",
 		"timeSignature",
 		"audioDuration",
-		"inferenceSteps",
 	],
 };
 

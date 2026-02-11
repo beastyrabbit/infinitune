@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
+import { llmProviderValidator, sessionStatusValidator, songStatusValidator } from './types'
 
 export default defineSchema({
   // EXISTING
@@ -17,9 +18,9 @@ export default defineSchema({
   sessions: defineTable({
     name: v.string(),
     prompt: v.string(),
-    llmProvider: v.string(), // "ollama" | "openrouter"
+    llmProvider: llmProviderValidator,
     llmModel: v.string(),
-    status: v.string(), // "active" | "paused" | "stopped"
+    status: sessionStatusValidator,
     songsGenerated: v.number(),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
@@ -27,6 +28,10 @@ export default defineSchema({
     timeSignature: v.optional(v.string()),
     audioDuration: v.optional(v.number()),
     inferenceSteps: v.optional(v.number()),
+    lmTemperature: v.optional(v.number()),
+    lmCfgScale: v.optional(v.number()),
+    inferMethod: v.optional(v.string()),
+    currentOrderIndex: v.optional(v.number()),
   }),
 
   songs: defineTable({
@@ -45,7 +50,16 @@ export default defineSchema({
     keyScale: v.optional(v.string()),
     timeSignature: v.optional(v.string()),
     audioDuration: v.optional(v.number()),
-    status: v.string(), // "pending" | "generating_metadata" | "metadata_ready" | "submitting_to_ace" | "generating_audio" | "saving" | "ready" | "playing" | "played" | "error" | "retry_pending"
+    vocalStyle: v.optional(v.string()),
+    mood: v.optional(v.string()),
+    energy: v.optional(v.string()),
+    era: v.optional(v.string()),
+    instruments: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    themes: v.optional(v.array(v.string())),
+    language: v.optional(v.string()),
+    description: v.optional(v.string()),
+    status: songStatusValidator,
     aceTaskId: v.optional(v.string()),
     aceSubmittedAt: v.optional(v.number()),
     audioUrl: v.optional(v.string()),
@@ -54,11 +68,16 @@ export default defineSchema({
     errorMessage: v.optional(v.string()),
     cancelledAtStatus: v.optional(v.string()), // deprecated, kept for existing data
     retryCount: v.optional(v.number()),
-    erroredAtStatus: v.optional(v.string()),
+    erroredAtStatus: v.optional(songStatusValidator),
     generationStartedAt: v.optional(v.number()),
     generationCompletedAt: v.optional(v.number()),
     isInterrupt: v.optional(v.boolean()),
     interruptPrompt: v.optional(v.string()),
+    llmProvider: v.optional(llmProviderValidator),
+    llmModel: v.optional(v.string()),
+    userRating: v.optional(v.union(v.literal("up"), v.literal("down"))),
+    playDurationMs: v.optional(v.number()),
+    listenCount: v.optional(v.number()),
   }).index("by_session", ["sessionId"])
     .index("by_session_status", ["sessionId", "status"])
     .index("by_session_order", ["sessionId", "orderIndex"]),

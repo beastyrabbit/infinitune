@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
+import { songStatusValidator, llmProviderValidator, ACTIVE_STATUSES, TRANSIENT_STATUSES } from './types'
 
 export const listBySession = query({
   args: { sessionId: v.id("sessions") },
@@ -47,6 +48,15 @@ export const create = mutation({
     keyScale: v.string(),
     timeSignature: v.string(),
     audioDuration: v.number(),
+    vocalStyle: v.optional(v.string()),
+    mood: v.optional(v.string()),
+    energy: v.optional(v.string()),
+    era: v.optional(v.string()),
+    instruments: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    themes: v.optional(v.array(v.string())),
+    language: v.optional(v.string()),
+    description: v.optional(v.string()),
     isInterrupt: v.optional(v.boolean()),
     interruptPrompt: v.optional(v.string()),
   },
@@ -73,6 +83,15 @@ export const updateMetadata = mutation({
     keyScale: v.string(),
     timeSignature: v.string(),
     audioDuration: v.number(),
+    vocalStyle: v.optional(v.string()),
+    mood: v.optional(v.string()),
+    energy: v.optional(v.string()),
+    era: v.optional(v.string()),
+    instruments: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    themes: v.optional(v.array(v.string())),
+    language: v.optional(v.string()),
+    description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...metadata } = args
@@ -83,11 +102,11 @@ export const updateMetadata = mutation({
 export const updateStatus = mutation({
   args: {
     id: v.id("songs"),
-    status: v.string(),
+    status: songStatusValidator,
     errorMessage: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const patch: any = { status: args.status }
+    const patch: Record<string, unknown> = { status: args.status }
     if (args.errorMessage) patch.errorMessage = args.errorMessage
     await ctx.db.patch(args.id, patch)
   },
@@ -125,7 +144,7 @@ export const markError = mutation({
   args: {
     id: v.id("songs"),
     errorMessage: v.string(),
-    erroredAtStatus: v.optional(v.string()),
+    erroredAtStatus: v.optional(songStatusValidator),
   },
   handler: async (ctx, args) => {
     const song = await ctx.db.get(args.id)
@@ -180,6 +199,43 @@ export const updateStoragePath = mutation({
     const patch: Record<string, string> = { storagePath: args.storagePath }
     if (args.aceAudioPath) patch.aceAudioPath = args.aceAudioPath
     await ctx.db.patch(args.id, patch)
+  },
+})
+
+export const setRating = mutation({
+  args: {
+    id: v.id("songs"),
+    rating: v.union(v.literal("up"), v.literal("down")),
+  },
+  handler: async (ctx, args) => {
+    const song = await ctx.db.get(args.id)
+    if (!song) return
+    // Toggle: if same rating clicked again, clear it
+    const newRating = song.userRating === args.rating ? undefined : args.rating
+    await ctx.db.patch(args.id, { userRating: newRating })
+  },
+})
+
+export const addListen = mutation({
+  args: { id: v.id("songs") },
+  handler: async (ctx, args) => {
+    const song = await ctx.db.get(args.id)
+    if (!song) return
+    await ctx.db.patch(args.id, { listenCount: (song.listenCount || 0) + 1 })
+  },
+})
+
+export const addPlayDuration = mutation({
+  args: {
+    id: v.id("songs"),
+    durationMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const song = await ctx.db.get(args.id)
+    if (!song) return
+    await ctx.db.patch(args.id, {
+      playDurationMs: (song.playDurationMs || 0) + args.durationMs,
+    })
   },
 })
 
@@ -248,6 +304,17 @@ export const completeMetadata = mutation({
     keyScale: v.string(),
     timeSignature: v.string(),
     audioDuration: v.number(),
+    vocalStyle: v.optional(v.string()),
+    mood: v.optional(v.string()),
+    energy: v.optional(v.string()),
+    era: v.optional(v.string()),
+    instruments: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    themes: v.optional(v.array(v.string())),
+    language: v.optional(v.string()),
+    description: v.optional(v.string()),
+    llmProvider: v.optional(llmProviderValidator),
+    llmModel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...metadata } = args
@@ -301,7 +368,37 @@ export const retryErroredSong = mutation({
       retryCount: (song.retryCount || 0) + 1,
       errorMessage: undefined,
       erroredAtStatus: undefined,
+      generationStartedAt: Date.now(),
     })
+  },
+})
+
+export const deleteSong = mutation({
+  args: { id: v.id("songs") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id)
+  },
+})
+
+export const revertSingleSong = mutation({
+  args: { id: v.id("songs") },
+  handler: async (ctx, args) => {
+    const song = await ctx.db.get(args.id)
+    if (!song) return
+    if (song.status === "generating_metadata") {
+      await ctx.db.patch(args.id, { status: "pending", generationStartedAt: Date.now() })
+    } else if (
+      song.status === "submitting_to_ace" ||
+      song.status === "generating_audio" ||
+      song.status === "saving"
+    ) {
+      await ctx.db.patch(args.id, {
+        status: "metadata_ready",
+        aceTaskId: undefined,
+        aceSubmittedAt: undefined,
+        generationStartedAt: Date.now(),
+      })
+    }
   },
 })
 
@@ -366,17 +463,57 @@ export const getWorkQueue = query({
     const generatingAudio = songs.filter((s) => s.status === "generating_audio")
     const retryPending = songs.filter((s) => s.status === "retry_pending")
 
-    // Calculate buffer deficit
-    const activeStatuses = ["pending", "generating_metadata", "metadata_ready", "submitting_to_ace", "generating_audio", "saving", "ready"]
-    const activeSongs = songs.filter((s) => activeStatuses.includes(s.status))
-    const playedOrPlaying = songs.filter((s) => s.status === "played" || s.status === "playing")
-    const bufferDeficit = Math.max(0, 5 - (activeSongs.length - playedOrPlaying.length))
+    // Calculate buffer deficit based on current playing position
+    const session = await ctx.db.get(args.sessionId)
+    const currentOrderIndex = session?.currentOrderIndex ?? 0
+    const songsAhead = songs.filter((s) =>
+      s.orderIndex > currentOrderIndex &&
+      (ACTIVE_STATUSES as string[]).includes(s.status)
+    ).length
+    const bufferDeficit = Math.max(0, 5 - songsAhead)
 
     const maxOrderIndex = songs.length > 0 ? Math.max(...songs.map((s) => s.orderIndex)) : 0
 
     // Count all songs in non-terminal statuses (for closing detection)
-    const transientStatuses = ["pending", "generating_metadata", "metadata_ready", "submitting_to_ace", "generating_audio", "saving", "retry_pending"]
-    const transientCount = songs.filter((s) => transientStatuses.includes(s.status)).length
+    const transientCount = songs.filter((s) => (TRANSIENT_STATUSES as string[]).includes(s.status)).length
+
+    // Songs with metadata, most recent first
+    const completedSongs = songs
+      .filter((s) => s.title && s.status !== "pending" && s.status !== "generating_metadata")
+      .sort((a, b) => b.orderIndex - a.orderIndex)
+
+    // Last 5 full songs for diversity prompt (genre, vocal, mood details)
+    const recentCompleted = completedSongs
+      .slice(0, 5)
+      .map((s) => ({
+        title: s.title!,
+        artistName: s.artistName!,
+        genre: s.genre!,
+        subGenre: s.subGenre!,
+        vocalStyle: s.vocalStyle,
+        mood: s.mood,
+        energy: s.energy,
+      }))
+
+    // Last 20 short descriptions for thematic diversity
+    const recentDescriptions = completedSongs
+      .slice(0, 20)
+      .map((s) => s.description)
+      .filter((d): d is string => !!d)
+
+    // Detect stale songs stuck in actively-processing statuses (not waiting statuses)
+    const STALE_TIMEOUT_MS = 20 * 60 * 1000 // 20 minutes
+    const ACTIVE_PROCESSING_STATUSES = ["generating_metadata", "submitting_to_ace", "generating_audio", "saving"]
+    const now = Date.now()
+    const staleSongs = songs.filter((s) => {
+      if (!ACTIVE_PROCESSING_STATUSES.includes(s.status)) return false
+      if (s.status === "generating_audio") {
+        const audioStart = s.aceSubmittedAt || s.generationStartedAt || s._creationTime
+        return (now - audioStart) > STALE_TIMEOUT_MS
+      }
+      const startedAt = s.generationStartedAt || s._creationTime
+      return (now - startedAt) > STALE_TIMEOUT_MS
+    })
 
     return {
       pending,
@@ -388,6 +525,9 @@ export const getWorkQueue = query({
       maxOrderIndex,
       totalSongs: songs.length,
       transientCount,
+      recentCompleted,
+      recentDescriptions,
+      staleSongs: staleSongs.map((s) => ({ _id: s._id, status: s.status, title: s.title })),
     }
   },
 })

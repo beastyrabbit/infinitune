@@ -96,7 +96,7 @@ async function tick() {
         // Metadata Processor: one at a time per session
         if (workQueue.pending.length > 0 && !state.llmBusy) {
           state.llmBusy = true
-          processMetadata(convex, session, workQueue.pending, signal)
+          processMetadata(convex, session, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal)
             .finally(() => { state.llmBusy = false })
         }
 
@@ -107,8 +107,8 @@ async function tick() {
             .finally(() => { state.coverBusy = false })
         }
 
-        // Audio Submit: one submission at a time per session
-        if (workQueue.metadataReady.length > 0 && !state.submitBusy) {
+        // Audio Submit: only when no songs are already generating audio (1 at a time)
+        if (workQueue.metadataReady.length > 0 && !state.submitBusy && workQueue.generatingAudio.length === 0) {
           state.submitBusy = true
           processAudioSubmit(convex, session, workQueue.metadataReady, signal)
             .finally(() => { state.submitBusy = false })
@@ -117,6 +117,14 @@ async function tick() {
         // Audio Poll: poll all generating_audio songs (concurrent)
         if (workQueue.generatingAudio.length > 0) {
           processAudioPoll(convex, sessionId, workQueue.generatingAudio, signal)
+        }
+
+        // === Stale song cleanup: remove songs stuck in transient states ===
+        if (workQueue.staleSongs.length > 0) {
+          for (const stale of workQueue.staleSongs) {
+            console.log(`  [stale] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`)
+            await convex.mutation(api.songs.deleteSong, { id: stale._id as any })
+          }
         }
 
         // === Closing sessions: check if all work is done ===

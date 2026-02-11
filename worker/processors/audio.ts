@@ -3,6 +3,16 @@ import { api } from '../../convex/_generated/api'
 import { submitToAce, pollAce } from '../../src/services/ace'
 import { saveSongToNfs } from '../../src/services/storage'
 
+const LANGUAGE_MAP: Record<string, string> = {
+  english: 'en', german: 'de', spanish: 'es', french: 'fr',
+  korean: 'ko', japanese: 'ja', russian: 'ru', chinese: 'zh',
+}
+
+function mapLanguageToCode(language?: string): string | undefined {
+  if (!language || language === 'auto') return undefined
+  return LANGUAGE_MAP[language.toLowerCase()] || language
+}
+
 // Grace period before treating "not_found" as a lost task (2 minutes)
 const NOT_FOUND_GRACE_MS = 2 * 60 * 1000
 
@@ -14,7 +24,15 @@ interface MetadataReadySong {
   subGenre?: string
   lyrics?: string
   caption?: string
+  vocalStyle?: string
   coverPrompt?: string
+  mood?: string
+  energy?: string
+  era?: string
+  instruments?: string[]
+  tags?: string[]
+  themes?: string[]
+  language?: string
   bpm?: number
   keyScale?: string
   timeSignature?: string
@@ -32,7 +50,15 @@ interface GeneratingAudioSong {
   subGenre?: string
   lyrics?: string
   caption?: string
+  vocalStyle?: string
   coverPrompt?: string
+  mood?: string
+  energy?: string
+  era?: string
+  instruments?: string[]
+  tags?: string[]
+  themes?: string[]
+  language?: string
   bpm?: number
   keyScale?: string
   timeSignature?: string
@@ -43,6 +69,10 @@ interface SessionInfo {
   _id: string
   aceModel?: string
   inferenceSteps?: number
+  lyricsLanguage?: string
+  lmTemperature?: number
+  lmCfgScale?: number
+  inferMethod?: string
 }
 
 // Track active polls so we don't double-poll
@@ -68,12 +98,17 @@ export async function processAudioSubmit(
     const result = await submitToAce({
       lyrics: song.lyrics || '',
       caption: song.caption || '',
+      vocalStyle: song.vocalStyle,
       bpm: song.bpm || 120,
       keyScale: song.keyScale || 'C major',
       timeSignature: song.timeSignature || '4/4',
       audioDuration: song.audioDuration || 240,
       aceModel: session.aceModel,
       inferenceSteps: session.inferenceSteps,
+      vocalLanguage: mapLanguageToCode(session.lyricsLanguage),
+      lmTemperature: session.lmTemperature,
+      lmCfgScale: session.lmCfgScale,
+      inferMethod: session.inferMethod,
       signal,
     })
 
@@ -153,7 +188,15 @@ async function pollSongAudio(
           subGenre: song.subGenre || song.genre || 'Unknown',
           lyrics: song.lyrics || '',
           caption: song.caption || '',
+          vocalStyle: song.vocalStyle,
           coverPrompt: song.coverPrompt,
+          mood: song.mood,
+          energy: song.energy,
+          era: song.era,
+          instruments: song.instruments,
+          tags: song.tags,
+          themes: song.themes,
+          language: song.language,
           bpm: song.bpm || 120,
           keyScale: song.keyScale || 'C major',
           timeSignature: song.timeSignature || '4/4',

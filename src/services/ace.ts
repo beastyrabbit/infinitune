@@ -14,21 +14,28 @@ export interface AcePollResult {
 export async function submitToAce(options: {
   lyrics: string
   caption: string
+  vocalStyle?: string
   bpm: number
   keyScale: string
   timeSignature: string
   audioDuration: number
   aceModel?: string
   inferenceSteps?: number
+  vocalLanguage?: string
+  lmTemperature?: number
+  lmCfgScale?: number
+  inferMethod?: string
   signal?: AbortSignal
 }): Promise<AceSubmitResult> {
-  const { lyrics, caption, bpm, keyScale, timeSignature, audioDuration, aceModel, inferenceSteps, signal } = options
+  const { lyrics, caption, vocalStyle, bpm, keyScale, timeSignature, audioDuration, aceModel, inferenceSteps, vocalLanguage, lmTemperature, lmCfgScale, inferMethod, signal } = options
 
   const urls = await getServiceUrls()
   const aceUrl = urls.aceStepUrl
 
+  const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption
+
   const payload: Record<string, unknown> = {
-    prompt: caption,
+    prompt: fullPrompt,
     lyrics,
     bpm,
     key_scale: keyScale,
@@ -36,7 +43,12 @@ export async function submitToAce(options: {
     audio_duration: audioDuration,
     thinking: true,
     batch_size: 1,
-    inference_steps: inferenceSteps ?? 8,
+    inference_steps: inferenceSteps ?? 12,
+    vocal_language: vocalLanguage || 'en',
+    use_format: true,
+    lm_temperature: lmTemperature ?? 0.85,
+    lm_cfg_scale: lmCfgScale ?? 2.5,
+    infer_method: inferMethod || 'ode',
     audio_format: 'mp3',
   }
 

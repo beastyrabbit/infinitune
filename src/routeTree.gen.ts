@@ -35,11 +35,13 @@ import { Route as AutoplayerTestAceRouteImport } from './routes/autoplayer_.test
 import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.autoplayer.test-connection'
 import { Route as ApiAutoplayerSubmitAceRouteImport } from './routes/api.autoplayer.submit-ace'
 import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplayer.save-song'
+import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
 import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplayer.poll-ace'
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
 import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
 import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
+import { Route as ApiAutoplayerEnhanceRequestRouteImport } from './routes/api.autoplayer.enhance-request'
 import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
@@ -185,6 +187,12 @@ const ApiAutoplayerSaveSongRoute = ApiAutoplayerSaveSongRouteImport.update({
   path: '/api/autoplayer/save-song',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAutoplayerRefinePromptRoute =
+  ApiAutoplayerRefinePromptRouteImport.update({
+    id: '/api/autoplayer/refine-prompt',
+    path: '/api/autoplayer/refine-prompt',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutoplayerPollAceRoute = ApiAutoplayerPollAceRouteImport.update({
   id: '/api/autoplayer/poll-ace',
   path: '/api/autoplayer/poll-ace',
@@ -212,6 +220,12 @@ const ApiAutoplayerEnhanceSessionRoute =
   ApiAutoplayerEnhanceSessionRouteImport.update({
     id: '/api/autoplayer/enhance-session',
     path: '/api/autoplayer/enhance-session',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerEnhanceRequestRoute =
+  ApiAutoplayerEnhanceRequestRouteImport.update({
+    id: '/api/autoplayer/enhance-request',
+    path: '/api/autoplayer/enhance-request',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiAutoplayerEnhancePromptRoute =
@@ -291,11 +305,13 @@ export interface FileRoutesByFullPath {
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
@@ -335,11 +351,13 @@ export interface FileRoutesByTo {
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
@@ -381,11 +399,13 @@ export interface FileRoutesById {
   '/demo/store': typeof DemoStoreRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
+  '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
@@ -428,11 +448,13 @@ export interface FileRouteTypes {
     | '/demo/store'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
@@ -472,11 +494,13 @@ export interface FileRouteTypes {
     | '/demo/store'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
@@ -517,11 +541,13 @@ export interface FileRouteTypes {
     | '/demo/store'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
+    | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
@@ -563,11 +589,13 @@ export interface RootRouteChildren {
   DemoStoreRoute: typeof DemoStoreRoute
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
   ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
+  ApiAutoplayerEnhanceRequestRoute: typeof ApiAutoplayerEnhanceRequestRoute
   ApiAutoplayerEnhanceSessionRoute: typeof ApiAutoplayerEnhanceSessionRoute
   ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
   ApiAutoplayerPollAceRoute: typeof ApiAutoplayerPollAceRoute
+  ApiAutoplayerRefinePromptRoute: typeof ApiAutoplayerRefinePromptRoute
   ApiAutoplayerSaveSongRoute: typeof ApiAutoplayerSaveSongRoute
   ApiAutoplayerSubmitAceRoute: typeof ApiAutoplayerSubmitAceRoute
   ApiAutoplayerTestConnectionRoute: typeof ApiAutoplayerTestConnectionRoute
@@ -773,6 +801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerSaveSongRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/autoplayer/refine-prompt': {
+      id: '/api/autoplayer/refine-prompt'
+      path: '/api/autoplayer/refine-prompt'
+      fullPath: '/api/autoplayer/refine-prompt'
+      preLoaderRoute: typeof ApiAutoplayerRefinePromptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/autoplayer/poll-ace': {
       id: '/api/autoplayer/poll-ace'
       path: '/api/autoplayer/poll-ace'
@@ -806,6 +841,13 @@ declare module '@tanstack/react-router' {
       path: '/api/autoplayer/enhance-session'
       fullPath: '/api/autoplayer/enhance-session'
       preLoaderRoute: typeof ApiAutoplayerEnhanceSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/enhance-request': {
+      id: '/api/autoplayer/enhance-request'
+      path: '/api/autoplayer/enhance-request'
+      fullPath: '/api/autoplayer/enhance-request'
+      preLoaderRoute: typeof ApiAutoplayerEnhanceRequestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/autoplayer/enhance-prompt': {
@@ -931,11 +973,13 @@ const rootRouteChildren: RootRouteChildren = {
   DemoStoreRoute: DemoStoreRoute,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,
   ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,
+  ApiAutoplayerEnhanceRequestRoute: ApiAutoplayerEnhanceRequestRoute,
   ApiAutoplayerEnhanceSessionRoute: ApiAutoplayerEnhanceSessionRoute,
   ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,
   ApiAutoplayerPollAceRoute: ApiAutoplayerPollAceRoute,
+  ApiAutoplayerRefinePromptRoute: ApiAutoplayerRefinePromptRoute,
   ApiAutoplayerSaveSongRoute: ApiAutoplayerSaveSongRoute,
   ApiAutoplayerSubmitAceRoute: ApiAutoplayerSubmitAceRoute,
   ApiAutoplayerTestConnectionRoute: ApiAutoplayerTestConnectionRoute,

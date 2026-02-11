@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ThumbsUp, ThumbsDown } from 'lucide-react'
+import type { SongStatus } from '../../../convex/types'
 import { CoverArt } from './CoverArt'
 
 interface Song {
@@ -9,10 +10,13 @@ interface Song {
   genre?: string
   subGenre?: string
   coverUrl?: string | null
-  status: string
+  status: SongStatus
   orderIndex: number
   generationStartedAt?: number | null
   generationCompletedAt?: number | null
+  userRating?: 'up' | 'down' | null
+  listenCount?: number | null
+  llmProvider?: string | null
 }
 
 interface QueueGridProps {
@@ -22,7 +26,7 @@ interface QueueGridProps {
   onOpenDetail: (songId: string) => void
 }
 
-function getStatusLabel(status: string, isCurrent: boolean) {
+function getStatusLabel(status: SongStatus, isCurrent: boolean) {
   if (isCurrent) return { text: '[PLAYING]', className: 'text-red-500 font-black' }
   switch (status) {
     case 'ready':
@@ -33,8 +37,6 @@ function getStatusLabel(status: string, isCurrent: boolean) {
       return { text: '[WRITING...]', className: 'text-yellow-500 animate-pulse font-bold' }
     case 'metadata_ready':
       return { text: '[METADATA OK]', className: 'text-cyan-400 font-bold' }
-    case 'generating_cover':
-      return { text: '[COVER...]', className: 'text-yellow-500 animate-pulse font-bold' }
     case 'submitting_to_ace':
       return { text: '[SUBMITTING...]', className: 'text-yellow-500 animate-pulse font-bold' }
     case 'generating_audio':
@@ -42,15 +44,11 @@ function getStatusLabel(status: string, isCurrent: boolean) {
     case 'saving':
       return { text: '[SAVING...]', className: 'text-yellow-500 animate-pulse font-bold' }
     case 'played':
-      return { text: '[DONE]', className: 'text-white/20 line-through' }
-    case 'playing':
-      return { text: '[PLAYING]', className: 'text-red-500 font-black' }
+      return { text: '[READY]', className: 'text-white/50 font-bold' }
     case 'retry_pending':
       return { text: '[RETRY PENDING]', className: 'text-orange-400 font-bold' }
     case 'error':
       return { text: '[ERROR]', className: 'text-red-400 font-bold' }
-    default:
-      return { text: `[${status.toUpperCase()}]`, className: 'text-white' }
   }
 }
 
@@ -78,11 +76,10 @@ function LiveTimer({ startedAt }: { startedAt: number }) {
 export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: QueueGridProps) {
   const sorted = [...songs].sort((a, b) => a.orderIndex - b.orderIndex)
 
-  const activeStatuses = ['pending', 'generating_metadata', 'metadata_ready', 'generating_cover', 'submitting_to_ace', 'generating_audio', 'saving']
+  const activeStatuses: SongStatus[] = ['pending', 'generating_metadata', 'metadata_ready', 'submitting_to_ace', 'generating_audio', 'saving']
   const generating = sorted.filter((s) => activeStatuses.includes(s.status)).length
   const retryPending = sorted.filter((s) => s.status === 'retry_pending').length
-  const ready = sorted.filter((s) => s.status === 'ready').length
-  const played = sorted.filter((s) => s.status === 'played').length
+  const ready = sorted.filter((s) => s.status === 'ready' || s.status === 'played').length
 
   return (
     <div className="border-b-4 border-white/20">
@@ -91,7 +88,6 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
           QUEUE [{sorted.length} TRACKS]
         </span>
         <div className="flex gap-4 text-xs uppercase tracking-wider text-white/30">
-          <span>{played} PLAYED</span>
           <span>{ready} READY</span>
           <span className="text-yellow-500">{generating} GENERATING</span>
           {retryPending > 0 && <span className="text-orange-400">{retryPending} RETRY</span>}
@@ -101,8 +97,9 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
         {sorted.map((song, i) => {
           const isCurrent = song._id === currentSongId
-          const isPlayed = song.status === 'played'
+          const isPlayable = song.status === 'ready' || song.status === 'played'
           const isGenerating = song.status === 'pending' || song.status.startsWith('generating') || song.status === 'metadata_ready' || song.status === 'submitting_to_ace' || song.status === 'saving'
+          const isReady = song.status === 'ready' || song.status === 'played' || isCurrent
           const status = getStatusLabel(song.status, isCurrent)
 
           const totalGenTime =
@@ -113,19 +110,19 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
           return (
             <div
               key={song._id}
-              className={`border-r-4 border-b-4 border-white/10 cursor-pointer transition-colors ${
+              className={`border-r-4 border-b-4 border-white/10 transition-colors ${
                 isCurrent
                   ? 'bg-red-950/40'
-                  : isPlayed
-                    ? 'opacity-30'
-                    : 'bg-gray-950 hover:bg-gray-900'
+                  : 'bg-gray-950'
               }`}
-              onClick={() => {
-                if (song.status === 'ready') onSelectSong(song._id)
-                else onOpenDetail(song._id)
-              }}
             >
-              <div className="relative">
+              {/* Cover art — click to play */}
+              <div
+                className={`relative ${isPlayable ? 'cursor-pointer' : ''} ${!isReady ? 'grayscale' : ''} transition-[filter] duration-500`}
+                onClick={() => {
+                  if (isPlayable) onSelectSong(song._id)
+                }}
+              >
                 <CoverArt
                   title={song.title || 'Generating...'}
                   artistName={song.artistName || '...'}
@@ -146,7 +143,6 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
                     {song.status === 'pending' ? 'QUEUED' :
                      song.status === 'generating_metadata' ? 'WRITING' :
                      song.status === 'metadata_ready' ? 'READY' :
-                     song.status === 'generating_cover' ? 'COVER' :
                      song.status === 'submitting_to_ace' ? 'SUBMITTING' :
                      song.status === 'generating_audio' ? 'AUDIO' :
                      song.status === 'saving' ? 'SAVING' : 'GENERATING'}
@@ -163,17 +159,30 @@ export function QueueGrid({ songs, currentSongId, onSelectSong, onOpenDetail }: 
                   </div>
                 )}
               </div>
-              <div className="p-2">
-                <p className={`text-xs font-black uppercase truncate ${isPlayed ? 'line-through' : ''}`}>
+              {/* Title/info — click to open detail */}
+              <div
+                className="p-2 cursor-pointer hover:bg-gray-900 transition-colors"
+                onClick={() => onOpenDetail(song._id)}
+              >
+                <p className="text-xs font-black uppercase truncate">
                   {song.title || 'Generating...'}
                 </p>
                 <p className="text-[10px] uppercase text-white/30 truncate">
-                  {song.artistName || '...'}
+                  {song.artistName || '...'}{' '}
+                  {song.llmProvider === 'openrouter' && <span className="text-blue-400">[OR]</span>}
+                  {song.llmProvider === 'ollama' && <span className="text-green-400">[OL]</span>}
                 </p>
                 <div className="flex items-center justify-between mt-1">
-                  <p className={`text-[10px] uppercase ${status.className}`}>
-                    {status.text}
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <p className={`text-[10px] uppercase ${status.className}`}>
+                      {status.text}
+                    </p>
+                    {song.userRating === 'up' && <ThumbsUp className="h-2.5 w-2.5 text-green-400" />}
+                    {song.userRating === 'down' && <ThumbsDown className="h-2.5 w-2.5 text-red-400" />}
+                    {(song.listenCount ?? 0) > 0 && (
+                      <span className="text-[10px] text-white/30">{song.listenCount}x</span>
+                    )}
+                  </div>
                   <p className="text-[10px] uppercase text-white/20">
                     {isGenerating && song.generationStartedAt ? (
                       <LiveTimer startedAt={song.generationStartedAt} />

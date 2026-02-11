@@ -1,5 +1,6 @@
 import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
+import { llmProviderValidator, sessionStatusValidator } from './types'
 
 export const list = query({
   handler: async (ctx) => {
@@ -34,7 +35,7 @@ export const create = mutation({
   args: {
     name: v.string(),
     prompt: v.string(),
-    llmProvider: v.string(),
+    llmProvider: llmProviderValidator,
     llmModel: v.string(),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
@@ -42,6 +43,9 @@ export const create = mutation({
     timeSignature: v.optional(v.string()),
     audioDuration: v.optional(v.number()),
     inferenceSteps: v.optional(v.number()),
+    lmTemperature: v.optional(v.number()),
+    lmCfgScale: v.optional(v.number()),
+    inferMethod: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sessions", {
@@ -61,6 +65,9 @@ export const updateParams = mutation({
     timeSignature: v.optional(v.string()),
     audioDuration: v.optional(v.number()),
     inferenceSteps: v.optional(v.number()),
+    lmTemperature: v.optional(v.number()),
+    lmCfgScale: v.optional(v.number()),
+    inferMethod: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...params } = args
@@ -80,10 +87,20 @@ export const updateParams = mutation({
 export const updateStatus = mutation({
   args: {
     id: v.id("sessions"),
-    status: v.string(),
+    status: sessionStatusValidator,
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { status: args.status })
+  },
+})
+
+export const updateCurrentPosition = mutation({
+  args: {
+    id: v.id("sessions"),
+    currentOrderIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { currentOrderIndex: args.currentOrderIndex })
   },
 })
 
@@ -93,6 +110,23 @@ export const incrementSongsGenerated = mutation({
     const session = await ctx.db.get(args.id)
     if (!session) throw new Error("Session not found")
     await ctx.db.patch(args.id, { songsGenerated: session.songsGenerated + 1 })
+  },
+})
+
+export const resetDefaults = mutation({
+  args: { id: v.id("sessions") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      lyricsLanguage: undefined,
+      targetBpm: undefined,
+      targetKey: undefined,
+      timeSignature: undefined,
+      audioDuration: undefined,
+      inferenceSteps: undefined,
+      lmTemperature: undefined,
+      lmCfgScale: undefined,
+      inferMethod: undefined,
+    })
   },
 })
 

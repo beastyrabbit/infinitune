@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
+import type { LlmProvider } from '../../../convex/types'
 import { Music, Settings, RotateCcw, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -23,7 +24,7 @@ interface SessionCreatorProps {
   onCreateSession: (data: {
     name: string
     prompt: string
-    provider: string
+    provider: LlmProvider
     model: string
     lyricsLanguage?: string
     targetBpm?: number
@@ -38,7 +39,7 @@ interface SessionCreatorProps {
 
 export function SessionCreator({ onCreateSession, onResumeSession, onOpenSettings }: SessionCreatorProps) {
   const [prompt, setPrompt] = useState('')
-  const [provider, setProvider] = useState('ollama')
+  const [provider, setProvider] = useState<LlmProvider>('ollama')
   const [model, setModel] = useState('')
   const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([])
   const [loading, setLoading] = useState(false)
@@ -54,7 +55,7 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
   useEffect(() => {
     if (!settings || settingsApplied.current) return
     settingsApplied.current = true
-    if (settings.textProvider) setProvider(settings.textProvider)
+    if (settings.textProvider) setProvider(settings.textProvider as LlmProvider)
     if (settings.textModel) {
       setModel(settings.textModel)
       modelSetByUserOrSettings.current = true

@@ -12,6 +12,7 @@ import type * as sessions from "../sessions.js";
 import type * as settings from "../settings.js";
 import type * as songs from "../songs.js";
 import type * as todos from "../todos.js";
+import type * as types from "../types.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   settings: typeof settings;
   songs: typeof songs;
   todos: typeof todos;
+  types: typeof types;
 }>;
 
 /**

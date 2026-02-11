@@ -10,7 +10,15 @@ export async function saveSongToNfs(options: {
   subGenre: string
   lyrics: string
   caption: string
+  vocalStyle?: string
   coverPrompt?: string
+  mood?: string
+  energy?: string
+  era?: string
+  instruments?: string[]
+  tags?: string[]
+  themes?: string[]
+  language?: string
   bpm: number
   keyScale: string
   timeSignature: string
@@ -20,8 +28,9 @@ export async function saveSongToNfs(options: {
 }): Promise<{ storagePath: string; audioFile: string }> {
   const {
     songId, title, artistName, genre, subGenre,
-    lyrics, caption, coverPrompt, bpm, keyScale,
-    timeSignature, audioDuration, aceAudioPath, coverBase64,
+    lyrics, caption, vocalStyle, coverPrompt,
+    mood, energy, era, instruments, tags, themes, language,
+    bpm, keyScale, timeSignature, audioDuration, aceAudioPath, coverBase64,
   } = options
 
   const urls = await getServiceUrls()
@@ -65,7 +74,8 @@ export async function saveSongToNfs(options: {
   fs.writeFileSync(path.join(songDir, 'lyrics.txt'), lyrics)
 
   const log = {
-    songId, title, artistName, genre, subGenre, caption, coverPrompt,
+    songId, title, artistName, genre, subGenre, caption, vocalStyle, coverPrompt,
+    mood, energy, era, instruments, tags, themes, language,
     bpm, keyScale, timeSignature, audioDuration, aceAudioPath,
     generatedAt: new Date().toISOString(),
   }
