@@ -45,15 +45,15 @@ function createInitialSteps(): Record<string, StepState> {
 
 function PipelineTestPage() {
 	const settings = useQuery(api.settings.getAll);
-	const currentSession = useQuery(api.sessions.getCurrent);
-	const sessionId = currentSession?._id ?? null;
+	const currentPlaylist = useQuery(api.playlists.getCurrent);
+	const playlistId = currentPlaylist?._id ?? null;
 
 	const createSong = useMutation(api.songs.create);
 	const updateAceTask = useMutation(api.songs.updateAceTask);
 	const updateCover = useMutation(api.songs.updateCover);
 	const updateStoragePath = useMutation(api.songs.updateStoragePath);
 	const markReady = useMutation(api.songs.markReady);
-	const incrementSongs = useMutation(api.sessions.incrementSongsGenerated);
+	const incrementSongs = useMutation(api.playlists.incrementSongsGenerated);
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [steps, setSteps] =
@@ -83,7 +83,7 @@ function PipelineTestPage() {
 
 	const runPipeline = useCallback(
 		async (fromStep?: string) => {
-			if (!sessionId || !currentSession) return;
+			if (!playlistId || !currentPlaylist) return;
 
 			const ac = new AbortController();
 			abortRef.current = ac;
@@ -167,7 +167,7 @@ function PipelineTestPage() {
 							throw new Error("songData is missing");
 						})();
 					const createInput = {
-						sessionId,
+						playlistId,
 						orderIndex: Date.now(),
 						title: songData.title,
 						artistName: songData.artistName,
@@ -462,7 +462,7 @@ function PipelineTestPage() {
 					const encodedAudioPath = encodeURIComponent(cd.audioPath ?? "");
 					const finalAudioUrl = `/api/autoplayer/audio/${cd.songId}?aceAudioPath=${encodedAudioPath}`;
 					await markReady({ id: cd.songId as never, audioUrl: finalAudioUrl });
-					await incrementSongs({ id: sessionId as never });
+					await incrementSongs({ id: playlistId as never });
 
 					setAudioUrl(finalAudioUrl);
 					updateStep("ready", {
@@ -512,8 +512,8 @@ function PipelineTestPage() {
 			}
 		},
 		[
-			sessionId,
-			currentSession,
+			playlistId,
+			currentPlaylist,
 			settings,
 			prompt,
 			createSong,
@@ -577,7 +577,7 @@ function PipelineTestPage() {
 							IMAGE: {settings?.imageProvider || "comfyui"} | ACE:{" "}
 							{settings?.aceModel || "default"}
 						</p>
-						<p>SESSION: {sessionId || "NONE"}</p>
+						<p>PLAYLIST: {playlistId || "NONE"}</p>
 					</div>
 
 					<div className="flex gap-2">
@@ -589,9 +589,9 @@ function PipelineTestPage() {
 									: "border-white/20 bg-green-600 text-white hover:bg-green-500"
 							}`}
 							onClick={() => runPipeline()}
-							disabled={isRunning || !sessionId}
+							disabled={isRunning || !playlistId}
 						>
-							{!sessionId ? "[NO SESSION]" : "[GENERATE ONE SONG]"}
+							{!playlistId ? "[NO PLAYLIST]" : "[GENERATE ONE SONG]"}
 						</button>
 						<button
 							type="button"

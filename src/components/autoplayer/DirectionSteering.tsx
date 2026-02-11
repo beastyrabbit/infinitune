@@ -3,21 +3,21 @@ import { Compass } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { Session } from "@/types/convex";
+import type { Playlist } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
 interface DirectionSteeringProps {
-	session: Pick<Session, "_id" | "prompt" | "llmProvider" | "llmModel">;
+	playlist: Pick<Playlist, "_id" | "prompt" | "llmProvider" | "llmModel">;
 	disabled?: boolean;
 }
 
 export function DirectionSteering({
-	session,
+	playlist,
 	disabled,
 }: DirectionSteeringProps) {
 	const [value, setValue] = useState("");
 	const [loading, setLoading] = useState(false);
-	const updatePrompt = useMutation(api.sessions.updatePrompt);
+	const updatePrompt = useMutation(api.playlists.updatePrompt);
 
 	const handleSubmit = async () => {
 		const trimmed = value.trim();
@@ -29,16 +29,16 @@ export function DirectionSteering({
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					currentPrompt: session.prompt,
+					currentPrompt: playlist.prompt,
 					direction: trimmed,
-					provider: session.llmProvider,
-					model: session.llmModel,
+					provider: playlist.llmProvider,
+					model: playlist.llmModel,
 				}),
 			});
 			const data = await res.json();
 			if (data.updatedPrompt) {
 				await updatePrompt({
-					id: session._id,
+					id: playlist._id,
 					prompt: data.updatedPrompt,
 				});
 				setValue("");

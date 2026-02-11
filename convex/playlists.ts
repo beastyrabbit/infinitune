@@ -1,20 +1,30 @@
 import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
-import { llmProviderValidator, sessionModeValidator, sessionStatusValidator } from './types'
+import { llmProviderValidator, playlistModeValidator, playlistStatusValidator } from './types'
 
 export const get = query({
-  args: { id: v.id("sessions") },
+  args: { id: v.id("playlists") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id)
   },
 })
 
+export const getByPlaylistKey = query({
+  args: { playlistKey: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("playlists")
+      .withIndex("by_playlist_key", (q) => q.eq("playlistKey", args.playlistKey))
+      .first()
+  },
+})
+
 export const getCurrent = query({
   handler: async (ctx) => {
-    const sessions = await ctx.db.query("sessions").collect()
-    // Show both 'active' and 'closing' sessions — closing stays visible until done
-    // Exclude oneshot sessions — they have their own UI
-    const active = sessions.filter((s) =>
+    const playlists = await ctx.db.query("playlists").collect()
+    // Show both 'active' and 'closing' playlists — closing stays visible until done
+    // Exclude oneshot playlists — they have their own UI
+    const active = playlists.filter((s) =>
       (s.status === "active" || s.status === "closing") && s.mode !== "oneshot"
     )
     return active[active.length - 1] ?? null
@@ -23,8 +33,8 @@ export const getCurrent = query({
 
 export const listClosed = query({
   handler: async (ctx) => {
-    const sessions = await ctx.db.query("sessions").collect()
-    return sessions.filter((s) =>
+    const playlists = await ctx.db.query("playlists").collect()
+    return playlists.filter((s) =>
       (s.status === "closed" || s.status === "closing") && s.mode !== "oneshot"
     ).reverse()
   },
@@ -36,7 +46,8 @@ export const create = mutation({
     prompt: v.string(),
     llmProvider: llmProviderValidator,
     llmModel: v.string(),
-    mode: v.optional(sessionModeValidator),
+    mode: v.optional(playlistModeValidator),
+    playlistKey: v.optional(v.string()),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
     targetKey: v.optional(v.string()),
@@ -48,7 +59,7 @@ export const create = mutation({
     inferMethod: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("sessions", {
+    return await ctx.db.insert("playlists", {
       ...args,
       mode: args.mode ?? "endless",
       status: "active",
@@ -59,7 +70,7 @@ export const create = mutation({
 
 export const updateParams = mutation({
   args: {
-    id: v.id("sessions"),
+    id: v.id("playlists"),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
     targetKey: v.optional(v.string()),
@@ -87,8 +98,8 @@ export const updateParams = mutation({
 
 export const updateStatus = mutation({
   args: {
-    id: v.id("sessions"),
-    status: sessionStatusValidator,
+    id: v.id("playlists"),
+    status: playlistStatusValidator,
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { status: args.status })
@@ -97,7 +108,7 @@ export const updateStatus = mutation({
 
 export const updateCurrentPosition = mutation({
   args: {
-    id: v.id("sessions"),
+    id: v.id("playlists"),
     currentOrderIndex: v.number(),
   },
   handler: async (ctx, args) => {
@@ -106,16 +117,16 @@ export const updateCurrentPosition = mutation({
 })
 
 export const incrementSongsGenerated = mutation({
-  args: { id: v.id("sessions") },
+  args: { id: v.id("playlists") },
   handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.id)
-    if (!session) throw new Error("Session not found")
-    await ctx.db.patch(args.id, { songsGenerated: session.songsGenerated + 1 })
+    const playlist = await ctx.db.get(args.id)
+    if (!playlist) throw new Error("Playlist not found")
+    await ctx.db.patch(args.id, { songsGenerated: playlist.songsGenerated + 1 })
   },
 })
 
 export const resetDefaults = mutation({
-  args: { id: v.id("sessions") },
+  args: { id: v.id("playlists") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       lyricsLanguage: undefined,
@@ -133,7 +144,7 @@ export const resetDefaults = mutation({
 
 export const updatePrompt = mutation({
   args: {
-    id: v.id("sessions"),
+    id: v.id("playlists"),
     prompt: v.string(),
   },
   handler: async (ctx, args) => {
@@ -142,12 +153,12 @@ export const updatePrompt = mutation({
 })
 
 export const remove = mutation({
-  args: { id: v.id("sessions") },
+  args: { id: v.id("playlists") },
   handler: async (ctx, args) => {
-    // Delete all songs in this session first
+    // Delete all songs in this playlist first
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.id))
+      .withIndex("by_playlist", (q) => q.eq("playlistId", args.id))
       .collect()
     for (const song of songs) {
       await ctx.db.delete(song._id)
@@ -158,14 +169,14 @@ export const remove = mutation({
 
 export const listAll = query({
   handler: async (ctx) => {
-    return await ctx.db.query("sessions").collect()
+    return await ctx.db.query("playlists").collect()
   },
 })
 
-// Returns sessions that the worker should process (active + closing)
-export const listWorkerSessions = query({
+// Returns playlists that the worker should process (active + closing)
+export const listWorkerPlaylists = query({
   handler: async (ctx) => {
-    const sessions = await ctx.db.query("sessions").collect()
-    return sessions.filter((s) => s.status === "active" || s.status === "closing")
+    const playlists = await ctx.db.query("playlists").collect()
+    return playlists.filter((s) => s.status === "active" || s.status === "closing")
   },
 })

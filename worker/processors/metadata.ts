@@ -5,7 +5,7 @@ import type { LlmProvider } from '../../convex/types'
 import { generateSongMetadata, type PromptDistance, type RecentSong, type SongMetadata } from '../../src/services/llm'
 
 type PendingSong = Pick<Doc<"songs">, "_id" | "interruptPrompt">
-type Session = Pick<Doc<"sessions">, "_id" | "prompt" | "llmProvider" | "llmModel" | "lyricsLanguage" | "targetBpm" | "targetKey" | "timeSignature" | "audioDuration" | "mode">
+type Playlist = Pick<Doc<"playlists">, "_id" | "prompt" | "llmProvider" | "llmModel" | "lyricsLanguage" | "targetBpm" | "targetKey" | "timeSignature" | "audioDuration" | "mode">
 
 /** Check if the generated title is too similar to any recent song */
 function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean {
@@ -20,7 +20,7 @@ function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean
 
 async function processOneSong(
   convex: ConvexHttpClient,
-  session: Session,
+  playlist: Playlist,
   song: PendingSong,
   recentSongs: RecentSong[],
   recentDescriptions: string[],
@@ -34,20 +34,20 @@ async function processOneSong(
   console.log(`  [metadata] Processing song ${song._id}`)
 
   try {
-    // Query live settings — allows switching provider without restarting session
+    // Query live settings — allows switching provider without restarting playlist
     const textProvider = await convex.query(api.settings.get, { key: 'textProvider' })
     const textModel = await convex.query(api.settings.get, { key: 'textModel' })
-    const effectiveProvider = (textProvider as LlmProvider) || session.llmProvider
-    const effectiveModel = textModel || session.llmModel
+    const effectiveProvider = (textProvider as LlmProvider) || playlist.llmProvider
+    const effectiveModel = textModel || playlist.llmModel
 
     console.log(`  [metadata] Using LLM: ${effectiveProvider} / ${effectiveModel}`)
 
-    const prompt = song.interruptPrompt || session.prompt
+    const prompt = song.interruptPrompt || playlist.prompt
     const isInterrupt = !!song.interruptPrompt
 
     // Pick prompt distance: faithful for interrupts and oneshot, random close/general for infinite gen
     let promptDistance: PromptDistance = 'faithful'
-    if (!isInterrupt && session.mode !== 'oneshot') {
+    if (!isInterrupt && playlist.mode !== 'oneshot') {
       promptDistance = Math.random() < 0.6 ? 'close' : 'general'
       console.log(`  [metadata] Prompt distance: ${promptDistance}`)
     }
@@ -56,11 +56,11 @@ async function processOneSong(
       prompt,
       provider: effectiveProvider,
       model: effectiveModel,
-      lyricsLanguage: session.lyricsLanguage,
-      targetBpm: session.targetBpm,
-      targetKey: session.targetKey,
-      timeSignature: session.timeSignature,
-      audioDuration: session.audioDuration,
+      lyricsLanguage: playlist.lyricsLanguage,
+      targetBpm: playlist.targetBpm,
+      targetKey: playlist.targetKey,
+      timeSignature: playlist.timeSignature,
+      audioDuration: playlist.audioDuration,
       recentSongs,
       recentDescriptions,
       isInterrupt,
@@ -123,7 +123,7 @@ async function processOneSong(
 
 export async function processMetadata(
   convex: ConvexHttpClient,
-  session: Session,
+  playlist: Playlist,
   pendingSongs: PendingSong[],
   recentSongs: RecentSong[],
   recentDescriptions: string[],
@@ -136,11 +136,11 @@ export async function processMetadata(
     // Fire all pending songs concurrently (safe for remote providers like openrouter)
     await Promise.all(
       pendingSongs.map((song) =>
-        processOneSong(convex, session, song, recentSongs, recentDescriptions, signal)
+        processOneSong(convex, playlist, song, recentSongs, recentDescriptions, signal)
       ),
     )
   } else {
     // Process one at a time (for local providers like ollama)
-    await processOneSong(convex, session, pendingSongs[0], recentSongs, recentDescriptions, signal)
+    await processOneSong(convex, playlist, pendingSongs[0], recentSongs, recentDescriptions, signal)
   }
 }

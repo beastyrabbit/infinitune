@@ -1,10 +1,9 @@
 import { useQuery } from "convex/react";
-import { Library, Zap } from "lucide-react";
+import { Library, List, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import GearIcon from "@/components/ui/gear-icon";
 import { Input } from "@/components/ui/input";
-import RefreshIcon from "@/components/ui/refresh-icon";
 import {
 	Select,
 	SelectContent,
@@ -24,8 +23,8 @@ interface ModelOption {
 	vision?: boolean;
 }
 
-interface SessionCreatorProps {
-	onCreateSession: (data: {
+interface PlaylistCreatorProps {
+	onCreatePlaylist: (data: {
 		name: string;
 		prompt: string;
 		provider: LlmProvider;
@@ -37,19 +36,19 @@ interface SessionCreatorProps {
 		audioDuration?: number;
 		inferenceSteps?: number;
 	}) => void;
-	onResumeSession: (id: string) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
 	onOpenOneshot?: () => void;
+	onOpenPlaylists?: () => void;
 }
 
-export function SessionCreator({
-	onCreateSession,
-	onResumeSession,
+export function PlaylistCreator({
+	onCreatePlaylist,
 	onOpenSettings,
 	onOpenLibrary,
 	onOpenOneshot,
-}: SessionCreatorProps) {
+	onOpenPlaylists,
+}: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>("ollama");
 	const [model, setModel] = useState("");
@@ -59,7 +58,6 @@ export function SessionCreator({
 	const [loadingState, setLoadingState] = useState("");
 	const modelSetByUserOrSettings = useRef(false);
 
-	const closedSessions = useQuery(api.sessions.listClosed);
 	const settings = useQuery(api.settings.getAll);
 
 	// Apply defaults from settings once loaded — takes priority over ollama fallback
@@ -136,30 +134,30 @@ export function SessionCreator({
 				body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
 			});
 
-			let sessionParams: Record<string, unknown> = {};
+			let enhancedParams: Record<string, unknown> = {};
 			if (res.ok) {
-				sessionParams = await res.json();
+				enhancedParams = await res.json();
 			}
 
 			setLoadingState(">>> INITIALIZING <<<");
 
 			const name = prompt.trim().slice(0, 50);
-			onCreateSession({
+			onCreatePlaylist({
 				name,
 				prompt: prompt.trim(),
 				provider,
 				model,
-				lyricsLanguage: sessionParams.lyricsLanguage as string | undefined,
-				targetBpm: sessionParams.targetBpm as number | undefined,
-				targetKey: sessionParams.targetKey as string | undefined,
-				timeSignature: sessionParams.timeSignature as string | undefined,
-				audioDuration: sessionParams.audioDuration as number | undefined,
-				inferenceSteps: sessionParams.inferenceSteps as number | undefined,
+				lyricsLanguage: enhancedParams.lyricsLanguage as string | undefined,
+				targetBpm: enhancedParams.targetBpm as number | undefined,
+				targetKey: enhancedParams.targetKey as string | undefined,
+				timeSignature: enhancedParams.timeSignature as string | undefined,
+				audioDuration: enhancedParams.audioDuration as number | undefined,
+				inferenceSteps: enhancedParams.inferenceSteps as number | undefined,
 			});
 		} catch {
-			// If enhance-session fails, still create session without params
+			// If enhance-session fails, still create playlist without params
 			const name = prompt.trim().slice(0, 50);
-			onCreateSession({ name, prompt: prompt.trim(), provider, model });
+			onCreatePlaylist({ name, prompt: prompt.trim(), provider, model });
 		}
 	};
 
@@ -182,7 +180,7 @@ export function SessionCreator({
 						<div className="flex items-center gap-2">
 							<VinylIcon size={16} className="text-red-500" />
 							<span className="text-sm font-black uppercase tracking-widest">
-								NEW SESSION
+								NEW PLAYLIST
 							</span>
 						</div>
 						<div className="flex items-center gap-3">
@@ -328,38 +326,19 @@ export function SessionCreator({
 					</div>
 				</div>
 
-				{/* Previous Sessions */}
-				{closedSessions && closedSessions.length > 0 && (
-					<div className="mt-6 border-4 border-white/20 bg-black">
-						<div className="border-b-4 border-white/20 px-4 py-3 flex items-center gap-2">
-							<RefreshIcon size={16} className="text-white/40" />
+				{/* Previous Playlists button */}
+				{onOpenPlaylists && (
+					<div className="mt-6">
+						<button
+							type="button"
+							className="w-full border-4 border-white/20 bg-black px-4 py-3 flex items-center justify-center gap-2 hover:bg-white/5 transition-colors"
+							onClick={onOpenPlaylists}
+						>
+							<List className="h-4 w-4 text-white/40" />
 							<span className="text-sm font-black uppercase tracking-widest text-white/60">
-								PREVIOUS SESSIONS
+								PREVIOUS PLAYLISTS
 							</span>
-						</div>
-						<div className="divide-y-2 divide-white/10">
-							{closedSessions.map((s) => (
-								<button
-									type="button"
-									key={s._id}
-									className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors text-left"
-									onClick={() => onResumeSession(s._id)}
-								>
-									<div>
-										<p className="text-sm font-black uppercase text-white/80">
-											{s.name}
-										</p>
-										<p className="text-[10px] uppercase tracking-wider text-white/30 mt-0.5">
-											{s.llmProvider.toUpperCase()} / {s.llmModel.toUpperCase()}{" "}
-											| {s.songsGenerated} TRACKS
-										</p>
-									</div>
-									<span className="text-xs font-black uppercase text-yellow-400 hover:text-white">
-										[RESUME]
-									</span>
-								</button>
-							))}
-						</div>
+						</button>
 					</div>
 				)}
 

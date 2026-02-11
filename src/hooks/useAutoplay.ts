@@ -9,7 +9,7 @@ import type { Id, Song } from "@/types/convex";
  */
 export function useAutoplay(
 	songs: Song[] | undefined,
-	sessionId: Id<"sessions"> | null,
+	playlistId: Id<"playlists"> | null,
 	currentSongId: string | null,
 	loadAndPlay: (url: string) => void,
 	userHasInteractedRef: MutableRefObject<boolean>,
@@ -19,7 +19,7 @@ export function useAutoplay(
 	// Auto-play when a song becomes ready and nothing is playing
 	useEffect(() => {
 		if (!userHasInteractedRef.current) return;
-		if (!songs || !sessionId) return;
+		if (!songs || !playlistId) return;
 		if (playerStore.state.isPlaying) return;
 
 		const currentSong = currentSongId
@@ -33,7 +33,7 @@ export function useAutoplay(
 				loadAndPlay(nextReady.audioUrl);
 			}
 		}
-	}, [songs, currentSongId, sessionId, loadAndPlay, userHasInteractedRef]);
+	}, [songs, currentSongId, playlistId, loadAndPlay, userHasInteractedRef]);
 
 	// Auto-play when current song changes and has audio
 	useEffect(() => {

@@ -2,22 +2,22 @@ import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
 import { songStatusValidator, llmProviderValidator, ACTIVE_STATUSES, TRANSIENT_STATUSES } from './types'
 
-export const listBySession = query({
-  args: { sessionId: v.id("sessions") },
+export const listByPlaylist = query({
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("songs")
-      .withIndex("by_session_order", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist_order", (q) => q.eq("playlistId", args.playlistId))
       .collect()
   },
 })
 
 export const getQueue = query({
-  args: { sessionId: v.id("sessions") },
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session_order", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist_order", (q) => q.eq("playlistId", args.playlistId))
       .collect()
     // Resolve coverStorageId → URL for songs that have it
     const resolved = await Promise.all(
@@ -35,7 +35,7 @@ export const getQueue = query({
 
 export const create = mutation({
   args: {
-    sessionId: v.id("sessions"),
+    playlistId: v.id("playlists"),
     orderIndex: v.number(),
     title: v.string(),
     artistName: v.string(),
@@ -247,11 +247,11 @@ export const get = query({
 })
 
 export const getNextOrderIndex = query({
-  args: { sessionId: v.id("sessions") },
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session_order", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist_order", (q) => q.eq("playlistId", args.playlistId))
       .collect()
     if (songs.length === 0) return 1
     const maxOrder = Math.max(...songs.map((s) => s.orderIndex))
@@ -280,14 +280,14 @@ export const listAll = query({
 
 export const createPending = mutation({
   args: {
-    sessionId: v.id("sessions"),
+    playlistId: v.id("playlists"),
     orderIndex: v.number(),
     isInterrupt: v.optional(v.boolean()),
     interruptPrompt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("songs", {
-      sessionId: args.sessionId,
+      playlistId: args.playlistId,
       orderIndex: args.orderIndex,
       status: "pending",
       isInterrupt: args.isInterrupt,
@@ -353,11 +353,11 @@ export const claimForAudio = mutation({
 })
 
 export const revertTransientStatuses = mutation({
-  args: { sessionId: v.id("sessions") },
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist", (q) => q.eq("playlistId", args.playlistId))
       .collect()
 
     for (const song of songs) {
@@ -421,11 +421,11 @@ export const revertSingleSong = mutation({
 
 // Smart recovery: preserves generating_audio (has aceTaskId), reverts others
 export const recoverFromWorkerRestart = mutation({
-  args: { sessionId: v.id("sessions") },
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist", (q) => q.eq("playlistId", args.playlistId))
       .collect()
 
     let recovered = 0
@@ -467,11 +467,11 @@ export const revertToMetadataReady = mutation({
 // ─── Worker queries ─────────────────────────────────────────────────
 
 export const getWorkQueue = query({
-  args: { sessionId: v.id("sessions") },
+  args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
     const songs = await ctx.db
       .query("songs")
-      .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
+      .withIndex("by_playlist", (q) => q.eq("playlistId", args.playlistId))
       .collect()
 
     const pending = songs.filter((s) => s.status === "pending").sort((a, b) => a.orderIndex - b.orderIndex)
@@ -481,8 +481,8 @@ export const getWorkQueue = query({
     const retryPending = songs.filter((s) => s.status === "retry_pending")
 
     // Calculate buffer deficit based on current playing position
-    const session = await ctx.db.get(args.sessionId)
-    const currentOrderIndex = session?.currentOrderIndex ?? 0
+    const playlist = await ctx.db.get(args.playlistId)
+    const currentOrderIndex = playlist?.currentOrderIndex ?? 0
     const songsAhead = songs.filter((s) =>
       s.orderIndex > currentOrderIndex &&
       (ACTIVE_STATUSES as string[]).includes(s.status)

@@ -4,4 +4,4 @@ export type { Doc, Id };
 
 // Song with coverUrl resolved from coverStorageId (augmented by getQueue query)
 export type Song = Doc<"songs"> & { coverUrl?: string };
-export type Session = Doc<"sessions">;
+export type Playlist = Doc<"playlists">;
