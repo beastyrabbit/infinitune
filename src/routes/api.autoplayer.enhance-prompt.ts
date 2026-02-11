@@ -1,19 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
-const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a rich, evocative music THEME that will inspire an AI music producer to create a DIVERSE playlist of songs.
+const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a focused SESSION THEME for an AI music playlist generator.
 
-IMPORTANT: Do NOT be overly specific about a single sub-genre or style. Instead, describe a broad MUSICAL UNIVERSE — a mood, era, cultural vibe, or emotional landscape that could spawn many different genres and styles.
+Your output defines the CENTER of a playlist. Songs will be generated at two distances from this center:
+- CLOSE: songs that stay on-brand (same genre family, era, vibe)
+- GENERAL: songs that explore adjacent territory (different genre, shifted mood, changed energy)
 
-Good example: "2000s German pop" → "The sound of early 2000s Germany — the pop charts, club nights, hip-hop blocks, indie cafés, and festival stages. Energetic, nostalgic, sometimes sentimental, sometimes aggressive. German lyrics mixed with English hooks. From radio-friendly pop to underground beats."
+So your theme should have:
+1. A CORE IDENTITY — the specific sound, era, and cultural context (this anchors the close songs)
+2. An EXPLORATION RANGE — adjacent genres, moods, and styles that would feel natural in the same playlist (this guides the general songs)
 
-Bad example: "2000s German pop" → "Upbeat Eurodance pop with synthesizers, four-on-the-floor beats at 128 BPM, catchy vocal hooks, and bright major key melodies" (TOO SPECIFIC — this locks every song into the same style)
+Good example: "2000s German pop" → "Early 2000s German pop radio — catchy hooks, sentimental ballads, club remixes. Core sound: Neue Deutsche Welle revival meets Euro-pop production. German lyrics with occasional English choruses. Adjacent territory: German hip-hop, electronic Schlager, indie rock from Hamburg, Krautrock-influenced electronica."
+
+Bad example: "Upbeat Eurodance with synthesizers at 128 BPM" (too specific, no room for variety)
 
 Guidelines:
-- Describe a WORLD of music, not a single song
-- Mention the emotional RANGE (happy AND sad, energetic AND chill)
-- Reference the era/culture broadly, not specific instruments or BPM
-- Leave room for genre exploration: pop, rock, hip-hop, electronic, ballads, etc.
+- Define the core genre/era/vibe clearly enough to anchor close songs
+- Name 3-4 adjacent genres or styles for exploration
 - Keep under 500 characters
 
 Return ONLY the enhanced prompt text, nothing else.`;

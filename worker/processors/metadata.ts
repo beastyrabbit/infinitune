@@ -1,7 +1,7 @@
 import type { ConvexHttpClient } from 'convex/browser'
 import { api } from '../../convex/_generated/api'
 import type { LlmProvider } from '../../convex/types'
-import { generateSongMetadata, type RecentSong, type SongMetadata } from '../../src/services/llm'
+import { generateSongMetadata, type PromptDistance, type RecentSong, type SongMetadata } from '../../src/services/llm'
 
 interface PendingSong {
   _id: string
@@ -59,6 +59,15 @@ export async function processMetadata(
     console.log(`  [metadata] Using LLM: ${effectiveProvider} / ${effectiveModel}`)
 
     const prompt = song.interruptPrompt || session.prompt
+    const isInterrupt = !!song.interruptPrompt
+
+    // Pick prompt distance: faithful for interrupts, random close/general for infinite gen
+    let promptDistance: PromptDistance = 'faithful'
+    if (!isInterrupt) {
+      promptDistance = Math.random() < 0.6 ? 'close' : 'general'
+      console.log(`  [metadata] Prompt distance: ${promptDistance}`)
+    }
+
     const genOptions = {
       prompt,
       provider: effectiveProvider,
@@ -70,7 +79,8 @@ export async function processMetadata(
       audioDuration: session.audioDuration,
       recentSongs,
       recentDescriptions,
-      isInterrupt: !!song.interruptPrompt,
+      isInterrupt,
+      promptDistance,
       signal,
     }
 
