@@ -80,7 +80,7 @@ function matchesFilters(
 	const era = song.era as string | undefined;
 	const language = song.language as string | undefined;
 	const userRating = song.userRating as string | undefined;
-	const playlistId = (song.playlistId ?? song.sessionId ?? "") as string;
+	const playlistId = song.playlistId;
 
 	if (filters.genres.length > 0 && (!genre || !filters.genres.includes(genre)))
 		return false;
@@ -108,7 +108,8 @@ function matchesFilters(
 		if (!filters.ratings.includes(rating)) return false;
 	}
 	if (filters.playlists.length > 0) {
-		const playlistName = playlistMap.get(playlistId) || playlistId;
+		const pid = playlistId as string;
+		const playlistName = playlistMap.get(pid) || pid;
 		if (!filters.playlists.includes(playlistName)) return false;
 	}
 	return true;
@@ -360,10 +361,11 @@ function LibraryPage() {
 			languages: unique(songs.map((s) => s.language)),
 			playlists: unique(
 				songs
-					.map((s) => {
-						const id = s.playlistId ?? s.sessionId ?? "";
-						return playlistMap.get(id) || id;
-					})
+					.map(
+						(s) =>
+							playlistMap.get(s.playlistId as string) ||
+							(s.playlistId as string),
+					)
 					.filter(Boolean),
 			),
 		};
@@ -423,10 +425,11 @@ function LibraryPage() {
 						? "disliked"
 						: "unrated",
 			),
-			playlists: countFor("playlists", (s) => {
-				const pid = (s.playlistId ?? s.sessionId ?? "") as string;
-				return playlistMap.get(pid) || pid;
-			}),
+			playlists: countFor(
+				"playlists",
+				(s) =>
+					playlistMap.get(s.playlistId as string) || (s.playlistId as string),
+			),
 		};
 	}, [songs, debouncedSearch, filters, playlistMap]);
 
