@@ -80,12 +80,13 @@ export async function processAudioSubmit(
     })
 
     console.log(`  [audio] ACE task ${result.taskId} for "${song.title}"`)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (signal.aborted) return
-    console.error(`  [audio] Submit error for ${song._id}:`, error.message)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`  [audio] Submit error for ${song._id}:`, msg)
     await convex.mutation(api.songs.markError, {
       id: song._id,
-      errorMessage: error.message || 'ACE-Step submission failed',
+      errorMessage: msg || 'ACE-Step submission failed',
       erroredAtStatus: 'submitting_to_ace',
     })
   }
@@ -168,8 +169,8 @@ async function pollSongAudio(
           storagePath: saveResult.storagePath,
           aceAudioPath: result.audioPath,
         })
-      } catch (e: any) {
-        console.error(`  [audio] NFS save failed for ${song._id}, continuing:`, e.message)
+      } catch (e: unknown) {
+        console.error(`  [audio] NFS save failed for ${song._id}, continuing:`, e instanceof Error ? e.message : e)
       }
 
       if (signal.aborted) return
@@ -209,9 +210,9 @@ async function pollSongAudio(
       }
     }
     // 'running' → do nothing, will be polled again next cycle
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (signal.aborted) return
-    console.error(`  [audio] Poll error for ${song._id}:`, error.message)
+    console.error(`  [audio] Poll error for ${song._id}:`, error instanceof Error ? error.message : error)
     // Don't mark error on poll failure — could be transient network issue
   }
 }

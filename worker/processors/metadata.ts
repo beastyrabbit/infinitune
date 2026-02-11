@@ -112,12 +112,13 @@ export async function processMetadata(
     })
 
     console.log(`  [metadata] Completed: "${metadata.title}" by ${metadata.artistName}`)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (signal.aborted) return
-    console.error(`  [metadata] Error for ${song._id}:`, error.message)
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error(`  [metadata] Error for ${song._id}:`, msg)
     await convex.mutation(api.songs.markError, {
       id: song._id,
-      errorMessage: error.message || 'Metadata generation failed',
+      errorMessage: msg || 'Metadata generation failed',
       erroredAtStatus: 'generating_metadata',
     })
   }

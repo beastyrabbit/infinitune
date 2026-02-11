@@ -57,6 +57,7 @@ export default defineSchema({
 
     retryCount: v.optional(v.number()),
     erroredAtStatus: v.optional(songStatusValidator),
+    cancelledAtStatus: v.optional(songStatusValidator),
     generationStartedAt: v.optional(v.number()),
     generationCompletedAt: v.optional(v.number()),
     isInterrupt: v.optional(v.boolean()),

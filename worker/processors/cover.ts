@@ -59,9 +59,9 @@ export async function processCover(
       coverUrl: `data:image/png;base64,${result.imageBase64}`,
     })
     console.log(`  [cover] Saved cover as data URL for ${song._id}`)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (signal.aborted) return
-    console.error(`  [cover] Error for ${song._id}:`, error.message)
+    console.error(`  [cover] Error for ${song._id}:`, error instanceof Error ? error.message : error)
     // Cover is best-effort, don't mark song as error
   }
 }

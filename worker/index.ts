@@ -53,8 +53,8 @@ async function tick() {
           await convex.mutation(api.songs.revertTransientStatuses, {
             sessionId,
           })
-        } catch (e: any) {
-          console.error(`[worker] Failed to revert statuses for ${sessionId}:`, e.message)
+        } catch (e: unknown) {
+          console.error(`[worker] Failed to revert statuses for ${sessionId}:`, e instanceof Error ? e.message : e)
         }
       }
     }
@@ -138,12 +138,12 @@ async function tick() {
           state.abortController.abort()
           sessionState.delete(sessionId)
         }
-      } catch (error: any) {
-        console.error(`[worker] Error processing session ${sessionId}:`, error.message)
+      } catch (error: unknown) {
+        console.error(`[worker] Error processing session ${sessionId}:`, error instanceof Error ? error.message : error)
       }
     }
-  } catch (error: any) {
-    console.error('[worker] Tick error:', error.message)
+  } catch (error: unknown) {
+    console.error('[worker] Tick error:', error instanceof Error ? error.message : error)
   }
 }
 
@@ -166,12 +166,12 @@ async function main() {
         if (recovered > 0) {
           console.log(`[worker] Recovered ${recovered} song(s) in session ${session._id}`)
         }
-      } catch (e: any) {
-        console.error(`[worker] Recovery failed for session ${session._id}:`, e.message)
+      } catch (e: unknown) {
+        console.error(`[worker] Recovery failed for session ${session._id}:`, e instanceof Error ? e.message : e)
       }
     }
-  } catch (error: any) {
-    console.error('[worker] Failed to connect to Convex:', error.message)
+  } catch (error: unknown) {
+    console.error('[worker] Failed to connect to Convex:', error instanceof Error ? error.message : error)
     process.exit(1)
   }
 
