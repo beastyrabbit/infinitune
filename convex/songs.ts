@@ -261,6 +261,24 @@ export const get = query({
   },
 })
 
+export const getBatch = query({
+  args: { ids: v.array(v.id("songs")) },
+  handler: async (ctx, args) => {
+    const songs = await Promise.all(
+      args.ids.map(async (id) => {
+        const song = await ctx.db.get(id)
+        if (!song) return null
+        if (song.coverStorageId && !song.coverUrl) {
+          const url = await ctx.storage.getUrl(song.coverStorageId)
+          return { ...song, coverUrl: url ?? undefined }
+        }
+        return song
+      })
+    )
+    return songs.filter((s) => s !== null)
+  },
+})
+
 export const getNextOrderIndex = query({
   args: { playlistId: v.id("playlists") },
   handler: async (ctx, args) => {
