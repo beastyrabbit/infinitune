@@ -36,7 +36,7 @@ interface Filters {
 	eras: string[];
 	languages: string[];
 	ratings: RatingFilter[];
-	sessions: string[];
+	playlists: string[];
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -46,7 +46,7 @@ const EMPTY_FILTERS: Filters = {
 	eras: [],
 	languages: [],
 	ratings: [],
-	sessions: [],
+	playlists: [],
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ function matchesSearch(song: Record<string, unknown>, term: string): boolean {
 function matchesFilters(
 	song: Record<string, unknown>,
 	filters: Filters,
-	sessionMap: Map<string, string>,
+	playlistMap: Map<string, string>,
 ): boolean {
 	const genre = song.genre as string | undefined;
 	const mood = song.mood as string | undefined;
@@ -80,7 +80,7 @@ function matchesFilters(
 	const era = song.era as string | undefined;
 	const language = song.language as string | undefined;
 	const userRating = song.userRating as string | undefined;
-	const sessionId = song.sessionId as string;
+	const playlistId = (song.playlistId ?? song.sessionId ?? "") as string;
 
 	if (filters.genres.length > 0 && (!genre || !filters.genres.includes(genre)))
 		return false;
@@ -107,9 +107,9 @@ function matchesFilters(
 					: "unrated";
 		if (!filters.ratings.includes(rating)) return false;
 	}
-	if (filters.sessions.length > 0) {
-		const sessionName = sessionMap.get(sessionId) || sessionId;
-		if (!filters.sessions.includes(sessionName)) return false;
+	if (filters.playlists.length > 0) {
+		const playlistName = playlistMap.get(playlistId) || playlistId;
+		if (!filters.playlists.includes(playlistName)) return false;
 	}
 	return true;
 }
@@ -313,7 +313,7 @@ function FilterSection({
 function LibraryPage() {
 	const navigate = useNavigate();
 	const songs = useQuery(api.songs.listAll);
-	const sessions = useQuery(api.sessions.listAll);
+	const playlists = useQuery(api.playlists.listAll);
 
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -330,16 +330,16 @@ function LibraryPage() {
 		return () => clearTimeout(searchTimerRef.current);
 	}, [search]);
 
-	// Session ID → name map
-	const sessionMap = useMemo(() => {
+	// Playlist ID → name map
+	const playlistMap = useMemo(() => {
 		const map = new Map<string, string>();
-		if (sessions) {
-			for (const s of sessions) {
+		if (playlists) {
+			for (const s of playlists) {
 				map.set(s._id, s.name || s._id);
 			}
 		}
 		return map;
-	}, [sessions]);
+	}, [playlists]);
 
 	// Extract unique filter options from all songs
 	const filterOptions = useMemo(() => {
@@ -350,7 +350,7 @@ function LibraryPage() {
 				energies: [],
 				eras: [],
 				languages: [],
-				sessions: [],
+				playlists: [],
 			};
 		return {
 			genres: unique(songs.map((s) => s.genre)),
@@ -358,11 +358,16 @@ function LibraryPage() {
 			energies: unique(songs.map((s) => s.energy)),
 			eras: unique(songs.map((s) => s.era)),
 			languages: unique(songs.map((s) => s.language)),
-			sessions: unique(
-				songs.map((s) => sessionMap.get(s.sessionId) || s.sessionId),
+			playlists: unique(
+				songs
+					.map((s) => {
+						const id = s.playlistId ?? s.sessionId ?? "";
+						return playlistMap.get(id) || id;
+					})
+					.filter(Boolean),
 			),
 		};
-	}, [songs, sessionMap]);
+	}, [songs, playlistMap]);
 
 	// Filter + search
 	const filtered = useMemo(() => {
@@ -370,9 +375,9 @@ function LibraryPage() {
 		return songs.filter(
 			(s) =>
 				matchesSearch(s, debouncedSearch) &&
-				matchesFilters(s, filters, sessionMap),
+				matchesFilters(s, filters, playlistMap),
 		);
-	}, [songs, debouncedSearch, filters, sessionMap]);
+	}, [songs, debouncedSearch, filters, playlistMap]);
 
 	// Counts per filter value (based on search + other filters, not this filter)
 	const filterCounts = useMemo(() => {
@@ -384,7 +389,7 @@ function LibraryPage() {
 				eras: new Map(),
 				languages: new Map(),
 				ratings: new Map(),
-				sessions: new Map(),
+				playlists: new Map(),
 			};
 
 		function countFor(
@@ -395,7 +400,7 @@ function LibraryPage() {
 			const base = (songs ?? []).filter(
 				(s) =>
 					matchesSearch(s, debouncedSearch) &&
-					matchesFilters(s, otherFilters, sessionMap),
+					matchesFilters(s, otherFilters, playlistMap),
 			);
 			const counts = new Map<string, number>();
 			for (const s of base) {
@@ -418,12 +423,12 @@ function LibraryPage() {
 						? "disliked"
 						: "unrated",
 			),
-			sessions: countFor(
-				"sessions",
-				(s) => sessionMap.get(s.sessionId as string) || (s.sessionId as string),
-			),
+			playlists: countFor("playlists", (s) => {
+				const pid = (s.playlistId ?? s.sessionId ?? "") as string;
+				return playlistMap.get(pid) || pid;
+			}),
 		};
-	}, [songs, debouncedSearch, filters, sessionMap]);
+	}, [songs, debouncedSearch, filters, playlistMap]);
 
 	const toggleFilter = useCallback((key: keyof Filters, value: string) => {
 		setFilters((prev) => {
@@ -542,11 +547,11 @@ function LibraryPage() {
 				counts={filterCounts.ratings}
 			/>
 			<FilterSection
-				title="SESSION"
-				options={filterOptions.sessions}
-				selected={filters.sessions}
-				onToggle={(v) => toggleFilter("sessions", v)}
-				counts={filterCounts.sessions}
+				title="PLAYLIST"
+				options={filterOptions.playlists}
+				selected={filters.playlists}
+				onToggle={(v) => toggleFilter("playlists", v)}
+				counts={filterCounts.playlists}
 			/>
 
 			{hasActiveFilters && (
@@ -653,7 +658,7 @@ function LibraryPage() {
 							</p>
 							<p className="text-xs uppercase tracking-wider text-white/15 mt-2">
 								{songs.length === 0
-									? "START A SESSION TO GENERATE MUSIC"
+									? "START A PLAYLIST TO GENERATE MUSIC"
 									: "TRY DIFFERENT FILTERS OR SEARCH TERMS"}
 							</p>
 						</div>
@@ -732,7 +737,7 @@ function LibraryPage() {
 			{/* FOOTER */}
 			<footer className="bg-black px-4 py-2 border-t-4 border-white/20 shrink-0">
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
-					<span>{"LIBRARY // ALL SESSIONS"}</span>
+					<span>{"LIBRARY // ALL PLAYLISTS"}</span>
 					<span className="flex items-center gap-2">
 						<VinylIcon size={12} />
 						{filtered.length} SHOWN / {songs.length} TOTAL

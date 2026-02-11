@@ -1,7 +1,7 @@
 import type { Id } from "../../convex/_generated/dataModel";
 
-export function asSessionId(id: string): Id<"sessions"> {
-	return id as Id<"sessions">;
+export function asPlaylistId(id: string): Id<"playlists"> {
+	return id as Id<"playlists">;
 }
 
 export function asSongId(id: string): Id<"songs"> {

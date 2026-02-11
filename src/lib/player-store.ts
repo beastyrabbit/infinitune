@@ -31,7 +31,7 @@ export interface PlayerState {
 	currentTime: number; // seconds
 	duration: number; // seconds
 	currentSongId: string | null; // Convex song ID
-	sessionId: string | null; // Convex session ID
+	playlistId: string | null; // Convex playlist ID
 	isMuted: boolean;
 }
 
@@ -41,7 +41,7 @@ export const playerStore = new Store<PlayerState>({
 	currentTime: 0,
 	duration: 0,
 	currentSongId: null,
-	sessionId: null,
+	playlistId: null,
 	isMuted: false,
 });
 
@@ -73,8 +73,8 @@ export function setCurrentSong(songId: string | null) {
 	}));
 }
 
-export function setSession(sessionId: string | null) {
-	playerStore.setState((state) => ({ ...state, sessionId }));
+export function setPlaylist(playlistId: string | null) {
+	playerStore.setState((state) => ({ ...state, playlistId }));
 }
 
 export function toggleMute() {

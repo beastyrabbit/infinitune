@@ -10,10 +10,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 
 export const Route = createFileRoute("/autoplayer_/settings")({
 	component: SettingsPage,
+	validateSearch: validatePlaylistKeySearch,
 });
 
 interface ModelOption {
@@ -181,7 +183,9 @@ function SettingsPage() {
 					<button
 						type="button"
 						className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-						onClick={() => navigate({ to: "/autoplayer" })}
+						onClick={() =>
+							navigate({ to: "/autoplayer", search: (prev) => prev })
+						}
 					>
 						[BACK]
 					</button>

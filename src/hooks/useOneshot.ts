@@ -9,20 +9,20 @@ export type OneshotPhase =
 	| "ready"
 	| "error";
 
-export function useOneshot(sessionId: Id<"sessions"> | null) {
+export function useOneshot(playlistId: Id<"playlists"> | null) {
 	const songs = useQuery(
 		api.songs.getQueue,
-		sessionId ? { sessionId } : "skip",
+		playlistId ? { playlistId } : "skip",
 	);
-	const session = useQuery(
-		api.sessions.get,
-		sessionId ? { id: sessionId } : "skip",
+	const playlist = useQuery(
+		api.playlists.get,
+		playlistId ? { id: playlistId } : "skip",
 	);
 
-	if (!sessionId || !songs) {
+	if (!playlistId || !songs) {
 		return {
 			song: null,
-			session: session ?? null,
+			playlist: playlist ?? null,
 			phase: "idle" as OneshotPhase,
 		};
 	}
@@ -31,7 +31,7 @@ export function useOneshot(sessionId: Id<"sessions"> | null) {
 
 	let phase: OneshotPhase = "idle";
 	if (!song) {
-		// Session created but no song yet
+		// Playlist created but no song yet
 		phase = "creating";
 	} else if (song.status === "error") {
 		phase = "error";
@@ -41,5 +41,5 @@ export function useOneshot(sessionId: Id<"sessions"> | null) {
 		phase = "generating";
 	}
 
-	return { song, session: session ?? null, phase };
+	return { song, playlist: playlist ?? null, phase };
 }

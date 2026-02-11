@@ -6,7 +6,7 @@ import ClockIcon from "@/components/ui/clock-icon";
 import GaugeIcon from "@/components/ui/gauge-icon";
 import GlobeIcon from "@/components/ui/globe-icon";
 import VinylIcon from "@/components/ui/vinyl-icon";
-import type { Session } from "@/types/convex";
+import type { Playlist } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
 const LANGUAGES = [
@@ -21,64 +21,64 @@ const LANGUAGES = [
 ] as const;
 
 interface GenerationControlsProps {
-	session: Session;
+	playlist: Playlist;
 }
 
-export function GenerationControls({ session }: GenerationControlsProps) {
-	const updateParams = useMutation(api.sessions.updateParams);
-	const updatePrompt = useMutation(api.sessions.updatePrompt);
-	const resetDefaults = useMutation(api.sessions.resetDefaults);
+export function GenerationControls({ playlist }: GenerationControlsProps) {
+	const updateParams = useMutation(api.playlists.updateParams);
+	const updatePrompt = useMutation(api.playlists.updatePrompt);
+	const resetDefaults = useMutation(api.playlists.resetDefaults);
 
-	const [prompt, setPromptValue] = useState(session.prompt);
-	const [language, setLanguage] = useState(session.lyricsLanguage || "auto");
-	const [bpm, setBpm] = useState(session.targetBpm?.toString() || "");
-	const [key, setKey] = useState(session.targetKey || "");
-	const [timeSig, setTimeSig] = useState(session.timeSignature || "");
+	const [prompt, setPromptValue] = useState(playlist.prompt);
+	const [language, setLanguage] = useState(playlist.lyricsLanguage || "auto");
+	const [bpm, setBpm] = useState(playlist.targetBpm?.toString() || "");
+	const [key, setKey] = useState(playlist.targetKey || "");
+	const [timeSig, setTimeSig] = useState(playlist.timeSignature || "");
 	const [duration, setDuration] = useState(
-		session.audioDuration?.toString() || "",
+		playlist.audioDuration?.toString() || "",
 	);
 	const [steps, setSteps] = useState(
-		session.inferenceSteps?.toString() || "12",
+		playlist.inferenceSteps?.toString() || "12",
 	);
 	const [lmTemp, setLmTemp] = useState(
-		session.lmTemperature?.toString() || "0.85",
+		playlist.lmTemperature?.toString() || "0.85",
 	);
-	const [lmCfg, setLmCfg] = useState(session.lmCfgScale?.toString() || "2.5");
-	const [inferMeth, setInferMeth] = useState(session.inferMethod || "ode");
+	const [lmCfg, setLmCfg] = useState(playlist.lmCfgScale?.toString() || "2.5");
+	const [inferMeth, setInferMeth] = useState(playlist.inferMethod || "ode");
 
 	const debounceRefs = useRef<Record<string, ReturnType<typeof setTimeout>>>(
 		{},
 	);
 
-	// Sync from session when Convex pushes updates (e.g. after reset)
+	// Sync from playlist when Convex pushes updates (e.g. after reset)
 	useEffect(() => {
-		setPromptValue(session.prompt);
-		setLanguage(session.lyricsLanguage || "auto");
-		setBpm(session.targetBpm?.toString() || "");
-		setKey(session.targetKey || "");
-		setTimeSig(session.timeSignature || "");
-		setDuration(session.audioDuration?.toString() || "");
-		setSteps(session.inferenceSteps?.toString() || "12");
-		setLmTemp(session.lmTemperature?.toString() || "0.85");
-		setLmCfg(session.lmCfgScale?.toString() || "2.5");
-		setInferMeth(session.inferMethod || "ode");
+		setPromptValue(playlist.prompt);
+		setLanguage(playlist.lyricsLanguage || "auto");
+		setBpm(playlist.targetBpm?.toString() || "");
+		setKey(playlist.targetKey || "");
+		setTimeSig(playlist.timeSignature || "");
+		setDuration(playlist.audioDuration?.toString() || "");
+		setSteps(playlist.inferenceSteps?.toString() || "12");
+		setLmTemp(playlist.lmTemperature?.toString() || "0.85");
+		setLmCfg(playlist.lmCfgScale?.toString() || "2.5");
+		setInferMeth(playlist.inferMethod || "ode");
 	}, [
-		session.inferenceSteps,
-		session.lmTemperature,
-		session.lmCfgScale,
-		session.inferMethod,
-		session.lyricsLanguage,
-		session.targetBpm,
-		session.targetKey,
-		session.timeSignature,
-		session.audioDuration,
-		session.prompt,
+		playlist.inferenceSteps,
+		playlist.lmTemperature,
+		playlist.lmCfgScale,
+		playlist.inferMethod,
+		playlist.lyricsLanguage,
+		playlist.targetBpm,
+		playlist.targetKey,
+		playlist.timeSignature,
+		playlist.audioDuration,
+		playlist.prompt,
 	]);
 
 	const debouncedUpdate = (field: string, value: unknown) => {
 		if (debounceRefs.current[field]) clearTimeout(debounceRefs.current[field]);
 		debounceRefs.current[field] = setTimeout(() => {
-			updateParams({ id: session._id, [field]: value });
+			updateParams({ id: playlist._id, [field]: value });
 		}, 500);
 	};
 
@@ -147,13 +147,13 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 		setLmCfg("2.5");
 		setInferMeth("ode");
 		setLanguage("auto");
-		resetDefaults({ id: session._id });
+		resetDefaults({ id: playlist._id });
 	};
 
 	const handleUpdatePrompt = () => {
 		const trimmed = prompt.trim();
-		if (!trimmed || trimmed === session.prompt) return;
-		updatePrompt({ id: session._id, prompt: trimmed });
+		if (!trimmed || trimmed === playlist.prompt) return;
+		updatePrompt({ id: playlist._id, prompt: trimmed });
 	};
 
 	return (
@@ -162,12 +162,12 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 				GENERATION CONTROLS
 			</div>
 
-			{/* Prompt editor (absorbed from PlaylistConfig) */}
+			{/* Prompt editor */}
 			<div className="mb-6">
 				{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 				<label className="flex items-center gap-2 text-sm font-bold uppercase text-white/60 mb-2">
 					<VinylIcon size={16} />
-					SESSION PROMPT
+					PLAYLIST PROMPT
 				</label>
 				<textarea
 					value={prompt}
@@ -176,13 +176,13 @@ export function GenerationControls({ session }: GenerationControlsProps) {
 				/>
 				<div className="flex items-center justify-between mt-2">
 					<div className="text-[10px] font-bold uppercase text-white/20">
-						{session.llmModel.toUpperCase()} /{" "}
-						{session.llmProvider.toUpperCase()}
+						{playlist.llmModel.toUpperCase()} /{" "}
+						{playlist.llmProvider.toUpperCase()}
 					</div>
 					<Button
 						className="h-8 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
 						onClick={handleUpdatePrompt}
-						disabled={!prompt.trim() || prompt.trim() === session.prompt}
+						disabled={!prompt.trim() || prompt.trim() === playlist.prompt}
 					>
 						UPDATE
 					</Button>

@@ -2,23 +2,23 @@ import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef } from "react";
 import { asSongId } from "@/lib/convex-helpers";
-import { playerStore, setCurrentSong, setSession } from "@/lib/player-store";
+import { playerStore, setCurrentSong, setPlaylist } from "@/lib/player-store";
 import type { Id } from "@/types/convex";
 import { api } from "../../convex/_generated/api";
 import { useAudioPlayer } from "./useAudioPlayer";
 import { useAutoplay } from "./useAutoplay";
 import { usePlaybackTracking } from "./usePlaybackTracking";
-import { useSessionLifecycle } from "./useSessionLifecycle";
+import { usePlaylistLifecycle } from "./usePlaylistLifecycle";
 
-export function useAutoplayer(sessionId: Id<"sessions"> | null) {
+export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 	// --- Data loading ---
 	const songs = useQuery(
 		api.songs.getQueue,
-		sessionId ? { sessionId } : "skip",
+		playlistId ? { playlistId } : "skip",
 	);
-	const session = useQuery(
-		api.sessions.get,
-		sessionId ? { id: sessionId } : "skip",
+	const playlist = useQuery(
+		api.playlists.get,
+		playlistId ? { id: playlistId } : "skip",
 	);
 
 	const { currentSongId, isPlaying, currentTime } = useStore(playerStore);
@@ -53,19 +53,19 @@ export function useAutoplayer(sessionId: Id<"sessions"> | null) {
 
 	// --- Composed hooks ---
 	usePlaybackTracking(currentSongId, isPlaying, currentTime);
-	useSessionLifecycle(sessionId, session, songs, currentSongId);
+	usePlaylistLifecycle(playlistId, playlist, songs, currentSongId);
 	useAutoplay(
 		songs,
-		sessionId,
+		playlistId,
 		currentSongId,
 		loadAndPlay,
 		userHasInteractedRef,
 	);
 
-	// Set session in store
+	// Set playlist in store
 	useEffect(() => {
-		setSession(sessionId);
-	}, [sessionId]);
+		setPlaylist(playlistId);
+	}, [playlistId]);
 
 	// --- User-facing actions ---
 	const userPlay = useCallback(() => {
@@ -104,19 +104,19 @@ export function useAutoplayer(sessionId: Id<"sessions"> | null) {
 
 	const requestSong = useCallback(
 		async (interruptPrompt: string) => {
-			if (!session || !sessionId || !songs) return;
+			if (!playlist || !playlistId || !songs) return;
 			const currentSong = songs.find((s) => s._id === currentSongId);
 			const orderIndex = currentSong
 				? currentSong.orderIndex + 0.5
 				: songs.length + 1;
 			await createPending({
-				sessionId,
+				playlistId,
 				orderIndex,
 				isInterrupt: true,
 				interruptPrompt,
 			});
 		},
-		[session, sessionId, songs, currentSongId, createPending],
+		[playlist, playlistId, songs, currentSongId, createPending],
 	);
 
 	const rateSong = useCallback(
@@ -128,7 +128,7 @@ export function useAutoplayer(sessionId: Id<"sessions"> | null) {
 
 	return {
 		songs,
-		session,
+		playlist,
 		play: userPlay,
 		pause,
 		toggle: userToggle,

@@ -31,7 +31,7 @@ type GeneratingAudioSong = Pick<Doc<"songs">,
   "bpm" | "keyScale" | "timeSignature" | "audioDuration"
 >
 
-type SessionInfo = Pick<Doc<"sessions">,
+type PlaylistInfo = Pick<Doc<"playlists">,
   "_id" | "inferenceSteps" | "lyricsLanguage" | "lmTemperature" | "lmCfgScale" | "inferMethod"
 > & { aceModel?: string }
 
@@ -40,7 +40,7 @@ const activePolls = new Set<string>()
 
 export async function processAudioSubmit(
   convex: ConvexHttpClient,
-  session: SessionInfo,
+  playlist: PlaylistInfo,
   metadataReadySongs: MetadataReadySong[],
   signal: AbortSignal,
 ): Promise<void> {
@@ -63,12 +63,12 @@ export async function processAudioSubmit(
       keyScale: song.keyScale || 'C major',
       timeSignature: song.timeSignature || '4/4',
       audioDuration: song.audioDuration || 240,
-      aceModel: session.aceModel,
-      inferenceSteps: session.inferenceSteps,
-      vocalLanguage: mapLanguageToCode(session.lyricsLanguage),
-      lmTemperature: session.lmTemperature,
-      lmCfgScale: session.lmCfgScale,
-      inferMethod: session.inferMethod,
+      aceModel: playlist.aceModel,
+      inferenceSteps: playlist.inferenceSteps,
+      vocalLanguage: mapLanguageToCode(playlist.lyricsLanguage),
+      lmTemperature: playlist.lmTemperature,
+      lmCfgScale: playlist.lmCfgScale,
+      inferMethod: playlist.inferMethod,
       signal,
     })
 
@@ -94,7 +94,7 @@ export async function processAudioSubmit(
 
 export async function processAudioPoll(
   convex: ConvexHttpClient,
-  sessionId: Id<"sessions">,
+  playlistId: Id<"playlists">,
   generatingAudioSongs: GeneratingAudioSong[],
   signal: AbortSignal,
 ): Promise<void> {
@@ -114,7 +114,7 @@ export async function processAudioPoll(
     activePolls.add(song._id)
 
     // Fire off poll in background
-    pollSongAudio(convex, sessionId, song, signal).finally(() => {
+    pollSongAudio(convex, playlistId, song, signal).finally(() => {
       activePolls.delete(song._id)
     })
   }
@@ -122,7 +122,7 @@ export async function processAudioPoll(
 
 async function pollSongAudio(
   convex: ConvexHttpClient,
-  sessionId: Id<"sessions">,
+  playlistId: Id<"playlists">,
   song: GeneratingAudioSong,
   signal: AbortSignal,
 ): Promise<void> {
@@ -181,8 +181,8 @@ async function pollSongAudio(
         id: song._id,
         audioUrl,
       })
-      await convex.mutation(api.sessions.incrementSongsGenerated, {
-        id: sessionId,
+      await convex.mutation(api.playlists.incrementSongsGenerated, {
+        id: playlistId,
       })
 
       console.log(`  [audio] Song "${song.title}" is READY`)

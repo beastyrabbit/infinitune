@@ -1,16 +1,19 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
-import { llmProviderValidator, sessionModeValidator, sessionStatusValidator, songStatusValidator } from './types'
+import { llmProviderValidator, playlistModeValidator, playlistStatusValidator, songStatusValidator } from './types'
 
 export default defineSchema({
+  // Legacy table — kept for backward compat with existing song.sessionId references
+  // Safe to remove once old data is cleared
   sessions: defineTable({
     name: v.string(),
     prompt: v.string(),
     llmProvider: llmProviderValidator,
     llmModel: v.string(),
-    mode: v.optional(sessionModeValidator),
-    status: sessionStatusValidator,
+    mode: v.optional(playlistModeValidator),
+    status: playlistStatusValidator,
     songsGenerated: v.number(),
+    playlistKey: v.optional(v.string()),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
     targetKey: v.optional(v.string()),
@@ -23,8 +26,32 @@ export default defineSchema({
     currentOrderIndex: v.optional(v.number()),
   }),
 
+  playlists: defineTable({
+    name: v.string(),
+    prompt: v.string(),
+    llmProvider: llmProviderValidator,
+    llmModel: v.string(),
+    mode: v.optional(playlistModeValidator),
+    status: playlistStatusValidator,
+    songsGenerated: v.number(),
+    playlistKey: v.optional(v.string()),
+    lyricsLanguage: v.optional(v.string()),
+    targetBpm: v.optional(v.number()),
+    targetKey: v.optional(v.string()),
+    timeSignature: v.optional(v.string()),
+    audioDuration: v.optional(v.number()),
+    inferenceSteps: v.optional(v.number()),
+    lmTemperature: v.optional(v.number()),
+    lmCfgScale: v.optional(v.number()),
+    inferMethod: v.optional(v.string()),
+    currentOrderIndex: v.optional(v.number()),
+  }).index("by_playlist_key", ["playlistKey"]),
+
   songs: defineTable({
-    sessionId: v.id("sessions"),
+    // New field — required for new songs, optional for backward compat with old data
+    playlistId: v.optional(v.id("playlists")),
+    // Legacy field — kept for backward compat with existing data
+    sessionId: v.optional(v.id("sessions")),
     orderIndex: v.number(),
     title: v.optional(v.string()),
     artistName: v.optional(v.string()),
@@ -68,9 +95,9 @@ export default defineSchema({
     userRating: v.optional(v.union(v.literal("up"), v.literal("down"))),
     playDurationMs: v.optional(v.number()),
     listenCount: v.optional(v.number()),
-  }).index("by_session", ["sessionId"])
-    .index("by_session_status", ["sessionId", "status"])
-    .index("by_session_order", ["sessionId", "orderIndex"]),
+  }).index("by_playlist", ["playlistId"])
+    .index("by_playlist_status", ["playlistId", "status"])
+    .index("by_playlist_order", ["playlistId", "orderIndex"]),
 
   settings: defineTable({
     key: v.string(),

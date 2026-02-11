@@ -9,8 +9,8 @@ import { processRetry } from './processors/retry'
 
 const POLL_INTERVAL = 2000 // 2 seconds
 
-// Per-session concurrency flags
-const sessionState = new Map<Id<"sessions">, {
+// Per-playlist concurrency flags
+const playlistState = new Map<Id<"playlists">, {
   llmBusy: boolean
   coverBusy: boolean
   submitBusy: boolean
@@ -18,8 +18,8 @@ const sessionState = new Map<Id<"sessions">, {
   abortController: AbortController
 }>()
 
-function getSessionState(sessionId: Id<"sessions">) {
-  let state = sessionState.get(sessionId)
+function getPlaylistState(playlistId: Id<"playlists">) {
+  let state = playlistState.get(playlistId)
   if (!state) {
     state = {
       llmBusy: false,
@@ -28,7 +28,7 @@ function getSessionState(sessionId: Id<"sessions">) {
       saveBusy: false,
       abortController: new AbortController(),
     }
-    sessionState.set(sessionId, state)
+    playlistState.set(playlistId, state)
   }
   return state
 }
@@ -37,29 +37,29 @@ async function tick() {
   const convex = getConvexClient()
 
   try {
-    // 1. Get sessions the worker should process (active + closing)
-    const workerSessions = await convex.query(api.sessions.listWorkerSessions)
-    const workerSessionIds = new Set(workerSessions.map((s) => s._id))
+    // 1. Get playlists the worker should process (active + closing)
+    const workerPlaylists = await convex.query(api.playlists.listWorkerPlaylists)
+    const workerPlaylistIds = new Set(workerPlaylists.map((s) => s._id))
 
-    // Clean up sessions that fully disappeared (force-closed or deleted)
-    for (const [sessionId, state] of sessionState.entries()) {
-      if (!workerSessionIds.has(sessionId)) {
-        console.log(`[worker] Session ${sessionId} gone, aborting in-flight work`)
+    // Clean up playlists that fully disappeared (force-closed or deleted)
+    for (const [playlistId, state] of playlistState.entries()) {
+      if (!workerPlaylistIds.has(playlistId)) {
+        console.log(`[worker] Playlist ${playlistId} gone, aborting in-flight work`)
         state.abortController.abort()
-        sessionState.delete(sessionId)
+        playlistState.delete(playlistId)
 
         // Revert transient statuses as safety net
         try {
           await convex.mutation(api.songs.revertTransientStatuses, {
-            sessionId,
+            playlistId,
           })
         } catch (e: unknown) {
-          console.error(`[worker] Failed to revert statuses for ${sessionId}:`, e instanceof Error ? e.message : e)
+          console.error(`[worker] Failed to revert statuses for ${playlistId}:`, e instanceof Error ? e.message : e)
         }
       }
     }
 
-    if (workerSessions.length === 0) return
+    if (workerPlaylists.length === 0) return
 
     // 2. Get settings for providers
     const settings = await convex.query(api.settings.getAll)
@@ -68,20 +68,20 @@ async function tick() {
     const imageModel = settings.imageModel
     const effectiveTextProvider = settings.textProvider || 'ollama'
 
-    // 3. Process each session
-    for (const session of workerSessions) {
-      const sessionId = session._id
-      const isClosing = session.status === 'closing'
-      const state = getSessionState(sessionId)
+    // 3. Process each playlist
+    for (const playlist of workerPlaylists) {
+      const playlistId = playlist._id
+      const isClosing = playlist.status === 'closing'
+      const state = getPlaylistState(playlistId)
       const signal = state.abortController.signal
 
       try {
         const workQueue = await convex.query(api.songs.getWorkQueue, {
-          sessionId,
+          playlistId,
         })
 
-        // === Active sessions only: create new pending songs ===
-        const isOneshot = session.mode === 'oneshot'
+        // === Active playlists only: create new pending songs ===
+        const isOneshot = playlist.mode === 'oneshot'
         if (!isClosing) {
           // Queue Keeper: maintain buffer
           // Oneshot mode: only create 1 song total
@@ -89,10 +89,10 @@ async function tick() {
             ? workQueue.totalSongs === 0
             : workQueue.bufferDeficit > 0
           if (shouldCreateSong) {
-            await processQueueKeeper(convex, sessionId, isOneshot ? 1 : workQueue.bufferDeficit, workQueue.maxOrderIndex)
+            await processQueueKeeper(convex, playlistId, isOneshot ? 1 : workQueue.bufferDeficit, workQueue.maxOrderIndex)
           }
 
-          // Retry Processor: revert retry_pending songs (only active — closing sessions shouldn't retry)
+          // Retry Processor: revert retry_pending songs (only active — closing playlists shouldn't retry)
           if (workQueue.retryPending.length > 0) {
             await processRetry(convex, workQueue.retryPending)
           }
@@ -104,7 +104,7 @@ async function tick() {
         const llmConcurrent = effectiveTextProvider !== 'ollama'
         if (workQueue.pending.length > 0 && (llmConcurrent || !state.llmBusy)) {
           state.llmBusy = true
-          processMetadata(convex, session, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal, llmConcurrent)
+          processMetadata(convex, playlist, workQueue.pending, workQueue.recentCompleted, workQueue.recentDescriptions, signal, llmConcurrent)
             .finally(() => { state.llmBusy = false })
         }
 
@@ -119,13 +119,13 @@ async function tick() {
         // Audio Submit: only when no songs are already generating audio (1 at a time)
         if (workQueue.metadataReady.length > 0 && !state.submitBusy && workQueue.generatingAudio.length === 0) {
           state.submitBusy = true
-          processAudioSubmit(convex, session, workQueue.metadataReady, signal)
+          processAudioSubmit(convex, playlist, workQueue.metadataReady, signal)
             .finally(() => { state.submitBusy = false })
         }
 
         // Audio Poll: poll all generating_audio songs (concurrent)
         if (workQueue.generatingAudio.length > 0) {
-          processAudioPoll(convex, sessionId, workQueue.generatingAudio, signal)
+          processAudioPoll(convex, playlistId, workQueue.generatingAudio, signal)
         }
 
         // === Stale song cleanup: remove songs stuck in transient states ===
@@ -138,25 +138,25 @@ async function tick() {
 
         // === Oneshot auto-close: when the single song is done ===
         if (isOneshot && !isClosing && workQueue.transientCount === 0 && workQueue.totalSongs > 0) {
-          console.log(`[worker] Oneshot session ${sessionId} complete, setting to closing`)
-          await convex.mutation(api.sessions.updateStatus, {
-            id: sessionId,
+          console.log(`[worker] Oneshot playlist ${playlistId} complete, setting to closing`)
+          await convex.mutation(api.playlists.updateStatus, {
+            id: playlistId,
             status: 'closing',
           })
         }
 
-        // === Closing sessions: check if all work is done ===
+        // === Closing playlists: check if all work is done ===
         if (isClosing && workQueue.transientCount === 0) {
-          console.log(`[worker] Session ${sessionId} closing complete, setting to closed`)
-          await convex.mutation(api.sessions.updateStatus, {
-            id: sessionId,
+          console.log(`[worker] Playlist ${playlistId} closing complete, setting to closed`)
+          await convex.mutation(api.playlists.updateStatus, {
+            id: playlistId,
             status: 'closed',
           })
           state.abortController.abort()
-          sessionState.delete(sessionId)
+          playlistState.delete(playlistId)
         }
       } catch (error: unknown) {
-        console.error(`[worker] Error processing session ${sessionId}:`, error instanceof Error ? error.message : error)
+        console.error(`[worker] Error processing playlist ${playlistId}:`, error instanceof Error ? error.message : error)
       }
     }
   } catch (error: unknown) {
@@ -171,20 +171,20 @@ async function main() {
   // Verify Convex connection and recover from any previous crash
   const convex = getConvexClient()
   try {
-    const sessions = await convex.query(api.sessions.listWorkerSessions)
-    console.log(`[worker] Connected to Convex. ${sessions.length} worker session(s)`)
+    const playlists = await convex.query(api.playlists.listWorkerPlaylists)
+    console.log(`[worker] Connected to Convex. ${playlists.length} worker playlist(s)`)
 
     // Recover songs stuck in transient statuses from previous worker instance
-    for (const session of sessions) {
+    for (const playlist of playlists) {
       try {
         const recovered = await convex.mutation(api.songs.recoverFromWorkerRestart, {
-          sessionId: session._id,
+          playlistId: playlist._id,
         })
         if (recovered > 0) {
-          console.log(`[worker] Recovered ${recovered} song(s) in session ${session._id}`)
+          console.log(`[worker] Recovered ${recovered} song(s) in playlist ${playlist._id}`)
         }
       } catch (e: unknown) {
-        console.error(`[worker] Recovery failed for session ${session._id}:`, e instanceof Error ? e.message : e)
+        console.error(`[worker] Recovery failed for playlist ${playlist._id}:`, e instanceof Error ? e.message : e)
       }
     }
   } catch (error: unknown) {

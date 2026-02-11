@@ -7,47 +7,58 @@ import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
 import { NowPlaying } from "@/components/autoplayer/NowPlaying";
+import { PlaylistCreator } from "@/components/autoplayer/PlaylistCreator";
+import { PlaylistPicker } from "@/components/autoplayer/PlaylistPicker";
 import { QueueGrid } from "@/components/autoplayer/QueueGrid";
 import { QuickRequest } from "@/components/autoplayer/QuickRequest";
-import { SessionCreator } from "@/components/autoplayer/SessionCreator";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
 import { Badge } from "@/components/ui/badge";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
-import type { Id } from "@/types/convex";
+import {
+	generatePlaylistKey,
+	validatePlaylistKeySearch,
+} from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 import type { LlmProvider } from "../../convex/types";
 
 export const Route = createFileRoute("/autoplayer")({
 	component: AutoplayerPage,
+	validateSearch: validatePlaylistKeySearch,
 });
 
 function AutoplayerPage() {
 	const navigate = useNavigate();
+	const { pl } = Route.useSearch();
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
+	const [pickerOpen, setPickerOpen] = useState(false);
 
-	const currentSession = useQuery(api.sessions.getCurrent);
-	const sessionId = currentSession?._id ?? null;
+	// Look up playlist by key from URL
+	const playlistByKey = useQuery(
+		api.playlists.getByPlaylistKey,
+		pl ? { playlistKey: pl } : "skip",
+	);
+	const playlistId = playlistByKey?._id ?? null;
 
-	const createSession = useMutation(api.sessions.create);
-	const updateStatus = useMutation(api.sessions.updateStatus);
+	const createPlaylist = useMutation(api.playlists.create);
+	const updateStatus = useMutation(api.playlists.updateStatus);
 	const revertTransientStatuses = useMutation(
 		api.songs.revertTransientStatuses,
 	);
 
 	const {
 		songs,
-		session,
+		playlist,
 		toggle,
 		seek,
 		skipToNext,
 		requestSong,
 		loadAndPlay,
 		rateSong,
-	} = useAutoplayer(sessionId);
+	} = useAutoplayer(playlistId);
 
 	const { currentSongId } = useStore(playerStore);
 
@@ -55,7 +66,7 @@ function AutoplayerPage() {
 
 	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;
 
-	const handleCreateSession = useCallback(
+	const handleCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
 			prompt: string;
@@ -68,11 +79,13 @@ function AutoplayerPage() {
 			audioDuration?: number;
 			inferenceSteps?: number;
 		}) => {
-			await createSession({
+			const key = generatePlaylistKey();
+			await createPlaylist({
 				name: data.name,
 				prompt: data.prompt,
 				llmProvider: data.provider,
 				llmModel: data.model,
+				playlistKey: key,
 				lyricsLanguage: data.lyricsLanguage,
 				targetBpm: data.targetBpm,
 				targetKey: data.targetKey,
@@ -80,29 +93,26 @@ function AutoplayerPage() {
 				audioDuration: data.audioDuration,
 				inferenceSteps: data.inferenceSteps,
 			});
+			navigate({
+				to: "/autoplayer",
+				search: { pl: key },
+			});
 		},
-		[createSession],
+		[createPlaylist, navigate],
 	);
 
 	// Graceful close: stop new generations, let current song finish
-	const handleCloseSession = useCallback(async () => {
-		if (!sessionId) return;
-		await updateStatus({ id: sessionId, status: "closing" });
-	}, [sessionId, updateStatus]);
+	const handleClosePlaylist = useCallback(async () => {
+		if (!playlistId) return;
+		await updateStatus({ id: playlistId, status: "closing" });
+	}, [playlistId, updateStatus]);
 
 	// Force close: revert transient statuses and close immediately
 	const handleForceClose = useCallback(async () => {
-		if (!sessionId) return;
-		await revertTransientStatuses({ sessionId: sessionId });
-		await updateStatus({ id: sessionId, status: "closed" });
-	}, [sessionId, updateStatus, revertTransientStatuses]);
-
-	const handleResumeSession = useCallback(
-		async (id: string) => {
-			await updateStatus({ id: id as Id<"sessions">, status: "active" });
-		},
-		[updateStatus],
-	);
+		if (!playlistId) return;
+		await revertTransientStatuses({ playlistId });
+		await updateStatus({ id: playlistId, status: "closed" });
+	}, [playlistId, updateStatus, revertTransientStatuses]);
 
 	const handleSelectSong = useCallback(
 		(songId: string) => {
@@ -116,20 +126,31 @@ function AutoplayerPage() {
 	);
 
 	// Loading state while Convex query resolves
-	if (currentSession === undefined) {
+	if (pl && playlistByKey === undefined) {
 		return <div className="font-mono min-h-screen bg-gray-950" />;
 	}
 
-	// No active session — show creator with session history
-	if (!sessionId) {
+	// No pl param or playlist not found — show creator + picker
+	if (!pl || !playlistId) {
 		return (
-			<SessionCreator
-				onCreateSession={handleCreateSession}
-				onResumeSession={handleResumeSession}
-				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
-				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
-				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
-			/>
+			<>
+				<PlaylistCreator
+					onCreatePlaylist={handleCreatePlaylist}
+					onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
+					onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
+					onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
+					onOpenPlaylists={() => setPickerOpen(true)}
+				/>
+				{pickerOpen && (
+					<PlaylistPicker
+						onSelect={(key) => {
+							setPickerOpen(false);
+							navigate({ to: "/autoplayer", search: { pl: key } });
+						}}
+						onClose={() => setPickerOpen(false)}
+					/>
+				)}
+			</>
 		);
 	}
 
@@ -148,7 +169,7 @@ function AutoplayerPage() {
 					</div>
 					<div className="flex items-center gap-4">
 						<span className="hidden sm:inline text-xs uppercase tracking-widest text-white/30">
-							{session?.status === "closing" ? (
+							{playlist?.status === "closing" ? (
 								<span className="text-yellow-500 animate-pulse">
 									CLOSING — FINISHING CURRENT SONG...
 								</span>
@@ -159,7 +180,9 @@ function AutoplayerPage() {
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
-							onClick={() => navigate({ to: "/autoplayer/oneshot" })}
+							onClick={() =>
+								navigate({ to: "/autoplayer/oneshot", search: (prev) => prev })
+							}
 						>
 							<Zap className="h-3.5 w-3.5" />
 							[ONESHOT]
@@ -167,21 +190,25 @@ function AutoplayerPage() {
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-							onClick={() => navigate({ to: "/autoplayer/library" })}
+							onClick={() =>
+								navigate({ to: "/autoplayer/library", search: (prev) => prev })
+							}
 						>
 							[LIBRARY]
 						</button>
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-							onClick={() => navigate({ to: "/autoplayer/settings" })}
+							onClick={() =>
+								navigate({ to: "/autoplayer/settings", search: (prev) => prev })
+							}
 						>
 							[SETTINGS]
 						</button>
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
-							onClick={handleCloseSession}
+							onClick={handleClosePlaylist}
 						>
 							[CLOSE]
 						</button>
@@ -221,7 +248,7 @@ function AutoplayerPage() {
 						}}
 					/>
 				</div>
-				{session && <GenerationControls session={session} />}
+				{playlist && <GenerationControls playlist={playlist} />}
 			</div>
 
 			{/* GENERATION BANNER */}
@@ -240,17 +267,17 @@ function AutoplayerPage() {
 
 			{/* DIRECTION STEERING + QUICK REQUEST */}
 			<div className="border-b-4 border-white/20">
-				{session && (
+				{playlist && (
 					<DirectionSteering
-						session={session}
-						disabled={session.status !== "active"}
+						playlist={playlist}
+						disabled={playlist.status !== "active"}
 					/>
 				)}
 				<QuickRequest
 					onRequest={requestSong}
-					disabled={!session || session.status !== "active"}
-					provider={session?.llmProvider}
-					model={session?.llmModel}
+					disabled={!playlist || playlist.status !== "active"}
+					provider={playlist?.llmProvider}
+					model={playlist?.llmModel}
 				/>
 			</div>
 

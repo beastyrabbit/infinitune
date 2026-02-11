@@ -41,12 +41,17 @@ import {
 	setVolume,
 	toggleMute,
 } from "@/lib/player-store";
+import {
+	generatePlaylistKey,
+	validatePlaylistKeySearch,
+} from "@/lib/playlist-key";
 import type { Id } from "@/types/convex";
 import { api } from "../../convex/_generated/api";
 import type { LlmProvider } from "../../convex/types";
 
 export const Route = createFileRoute("/autoplayer_/oneshot")({
 	component: OneshotPage,
+	validateSearch: validatePlaylistKeySearch,
 });
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -92,8 +97,16 @@ function formatTime(seconds: number): string {
 
 function OneshotPage() {
 	const navigate = useNavigate();
-	const createSession = useMutation(api.sessions.create);
+	const { pl } = Route.useSearch();
+	const createPlaylist = useMutation(api.playlists.create);
 	const settings = useQuery(api.settings.getAll);
+
+	// Look up playlist by key from URL
+	const playlistByKey = useQuery(
+		api.playlists.getByPlaylistKey,
+		pl ? { playlistKey: pl } : "skip",
+	);
+	const playlistIdFromUrl = playlistByKey?._id ?? null;
 
 	// ── Local state ──
 	const [prompt, setPrompt] = useState("");
@@ -104,9 +117,13 @@ function OneshotPage() {
 	const [generating, setGenerating] = useState(false);
 	const [advancedOpen, setAdvancedOpen] = useState(false);
 	const [lyricsOpen, setLyricsOpen] = useState(false);
-	const [sessionId, setSessionId] = useState<Id<"sessions"> | null>(null);
+	const [localPlaylistId, setLocalPlaylistId] =
+		useState<Id<"playlists"> | null>(null);
 
-	// Advanced settings — local state, passed to session create
+	// Use URL-based playlist ID if available, otherwise local state
+	const playlistId = playlistIdFromUrl ?? localPlaylistId;
+
+	// Advanced settings — local state, passed to playlist create
 	const [language, setLanguage] = useState("auto");
 	const [bpm, setBpm] = useState("");
 	const [key, setKey] = useState("");
@@ -120,7 +137,7 @@ function OneshotPage() {
 	const modelSetByUserOrSettings = useRef(false);
 
 	// ── Oneshot subscription ──
-	const { song, phase } = useOneshot(sessionId);
+	const { song, phase } = useOneshot(playlistId);
 
 	// ── Audio player ──
 	const { loadAndPlay, toggle, seek } = useAudioPlayer();
@@ -209,48 +226,51 @@ function OneshotPage() {
 		hasAutoPlayed.current = false;
 
 		try {
-			// Enhance session params
-			let sessionParams: Record<string, unknown> = {};
+			// Enhance playlist params
+			let playlistParams: Record<string, unknown> = {};
 			try {
 				const res = await fetch("/api/autoplayer/enhance-session", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
 				});
-				if (res.ok) sessionParams = await res.json();
+				if (res.ok) playlistParams = await res.json();
 			} catch {
 				// Continue without enhanced params
 			}
 
 			// Merge user overrides with AI params
 			const name = `[ONESHOT] ${prompt.trim().slice(0, 40)}`;
-			const id = await createSession({
+			const key = generatePlaylistKey();
+			const id = await createPlaylist({
 				name,
 				prompt: prompt.trim(),
 				llmProvider: provider,
 				llmModel: model,
 				mode: "oneshot",
+				playlistKey: key,
 				lyricsLanguage:
 					language !== "auto"
 						? language
-						: (sessionParams.lyricsLanguage as string | undefined),
+						: (playlistParams.lyricsLanguage as string | undefined),
 				targetBpm: bpm
 					? Number.parseInt(bpm, 10)
-					: (sessionParams.targetBpm as number | undefined),
-				targetKey: key || (sessionParams.targetKey as string | undefined),
+					: (playlistParams.targetBpm as number | undefined),
+				targetKey: key || (playlistParams.targetKey as string | undefined),
 				timeSignature:
-					timeSig || (sessionParams.timeSignature as string | undefined),
+					timeSig || (playlistParams.timeSignature as string | undefined),
 				audioDuration: duration
 					? Number.parseInt(duration, 10)
-					: (sessionParams.audioDuration as number | undefined),
+					: (playlistParams.audioDuration as number | undefined),
 				inferenceSteps: steps
 					? Number.parseInt(steps, 10)
-					: (sessionParams.inferenceSteps as number | undefined),
+					: (playlistParams.inferenceSteps as number | undefined),
 				lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
 				lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 				inferMethod: inferMeth,
 			});
-			setSessionId(id);
+			setLocalPlaylistId(id);
+			navigate({ to: "/autoplayer/oneshot", search: { pl: key } });
 		} catch {
 			// Fallback
 			setGenerating(false);
@@ -262,22 +282,23 @@ function OneshotPage() {
 		generating,
 		language,
 		bpm,
-		key,
 		timeSig,
 		duration,
 		steps,
 		lmTemp,
 		lmCfg,
 		inferMeth,
-		createSession,
+		createPlaylist,
+		navigate,
 	]);
 
 	const handleGenerateAnother = useCallback(() => {
-		setSessionId(null);
+		setLocalPlaylistId(null);
 		setGenerating(false);
 		hasAutoPlayed.current = false;
 		setLyricsOpen(false);
-	}, []);
+		navigate({ to: "/autoplayer/oneshot", search: {} });
+	}, [navigate]);
 
 	const handlePlayPause = useCallback(() => {
 		if (!song?.audioUrl) return;
@@ -344,14 +365,18 @@ function OneshotPage() {
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-							onClick={() => navigate({ to: "/autoplayer/library" })}
+							onClick={() =>
+								navigate({ to: "/autoplayer/library", search: (prev) => prev })
+							}
 						>
 							[LIBRARY]
 						</button>
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-							onClick={() => navigate({ to: "/autoplayer/settings" })}
+							onClick={() =>
+								navigate({ to: "/autoplayer/settings", search: (prev) => prev })
+							}
 						>
 							[SETTINGS]
 						</button>
