@@ -1,5 +1,12 @@
 import { useQuery } from "convex/react";
-import { Library, Music, RotateCcw, Settings, Sparkles } from "lucide-react";
+import {
+	Library,
+	Music,
+	RotateCcw,
+	Settings,
+	Sparkles,
+	Zap,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +43,7 @@ interface SessionCreatorProps {
 	onResumeSession: (id: string) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
+	onOpenOneshot?: () => void;
 }
 
 export function SessionCreator({
@@ -43,6 +51,7 @@ export function SessionCreator({
 	onResumeSession,
 	onOpenSettings,
 	onOpenLibrary,
+	onOpenOneshot,
 }: SessionCreatorProps) {
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>("ollama");
@@ -180,6 +189,16 @@ export function SessionCreator({
 							</span>
 						</div>
 						<div className="flex items-center gap-3">
+							{onOpenOneshot && (
+								<button
+									type="button"
+									className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
+									onClick={onOpenOneshot}
+								>
+									<Zap className="h-4 w-4" />
+									[ONESHOT]
+								</button>
+							)}
 							{onOpenLibrary && (
 								<button
 									type="button"

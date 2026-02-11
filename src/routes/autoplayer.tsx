@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
-import { Music } from "lucide-react";
+import { Music, Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
@@ -127,6 +127,7 @@ function AutoplayerPage() {
 				onResumeSession={handleResumeSession}
 				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
 				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
+				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
 			/>
 		);
 	}
@@ -154,6 +155,14 @@ function AutoplayerPage() {
 								<>MODE:AUTO | QUEUE:{songs?.length ?? 0}</>
 							)}
 						</span>
+						<button
+							type="button"
+							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
+							onClick={() => navigate({ to: "/autoplayer/oneshot" })}
+						>
+							<Zap className="h-3.5 w-3.5" />
+							[ONESHOT]
+						</button>
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"

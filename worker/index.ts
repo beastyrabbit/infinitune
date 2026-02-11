@@ -80,10 +80,15 @@ async function tick() {
         })
 
         // === Active sessions only: create new pending songs ===
+        const isOneshot = session.mode === 'oneshot'
         if (!isClosing) {
           // Queue Keeper: maintain buffer
-          if (workQueue.bufferDeficit > 0) {
-            await processQueueKeeper(convex, sessionId, workQueue.bufferDeficit, workQueue.maxOrderIndex)
+          // Oneshot mode: only create 1 song total
+          const shouldCreateSong = isOneshot
+            ? workQueue.totalSongs === 0
+            : workQueue.bufferDeficit > 0
+          if (shouldCreateSong) {
+            await processQueueKeeper(convex, sessionId, isOneshot ? 1 : workQueue.bufferDeficit, workQueue.maxOrderIndex)
           }
 
           // Retry Processor: revert retry_pending songs (only active — closing sessions shouldn't retry)
@@ -126,6 +131,15 @@ async function tick() {
             console.log(`  [stale] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`)
             await convex.mutation(api.songs.deleteSong, { id: stale._id })
           }
+        }
+
+        // === Oneshot auto-close: when the single song is done ===
+        if (isOneshot && !isClosing && workQueue.transientCount === 0 && workQueue.totalSongs > 0) {
+          console.log(`[worker] Oneshot session ${sessionId} complete, setting to closing`)
+          await convex.mutation(api.sessions.updateStatus, {
+            id: sessionId,
+            status: 'closing',
+          })
         }
 
         // === Closing sessions: check if all work is done ===

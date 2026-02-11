@@ -1,6 +1,6 @@
 import { v } from 'convex/values'
 import { query, mutation } from './_generated/server'
-import { llmProviderValidator, sessionStatusValidator } from './types'
+import { llmProviderValidator, sessionModeValidator, sessionStatusValidator } from './types'
 
 export const get = query({
   args: { id: v.id("sessions") },
@@ -13,7 +13,10 @@ export const getCurrent = query({
   handler: async (ctx) => {
     const sessions = await ctx.db.query("sessions").collect()
     // Show both 'active' and 'closing' sessions — closing stays visible until done
-    const active = sessions.filter((s) => s.status === "active" || s.status === "closing")
+    // Exclude oneshot sessions — they have their own UI
+    const active = sessions.filter((s) =>
+      (s.status === "active" || s.status === "closing") && s.mode !== "oneshot"
+    )
     return active[active.length - 1] ?? null
   },
 })
@@ -21,7 +24,9 @@ export const getCurrent = query({
 export const listClosed = query({
   handler: async (ctx) => {
     const sessions = await ctx.db.query("sessions").collect()
-    return sessions.filter((s) => s.status === "closed" || s.status === "closing").reverse()
+    return sessions.filter((s) =>
+      (s.status === "closed" || s.status === "closing") && s.mode !== "oneshot"
+    ).reverse()
   },
 })
 
@@ -31,6 +36,7 @@ export const create = mutation({
     prompt: v.string(),
     llmProvider: llmProviderValidator,
     llmModel: v.string(),
+    mode: v.optional(sessionModeValidator),
     lyricsLanguage: v.optional(v.string()),
     targetBpm: v.optional(v.number()),
     targetKey: v.optional(v.string()),
@@ -44,6 +50,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert("sessions", {
       ...args,
+      mode: args.mode ?? "endless",
       status: "active",
       songsGenerated: 0,
     })

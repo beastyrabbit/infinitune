@@ -14,6 +14,7 @@ import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutoplayerTestRouteImport } from './routes/autoplayer_.test'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
+import { Route as AutoplayerOneshotRouteImport } from './routes/autoplayer_.oneshot'
 import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
 import { Route as AutoplayerTestIndexRouteImport } from './routes/autoplayer_.test.index'
 import { Route as AutoplayerTestLlmRouteImport } from './routes/autoplayer_.test.llm'
@@ -58,6 +59,11 @@ const AutoplayerTestRoute = AutoplayerTestRouteImport.update({
 const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
   id: '/autoplayer_/settings',
   path: '/autoplayer/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerOneshotRoute = AutoplayerOneshotRouteImport.update({
+  id: '/autoplayer_/oneshot',
+  path: '/autoplayer/oneshot',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerLibraryRoute = AutoplayerLibraryRouteImport.update({
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
+  '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/test': typeof AutoplayerTestRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
+  '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
   '/autoplayer_/library': typeof AutoplayerLibraryRoute
+  '/autoplayer_/oneshot': typeof AutoplayerOneshotRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
   '/autoplayer_/test': typeof AutoplayerTestRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/autoplayer'
     | '/mcp'
     | '/autoplayer/library'
+    | '/autoplayer/oneshot'
     | '/autoplayer/settings'
     | '/autoplayer/test'
     | '/api/autoplayer/ace-models'
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/autoplayer'
     | '/mcp'
     | '/autoplayer/library'
+    | '/autoplayer/oneshot'
     | '/autoplayer/settings'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/autoplayer'
     | '/mcp'
     | '/autoplayer_/library'
+    | '/autoplayer_/oneshot'
     | '/autoplayer_/settings'
     | '/autoplayer_/test'
     | '/api/autoplayer/ace-models'
@@ -340,6 +352,7 @@ export interface RootRouteChildren {
   AutoplayerRoute: typeof AutoplayerRoute
   McpRoute: typeof McpRoute
   AutoplayerLibraryRoute: typeof AutoplayerLibraryRoute
+  AutoplayerOneshotRoute: typeof AutoplayerOneshotRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
   AutoplayerTestRoute: typeof AutoplayerTestRouteWithChildren
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       path: '/autoplayer/settings'
       fullPath: '/autoplayer/settings'
       preLoaderRoute: typeof AutoplayerSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/oneshot': {
+      id: '/autoplayer_/oneshot'
+      path: '/autoplayer/oneshot'
+      fullPath: '/autoplayer/oneshot'
+      preLoaderRoute: typeof AutoplayerOneshotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/library': {
@@ -564,6 +584,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerRoute: AutoplayerRoute,
   McpRoute: McpRoute,
   AutoplayerLibraryRoute: AutoplayerLibraryRoute,
+  AutoplayerOneshotRoute: AutoplayerOneshotRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
   AutoplayerTestRoute: AutoplayerTestRouteWithChildren,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,

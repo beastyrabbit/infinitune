@@ -51,6 +51,16 @@ export const ACTIVE_STATUSES: SongStatus[] = [
   "ready",
 ]
 
+// ─── Session Mode ───────────────────────────────────────────────────
+export const SESSION_MODES = ["endless", "oneshot"] as const
+
+export type SessionMode = (typeof SESSION_MODES)[number]
+
+export const sessionModeValidator = v.union(
+  v.literal("endless"),
+  v.literal("oneshot"),
+)
+
 // ─── Session Status ──────────────────────────────────────────────────
 export const SESSION_STATUSES = ["active", "closing", "closed"] as const
 

@@ -1,6 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
-import { llmProviderValidator, sessionStatusValidator, songStatusValidator } from './types'
+import { llmProviderValidator, sessionModeValidator, sessionStatusValidator, songStatusValidator } from './types'
 
 export default defineSchema({
   sessions: defineTable({
@@ -8,6 +8,7 @@ export default defineSchema({
     prompt: v.string(),
     llmProvider: llmProviderValidator,
     llmModel: v.string(),
+    mode: v.optional(sessionModeValidator),
     status: sessionStatusValidator,
     songsGenerated: v.number(),
     lyricsLanguage: v.optional(v.string()),

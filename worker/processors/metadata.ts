@@ -5,7 +5,7 @@ import type { LlmProvider } from '../../convex/types'
 import { generateSongMetadata, type PromptDistance, type RecentSong, type SongMetadata } from '../../src/services/llm'
 
 type PendingSong = Pick<Doc<"songs">, "_id" | "interruptPrompt">
-type Session = Pick<Doc<"sessions">, "_id" | "prompt" | "llmProvider" | "llmModel" | "lyricsLanguage" | "targetBpm" | "targetKey" | "timeSignature" | "audioDuration">
+type Session = Pick<Doc<"sessions">, "_id" | "prompt" | "llmProvider" | "llmModel" | "lyricsLanguage" | "targetBpm" | "targetKey" | "timeSignature" | "audioDuration" | "mode">
 
 /** Check if the generated title is too similar to any recent song */
 function isDuplicate(metadata: SongMetadata, recentSongs: RecentSong[]): boolean {
@@ -48,9 +48,9 @@ export async function processMetadata(
     const prompt = song.interruptPrompt || session.prompt
     const isInterrupt = !!song.interruptPrompt
 
-    // Pick prompt distance: faithful for interrupts, random close/general for infinite gen
+    // Pick prompt distance: faithful for interrupts and oneshot, random close/general for infinite gen
     let promptDistance: PromptDistance = 'faithful'
-    if (!isInterrupt) {
+    if (!isInterrupt && session.mode !== 'oneshot') {
       promptDistance = Math.random() < 0.6 ? 'close' : 'general'
       console.log(`  [metadata] Prompt distance: ${promptDistance}`)
     }
