@@ -123,6 +123,7 @@ function AutoplayerPage() {
 				onCreateSession={handleCreateSession}
 				onResumeSession={handleResumeSession}
 				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
+				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
 			/>
 		);
 	}
@@ -150,6 +151,12 @@ function AutoplayerPage() {
 								<>MODE:AUTO | QUEUE:{songs?.length ?? 0}</>
 							)}
 						</span>
+						<button
+							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
+							onClick={() => navigate({ to: "/autoplayer/library" })}
+						>
+							[LIBRARY]
+						</button>
 						<button
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
 							onClick={() => navigate({ to: "/autoplayer/settings" })}

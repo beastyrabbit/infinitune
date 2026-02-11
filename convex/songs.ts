@@ -259,6 +259,23 @@ export const getNextOrderIndex = query({
   },
 })
 
+export const listAll = query({
+  handler: async (ctx) => {
+    const songs = await ctx.db.query("songs").collect()
+    const withMetadata = songs.filter((s) => s.title)
+    const resolved = await Promise.all(
+      withMetadata.map(async (song) => {
+        if (song.coverStorageId && !song.coverUrl) {
+          const url = await ctx.storage.getUrl(song.coverStorageId)
+          return { ...song, coverUrl: url ?? undefined }
+        }
+        return song
+      })
+    )
+    return resolved.sort((a, b) => b._creationTime - a._creationTime)
+  },
+})
+
 // ─── Worker mutations ───────────────────────────────────────────────
 
 export const createPending = mutation({

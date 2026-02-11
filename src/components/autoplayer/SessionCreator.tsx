@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import type { LlmProvider } from '../../../convex/types'
-import { Music, Settings, RotateCcw, Sparkles } from 'lucide-react'
+import { Music, Settings, RotateCcw, Sparkles, Library } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -35,9 +35,10 @@ interface SessionCreatorProps {
   }) => void
   onResumeSession: (id: string) => void
   onOpenSettings: () => void
+  onOpenLibrary?: () => void
 }
 
-export function SessionCreator({ onCreateSession, onResumeSession, onOpenSettings }: SessionCreatorProps) {
+export function SessionCreator({ onCreateSession, onResumeSession, onOpenSettings, onOpenLibrary }: SessionCreatorProps) {
   const [prompt, setPrompt] = useState('')
   const [provider, setProvider] = useState<LlmProvider>('ollama')
   const [model, setModel] = useState('')
@@ -166,13 +167,24 @@ export function SessionCreator({ onCreateSession, onResumeSession, onOpenSetting
                 NEW SESSION
               </span>
             </div>
-            <button
-              className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-              onClick={onOpenSettings}
-            >
-              <Settings className="h-4 w-4" />
-              [SETTINGS]
-            </button>
+            <div className="flex items-center gap-3">
+              {onOpenLibrary && (
+                <button
+                  className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
+                  onClick={onOpenLibrary}
+                >
+                  <Library className="h-4 w-4" />
+                  [LIBRARY]
+                </button>
+              )}
+              <button
+                className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
+                onClick={onOpenSettings}
+              >
+                <Settings className="h-4 w-4" />
+                [SETTINGS]
+              </button>
+            </div>
           </div>
 
           <div className="p-6 space-y-6">

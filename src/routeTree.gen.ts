@@ -20,6 +20,7 @@ import { Route as DemoAiImageRouteImport } from './routes/demo/ai-image'
 import { Route as DemoAiChatRouteImport } from './routes/demo/ai-chat'
 import { Route as AutoplayerTestRouteImport } from './routes/autoplayer_.test'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
+import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
 import { Route as DemoGuitarsIndexRouteImport } from './routes/demo/guitars/index'
 import { Route as AutoplayerTestIndexRouteImport } from './routes/autoplayer_.test.index'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
@@ -108,6 +109,11 @@ const AutoplayerTestRoute = AutoplayerTestRouteImport.update({
 const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
   id: '/autoplayer_/settings',
   path: '/autoplayer/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerLibraryRoute = AutoplayerLibraryRouteImport.update({
+  id: '/autoplayer_/library',
+  path: '/autoplayer/library',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoGuitarsIndexRoute = DemoGuitarsIndexRouteImport.update({
@@ -295,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
+  '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/test': typeof AutoplayerTestRouteWithChildren
   '/demo/ai-chat': typeof DemoAiChatRoute
@@ -342,6 +349,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
+  '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/demo/ai-chat': typeof DemoAiChatRoute
   '/demo/ai-image': typeof DemoAiImageRoute
@@ -389,6 +397,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/mcp': typeof McpRoute
+  '/autoplayer_/library': typeof AutoplayerLibraryRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
   '/autoplayer_/test': typeof AutoplayerTestRouteWithChildren
   '/demo/ai-chat': typeof DemoAiChatRoute
@@ -438,6 +447,7 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/mcp'
+    | '/autoplayer/library'
     | '/autoplayer/settings'
     | '/autoplayer/test'
     | '/demo/ai-chat'
@@ -485,6 +495,7 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/mcp'
+    | '/autoplayer/library'
     | '/autoplayer/settings'
     | '/demo/ai-chat'
     | '/demo/ai-image'
@@ -531,6 +542,7 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/mcp'
+    | '/autoplayer_/library'
     | '/autoplayer_/settings'
     | '/autoplayer_/test'
     | '/demo/ai-chat'
@@ -579,6 +591,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AutoplayerRoute: typeof AutoplayerRoute
   McpRoute: typeof McpRoute
+  AutoplayerLibraryRoute: typeof AutoplayerLibraryRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
   AutoplayerTestRoute: typeof AutoplayerTestRouteWithChildren
   DemoAiChatRoute: typeof DemoAiChatRoute
@@ -694,6 +707,13 @@ declare module '@tanstack/react-router' {
       path: '/autoplayer/settings'
       fullPath: '/autoplayer/settings'
       preLoaderRoute: typeof AutoplayerSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/library': {
+      id: '/autoplayer_/library'
+      path: '/autoplayer/library'
+      fullPath: '/autoplayer/library'
+      preLoaderRoute: typeof AutoplayerLibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/guitars/': {
@@ -963,6 +983,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AutoplayerRoute: AutoplayerRoute,
   McpRoute: McpRoute,
+  AutoplayerLibraryRoute: AutoplayerLibraryRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
   AutoplayerTestRoute: AutoplayerTestRouteWithChildren,
   DemoAiChatRoute: DemoAiChatRoute,

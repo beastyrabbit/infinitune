@@ -155,6 +155,12 @@ export const remove = mutation({
   },
 })
 
+export const listAll = query({
+  handler: async (ctx) => {
+    return await ctx.db.query("sessions").collect()
+  },
+})
+
 export const listActive = query({
   handler: async (ctx) => {
     const sessions = await ctx.db.query("sessions").collect()
