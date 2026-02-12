@@ -33,6 +33,9 @@ interface SongInfo {
 	genre: string;
 	coverUrl?: string;
 	status: string;
+	orderIndex: number;
+	promptEpoch: number;
+	isInterrupt: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -117,6 +120,17 @@ function MiniCover({
 	);
 }
 
+// ─── Priority decoding ───────────────────────────────────────────────
+
+function decodePriority(p: number): { label: string; color: string } {
+	if (p >= 10000) return { label: "CLOSING", color: "text-white/20" };
+	if (p >= 5000) return { label: "OLD EPOCH", color: "text-orange-400/60" };
+	if (p >= 100) return { label: "NORMAL", color: "text-white/40" };
+	if (p === 1) return { label: "INTERRUPT", color: "text-cyan-400" };
+	if (p === 0) return { label: "ONESHOT", color: "text-yellow-400" };
+	return { label: "???", color: "text-white/20" };
+}
+
 // ─── Song card for active/pending items ─────────────────────────────
 
 function SongCard({
@@ -137,8 +151,19 @@ function SongCard({
 	const genre = songInfo?.genre || "";
 
 	const isActive = variant === "active";
-	const borderColor = isActive ? "border-green-500/60" : "border-white/10";
-	const bgColor = isActive ? "bg-green-950/20" : "bg-white/[0.02]";
+	const isOldEpoch = priority !== undefined && priority >= 5000 && priority < 10000;
+	const borderColor = isActive
+		? "border-green-500/60"
+		: isOldEpoch
+			? "border-orange-500/20"
+			: "border-white/10";
+	const bgColor = isActive
+		? "bg-green-950/20"
+		: isOldEpoch
+			? "bg-orange-950/10"
+			: "bg-white/[0.02]";
+
+	const decoded = priority !== undefined ? decodePriority(priority) : null;
 
 	return (
 		<div
@@ -157,21 +182,37 @@ function SongCard({
 
 			{/* Song info */}
 			<div className="flex-1 min-w-0">
-				<p className="text-xs font-black uppercase truncate leading-tight">
-					{title}
-				</p>
-				<p className="text-[10px] text-white/40 uppercase truncate leading-tight mt-0.5">
-					{artist}
-					{genre && (
-						<>
-							{" "}
-							<span className="text-white/20">{"//"}</span> {genre}
-						</>
+				<div className="flex items-center gap-1.5">
+					<p className={`text-xs font-black uppercase truncate leading-tight ${isOldEpoch ? "text-white/30" : ""}`}>
+						{title}
+					</p>
+					{songInfo?.isInterrupt && (
+						<span className="shrink-0 text-[9px] font-black text-cyan-400 border border-cyan-400/40 px-1 leading-tight">
+							REQ
+						</span>
 					)}
-				</p>
+				</div>
+				<div className="flex items-center gap-2 mt-0.5">
+					<p className={`text-[10px] uppercase truncate leading-tight ${isOldEpoch ? "text-white/20" : "text-white/40"}`}>
+						{artist}
+						{genre && (
+							<>
+								{" "}
+								<span className="text-white/20">{"//"}</span> {genre}
+							</>
+						)}
+					</p>
+					{songInfo && (
+						<span className="shrink-0 text-[9px] font-mono text-white/15 tabular-nums">
+							#{String(Math.round(songInfo.orderIndex)).padStart(2, "0")}
+							{" E"}
+							{songInfo.promptEpoch}
+						</span>
+					)}
+				</div>
 			</div>
 
-			{/* Timer + status badge */}
+			{/* Priority + timer */}
 			<div className="shrink-0 text-right flex flex-col items-end gap-0.5">
 				{isActive ? (
 					<>
@@ -186,8 +227,13 @@ function SongCard({
 					</>
 				) : (
 					<>
+						{decoded && (
+							<span className={`text-[10px] font-bold uppercase ${decoded.color}`}>
+								{decoded.label}
+							</span>
+						)}
 						{priority !== undefined && (
-							<span className="text-[10px] font-mono text-white/25 tabular-nums">
+							<span className="text-[9px] font-mono text-white/15 tabular-nums">
 								P{priority}
 							</span>
 						)}
@@ -460,6 +506,9 @@ function QueuePage() {
 				genre: song.genre || "",
 				coverUrl: song.coverUrl,
 				status: song.status,
+				orderIndex: song.orderIndex,
+				promptEpoch: song.promptEpoch ?? 0,
+				isInterrupt: !!song.isInterrupt,
 			});
 		}
 		return map;

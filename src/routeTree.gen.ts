@@ -28,6 +28,7 @@ import { Route as ApiAutoplayerSubmitAceRouteImport } from './routes/api.autopla
 import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplayer.save-song'
 import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
 import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplayer.poll-ace'
+import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
 import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
@@ -135,6 +136,12 @@ const ApiAutoplayerPollAceRoute = ApiAutoplayerPollAceRouteImport.update({
   path: '/api/autoplayer/poll-ace',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAutoplayerOpenrouterModelsRoute =
+  ApiAutoplayerOpenrouterModelsRouteImport.update({
+    id: '/api/autoplayer/openrouter-models',
+    path: '/api/autoplayer/openrouter-models',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutoplayerOllamaModelsRoute =
   ApiAutoplayerOllamaModelsRouteImport.update({
     id: '/api/autoplayer/ollama-models',
@@ -199,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
+  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
@@ -227,6 +235,7 @@ export interface FileRoutesByTo {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
+  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
@@ -257,6 +266,7 @@ export interface FileRoutesById {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
+  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
@@ -288,6 +298,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
+    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
+    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
@@ -345,6 +357,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
+    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
@@ -375,6 +388,7 @@ export interface RootRouteChildren {
   ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
+  ApiAutoplayerOpenrouterModelsRoute: typeof ApiAutoplayerOpenrouterModelsRoute
   ApiAutoplayerPollAceRoute: typeof ApiAutoplayerPollAceRoute
   ApiAutoplayerRefinePromptRoute: typeof ApiAutoplayerRefinePromptRoute
   ApiAutoplayerSaveSongRoute: typeof ApiAutoplayerSaveSongRoute
@@ -518,6 +532,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerPollAceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/autoplayer/openrouter-models': {
+      id: '/api/autoplayer/openrouter-models'
+      path: '/api/autoplayer/openrouter-models'
+      fullPath: '/api/autoplayer/openrouter-models'
+      preLoaderRoute: typeof ApiAutoplayerOpenrouterModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/autoplayer/ollama-models': {
       id: '/api/autoplayer/ollama-models'
       path: '/api/autoplayer/ollama-models'
@@ -614,6 +635,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,
+  ApiAutoplayerOpenrouterModelsRoute: ApiAutoplayerOpenrouterModelsRoute,
   ApiAutoplayerPollAceRoute: ApiAutoplayerPollAceRoute,
   ApiAutoplayerRefinePromptRoute: ApiAutoplayerRefinePromptRoute,
   ApiAutoplayerSaveSongRoute: ApiAutoplayerSaveSongRoute,

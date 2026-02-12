@@ -12,8 +12,8 @@ const LLM_CONCURRENCY: Record<string, number> = {
 }
 
 const IMAGE_CONCURRENCY: Record<string, number> = {
-  comfyui: 5,
-  openrouter: 3,
+  comfyui: 1,
+  openrouter: 1,
 }
 
 // ─── Cover generation result ─────────────────────────────────────────

@@ -80,3 +80,18 @@ export function setPlaylist(playlistId: string | null) {
 export function toggleMute() {
 	playerStore.setState((state) => ({ ...state, isMuted: !state.isMuted }));
 }
+
+export function stopPlayback() {
+	if (globalAudio) {
+		globalAudio.pause();
+		globalAudio.src = "";
+	}
+	playerStore.setState((state) => ({
+		...state,
+		isPlaying: false,
+		currentSongId: null,
+		currentTime: 0,
+		duration: 0,
+	}));
+}
+

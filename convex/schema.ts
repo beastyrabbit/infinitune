@@ -23,6 +23,12 @@ export default defineSchema({
     inferMethod: v.optional(v.string()),
     currentOrderIndex: v.optional(v.number()),
     lastSeenAt: v.optional(v.number()),
+    promptEpoch: v.optional(v.number()),
+    steerHistory: v.optional(v.array(v.object({
+      epoch: v.number(),
+      direction: v.string(),
+      at: v.number(),
+    }))),
   }).index("by_playlist_key", ["playlistKey"]),
 
   songs: defineTable({
@@ -67,6 +73,7 @@ export default defineSchema({
     interruptPrompt: v.optional(v.string()),
     llmProvider: v.optional(llmProviderValidator),
     llmModel: v.optional(v.string()),
+    promptEpoch: v.optional(v.number()),
     userRating: v.optional(v.union(v.literal("up"), v.literal("down"))),
     playDurationMs: v.optional(v.number()),
     listenCount: v.optional(v.number()),

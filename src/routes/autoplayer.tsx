@@ -12,6 +12,7 @@ import { PlaylistPicker } from "@/components/autoplayer/PlaylistPicker";
 import { QueueGrid } from "@/components/autoplayer/QueueGrid";
 import { QuickRequest } from "@/components/autoplayer/QuickRequest";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
+import { UpNextBanner } from "@/components/autoplayer/UpNextBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import VinylIcon from "@/components/ui/vinyl-icon";
@@ -20,7 +21,7 @@ import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import type { EndpointStatus } from "@/hooks/useWorkerStatus";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
-import { playerStore, setCurrentSong } from "@/lib/player-store";
+import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
@@ -140,20 +141,23 @@ function AutoplayerPage() {
 				createPendingMut({
 					playlistId,
 					orderIndex: maxOrder + i + 1,
+					promptEpoch: playlist?.promptEpoch ?? 0,
 				}),
 			),
 		);
-	}, [playlistId, songs, createPendingMut]);
+	}, [playlistId, songs, playlist?.promptEpoch, createPendingMut]);
 
 	// Graceful close: stop new generations, let current song finish
 	const handleClosePlaylist = useCallback(async () => {
 		if (!playlistId) return;
+		stopPlayback();
 		await updateStatus({ id: playlistId, status: "closing" });
 	}, [playlistId, updateStatus]);
 
 	// Force close: close immediately — worker will cancel in-flight work
 	const handleForceClose = useCallback(async () => {
 		if (!playlistId) return;
+		stopPlayback();
 		await updateStatus({ id: playlistId, status: "closed" });
 	}, [playlistId, updateStatus]);
 
@@ -338,11 +342,21 @@ function AutoplayerPage() {
 			{/* GENERATION BANNER */}
 			{songs && <GenerationBanner songs={songs} />}
 
+			{/* UP NEXT BANNER */}
+			{songs && playlist && (
+				<UpNextBanner
+					songs={songs}
+					currentSongId={currentSongId}
+					playlist={playlist}
+				/>
+			)}
+
 			{/* QUEUE GRID */}
 			{songs && songs.length > 0 && (
 				<QueueGrid
 					songs={songs}
 					currentSongId={currentSongId}
+					playlistEpoch={playlist?.promptEpoch ?? 0}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
 					onRate={rateSong}

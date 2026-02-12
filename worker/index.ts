@@ -94,8 +94,9 @@ async function tick() {
             await convex.mutation(api.songs.createPending, {
               playlistId,
               orderIndex,
+              promptEpoch: playlist.promptEpoch ?? 0,
             })
-            console.log(`  [queue-keeper] Created pending song at order ${orderIndex} (deficit: ${workQueue.bufferDeficit})`)
+            console.log(`  [queue-keeper] Created pending song at order ${orderIndex} (deficit: ${workQueue.bufferDeficit}, epoch: ${playlist.promptEpoch ?? 0})`)
           }
 
           // Retry: revert retry_pending songs
@@ -107,13 +108,38 @@ async function tick() {
           }
         }
 
+        // === Epoch cleanup: delete old-epoch pending songs (zero work done) ===
+        // Songs past pending have started LLM/audio work — let them finish at low priority.
+        const deletedSongIds = new Set<string>()
+        if (!isClosing) {
+          const currentEpoch = playlist.promptEpoch ?? 0
+          const oldPending = workQueue.pending.filter(
+            (s) => (s.promptEpoch ?? 0) < currentEpoch && !s.isInterrupt
+          )
+          for (const song of oldPending) {
+            const w = songWorkers.get(song._id)
+            if (w) w.cancel()
+            await convex.mutation(api.songs.deleteSong, { id: song._id })
+            deletedSongIds.add(song._id)
+            console.log(`  [epoch-cleanup] Deleted old-epoch pending song ${song._id} (epoch ${song.promptEpoch ?? 0} < ${currentEpoch})`)
+          }
+        }
+
         // === Both active and closing: create SongWorkers for actionable songs ===
+        // Sort: current-epoch first so they claim queue slots before old-epoch songs.
+        const currentEpoch = playlist.promptEpoch ?? 0
         const actionableSongs = [
           ...workQueue.pending,
           ...workQueue.metadataReady,
           ...workQueue.generatingAudio,
           ...workQueue.needsRecovery,
         ]
+          .filter((s) => !deletedSongIds.has(s._id))
+          .sort((a, b) => {
+            const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1
+            const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1
+            return aEpoch - bEpoch
+          })
 
         for (const song of actionableSongs) {
           if (songWorkers.has(song._id)) continue // Already tracked

@@ -148,7 +148,16 @@ export const updatePrompt = mutation({
     prompt: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { prompt: args.prompt })
+    const playlist = await ctx.db.get(args.id)
+    if (!playlist) throw new Error("Playlist not found")
+    const newEpoch = (playlist.promptEpoch ?? 0) + 1
+    const history = playlist.steerHistory ?? []
+    history.push({ epoch: newEpoch, direction: args.prompt, at: Date.now() })
+    await ctx.db.patch(args.id, {
+      prompt: args.prompt,
+      promptEpoch: newEpoch,
+      steerHistory: history,
+    })
   },
 })
 

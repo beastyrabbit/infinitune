@@ -16,6 +16,9 @@ interface PendingItem {
   resolve: (result: QueueResult<AudioResult>) => void
   reject: (error: Error) => void
   enqueuedAt: number
+  /** Set when resuming a poll for an already-submitted ACE task */
+  resumeTaskId?: string
+  resumeSubmittedAt?: number
 }
 
 interface ActiveSlot {
@@ -48,9 +51,6 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   /** Single active slot — null when idle */
   private active: ActiveSlot | null = null
 
-  /** Resumed polls from worker restart (run alongside active slot) */
-  private resumedPolls = new Map<string, ActiveSlot>()
-
   /** Poll function injected by caller */
   private pollFn: (taskId: string, signal: AbortSignal) => Promise<{
     status: 'running' | 'succeeded' | 'failed' | 'not_found'
@@ -76,23 +76,16 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
         enqueuedAt: Date.now(),
       }
 
-      // Sorted insert: lower priority number = higher priority, FIFO tiebreak
-      const idx = this.pending.findIndex(
-        (p) => p.request.priority > request.priority,
-      )
-      if (idx === -1) {
-        this.pending.push(item)
-      } else {
-        this.pending.splice(idx, 0, item)
-      }
-
+      this.sortedInsert(item)
       this.drain()
     })
   }
 
   /**
    * Resume polling for a song already submitted (e.g., after worker restart).
-   * These run alongside the main active slot since ACE is already working on them.
+   * Queued through the same single-slot pipeline to guarantee only 1 audio
+   * task is active at a time. Gets priority 0 (highest) since ACE is already
+   * working on it.
    */
   resumePoll(
     songId: Id<"songs">,
@@ -100,34 +93,30 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
     submittedAt: number,
   ): Promise<QueueResult<AudioResult>> {
     return new Promise<QueueResult<AudioResult>>((resolve, reject) => {
-      const abortController = new AbortController()
-      const slot: ActiveSlot = {
-        songId,
-        taskId,
-        submittedAt,
-        submitProcessingMs: 0,
+      const item: PendingItem = {
+        request: {
+          songId,
+          priority: 0, // Highest — already submitted, just needs polling
+          execute: async () => { throw new Error('Should not be called for resumed polls') },
+        },
         resolve,
         reject,
-        abortController,
+        enqueuedAt: Date.now(),
+        resumeTaskId: taskId,
+        resumeSubmittedAt: submittedAt,
       }
-      this.resumedPolls.set(taskId, slot)
+
+      this.sortedInsert(item)
+      this.drain()
     })
   }
 
-  /** Called every tick — polls active song + any resumed polls */
+  /** Called every tick — polls the single active slot */
   async tickPolls(): Promise<void> {
-    // Poll the main active slot
     if (this.active) {
       await this.pollSlot(this.active, () => {
         this.active = null
-        this.drain() // slot freed, submit next
-      })
-    }
-
-    // Poll resumed slots (from worker restart)
-    for (const [taskId, slot] of this.resumedPolls.entries()) {
-      await this.pollSlot(slot, () => {
-        this.resumedPolls.delete(taskId)
+        this.drain() // slot freed, process next
       })
     }
   }
@@ -189,15 +178,41 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
     }
   }
 
-  /** Try to submit the next pending song if the slot is free */
+  /** Sorted insert into pending queue: lower priority number = higher priority, FIFO tiebreak */
+  private sortedInsert(item: PendingItem): void {
+    const idx = this.pending.findIndex(
+      (p) => p.request.priority > item.request.priority,
+    )
+    if (idx === -1) {
+      this.pending.push(item)
+    } else {
+      this.pending.splice(idx, 0, item)
+    }
+  }
+
+  /** Try to process the next pending item if the slot is free */
   private drain(): void {
     if (this.active || this.pending.length === 0) return
 
     const item = this.pending.shift()!
     const abortController = new AbortController()
-    const submitStartedAt = Date.now()
 
-    // Mark a placeholder active slot to block further drains
+    // Resumed poll — no submission needed, just set up for polling
+    if (item.resumeTaskId) {
+      this.active = {
+        songId: item.request.songId,
+        taskId: item.resumeTaskId,
+        submittedAt: item.resumeSubmittedAt ?? Date.now(),
+        submitProcessingMs: 0,
+        resolve: item.resolve,
+        reject: item.reject,
+        abortController,
+      }
+      return
+    }
+
+    // New submission — submit to ACE
+    const submitStartedAt = Date.now()
     const placeholder: ActiveSlot = {
       songId: item.request.songId,
       taskId: '', // not yet known
@@ -209,7 +224,6 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
     }
     this.active = placeholder
 
-    // Submit to ACE
     item.request.execute(abortController.signal)
       .then((result) => {
         const submitProcessingMs = Date.now() - submitStartedAt
@@ -229,7 +243,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   }
 
   cancelSong(songId: Id<"songs">): void {
-    // Remove from pending
+    // Remove from pending (includes resumed polls waiting in queue)
     const idx = this.pending.findIndex((p) => p.request.songId === songId)
     if (idx !== -1) {
       const [removed] = this.pending.splice(idx, 1)
@@ -243,24 +257,12 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
       this.active = null
       this.drain()
     }
-
-    // Cancel resumed polls
-    for (const [taskId, slot] of this.resumedPolls.entries()) {
-      if (slot.songId === songId) {
-        slot.abortController.abort()
-        slot.reject(new Error('Cancelled'))
-        this.resumedPolls.delete(taskId)
-      }
-    }
   }
 
   getStatus(): QueueStatus {
     const activeItems: { songId: string; startedAt: number }[] = []
     if (this.active) {
       activeItems.push({ songId: this.active.songId as string, startedAt: this.active.submittedAt })
-    }
-    for (const slot of this.resumedPolls.values()) {
-      activeItems.push({ songId: slot.songId as string, startedAt: slot.submittedAt })
     }
 
     return {
@@ -283,6 +285,6 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   }
 
   get activePolls(): number {
-    return (this.active ? 1 : 0) + this.resumedPolls.size
+    return this.active ? 1 : 0
   }
 }

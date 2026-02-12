@@ -175,12 +175,15 @@ export class SongWorker {
       promptDistance = Math.random() < 0.6 ? 'close' : 'general'
     }
 
+    const currentEpoch = this.ctx.playlist.promptEpoch ?? 0
+    const songEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
+      isOldEpoch: songEpoch < currentEpoch,
     })
 
     try {
@@ -276,12 +279,15 @@ export class SongWorker {
 
     const isOneshot = this.ctx.playlist.mode === 'oneshot'
     const isInterrupt = !!this.song.interruptPrompt
+    const coverCurrentEpoch = this.ctx.playlist.promptEpoch ?? 0
+    const coverSongEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
+      isOldEpoch: coverSongEpoch < coverCurrentEpoch,
     })
 
     // Fire-and-forget — we don't await this
@@ -366,12 +372,15 @@ export class SongWorker {
 
     const isOneshot = this.ctx.playlist.mode === 'oneshot'
     const isInterrupt = !!this.song.interruptPrompt
+    const audioCurrentEpoch = this.ctx.playlist.promptEpoch ?? 0
+    const audioSongEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
+      isOldEpoch: audioSongEpoch < audioCurrentEpoch,
     })
 
     try {
@@ -513,6 +522,13 @@ export class SongWorker {
         storagePath: saveResult.storagePath,
         aceAudioPath: audioPath,
       })
+      // Update duration if silence was trimmed
+      if (saveResult.effectiveDuration) {
+        await this.ctx.convex.mutation(api.songs.updateAudioDuration, {
+          id: this.songId,
+          audioDuration: saveResult.effectiveDuration,
+        })
+      }
     } catch (e: unknown) {
       console.error(`  [song-worker] NFS save failed for ${this.songId}, continuing:`, e instanceof Error ? e.message : e)
     }

@@ -2,6 +2,7 @@ import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef } from "react";
 import { asSongId } from "@/lib/convex-helpers";
+import { pickNextSong } from "@/lib/pick-next-song";
 import { playerStore, setCurrentSong, setPlaylist } from "@/lib/player-store";
 import type { Id } from "@/types/convex";
 import { api } from "../../convex/_generated/api";
@@ -32,21 +33,20 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 	const handleSongEnded = useCallback(() => {
 		userHasInteractedRef.current = true;
 		if (!songs) return;
-		const currentIndex = songs.findIndex((s) => s._id === currentSongId);
-		if (currentIndex === -1) return;
+		const endedSong = songs.find((s) => s._id === currentSongId);
+		if (!endedSong) return;
 
-		const endedSong = songs[currentIndex];
-		if (endedSong && endedSong.status === "ready") {
+		if (endedSong.status === "ready") {
 			updateSongStatus({ id: endedSong._id, status: "played" });
 		}
 
-		const nextSong = songs
-			.slice(currentIndex + 1)
-			.find((s) => s.status === "ready");
-		if (nextSong) {
-			setCurrentSong(nextSong._id);
-		}
-	}, [songs, currentSongId, updateSongStatus]);
+		const nextSong = pickNextSong(
+			songs,
+			currentSongId,
+			playlist?.promptEpoch ?? 0,
+		);
+		setCurrentSong(nextSong?._id ?? null);
+	}, [songs, currentSongId, playlist?.promptEpoch, updateSongStatus]);
 
 	const { loadAndPlay, seek, play, pause, toggle } =
 		useAudioPlayer(handleSongEnded);
@@ -60,6 +60,7 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 		currentSongId,
 		loadAndPlay,
 		userHasInteractedRef,
+		playlist,
 	);
 
 	// Set playlist in store
@@ -89,18 +90,19 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 	const skipToNext = useCallback(() => {
 		userHasInteractedRef.current = true;
 		if (!songs || !currentSongId) return;
-		const currentIndex = songs.findIndex((s) => s._id === currentSongId);
-		const skippedSong = songs[currentIndex];
+		const skippedSong = songs.find((s) => s._id === currentSongId);
 		if (skippedSong && skippedSong.status === "ready") {
 			updateSongStatus({ id: skippedSong._id, status: "played" });
 		}
-		const nextReady = songs
-			.slice(currentIndex + 1)
-			.find((s) => s.status === "ready");
-		if (nextReady) {
-			setCurrentSong(nextReady._id);
+		const nextSong = pickNextSong(
+			songs,
+			currentSongId,
+			playlist?.promptEpoch ?? 0,
+		);
+		if (nextSong) {
+			setCurrentSong(nextSong._id);
 		}
-	}, [songs, currentSongId, updateSongStatus]);
+	}, [songs, currentSongId, playlist?.promptEpoch, updateSongStatus]);
 
 	const requestSong = useCallback(
 		async (interruptPrompt: string) => {
@@ -114,6 +116,7 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 				orderIndex,
 				isInterrupt: true,
 				interruptPrompt,
+				promptEpoch: playlist.promptEpoch ?? 0,
 			});
 		},
 		[playlist, playlistId, songs, currentSongId, createPending],

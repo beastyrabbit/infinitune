@@ -204,6 +204,16 @@ export const updateCoverProcessingMs = mutation({
   },
 })
 
+export const updateAudioDuration = mutation({
+  args: {
+    id: v.id("songs"),
+    audioDuration: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { audioDuration: args.audioDuration })
+  },
+})
+
 export const updateStoragePath = mutation({
   args: {
     id: v.id("songs"),
@@ -317,6 +327,7 @@ export const createPending = mutation({
     orderIndex: v.number(),
     isInterrupt: v.optional(v.boolean()),
     interruptPrompt: v.optional(v.string()),
+    promptEpoch: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("songs", {
@@ -325,6 +336,7 @@ export const createPending = mutation({
       status: "pending",
       isInterrupt: args.isInterrupt,
       interruptPrompt: args.interruptPrompt,
+      promptEpoch: args.promptEpoch,
       generationStartedAt: Date.now(),
     })
   },
@@ -521,12 +533,14 @@ export const getWorkQueue = query({
       s.status === "saving"
     )
 
-    // Calculate buffer deficit based on current playing position
+    // Calculate buffer deficit based on current playing position + epoch
     const playlist = await ctx.db.get(args.playlistId)
     const currentOrderIndex = playlist?.currentOrderIndex ?? 0
+    const currentEpoch = playlist?.promptEpoch ?? 0
     const songsAhead = songs.filter((s) =>
       s.orderIndex > currentOrderIndex &&
-      (ACTIVE_STATUSES as string[]).includes(s.status)
+      (ACTIVE_STATUSES as string[]).includes(s.status) &&
+      (s.promptEpoch ?? 0) === currentEpoch
     ).length
     const bufferDeficit = Math.max(0, 5 - songsAhead)
 
@@ -584,6 +598,7 @@ export const getWorkQueue = query({
       maxOrderIndex,
       totalSongs: songs.length,
       transientCount,
+      currentEpoch,
       recentCompleted,
       recentDescriptions,
       staleSongs: staleSongs.map((s) => ({ _id: s._id, status: s.status, title: s.title })),

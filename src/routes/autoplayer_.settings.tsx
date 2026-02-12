@@ -1,15 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
+import { Cpu, Music, Plug } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { SettingsTabAudioEngine } from "@/components/autoplayer/settings/SettingsTabAudioEngine";
+import type {
+	ModelOption,
+	OpenRouterModelOption,
+} from "@/components/autoplayer/settings/SettingsTabModels";
+import { SettingsTabModels } from "@/components/autoplayer/settings/SettingsTabModels";
+import { SettingsTabNetwork } from "@/components/autoplayer/settings/SettingsTabNetwork";
+import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 
@@ -18,18 +19,13 @@ export const Route = createFileRoute("/autoplayer_/settings")({
 	validateSearch: validatePlaylistKeySearch,
 });
 
-interface ModelOption {
-	name: string;
-	is_default?: boolean;
-	vision?: boolean;
-	type?: string;
-}
+type Tab = "network" | "models" | "audio";
 
-type TestStatus =
-	| { state: "idle" }
-	| { state: "testing" }
-	| { state: "ok"; message: string }
-	| { state: "error"; message: string };
+const TABS: { id: Tab; label: string; icon: typeof Plug }[] = [
+	{ id: "network", label: "NETWORK", icon: Plug },
+	{ id: "models", label: "MODELS", icon: Cpu },
+	{ id: "audio", label: "AUDIO ENGINE", icon: Music },
+];
 
 function SettingsPage() {
 	const navigate = useNavigate();
@@ -41,6 +37,9 @@ function SettingsPage() {
 		pl ? { playlistKey: pl } : "skip",
 	);
 	const updateParams = useMutation(api.playlists.updateParams);
+
+	// Tab state
+	const [activeTab, setActiveTab] = useState<Tab>("network");
 
 	// Generation params
 	const [inferSteps, setInferSteps] = useState("12");
@@ -64,6 +63,13 @@ function SettingsPage() {
 	// Available models
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [aceModels, setAceModels] = useState<ModelOption[]>([]);
+	const [openRouterTextModels, setOpenRouterTextModels] = useState<
+		OpenRouterModelOption[]
+	>([]);
+	const [openRouterImageModels, setOpenRouterImageModels] = useState<
+		OpenRouterModelOption[]
+	>([]);
+	const [openRouterLoading, setOpenRouterLoading] = useState(false);
 
 	// Test statuses
 	const [ollamaTest, setOllamaTest] = useState<TestStatus>({ state: "idle" });
@@ -89,7 +95,6 @@ function SettingsPage() {
 		setAceModel(settings.aceModel || "");
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
 
-		// Generation params: prefer active playlist values, fall back to global settings
 		if (activePlaylist) {
 			setInferSteps(
 				activePlaylist.inferenceSteps?.toString() ||
@@ -117,7 +122,7 @@ function SettingsPage() {
 		}
 	}, [settings, activePlaylist]);
 
-	// Fetch available models on mount
+	// Fetch Ollama + ACE models on mount
 	useEffect(() => {
 		fetch("/api/autoplayer/ollama-models")
 			.then((r) => r.json())
@@ -130,9 +135,32 @@ function SettingsPage() {
 			.catch(() => {});
 	}, []);
 
-	const textModels = ollamaModels.filter(
-		(m) => m.type === "text" || (!m.type && !m.vision),
-	);
+	// Fetch OpenRouter models when provider is selected + key exists
+	useEffect(() => {
+		const needsOpenRouter =
+			textProvider === "openrouter" || imageProvider === "openrouter";
+		if (!needsOpenRouter || !openrouterApiKey) {
+			setOpenRouterTextModels([]);
+			setOpenRouterImageModels([]);
+			return;
+		}
+
+		setOpenRouterLoading(true);
+		Promise.all([
+			fetch("/api/autoplayer/openrouter-models?type=text")
+				.then((r) => r.json())
+				.then((d) => d.models || [])
+				.catch(() => []),
+			fetch("/api/autoplayer/openrouter-models?type=image")
+				.then((r) => r.json())
+				.then((d) => d.models || [])
+				.catch(() => []),
+		]).then(([text, image]) => {
+			setOpenRouterTextModels(text);
+			setOpenRouterImageModels(image);
+			setOpenRouterLoading(false);
+		});
+	}, [textProvider, imageProvider, openrouterApiKey]);
 
 	const testConnection = useCallback(
 		async (provider: string) => {
@@ -176,14 +204,12 @@ function SettingsPage() {
 			setSetting({ key: "imageModel", value: imageModel }),
 			setSetting({ key: "aceModel", value: aceModel }),
 			setSetting({ key: "openrouterApiKey", value: openrouterApiKey }),
-			// Generation param defaults
 			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
 			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
 			setSetting({ key: "aceInferMethod", value: inferMethod }),
 		];
 
-		// Also update active playlist if one exists
 		if (activePlaylist) {
 			promises.push(
 				updateParams({
@@ -202,36 +228,6 @@ function SettingsPage() {
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);
 	};
-
-	// biome-ignore lint/correctness/noNestedComponentDefinitions: small helper component tightly coupled to parent state
-	const TestButton = ({
-		provider,
-		status,
-	}: {
-		provider: string;
-		status: TestStatus;
-	}) => (
-		<div className="flex items-center gap-2">
-			<button
-				type="button"
-				className="font-mono text-[10px] font-black uppercase tracking-wider text-white/40 hover:text-yellow-400 transition-colors"
-				onClick={() => testConnection(provider)}
-				disabled={status.state === "testing"}
-			>
-				{status.state === "testing" ? "[TESTING...]" : "[TEST]"}
-			</button>
-			{status.state === "ok" && (
-				<span className="text-[10px] font-bold uppercase text-green-400">
-					{status.message}
-				</span>
-			)}
-			{status.state === "error" && (
-				<span className="text-[10px] font-bold uppercase text-red-400">
-					{status.message}
-				</span>
-			)}
-		</div>
-	);
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white">
@@ -253,397 +249,132 @@ function SettingsPage() {
 				</div>
 			</header>
 
-			<div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-				{/* SERVICE URLS */}
-				<section>
-					<h3 className="text-sm font-black uppercase tracking-widest text-red-500 mb-4 border-b-2 border-white/10 pb-1">
-						SERVICE ENDPOINTS
-					</h3>
-					<div className="space-y-4">
-						<div>
-							<div className="flex items-center justify-between mb-1">
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40">
-									Ollama URL
-								</label>
-								<TestButton provider="ollama" status={ollamaTest} />
-							</div>
-							<Input
-								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0"
-								placeholder="http://192.168.10.120:11434"
-								value={ollamaUrl}
-								onChange={(e) => setOllamaUrl(e.target.value)}
-							/>
-						</div>
-						<div>
-							<div className="flex items-center justify-between mb-1">
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40">
-									ACE-Step URL
-								</label>
-								<TestButton provider="ace-step" status={aceTest} />
-							</div>
-							<Input
-								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0"
-								placeholder="http://192.168.10.120:8001"
-								value={aceStepUrl}
-								onChange={(e) => setAceStepUrl(e.target.value)}
-							/>
-						</div>
-						<div>
-							<div className="flex items-center justify-between mb-1">
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40">
-									ComfyUI URL
-								</label>
-								<TestButton provider="comfyui" status={comfyuiTest} />
-							</div>
-							<Input
-								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0"
-								placeholder="http://192.168.10.120:8188"
-								value={comfyuiUrl}
-								onChange={(e) => setComfyuiUrl(e.target.value)}
-							/>
-						</div>
-					</div>
-				</section>
+			<div className="max-w-5xl mx-auto px-4 py-8">
+				{/* Mobile: horizontal tab strip */}
+				<div className="flex gap-0 md:hidden mb-6">
+					{TABS.map((tab, i) => {
+						const Icon = tab.icon;
+						const isActive = activeTab === tab.id;
+						return (
+							<button
+								key={tab.id}
+								type="button"
+								className={`flex-1 h-10 border-4 border-white/20 font-mono text-[10px] font-black uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 ${
+									i > 0 ? "border-l-0" : ""
+								} ${
+									isActive
+										? "bg-white text-black"
+										: "bg-transparent text-white/60 hover:bg-white/10"
+								}`}
+								onClick={() => setActiveTab(tab.id)}
+							>
+								<Icon size={12} />
+								{tab.label}
+								{tab.id === "audio" && activePlaylist && (
+									<span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+								)}
+							</button>
+						);
+					})}
+				</div>
 
-				{/* TEXT MODEL */}
-				<section>
-					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
-						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
-							TEXT MODEL — LYRICS & METADATA
-						</h3>
-					</div>
-					<div className="space-y-3">
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Provider
-							</label>
-							<div className="flex gap-0">
+				{/* Desktop: sidebar + panel grid */}
+				<div className="md:grid md:grid-cols-[200px_1fr] md:gap-6">
+					{/* Desktop sidebar — hidden on mobile */}
+					<nav className="hidden md:flex md:flex-col gap-1">
+						{TABS.map((tab) => {
+							const Icon = tab.icon;
+							const isActive = activeTab === tab.id;
+							return (
 								<button
+									key={tab.id}
 									type="button"
-									className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										textProvider === "ollama"
+									className={`w-full h-10 px-3 border-4 border-white/20 font-mono text-xs font-black uppercase tracking-wider transition-colors flex items-center gap-2 ${
+										isActive
 											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
+											: "bg-transparent text-white/60 hover:bg-white/10 hover:text-white"
 									}`}
-									onClick={() => setTextProvider("ollama")}
+									onClick={() => setActiveTab(tab.id)}
 								>
-									OLLAMA
+									<Icon size={14} />
+									{tab.label}
+									{tab.id === "audio" && activePlaylist && (
+										<span className="ml-auto w-2 h-2 rounded-full bg-yellow-500" />
+									)}
 								</button>
-								<button
-									type="button"
-									className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										textProvider === "openrouter"
-											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
-									}`}
-									onClick={() => setTextProvider("openrouter")}
-								>
-									OPENROUTER
-								</button>
-							</div>
-						</div>
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Model
-							</label>
-							{textProvider === "ollama" && textModels.length > 0 ? (
-								<Select value={textModel} onValueChange={setTextModel}>
-									<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-										<SelectValue placeholder="SELECT MODEL" />
-									</SelectTrigger>
-									<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-										{textModels.map((m) => (
-											<SelectItem
-												key={m.name}
-												value={m.name}
-												className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-											>
-												{m.name.toUpperCase()}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							) : (
-								<Input
-									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-									placeholder={
-										textProvider === "openrouter"
-											? "GOOGLE/GEMINI-2.5-FLASH"
-											: "LLAMA3.1:8B"
-									}
-									value={textModel}
-									onChange={(e) => setTextModel(e.target.value)}
-								/>
-							)}
-						</div>
-					</div>
-				</section>
+							);
+						})}
+					</nav>
 
-				{/* IMAGE MODEL */}
-				<section>
-					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
-						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
-							IMAGE MODEL — COVER ART
-						</h3>
-					</div>
-					<div className="space-y-3">
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Provider
-							</label>
-							<div className="flex gap-0">
-								<button
-									type="button"
-									className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										imageProvider === "comfyui"
-											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
-									}`}
-									onClick={() => setImageProvider("comfyui")}
-								>
-									COMFYUI
-								</button>
-								<button
-									type="button"
-									className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										imageProvider === "openrouter"
-											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
-									}`}
-									onClick={() => setImageProvider("openrouter")}
-								>
-									OPENROUTER
-								</button>
-							</div>
-						</div>
-						{imageProvider === "comfyui" ? (
-							<div>
-								<p className="text-[10px] font-bold uppercase text-white/30 mt-1">
-									USING BUILT-IN Z-IMAGE-TURBO (LUMINA2) WORKFLOW — 4 STEPS,
-									496x496, WEBSOCKET
-								</p>
-							</div>
-						) : (
-							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-									Model
-								</label>
-								<Input
-									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-									placeholder="OPENAI/DALL-E-3"
-									value={imageModel}
-									onChange={(e) => setImageModel(e.target.value)}
-								/>
-							</div>
+					{/* Content panel */}
+					<div className="min-w-0">
+						{activeTab === "network" && (
+							<SettingsTabNetwork
+								ollamaUrl={ollamaUrl}
+								setOllamaUrl={setOllamaUrl}
+								aceStepUrl={aceStepUrl}
+								setAceStepUrl={setAceStepUrl}
+								comfyuiUrl={comfyuiUrl}
+								setComfyuiUrl={setComfyuiUrl}
+								openrouterApiKey={openrouterApiKey}
+								setOpenrouterApiKey={setOpenrouterApiKey}
+								ollamaTest={ollamaTest}
+								aceTest={aceTest}
+								comfyuiTest={comfyuiTest}
+								openrouterTest={openrouterTest}
+								onTest={testConnection}
+							/>
 						)}
-					</div>
-				</section>
 
-				{/* ACE-STEP MODEL */}
-				<section>
-					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
-						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
-							ACE-STEP — AUDIO GENERATION
-						</h3>
-					</div>
-					<div className="space-y-3">
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Model
-							</label>
-							{aceModels.length > 0 ? (
-								<Select value={aceModel} onValueChange={setAceModel}>
-									<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-										<SelectValue placeholder="DEFAULT" />
-									</SelectTrigger>
-									<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-										<SelectItem
-											value="__default__"
-											className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-										>
-											DEFAULT
-										</SelectItem>
-										{aceModels.map((m) => (
-											<SelectItem
-												key={m.name}
-												value={m.name}
-												className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-											>
-												{m.name.toUpperCase()}
-												{m.is_default ? " (DEFAULT)" : ""}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							) : (
-								<Input
-									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-									placeholder="ACESTEP-V15-TURBO"
-									value={aceModel}
-									onChange={(e) => setAceModel(e.target.value)}
-								/>
-							)}
-						</div>
-					</div>
-				</section>
-
-				{/* ACE-STEP GENERATION PARAMS */}
-				<section>
-					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
-						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
-							ACE-STEP GENERATION PARAMS
-						</h3>
-						{activePlaylist && (
-							<span className="text-[10px] font-black uppercase tracking-wider text-yellow-500 animate-pulse">
-								EDITING ACTIVE PLAYLIST
-							</span>
+						{activeTab === "models" && (
+							<SettingsTabModels
+								textProvider={textProvider}
+								setTextProvider={setTextProvider}
+								textModel={textModel}
+								setTextModel={setTextModel}
+								imageProvider={imageProvider}
+								setImageProvider={setImageProvider}
+								imageModel={imageModel}
+								setImageModel={setImageModel}
+								aceModel={aceModel}
+								setAceModel={setAceModel}
+								ollamaModels={ollamaModels}
+								aceModels={aceModels}
+								openRouterTextModels={openRouterTextModels}
+								openRouterImageModels={openRouterImageModels}
+								openRouterLoading={openRouterLoading}
+							/>
 						)}
-					</div>
-					<div className="space-y-4">
-						{/* Inference Steps */}
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Inference Steps
-							</label>
-							<Input
-								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-								placeholder="12"
-								value={inferSteps}
-								onChange={(e) => {
-									if (e.target.value === "" || /^\d+$/.test(e.target.value))
-										setInferSteps(e.target.value);
-								}}
+
+						{activeTab === "audio" && (
+							<SettingsTabAudioEngine
+								inferSteps={inferSteps}
+								setInferSteps={setInferSteps}
+								lmTemp={lmTemp}
+								setLmTemp={setLmTemp}
+								lmCfg={lmCfg}
+								setLmCfg={setLmCfg}
+								inferMethod={inferMethod}
+								setInferMethod={setInferMethod}
+								activePlaylist={!!activePlaylist}
 							/>
-							<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
-								4-16 — HIGHER = BETTER QUALITY, SLOWER
-							</p>
-						</div>
+						)}
 
-						{/* LM Temperature + CFG Scale — side by side */}
-						<div className="grid grid-cols-2 gap-3">
-							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-									LM Temperature
-								</label>
-								<Input
-									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-									placeholder="0.85"
-									value={lmTemp}
-									onChange={(e) => {
-										if (
-											e.target.value === "" ||
-											/^\d*\.?\d*$/.test(e.target.value)
-										)
-											setLmTemp(e.target.value);
-									}}
-								/>
-								<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
-									0.1-1.5 — HIGHER = MORE CREATIVE
-								</p>
-							</div>
-							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-									LM CFG Scale
-								</label>
-								<Input
-									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-									placeholder="2.5"
-									value={lmCfg}
-									onChange={(e) => {
-										if (
-											e.target.value === "" ||
-											/^\d*\.?\d*$/.test(e.target.value)
-										)
-											setLmCfg(e.target.value);
-									}}
-								/>
-								<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
-									1.0-5.0 — HIGHER = FOLLOW PROMPT MORE
-								</p>
-							</div>
-						</div>
-
-						{/* Diffusion Method */}
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Diffusion Method
-							</label>
-							<div className="flex gap-0">
-								<button
-									type="button"
-									className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										inferMethod === "ode"
-											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
-									}`}
-									onClick={() => setInferMethod("ode")}
-								>
-									ODE (FASTER)
-								</button>
-								<button
-									type="button"
-									className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-										inferMethod === "sde"
-											? "bg-white text-black"
-											: "bg-transparent text-white hover:bg-white/10"
-									}`}
-									onClick={() => setInferMethod("sde")}
-								>
-									SDE (STOCHASTIC)
-								</button>
-							</div>
+						{/* SAVE — always visible below content */}
+						<div className="mt-8">
+							<Button
+								className={`w-full h-12 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${
+									saved
+										? "border-green-500/40 bg-green-500 text-white"
+										: "border-white/20 bg-red-500 text-white hover:bg-white hover:text-black"
+								}`}
+								onClick={save}
+							>
+								{saved ? "SAVED" : "SAVE SETTINGS"}
+							</Button>
 						</div>
 					</div>
-				</section>
-
-				{/* API KEYS */}
-				<section>
-					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
-						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
-							API KEYS
-						</h3>
-						<TestButton provider="openrouter" status={openrouterTest} />
-					</div>
-					<div className="space-y-3">
-						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								OpenRouter API Key
-							</label>
-							<Input
-								type="password"
-								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0"
-								placeholder="sk-or-..."
-								value={openrouterApiKey}
-								onChange={(e) => setOpenrouterApiKey(e.target.value)}
-							/>
-						</div>
-					</div>
-				</section>
-
-				{/* SAVE */}
-				<Button
-					className={`w-full h-12 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${
-						saved
-							? "border-green-500/40 bg-green-500 text-white"
-							: "border-white/20 bg-red-500 text-white hover:bg-white hover:text-black"
-					}`}
-					onClick={save}
-				>
-					{saved ? "SAVED" : "SAVE SETTINGS"}
-				</Button>
+				</div>
 			</div>
 		</div>
 	);

@@ -7,8 +7,20 @@ import type { Playlist } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
 interface DirectionSteeringProps {
-	playlist: Pick<Playlist, "_id" | "prompt" | "llmProvider" | "llmModel">;
+	playlist: Pick<
+		Playlist,
+		"_id" | "prompt" | "llmProvider" | "llmModel" | "promptEpoch" | "steerHistory"
+	>;
 	disabled?: boolean;
+}
+
+function formatTimeAgo(ms: number): string {
+	const seconds = Math.floor((Date.now() - ms) / 1000);
+	if (seconds < 60) return `${seconds}s ago`;
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}min ago`;
+	const hours = Math.floor(minutes / 60);
+	return `${hours}h ago`;
 }
 
 export function DirectionSteering({
@@ -50,6 +62,8 @@ export function DirectionSteering({
 		}
 	};
 
+	const history = playlist.steerHistory ?? [];
+
 	return (
 		<div className="p-4">
 			<div className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-white/60">
@@ -75,6 +89,35 @@ export function DirectionSteering({
 					{loading ? "REFINING..." : "STEER"}
 				</Button>
 			</div>
+
+			{/* Direction history */}
+			{history.length > 0 && (
+				<div className="mt-3 space-y-1">
+					<p className="text-[10px] font-bold uppercase tracking-widest text-white/60">
+						CURRENT DIRECTION: &quot;{playlist.prompt}&quot;
+					</p>
+					<div className="border-t border-white/10 pt-1">
+						<p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-0.5">
+							HISTORY:
+						</p>
+						{[...history]
+							.reverse()
+							.slice(0, 5)
+							.map((entry) => (
+								<p
+									key={entry.epoch}
+									className="text-[10px] uppercase text-white/30 pl-2"
+								>
+									[{entry.epoch}] &rarr;{" "}
+									{entry.direction.length > 60
+										? `${entry.direction.slice(0, 60)}...`
+										: entry.direction}{" "}
+									({formatTimeAgo(entry.at)})
+								</p>
+							))}
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

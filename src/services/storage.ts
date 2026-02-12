@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getServiceUrls } from "@/lib/server-settings";
+import { trimTrailingSilence } from "./audio-processing";
 
 function resolveLocalAudioPath(aceAudioPath: string): string | null {
 	const storagePath = process.env.MUSIC_STORAGE_PATH;
@@ -47,7 +48,7 @@ export async function saveSongToNfs(options: {
 	audioDuration: number;
 	aceAudioPath: string;
 	coverBase64?: string | null;
-}): Promise<{ storagePath: string; audioFile: string }> {
+}): Promise<{ storagePath: string; audioFile: string; effectiveDuration?: number }> {
 	const {
 		songId,
 		title,
@@ -119,6 +120,9 @@ export async function saveSongToNfs(options: {
 		fs.writeFileSync(audioFile, audioBuffer);
 	}
 
+	// Trim trailing silence from audio
+	const trimResult = await trimTrailingSilence(audioFile);
+
 	if (coverBase64) {
 		const coverBuffer = Buffer.from(coverBase64, "base64");
 		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
@@ -154,5 +158,9 @@ export async function saveSongToNfs(options: {
 		JSON.stringify(log, null, 2),
 	);
 
-	return { storagePath: songDir, audioFile };
+	return {
+		storagePath: songDir,
+		audioFile,
+		effectiveDuration: trimResult.trimmed ? trimResult.trimmedDuration : undefined,
+	};
 }

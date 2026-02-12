@@ -1,11 +1,13 @@
 import { type MutableRefObject, useEffect, useRef } from "react";
+import { pickNextSong } from "@/lib/pick-next-song";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
-import type { Id, Song } from "@/types/convex";
+import type { Id, Playlist, Song } from "@/types/convex";
 
 /**
  * Auto-plays songs when they become ready, gated on prior user interaction.
- * - Selects the next ready song when nothing is playing.
+ * - Uses pickNextSong for priority-based selection (interrupts > current-epoch > filler).
  * - Loads audio when the current song changes.
+ * - Re-evaluates when a played song's successor becomes ready (gap recovery).
  */
 export function useAutoplay(
 	songs: Song[] | undefined,
@@ -13,10 +15,12 @@ export function useAutoplay(
 	currentSongId: string | null,
 	loadAndPlay: (url: string) => void,
 	userHasInteractedRef: MutableRefObject<boolean>,
+	playlist: Playlist | null | undefined,
 ) {
 	const loadedSongIdRef = useRef<string | null>(null);
 
-	// Auto-play when a song becomes ready and nothing is playing
+	// Auto-play when a song becomes ready and nothing is playing,
+	// or when the current song has been played and a new one is available
 	useEffect(() => {
 		if (!userHasInteractedRef.current) return;
 		if (!songs || !playlistId) return;
@@ -26,14 +30,19 @@ export function useAutoplay(
 			? songs.find((s) => s._id === currentSongId)
 			: null;
 
-		if (!currentSong) {
-			const nextReady = songs.find((s) => s.status === "ready");
-			if (nextReady?.audioUrl) {
-				setCurrentSong(nextReady._id);
-				loadAndPlay(nextReady.audioUrl);
+		const shouldPick = !currentSong || currentSong.status === "played";
+		if (shouldPick) {
+			const next = pickNextSong(
+				songs,
+				currentSongId,
+				playlist?.promptEpoch ?? 0,
+			);
+			if (next?.audioUrl) {
+				setCurrentSong(next._id);
+				loadAndPlay(next.audioUrl);
 			}
 		}
-	}, [songs, currentSongId, playlistId, loadAndPlay, userHasInteractedRef]);
+	}, [songs, currentSongId, playlistId, loadAndPlay, userHasInteractedRef, playlist?.promptEpoch]);
 
 	// Auto-play when current song changes and has audio
 	useEffect(() => {
