@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
 const SYSTEM_PROMPT = `You are a music session director. You will receive a current session prompt and a user direction. Merge them into an updated prompt.
@@ -24,7 +25,32 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						model: string;
 					};
 
-					const userMessage = `Current session prompt:\n"${currentPrompt}"\n\nUser direction:\n"${direction}"\n\nReturn the updated prompt:`;
+					if (
+						!currentPrompt ||
+						typeof currentPrompt !== "string" ||
+						!direction ||
+						typeof direction !== "string" ||
+						!provider ||
+						!model
+					) {
+						return new Response(
+							JSON.stringify({
+								error:
+									"Missing required fields: currentPrompt, direction, provider, model",
+							}),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+					const trimmedPrompt = currentPrompt.trim().slice(0, 2000);
+					const trimmedDirection = direction.trim().slice(0, 2000);
+					if (!trimmedPrompt || !trimmedDirection) {
+						return new Response(
+							JSON.stringify({ error: "Prompt and direction cannot be empty" }),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+
+					const userMessage = `Current session prompt:\n"${trimmedPrompt}"\n\nUser direction:\n"${trimmedDirection}"\n\nReturn the updated prompt:`;
 
 					let fullText: string;
 
@@ -81,7 +107,7 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 					}
 
 					return new Response(
-						JSON.stringify({ updatedPrompt: fullText.trim() }),
+						JSON.stringify({ result: sanitizeLlmText(fullText) }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {

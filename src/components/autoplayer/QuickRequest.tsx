@@ -38,8 +38,8 @@ export function QuickRequest({
 					}),
 				});
 				const data = await res.json();
-				if (data.enhancedRequest) {
-					onRequest(data.enhancedRequest);
+				if (data.result) {
+					onRequest(data.result);
 				} else {
 					onRequest(trimmed);
 				}

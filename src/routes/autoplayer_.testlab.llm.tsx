@@ -9,7 +9,7 @@ import {
 import { api } from "../../convex/_generated/api";
 import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
-export const Route = createFileRoute("/autoplayer_/test/llm")({
+export const Route = createFileRoute("/autoplayer_/testlab/llm")({
 	component: LlmTestPage,
 });
 

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
 const SYSTEM_PROMPT = `You are a music request enhancer. The user has typed a short song request. Expand it into a richer description for an AI music producer that uses an audio generation model.
@@ -32,6 +33,27 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 						model: string;
 					};
 
+					if (
+						!songRequest ||
+						typeof songRequest !== "string" ||
+						!provider ||
+						!model
+					) {
+						return new Response(
+							JSON.stringify({
+								error: "Missing required fields: request, provider, model",
+							}),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+					const trimmedRequest = songRequest.trim().slice(0, 2000);
+					if (!trimmedRequest) {
+						return new Response(
+							JSON.stringify({ error: "Request cannot be empty" }),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+
 					let fullText: string;
 
 					if (provider === "openrouter") {
@@ -51,7 +73,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 									model,
 									messages: [
 										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: songRequest },
+										{ role: "user", content: trimmedRequest },
 									],
 								}),
 							},
@@ -71,7 +93,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 								model,
 								messages: [
 									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: songRequest },
+									{ role: "user", content: trimmedRequest },
 								],
 								stream: false,
 								keep_alive: "10m",
@@ -87,7 +109,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 					}
 
 					return new Response(
-						JSON.stringify({ enhancedRequest: fullText.trim() }),
+						JSON.stringify({ result: sanitizeLlmText(fullText) }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {

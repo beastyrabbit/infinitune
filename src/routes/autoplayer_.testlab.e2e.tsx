@@ -12,7 +12,7 @@ import {
 import { api } from "../../convex/_generated/api";
 import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
-export const Route = createFileRoute("/autoplayer_/test/e2e")({
+export const Route = createFileRoute("/autoplayer_/testlab/e2e")({
 	component: PipelineTestPage,
 });
 

@@ -36,10 +36,10 @@ export function DirectionSteering({
 				}),
 			});
 			const data = await res.json();
-			if (data.updatedPrompt) {
+			if (data.result) {
 				await updatePrompt({
 					id: playlist._id,
-					prompt: data.updatedPrompt,
+					prompt: data.result,
 				});
 				setValue("");
 			}

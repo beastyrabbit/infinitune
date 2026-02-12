@@ -110,8 +110,8 @@ export function PlaylistCreator({
 			});
 			if (res.ok) {
 				const data = await res.json();
-				if (data.enhancedPrompt) {
-					setPrompt(data.enhancedPrompt.toUpperCase());
+				if (data.result) {
+					setPrompt(data.result);
 				}
 			}
 		} catch {
@@ -226,7 +226,7 @@ export function PlaylistCreator({
 								className="min-h-[120px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-white/40 resize-none"
 								placeholder="GERMAN ROCK LIKE RAMMSTEIN MEETS LINKIN PARK WITH HEAVY INDUSTRIAL BEATS..."
 								value={prompt}
-								onChange={(e) => setPrompt(e.target.value.toUpperCase())}
+								onChange={(e) => setPrompt(e.target.value)}
 							/>
 							<button
 								type="button"

@@ -9,7 +9,7 @@ import {
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { api } from "../../convex/_generated/api";
 
-export const Route = createFileRoute("/autoplayer_/test/cover")({
+export const Route = createFileRoute("/autoplayer_/testlab/cover")({
 	component: CoverTestPage,
 });
 

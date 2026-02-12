@@ -12,17 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AutoplayerTestRouteImport } from './routes/autoplayer_.test'
+import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
 import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
 import { Route as AutoplayerOneshotRouteImport } from './routes/autoplayer_.oneshot'
 import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
-import { Route as AutoplayerTestIndexRouteImport } from './routes/autoplayer_.test.index'
-import { Route as AutoplayerTestLlmRouteImport } from './routes/autoplayer_.test.llm'
-import { Route as AutoplayerTestE2eRouteImport } from './routes/autoplayer_.test.e2e'
-import { Route as AutoplayerTestCoverRouteImport } from './routes/autoplayer_.test.cover'
-import { Route as AutoplayerTestConnectionsRouteImport } from './routes/autoplayer_.test.connections'
-import { Route as AutoplayerTestAceRouteImport } from './routes/autoplayer_.test.ace'
+import { Route as AutoplayerTestlabIndexRouteImport } from './routes/autoplayer_.testlab.index'
+import { Route as AutoplayerTestlabLlmRouteImport } from './routes/autoplayer_.testlab.llm'
+import { Route as AutoplayerTestlabE2eRouteImport } from './routes/autoplayer_.testlab.e2e'
+import { Route as AutoplayerTestlabCoverRouteImport } from './routes/autoplayer_.testlab.cover'
+import { Route as AutoplayerTestlabConnectionsRouteImport } from './routes/autoplayer_.testlab.connections'
+import { Route as AutoplayerTestlabAceRouteImport } from './routes/autoplayer_.testlab.ace'
 import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.autoplayer.test-connection'
 import { Route as ApiAutoplayerSubmitAceRouteImport } from './routes/api.autoplayer.submit-ace'
 import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplayer.save-song'
@@ -52,9 +52,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AutoplayerTestRoute = AutoplayerTestRouteImport.update({
-  id: '/autoplayer_/test',
-  path: '/autoplayer/test',
+const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
+  id: '/autoplayer_/testlab',
+  path: '/autoplayer/testlab',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
@@ -77,36 +77,36 @@ const AutoplayerLibraryRoute = AutoplayerLibraryRouteImport.update({
   path: '/autoplayer/library',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AutoplayerTestIndexRoute = AutoplayerTestIndexRouteImport.update({
+const AutoplayerTestlabIndexRoute = AutoplayerTestlabIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AutoplayerTestRoute,
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
-const AutoplayerTestLlmRoute = AutoplayerTestLlmRouteImport.update({
+const AutoplayerTestlabLlmRoute = AutoplayerTestlabLlmRouteImport.update({
   id: '/llm',
   path: '/llm',
-  getParentRoute: () => AutoplayerTestRoute,
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
-const AutoplayerTestE2eRoute = AutoplayerTestE2eRouteImport.update({
+const AutoplayerTestlabE2eRoute = AutoplayerTestlabE2eRouteImport.update({
   id: '/e2e',
   path: '/e2e',
-  getParentRoute: () => AutoplayerTestRoute,
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
-const AutoplayerTestCoverRoute = AutoplayerTestCoverRouteImport.update({
+const AutoplayerTestlabCoverRoute = AutoplayerTestlabCoverRouteImport.update({
   id: '/cover',
   path: '/cover',
-  getParentRoute: () => AutoplayerTestRoute,
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
-const AutoplayerTestConnectionsRoute =
-  AutoplayerTestConnectionsRouteImport.update({
+const AutoplayerTestlabConnectionsRoute =
+  AutoplayerTestlabConnectionsRouteImport.update({
     id: '/connections',
     path: '/connections',
-    getParentRoute: () => AutoplayerTestRoute,
+    getParentRoute: () => AutoplayerTestlabRoute,
   } as any)
-const AutoplayerTestAceRoute = AutoplayerTestAceRouteImport.update({
+const AutoplayerTestlabAceRoute = AutoplayerTestlabAceRouteImport.update({
   id: '/ace',
   path: '/ace',
-  getParentRoute: () => AutoplayerTestRoute,
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
 const ApiAutoplayerTestConnectionRoute =
   ApiAutoplayerTestConnectionRouteImport.update({
@@ -191,7 +191,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
   '/autoplayer/queue': typeof AutoplayerQueueRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
-  '/autoplayer/test': typeof AutoplayerTestRouteWithChildren
+  '/autoplayer/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -204,12 +204,12 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer/test/ace': typeof AutoplayerTestAceRoute
-  '/autoplayer/test/connections': typeof AutoplayerTestConnectionsRoute
-  '/autoplayer/test/cover': typeof AutoplayerTestCoverRoute
-  '/autoplayer/test/e2e': typeof AutoplayerTestE2eRoute
-  '/autoplayer/test/llm': typeof AutoplayerTestLlmRoute
-  '/autoplayer/test/': typeof AutoplayerTestIndexRoute
+  '/autoplayer/testlab/ace': typeof AutoplayerTestlabAceRoute
+  '/autoplayer/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
+  '/autoplayer/testlab/cover': typeof AutoplayerTestlabCoverRoute
+  '/autoplayer/testlab/e2e': typeof AutoplayerTestlabE2eRoute
+  '/autoplayer/testlab/llm': typeof AutoplayerTestlabLlmRoute
+  '/autoplayer/testlab/': typeof AutoplayerTestlabIndexRoute
   '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRoutesByTo {
@@ -232,12 +232,12 @@ export interface FileRoutesByTo {
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer/test/ace': typeof AutoplayerTestAceRoute
-  '/autoplayer/test/connections': typeof AutoplayerTestConnectionsRoute
-  '/autoplayer/test/cover': typeof AutoplayerTestCoverRoute
-  '/autoplayer/test/e2e': typeof AutoplayerTestE2eRoute
-  '/autoplayer/test/llm': typeof AutoplayerTestLlmRoute
-  '/autoplayer/test': typeof AutoplayerTestIndexRoute
+  '/autoplayer/testlab/ace': typeof AutoplayerTestlabAceRoute
+  '/autoplayer/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
+  '/autoplayer/testlab/cover': typeof AutoplayerTestlabCoverRoute
+  '/autoplayer/testlab/e2e': typeof AutoplayerTestlabE2eRoute
+  '/autoplayer/testlab/llm': typeof AutoplayerTestlabLlmRoute
+  '/autoplayer/testlab': typeof AutoplayerTestlabIndexRoute
   '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRoutesById {
@@ -249,7 +249,7 @@ export interface FileRoutesById {
   '/autoplayer_/oneshot': typeof AutoplayerOneshotRoute
   '/autoplayer_/queue': typeof AutoplayerQueueRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
-  '/autoplayer_/test': typeof AutoplayerTestRouteWithChildren
+  '/autoplayer_/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -262,12 +262,12 @@ export interface FileRoutesById {
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer_/test/ace': typeof AutoplayerTestAceRoute
-  '/autoplayer_/test/connections': typeof AutoplayerTestConnectionsRoute
-  '/autoplayer_/test/cover': typeof AutoplayerTestCoverRoute
-  '/autoplayer_/test/e2e': typeof AutoplayerTestE2eRoute
-  '/autoplayer_/test/llm': typeof AutoplayerTestLlmRoute
-  '/autoplayer_/test/': typeof AutoplayerTestIndexRoute
+  '/autoplayer_/testlab/ace': typeof AutoplayerTestlabAceRoute
+  '/autoplayer_/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
+  '/autoplayer_/testlab/cover': typeof AutoplayerTestlabCoverRoute
+  '/autoplayer_/testlab/e2e': typeof AutoplayerTestlabE2eRoute
+  '/autoplayer_/testlab/llm': typeof AutoplayerTestlabLlmRoute
+  '/autoplayer_/testlab/': typeof AutoplayerTestlabIndexRoute
   '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRouteTypes {
@@ -280,7 +280,7 @@ export interface FileRouteTypes {
     | '/autoplayer/oneshot'
     | '/autoplayer/queue'
     | '/autoplayer/settings'
-    | '/autoplayer/test'
+    | '/autoplayer/testlab'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -293,12 +293,12 @@ export interface FileRouteTypes {
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer/test/ace'
-    | '/autoplayer/test/connections'
-    | '/autoplayer/test/cover'
-    | '/autoplayer/test/e2e'
-    | '/autoplayer/test/llm'
-    | '/autoplayer/test/'
+    | '/autoplayer/testlab/ace'
+    | '/autoplayer/testlab/connections'
+    | '/autoplayer/testlab/cover'
+    | '/autoplayer/testlab/e2e'
+    | '/autoplayer/testlab/llm'
+    | '/autoplayer/testlab/'
     | '/api/autoplayer/audio/$songId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -321,12 +321,12 @@ export interface FileRouteTypes {
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer/test/ace'
-    | '/autoplayer/test/connections'
-    | '/autoplayer/test/cover'
-    | '/autoplayer/test/e2e'
-    | '/autoplayer/test/llm'
-    | '/autoplayer/test'
+    | '/autoplayer/testlab/ace'
+    | '/autoplayer/testlab/connections'
+    | '/autoplayer/testlab/cover'
+    | '/autoplayer/testlab/e2e'
+    | '/autoplayer/testlab/llm'
+    | '/autoplayer/testlab'
     | '/api/autoplayer/audio/$songId'
   id:
     | '__root__'
@@ -337,7 +337,7 @@ export interface FileRouteTypes {
     | '/autoplayer_/oneshot'
     | '/autoplayer_/queue'
     | '/autoplayer_/settings'
-    | '/autoplayer_/test'
+    | '/autoplayer_/testlab'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -350,12 +350,12 @@ export interface FileRouteTypes {
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer_/test/ace'
-    | '/autoplayer_/test/connections'
-    | '/autoplayer_/test/cover'
-    | '/autoplayer_/test/e2e'
-    | '/autoplayer_/test/llm'
-    | '/autoplayer_/test/'
+    | '/autoplayer_/testlab/ace'
+    | '/autoplayer_/testlab/connections'
+    | '/autoplayer_/testlab/cover'
+    | '/autoplayer_/testlab/e2e'
+    | '/autoplayer_/testlab/llm'
+    | '/autoplayer_/testlab/'
     | '/api/autoplayer/audio/$songId'
   fileRoutesById: FileRoutesById
 }
@@ -367,7 +367,7 @@ export interface RootRouteChildren {
   AutoplayerOneshotRoute: typeof AutoplayerOneshotRoute
   AutoplayerQueueRoute: typeof AutoplayerQueueRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
-  AutoplayerTestRoute: typeof AutoplayerTestRouteWithChildren
+  AutoplayerTestlabRoute: typeof AutoplayerTestlabRouteWithChildren
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
   ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
   ApiAutoplayerEnhanceRequestRoute: typeof ApiAutoplayerEnhanceRequestRoute
@@ -406,11 +406,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/autoplayer_/test': {
-      id: '/autoplayer_/test'
-      path: '/autoplayer/test'
-      fullPath: '/autoplayer/test'
-      preLoaderRoute: typeof AutoplayerTestRouteImport
+    '/autoplayer_/testlab': {
+      id: '/autoplayer_/testlab'
+      path: '/autoplayer/testlab'
+      fullPath: '/autoplayer/testlab'
+      preLoaderRoute: typeof AutoplayerTestlabRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/settings': {
@@ -441,47 +441,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutoplayerLibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/autoplayer_/test/': {
-      id: '/autoplayer_/test/'
+    '/autoplayer_/testlab/': {
+      id: '/autoplayer_/testlab/'
       path: '/'
-      fullPath: '/autoplayer/test/'
-      preLoaderRoute: typeof AutoplayerTestIndexRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/'
+      preLoaderRoute: typeof AutoplayerTestlabIndexRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/test/llm': {
-      id: '/autoplayer_/test/llm'
+    '/autoplayer_/testlab/llm': {
+      id: '/autoplayer_/testlab/llm'
       path: '/llm'
-      fullPath: '/autoplayer/test/llm'
-      preLoaderRoute: typeof AutoplayerTestLlmRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/llm'
+      preLoaderRoute: typeof AutoplayerTestlabLlmRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/test/e2e': {
-      id: '/autoplayer_/test/e2e'
+    '/autoplayer_/testlab/e2e': {
+      id: '/autoplayer_/testlab/e2e'
       path: '/e2e'
-      fullPath: '/autoplayer/test/e2e'
-      preLoaderRoute: typeof AutoplayerTestE2eRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/e2e'
+      preLoaderRoute: typeof AutoplayerTestlabE2eRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/test/cover': {
-      id: '/autoplayer_/test/cover'
+    '/autoplayer_/testlab/cover': {
+      id: '/autoplayer_/testlab/cover'
       path: '/cover'
-      fullPath: '/autoplayer/test/cover'
-      preLoaderRoute: typeof AutoplayerTestCoverRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/cover'
+      preLoaderRoute: typeof AutoplayerTestlabCoverRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/test/connections': {
-      id: '/autoplayer_/test/connections'
+    '/autoplayer_/testlab/connections': {
+      id: '/autoplayer_/testlab/connections'
       path: '/connections'
-      fullPath: '/autoplayer/test/connections'
-      preLoaderRoute: typeof AutoplayerTestConnectionsRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/connections'
+      preLoaderRoute: typeof AutoplayerTestlabConnectionsRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/test/ace': {
-      id: '/autoplayer_/test/ace'
+    '/autoplayer_/testlab/ace': {
+      id: '/autoplayer_/testlab/ace'
       path: '/ace'
-      fullPath: '/autoplayer/test/ace'
-      preLoaderRoute: typeof AutoplayerTestAceRouteImport
-      parentRoute: typeof AutoplayerTestRoute
+      fullPath: '/autoplayer/testlab/ace'
+      preLoaderRoute: typeof AutoplayerTestlabAceRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
     '/api/autoplayer/test-connection': {
       id: '/api/autoplayer/test-connection'
@@ -577,27 +577,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AutoplayerTestRouteChildren {
-  AutoplayerTestAceRoute: typeof AutoplayerTestAceRoute
-  AutoplayerTestConnectionsRoute: typeof AutoplayerTestConnectionsRoute
-  AutoplayerTestCoverRoute: typeof AutoplayerTestCoverRoute
-  AutoplayerTestE2eRoute: typeof AutoplayerTestE2eRoute
-  AutoplayerTestLlmRoute: typeof AutoplayerTestLlmRoute
-  AutoplayerTestIndexRoute: typeof AutoplayerTestIndexRoute
+interface AutoplayerTestlabRouteChildren {
+  AutoplayerTestlabAceRoute: typeof AutoplayerTestlabAceRoute
+  AutoplayerTestlabConnectionsRoute: typeof AutoplayerTestlabConnectionsRoute
+  AutoplayerTestlabCoverRoute: typeof AutoplayerTestlabCoverRoute
+  AutoplayerTestlabE2eRoute: typeof AutoplayerTestlabE2eRoute
+  AutoplayerTestlabLlmRoute: typeof AutoplayerTestlabLlmRoute
+  AutoplayerTestlabIndexRoute: typeof AutoplayerTestlabIndexRoute
 }
 
-const AutoplayerTestRouteChildren: AutoplayerTestRouteChildren = {
-  AutoplayerTestAceRoute: AutoplayerTestAceRoute,
-  AutoplayerTestConnectionsRoute: AutoplayerTestConnectionsRoute,
-  AutoplayerTestCoverRoute: AutoplayerTestCoverRoute,
-  AutoplayerTestE2eRoute: AutoplayerTestE2eRoute,
-  AutoplayerTestLlmRoute: AutoplayerTestLlmRoute,
-  AutoplayerTestIndexRoute: AutoplayerTestIndexRoute,
+const AutoplayerTestlabRouteChildren: AutoplayerTestlabRouteChildren = {
+  AutoplayerTestlabAceRoute: AutoplayerTestlabAceRoute,
+  AutoplayerTestlabConnectionsRoute: AutoplayerTestlabConnectionsRoute,
+  AutoplayerTestlabCoverRoute: AutoplayerTestlabCoverRoute,
+  AutoplayerTestlabE2eRoute: AutoplayerTestlabE2eRoute,
+  AutoplayerTestlabLlmRoute: AutoplayerTestlabLlmRoute,
+  AutoplayerTestlabIndexRoute: AutoplayerTestlabIndexRoute,
 }
 
-const AutoplayerTestRouteWithChildren = AutoplayerTestRoute._addFileChildren(
-  AutoplayerTestRouteChildren,
-)
+const AutoplayerTestlabRouteWithChildren =
+  AutoplayerTestlabRoute._addFileChildren(AutoplayerTestlabRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -607,7 +606,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerOneshotRoute: AutoplayerOneshotRoute,
   AutoplayerQueueRoute: AutoplayerQueueRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
-  AutoplayerTestRoute: AutoplayerTestRouteWithChildren,
+  AutoplayerTestlabRoute: AutoplayerTestlabRouteWithChildren,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,
   ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,
   ApiAutoplayerEnhanceRequestRoute: ApiAutoplayerEnhanceRequestRoute,

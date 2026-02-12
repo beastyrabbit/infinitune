@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { getServiceUrls, getSetting } from "@/lib/server-settings";
 
 const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a focused SESSION THEME for an AI music playlist generator.
@@ -34,6 +35,22 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 						model: string;
 					};
 
+					if (!prompt || typeof prompt !== "string" || !provider || !model) {
+						return new Response(
+							JSON.stringify({
+								error: "Missing required fields: prompt, provider, model",
+							}),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+					const trimmedPrompt = prompt.trim().slice(0, 2000);
+					if (!trimmedPrompt) {
+						return new Response(
+							JSON.stringify({ error: "Prompt cannot be empty" }),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+
 					let fullText: string;
 
 					if (provider === "openrouter") {
@@ -53,7 +70,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 									model,
 									messages: [
 										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: prompt },
+										{ role: "user", content: trimmedPrompt },
 									],
 								}),
 							},
@@ -73,7 +90,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 								model,
 								messages: [
 									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: prompt },
+									{ role: "user", content: trimmedPrompt },
 								],
 								stream: false,
 								keep_alive: "10m",
@@ -89,7 +106,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 					}
 
 					return new Response(
-						JSON.stringify({ enhancedPrompt: fullText.trim() }),
+						JSON.stringify({ result: sanitizeLlmText(fullText) }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Cpu, Image, Music, PlayCircle, Plug } from "lucide-react";
 
-export const Route = createFileRoute("/autoplayer_/test/")({
+export const Route = createFileRoute("/autoplayer_/testlab/")({
 	component: TestLabIndex,
 });
 
@@ -9,31 +9,31 @@ const TEST_CARDS = [
 	{
 		title: "E2E PIPELINE",
 		description: "Full pipeline: LLM → cover → audio → save",
-		to: "/autoplayer/test/e2e",
+		to: "/autoplayer/testlab/e2e",
 		icon: PlayCircle,
 	},
 	{
 		title: "LLM GENERATION",
 		description: "Test song metadata generation with full prompt visibility",
-		to: "/autoplayer/test/llm",
+		to: "/autoplayer/testlab/llm",
 		icon: Cpu,
 	},
 	{
 		title: "COVER ART",
 		description: "Generate covers, side-by-side comparison",
-		to: "/autoplayer/test/cover",
+		to: "/autoplayer/testlab/cover",
 		icon: Image,
 	},
 	{
 		title: "ACE-STEP AUDIO",
 		description: "Submit + poll audio generation",
-		to: "/autoplayer/test/ace",
+		to: "/autoplayer/testlab/ace",
 		icon: Music,
 	},
 	{
 		title: "CONNECTIONS",
 		description: "Test all service endpoints",
-		to: "/autoplayer/test/connections",
+		to: "/autoplayer/testlab/connections",
 		icon: Plug,
 	},
 ] as const;

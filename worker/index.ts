@@ -15,6 +15,9 @@ const HEARTBEAT_STALE_MS = 90_000 // 90 seconds = 3 missed 30s heartbeats
 /** Active song workers keyed by songId */
 const songWorkers = new Map<Id<"songs">, SongWorker>()
 
+/** Reverse index: playlist → set of active song IDs */
+const playlistSongs = new Map<Id<"playlists">, Set<Id<"songs">>>()
+
 /** Tracked playlist IDs from last tick */
 const trackedPlaylists = new Set<Id<"playlists">>()
 
@@ -129,9 +132,22 @@ async function tick() {
           })
           songWorkers.set(song._id, worker)
 
+          // Track song → playlist for reverse lookup
+          let songSet = playlistSongs.get(playlistId)
+          if (!songSet) {
+            songSet = new Set()
+            playlistSongs.set(playlistId, songSet)
+          }
+          songSet.add(song._id)
+
           // Fire-and-forget
           worker.run().finally(() => {
             songWorkers.delete(song._id)
+            const set = playlistSongs.get(playlistId)
+            if (set) {
+              set.delete(song._id)
+              if (set.size === 0) playlistSongs.delete(playlistId)
+            }
           })
         }
 
@@ -177,11 +193,15 @@ async function tick() {
   }
 }
 
-function cancelPlaylistWorkers(_playlistId: Id<"playlists">): void {
-  // Song workers check playlist activity before each major step.
-  // When a playlist disappears, their getPlaylistActive() returns false
-  // and they'll abort. The queues will also reject cancelled items.
-  // No explicit per-playlist tracking needed — workers self-terminate.
+function cancelPlaylistWorkers(playlistId: Id<"playlists">): void {
+  const songIds = playlistSongs.get(playlistId)
+  if (songIds) {
+    for (const songId of songIds) {
+      const worker = songWorkers.get(songId)
+      if (worker) worker.cancel()
+    }
+  }
+  playlistSongs.delete(playlistId)
 }
 
 // ─── Startup ─────────────────────────────────────────────────────────

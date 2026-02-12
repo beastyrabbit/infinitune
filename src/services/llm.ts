@@ -32,7 +32,7 @@ Field guidance:
   "lo-fi hip-hop, dusty SP-404 samples, muted Rhodes, vinyl crackle, boom-bap drums, late-night contemplative"
 - coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
   RULES:
-  1. ART STYLE — Pick ONE at random, NEVER repeat across songs: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, stained glass window, watercolor bleed on wet paper, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, spray paint stencil on brick wall, Dutch Golden Age still life, Chinese ink wash painting, cross-processed 35mm film, Aboriginal dot painting, 1950s pulp sci-fi cover, solarized darkroom print
+  1. ART STYLE — Pick ONE at random. Vary art styles across songs: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, stained glass window, watercolor bleed on wet paper, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, spray paint stencil on brick wall, Dutch Golden Age still life, Chinese ink wash painting, cross-processed 35mm film, Aboriginal dot painting, 1950s pulp sci-fi cover, solarized darkroom print
   2. SCENE — A SPECIFIC, vivid scene inspired by THIS song's lyrics. Describe exact objects, materials, textures, spatial relationships. BAD: "a woman standing in rain". GOOD: "a woman in a moth-eaten velvet coat standing ankle-deep in a flooded ballroom, chandelier reflections rippling across the black water surface".
   3. MATERIALS & TEXTURES — Specify physical qualities: "cracked leather", "oxidized copper patina", "rain-streaked glass".
   4. LIGHTING — Be precise: "harsh tungsten overhead casting deep eye-socket shadows", "golden hour backlighting through dusty air".
@@ -53,7 +53,7 @@ Field guidance:
 - language: Language of the lyrics. e.g. "English", "German", "Mixed (English/Spanish)"
 - description: Short 1-2 sentence music journalist description. Max 200 chars.
 
-JSON OUTPUT: NEVER use double-quote characters (") inside any string value — use single quotes (') instead. All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
+JSON OUTPUT: All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
 
 /** Close prompt — stays near the playlist theme, like a radio station that stays on-brand */
 const SYSTEM_PROMPT_CLOSE = `You are a music producer AI. Generate a song that fits naturally in this playlist.
@@ -229,6 +229,63 @@ export interface RecentSong {
 	vocalStyle?: string;
 	mood?: string;
 	energy?: string;
+}
+
+function clampInt(
+	val: unknown,
+	min: number,
+	max: number,
+	fallback: number,
+): number {
+	const n = typeof val === "number" ? val : fallback;
+	return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+/** Validate and clamp LLM-generated metadata to safe ranges */
+function validateSongMetadata(raw: Record<string, unknown>): SongMetadata {
+	const str = (val: unknown, fallback: string): string =>
+		typeof val === "string" && val.trim() ? val.trim() : fallback;
+	const strArr = (val: unknown, fallback: string[]): string[] =>
+		Array.isArray(val) &&
+		val.length > 0 &&
+		val.every((v) => typeof v === "string")
+			? val
+			: fallback;
+
+	return {
+		title: str(raw.title, "Untitled"),
+		artistName: str(raw.artistName, "Unknown Artist"),
+		genre: str(raw.genre, "Electronic"),
+		subGenre: str(raw.subGenre, "Ambient"),
+		vocalStyle: str(raw.vocalStyle, "female smooth vocal"),
+		lyrics: str(raw.lyrics, "[Instrumental]"),
+		caption: str(
+			raw.caption,
+			"ambient electronic, soft pads, gentle beat, dreamy atmosphere",
+		),
+		coverPrompt:
+			typeof raw.coverPrompt === "string" ? raw.coverPrompt.trim() : undefined,
+		bpm: clampInt(raw.bpm, 60, 200, 120),
+		keyScale: str(raw.keyScale, "C major"),
+		timeSignature:
+			typeof raw.timeSignature === "string" &&
+			/^\d+\/\d+$/.test(raw.timeSignature)
+				? raw.timeSignature
+				: "4/4",
+		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
+		mood: str(raw.mood, "dreamy"),
+		energy: str(raw.energy, "medium"),
+		era: str(raw.era, "2020s"),
+		instruments: strArr(raw.instruments, [
+			"synthesizer",
+			"drum machine",
+			"bass",
+		]),
+		tags: strArr(raw.tags, ["electronic", "ambient"]),
+		themes: strArr(raw.themes, ["atmosphere"]),
+		language: str(raw.language, "English"),
+		description: str(raw.description, "An AI-generated track."),
+	};
 }
 
 /** Repair common LLM JSON output issues: unescaped control chars, markdown artifacts, internal quotes */
@@ -455,7 +512,7 @@ export async function generateSongMetadata(options: {
 
 	jsonStr = repairJson(jsonStr);
 
-	const songData = JSON.parse(jsonStr) as SongMetadata;
+	const songData = validateSongMetadata(JSON.parse(jsonStr));
 
 	if (targetBpm && targetBpm >= 60 && targetBpm <= 220) {
 		songData.bpm = targetBpm;

@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { Zap } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
@@ -83,6 +83,14 @@ function AutoplayerPage() {
 
 	useVolumeSync();
 	usePlaylistHeartbeat(playlistId);
+
+	// Navigate away when playlist becomes closed
+	useEffect(() => {
+		if (playlist?.status === "closed") {
+			navigate({ to: "/autoplayer" });
+		}
+	}, [playlist?.status, navigate]);
+
 	const { status: workerStatus } = useWorkerStatus();
 
 	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;

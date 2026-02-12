@@ -211,7 +211,7 @@ function OneshotPage() {
 			});
 			if (res.ok) {
 				const data = await res.json();
-				if (data.enhancedPrompt) setPrompt(data.enhancedPrompt.toUpperCase());
+				if (data.result) setPrompt(data.result);
 			}
 		} catch {
 			// User still has original prompt
@@ -241,14 +241,14 @@ function OneshotPage() {
 
 			// Merge user overrides with AI params
 			const name = `[ONESHOT] ${prompt.trim().slice(0, 40)}`;
-			const key = generatePlaylistKey();
+			const playlistKey = generatePlaylistKey();
 			const id = await createPlaylist({
 				name,
 				prompt: prompt.trim(),
 				llmProvider: provider,
 				llmModel: model,
 				mode: "oneshot",
-				playlistKey: key,
+				playlistKey: playlistKey,
 				lyricsLanguage:
 					language !== "auto"
 						? language
@@ -270,7 +270,7 @@ function OneshotPage() {
 				inferMethod: inferMeth,
 			});
 			setLocalPlaylistId(id);
-			navigate({ to: "/autoplayer/oneshot", search: { pl: key } });
+			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
 		} catch {
 			// Fallback
 			setGenerating(false);
@@ -282,6 +282,7 @@ function OneshotPage() {
 		generating,
 		language,
 		bpm,
+		key,
 		timeSig,
 		duration,
 		steps,
@@ -404,7 +405,7 @@ function OneshotPage() {
 									className="min-h-[100px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-yellow-500/50 resize-none"
 									placeholder="A MELANCHOLIC SYNTH BALLAD ABOUT FADING CITY LIGHTS WITH ETHEREAL VOCALS AND A SLOW BUILD TO A EUPHORIC DROP..."
 									value={prompt}
-									onChange={(e) => setPrompt(e.target.value.toUpperCase())}
+									onChange={(e) => setPrompt(e.target.value)}
 									disabled={
 										generating && phase !== "ready" && phase !== "error"
 									}

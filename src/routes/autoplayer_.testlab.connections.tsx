@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { api } from "../../convex/_generated/api";
 
-export const Route = createFileRoute("/autoplayer_/test/connections")({
+export const Route = createFileRoute("/autoplayer_/testlab/connections")({
 	component: ConnectionsTestPage,
 });
 

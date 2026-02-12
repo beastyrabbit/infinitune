@@ -10,7 +10,7 @@ import {
 } from "@/components/autoplayer/test/shared";
 import { api } from "../../convex/_generated/api";
 
-export const Route = createFileRoute("/autoplayer_/test/ace")({
+export const Route = createFileRoute("/autoplayer_/testlab/ace")({
 	component: AceTestPage,
 });
 

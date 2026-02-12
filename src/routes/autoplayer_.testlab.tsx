@@ -5,7 +5,7 @@ import {
 	useMatches,
 } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/autoplayer_/test")({
+export const Route = createFileRoute("/autoplayer_/testlab")({
 	component: TestLabLayout,
 });
 
@@ -14,7 +14,8 @@ function TestLabLayout() {
 	// Show INDEX link when on a child page (not the landing/index)
 	const isChild = matches.some(
 		(m) =>
-			m.routeId !== "/autoplayer_/test" && m.routeId !== "/autoplayer_/test/",
+			m.routeId !== "/autoplayer_/testlab" &&
+			m.routeId !== "/autoplayer_/testlab/",
 	);
 
 	return (
@@ -27,7 +28,7 @@ function TestLabLayout() {
 					<div className="flex items-center gap-3">
 						{isChild && (
 							<Link
-								to="/autoplayer/test"
+								to="/autoplayer/testlab"
 								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
 							>
 								[INDEX]

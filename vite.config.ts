@@ -7,7 +7,7 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 import viteTsConfigPaths from "vite-tsconfig-paths";
 
-const config = defineConfig({
+export default defineConfig(({ mode }) => ({
 	resolve: {
 		alias: {
 			"@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -21,9 +21,11 @@ const config = defineConfig({
 			projects: ["./tsconfig.json"],
 		}),
 		tailwindcss(),
-		tanstackStart(),
+		tanstackStart(
+			mode === "production"
+				? { router: { routeFileIgnorePattern: "testlab" } }
+				: undefined,
+		),
 		viteReact(),
 	],
-});
-
-export default config;
+}));
