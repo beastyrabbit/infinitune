@@ -65,6 +65,7 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {
+					console.error("[refine-prompt] LLM call failed:", error);
 					return new Response(
 						JSON.stringify({
 							error:

@@ -67,6 +67,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {
+					console.error("[enhance-request] LLM call failed:", error);
 					return new Response(
 						JSON.stringify({
 							error:

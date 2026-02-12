@@ -37,6 +37,15 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 						model: string;
 					};
 
+					if (!prompt || typeof prompt !== "string" || !provider || !model) {
+						return new Response(
+							JSON.stringify({
+								error: "Missing required fields: prompt, provider, model",
+							}),
+							{ status: 400, headers: { "Content-Type": "application/json" } },
+						);
+					}
+
 					const params = await callLlmObject({
 						provider: provider as "ollama" | "openrouter",
 						model,
@@ -51,6 +60,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 						headers: { "Content-Type": "application/json" },
 					});
 				} catch (error: unknown) {
+					console.error("[enhance-session] LLM call failed:", error);
 					return new Response(
 						JSON.stringify({
 							error:

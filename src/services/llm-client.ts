@@ -27,6 +27,11 @@ class ProviderSemaphore {
 	private readonly queue: Waiter[] = [];
 
 	constructor(limit: number) {
+		if (!Number.isInteger(limit) || limit < 1) {
+			throw new Error(
+				`ProviderSemaphore limit must be a positive integer, got ${limit}`,
+			);
+		}
 		this.limit = limit;
 	}
 
@@ -73,13 +78,17 @@ const semaphores: Record<Provider, ProviderSemaphore> = {
 // Provider factory (internal)
 // ---------------------------------------------------------------------------
 
+async function getOpenRouterApiKey(): Promise<string> {
+	return (
+		(await getSetting("openrouterApiKey")) ||
+		process.env.OPENROUTER_API_KEY ||
+		""
+	);
+}
+
 async function getLanguageModel(provider: Provider, model: string) {
 	if (provider === "openrouter") {
-		const apiKey =
-			(await getSetting("openrouterApiKey")) ||
-			process.env.OPENROUTER_API_KEY ||
-			"";
-		const or = createOpenRouter({ apiKey });
+		const or = createOpenRouter({ apiKey: await getOpenRouterApiKey() });
 		return or(model, { plugins: [{ id: "response-healing" }] });
 	}
 	const urls = await getServiceUrls();
@@ -88,11 +97,7 @@ async function getLanguageModel(provider: Provider, model: string) {
 }
 
 async function getImageModel(model: string) {
-	const apiKey =
-		(await getSetting("openrouterApiKey")) ||
-		process.env.OPENROUTER_API_KEY ||
-		"";
-	const or = createOpenRouter({ apiKey });
+	const or = createOpenRouter({ apiKey: await getOpenRouterApiKey() });
 	return or.imageModel(model);
 }
 
@@ -117,6 +122,11 @@ export async function callLlmText(options: {
 		signal,
 	} = options;
 
+	if (!(provider in semaphores)) {
+		throw new Error(
+			`Invalid LLM provider "${provider}". Must be one of: ${Object.keys(semaphores).join(", ")}`,
+		);
+	}
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
@@ -161,18 +171,24 @@ export async function callLlmObject<T>(options: {
 		signal,
 	} = options;
 
+	if (!(provider in semaphores)) {
+		throw new Error(
+			`Invalid LLM provider "${provider}". Must be one of: ${Object.keys(semaphores).join(", ")}`,
+		);
+	}
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
 		const languageModel = await getLanguageModel(provider, model);
-		const ollamaOptions: Record<string, boolean | Record<string, number>> = {
-			think: false,
-		};
-		if (seed !== undefined) {
-			ollamaOptions.options = { seed };
-		}
 		const providerOptions =
-			provider === "ollama" ? { ollama: ollamaOptions } : undefined;
+			provider === "ollama"
+				? {
+						ollama: {
+							think: false,
+							...(seed !== undefined && { options: { seed } }),
+						},
+					}
+				: undefined;
 
 		const { object } = await generateObject({
 			model: languageModel,

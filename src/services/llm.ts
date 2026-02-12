@@ -109,7 +109,7 @@ function getSystemPrompt(distance: PromptDistance): string {
 	}
 }
 
-/** For backward compatibility */
+/** Default system prompt (close distance) — used by testlab debug views */
 const SYSTEM_PROMPT = SYSTEM_PROMPT_CLOSE;
 
 const SONG_SCHEMA = {
@@ -199,7 +199,6 @@ const SONG_SCHEMA = {
 		"vocalStyle",
 		"lyrics",
 		"caption",
-		"coverPrompt",
 		"bpm",
 		"keyScale",
 		"timeSignature",
@@ -294,59 +293,50 @@ export interface RecentSong {
 }
 
 function clampInt(
-	val: unknown,
+	val: number,
 	min: number,
 	max: number,
 	fallback: number,
 ): number {
-	const n = typeof val === "number" ? val : fallback;
+	const n = Number.isFinite(val) ? val : fallback;
 	return Math.max(min, Math.min(max, Math.round(n)));
 }
 
-/** Validate and clamp LLM-generated metadata to safe ranges */
-function validateSongMetadata(raw: Record<string, unknown>): SongMetadata {
-	const str = (val: unknown, fallback: string): string =>
-		typeof val === "string" && val.trim() ? val.trim() : fallback;
-	const strArr = (val: unknown, fallback: string[]): string[] =>
-		Array.isArray(val) &&
-		val.length > 0 &&
-		val.every((v) => typeof v === "string")
-			? val
-			: fallback;
-
+/** Sanitize LLM-generated metadata: clamp numeric fields to safe ranges and normalize strings */
+function validateSongMetadata(raw: SongMetadata): SongMetadata {
 	return {
-		title: str(raw.title, "Untitled"),
-		artistName: str(raw.artistName, "Unknown Artist"),
-		genre: str(raw.genre, "Electronic"),
-		subGenre: str(raw.subGenre, "Ambient"),
-		vocalStyle: str(raw.vocalStyle, "female smooth vocal"),
-		lyrics: str(raw.lyrics, "[Instrumental]"),
-		caption: str(
-			raw.caption,
+		...raw,
+		title: raw.title?.trim() || "Untitled",
+		artistName: raw.artistName?.trim() || "Unknown Artist",
+		genre: raw.genre?.trim() || "Electronic",
+		subGenre: raw.subGenre?.trim() || "Ambient",
+		vocalStyle: raw.vocalStyle?.trim() || "female smooth vocal",
+		lyrics: raw.lyrics?.trim() || "[Instrumental]",
+		caption:
+			raw.caption?.trim() ||
 			"ambient electronic, soft pads, gentle beat, dreamy atmosphere",
-		),
-		coverPrompt:
-			typeof raw.coverPrompt === "string" ? raw.coverPrompt.trim() : undefined,
+		coverPrompt: raw.coverPrompt?.trim() || undefined,
+		// Clamp to wider safe range (30-600s) rather than the ideal 180-300s
+		// to avoid rejecting borderline LLM outputs
 		bpm: clampInt(raw.bpm, 60, 200, 120),
-		keyScale: str(raw.keyScale, "C major"),
+		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
+		keyScale: raw.keyScale?.trim() || "C major",
 		timeSignature:
 			typeof raw.timeSignature === "string" &&
 			/^\d+\/\d+$/.test(raw.timeSignature)
 				? raw.timeSignature
 				: "4/4",
-		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
-		mood: str(raw.mood, "dreamy"),
-		energy: str(raw.energy, "medium"),
-		era: str(raw.era, "2020s"),
-		instruments: strArr(raw.instruments, [
-			"synthesizer",
-			"drum machine",
-			"bass",
-		]),
-		tags: strArr(raw.tags, ["electronic", "ambient"]),
-		themes: strArr(raw.themes, ["atmosphere"]),
-		language: str(raw.language, "English"),
-		description: str(raw.description, "An AI-generated track."),
+		mood: raw.mood?.trim() || "dreamy",
+		energy: raw.energy?.trim() || "medium",
+		era: raw.era?.trim() || "2020s",
+		instruments:
+			raw.instruments?.length > 0
+				? raw.instruments
+				: ["synthesizer", "drum machine", "bass"],
+		tags: raw.tags?.length > 0 ? raw.tags : ["electronic", "ambient"],
+		themes: raw.themes?.length > 0 ? raw.themes : ["atmosphere"],
+		language: raw.language?.trim() || "English",
+		description: raw.description?.trim() || "An AI-generated track.",
 	};
 }
 
@@ -453,8 +443,18 @@ export async function generateSongMetadata(options: {
 	// Determine prompt distance: explicit > interrupt flag > default close
 	const distance: PromptDistance =
 		promptDistance ?? (isInterrupt ? "faithful" : "close");
-	const temperature =
-		distance === "faithful" ? 0.7 : distance === "album" ? 0.9 : 0.85;
+
+	let temperature: number;
+	switch (distance) {
+		case "faithful":
+			temperature = 0.7;
+			break;
+		case "album":
+			temperature = 0.9;
+			break;
+		default:
+			temperature = 0.85;
+	}
 
 	let systemPrompt = getSystemPrompt(distance);
 
@@ -509,7 +509,7 @@ export async function generateSongMetadata(options: {
 		signal,
 	});
 
-	const songData = validateSongMetadata(raw as Record<string, unknown>);
+	const songData = validateSongMetadata(raw);
 
 	if (targetBpm && targetBpm >= 60 && targetBpm <= 220) {
 		songData.bpm = targetBpm;
