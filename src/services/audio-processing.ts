@@ -54,7 +54,11 @@ export async function trimTrailingSilence(
 		}
 
 		if (silenceStarts.length === 0) {
-			return { trimmed: false, originalDuration, trimmedDuration: originalDuration };
+			return {
+				trimmed: false,
+				originalDuration,
+				trimmedDuration: originalDuration,
+			};
 		}
 
 		// Only care about trailing silence — the last silence_start should be near the end
@@ -63,13 +67,21 @@ export async function trimTrailingSilence(
 
 		// Only trim if trailing silence is at least 2 seconds
 		if (trailingGap < 3) {
-			return { trimmed: false, originalDuration, trimmedDuration: originalDuration };
+			return {
+				trimmed: false,
+				originalDuration,
+				trimmedDuration: originalDuration,
+			};
 		}
 
 		// Keep 0.5s buffer after silence_start to preserve reverb tails
 		const trimPoint = lastSilenceStart + 1.0;
 		if (trimPoint >= originalDuration) {
-			return { trimmed: false, originalDuration, trimmedDuration: originalDuration };
+			return {
+				trimmed: false,
+				originalDuration,
+				trimmedDuration: originalDuration,
+			};
 		}
 
 		// Pass 2: trim via stream copy (instant, no re-encode)

@@ -1,53 +1,77 @@
 <div align="center">
-# INFINITUNE
 
-**Infinite generative music — describe a vibe, get an endless stream of original songs.**
+<br>
 
-Lyrics, cover art, and audio are all generated on the fly by AI.
+# ∞ INFINITUNE
+
+### Infinite Generative Music
+
+**Describe a vibe. Get an endless stream of original AI-generated songs — lyrics, cover art, and audio, all created on the fly.**
+
+<br>
 
 ![Player Overview](public/screenshots/player-overview.png)
 
-</div>
+<br>
 
----
+[How It Works](#how-it-works) · [Tech Stack](#tech-stack) · [Quick Start](#quick-start) · [Architecture](#architecture)
+
+<br>
+
+</div>
 
 ## Screenshots
 
-| Playlist Creator | Queue Grid |
-|:---:|:---:|
-| ![Playlist Creator](public/screenshots/playlist-creator.png) | ![Queue Grid](public/screenshots/queue-grid.png) |
+<table>
+<tr>
+<td width="50%">
+
+**Playlist Creator** — describe your music, pick an LLM, hit start
+
+![Playlist Creator](public/screenshots/playlist-creator.png)
+
+</td>
+<td width="50%">
+
+**Queue Grid** — vinyl covers generated per-song by ComfyUI
+
+![Queue Grid](public/screenshots/queue-grid.png)
+
+</td>
+</tr>
+</table>
 
 ## How It Works
 
-1. **Describe your music** — type a prompt like *"2010 techno beats with English lyrics, S3RL energy, heavy 808 bass"*
-2. **Hit Start** — a background worker begins generating songs in a pipeline: LLM writes metadata + lyrics → ComfyUI renders cover art → ACE-Step synthesizes audio
-3. **Listen endlessly** — songs appear in real-time as they're generated. Rate them (thumbs up/down) to steer the direction. Request one-offs or generate entire albums from a single track.
+> **1.** Describe your music — *"2010 techno beats with English lyrics, S3RL energy, heavy 808 bass"*
+>
+> **2.** Hit Start — a background worker kicks off the pipeline: LLM writes metadata + lyrics → ComfyUI renders cover art → ACE-Step synthesizes audio
+>
+> **3.** Listen endlessly — songs appear in real-time. Rate them 👍/👎 to steer the direction. Request one-offs or generate entire albums from a single track.
 
 ## Hardware Setup
 
-Infinitune runs on a **Framework Desktop** (AMD Ryzen / dedicated GPU) hosting the AI services locally:
+Infinitune runs on a **Framework Desktop** (AMD Ryzen / dedicated GPU) hosting all AI services locally on the same network:
 
 | Service | Role | Details |
-|---------|------|---------|
-| **ACE-Step 1.5** | Audio generation | Text-to-music model, generates full songs from lyrics + captions |
-| **Ollama** | Local LLM | Runs models like Llama 3.1 for writing song metadata, lyrics, and persona extraction |
-| **OpenRouter** | Cloud LLM (optional) | Alternative to Ollama — access DeepSeek, Claude, GPT, etc. via API |
-| **ComfyUI** | Cover art generation | Generates vinyl-style album covers from image prompts |
-| **Convex** | Real-time database | Syncs playlist state between browser, worker, and all connected clients |
-
-All services run on the local network. The browser connects to Convex (cloud-hosted), which the worker polls for pending songs.
+|:--------|:-----|:--------|
+| **ACE-Step 1.5** | 🎵 Audio | Text-to-music model — generates full songs from lyrics + captions |
+| **Ollama** | 🧠 Local LLM | Llama 3.1, DeepSeek, etc. for song metadata, lyrics, persona extraction |
+| **OpenRouter** | ☁️ Cloud LLM | Optional — access DeepSeek, Claude, GPT via API |
+| **ComfyUI** | 🎨 Cover Art | Generates vinyl-style album covers from image prompts |
+| **Convex** | ⚡ Real-time DB | Syncs playlist state between browser, worker, and all clients |
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19, TanStack Router, Tailwind CSS 4 |
-| Backend | Convex (real-time DB + mutations/queries) |
-| Worker | Node.js background process with per-song workers and endpoint queues |
-| Audio | ACE-Step 1.5 (text-to-music synthesis) |
-| Cover Art | ComfyUI (image generation) |
-| LLM | Ollama (local) or OpenRouter (cloud) |
-| Build | Vite 7, TypeScript 5.7, Biome (lint/format) |
+| | Technology |
+|:--|:-----------|
+| **Frontend** | React 19 · TanStack Router · Tailwind CSS 4 |
+| **Backend** | Convex (real-time database + mutations/queries) |
+| **Worker** | Node.js background process · per-song workers · endpoint queues |
+| **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
+| **Cover Art** | ComfyUI (image generation) |
+| **LLM** | Ollama (local) or OpenRouter (cloud) |
+| **Build** | Vite 7 · TypeScript 5.7 · Biome (lint/format) |
 
 ## Quick Start
 
@@ -65,32 +89,30 @@ pnpm dev
 pnpm worker
 ```
 
-Configure service URLs in the Settings page (`/autoplayer/settings`) or via environment variables.
+> All three processes need to run simultaneously. Configure service URLs in Settings (`/autoplayer/settings`) or via environment variables.
 
 ## Environment Variables
 
-Configure in `.env.local` or export in your shell:
+Configure in `.env.local`:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_CONVEX_URL` | — | Convex deployment URL (required) |
+|:---------|:--------|:------------|
+| `VITE_CONVEX_URL` | — | Convex deployment URL *(required)* |
 | `OLLAMA_URL` | `http://192.168.10.120:11434` | Ollama API endpoint |
 | `ACE_STEP_URL` | `http://192.168.10.120:8001` | ACE-Step audio generation endpoint |
 | `COMFYUI_URL` | `http://192.168.10.120:8188` | ComfyUI image generation endpoint |
-| `OPENROUTER_API_KEY` | — | OpenRouter API key (if using cloud LLM) |
+| `OPENROUTER_API_KEY` | — | OpenRouter API key *(if using cloud LLM)* |
 | `MUSIC_STORAGE_PATH` | `/mnt/truenas/MediaBiB/media/AI-Music` | Path for storing generated audio files |
 | `ACE_NAS_PREFIX` | — | NAS path prefix for ACE-Step output |
-
-Most settings can also be configured live via the Settings page.
 
 ## Architecture
 
 ```
 Browser (React + TanStack Router)
-  ↕ real-time sync
+  ↕ real-time WebSocket sync
 Convex (database + API)
-  ↕ polling
-Worker (background process)
+  ↕ HTTP polling
+Worker (Node.js)
   ├── LLM → song metadata + lyrics
   ├── ComfyUI → cover art
   └── ACE-Step → audio generation
@@ -103,12 +125,14 @@ The frontend creates playlists and displays songs in real-time. The worker polls
 ```
 src/
   routes/          # File-based routes + API endpoints
-  components/      # React components
+  components/      # React components (autoplayer/, ui/)
   services/        # LLM, ACE-Step, cover art integrations
   hooks/           # Custom React hooks
-  lib/             # Utilities
+  lib/             # Utilities + player store
 convex/            # Database schema, mutations, queries
 worker/            # Background song generation worker
-public/
-  screenshots/     # App screenshots for README
 ```
+
+<div align="center">
+<sub>Built with mass GPU cycles and human curiosity.</sub>
+</div>

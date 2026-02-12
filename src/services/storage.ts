@@ -48,7 +48,11 @@ export async function saveSongToNfs(options: {
 	audioDuration: number;
 	aceAudioPath: string;
 	coverBase64?: string | null;
-}): Promise<{ storagePath: string; audioFile: string; effectiveDuration?: number }> {
+}): Promise<{
+	storagePath: string;
+	audioFile: string;
+	effectiveDuration?: number;
+}> {
 	const {
 		songId,
 		title,
@@ -161,6 +165,8 @@ export async function saveSongToNfs(options: {
 	return {
 		storagePath: songDir,
 		audioFile,
-		effectiveDuration: trimResult.trimmed ? trimResult.trimmedDuration : undefined,
+		effectiveDuration: trimResult.trimmed
+			? trimResult.trimmedDuration
+			: undefined,
 	};
 }
