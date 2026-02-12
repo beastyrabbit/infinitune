@@ -1,5 +1,4 @@
 <div align="center">
-
 # INFINITUNE
 
 **Infinite generative music — describe a vibe, get an endless stream of original songs.**
