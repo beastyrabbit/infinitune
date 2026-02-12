@@ -34,6 +34,8 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 
 	// When user manually picks a song, the epoch transition is over —
 	// skip/end should respect position order, not epoch priority.
+	// State drives re-renders; ref provides a stable value for callbacks
+	// (handleSongEnded, skipToNext) that would otherwise capture stale state.
 	const [transitionDismissed, setTransitionDismissed] = useState(false);
 	const transitionDismissedRef = useRef(false);
 
