@@ -90,7 +90,7 @@ export function PlaylistCreator({
 					}
 				}
 			})
-			.catch(() => {});
+			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
 	}, []);
 
 	const textModels = ollamaModels.filter(

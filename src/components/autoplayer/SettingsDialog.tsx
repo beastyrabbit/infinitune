@@ -74,12 +74,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 		fetch("/api/autoplayer/ollama-models")
 			.then((r) => r.json())
 			.then((d) => setOllamaModels(d.models || []))
-			.catch(() => {});
+			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
 
 		fetch("/api/autoplayer/ace-models")
 			.then((r) => r.json())
 			.then((d) => setAceModels(d.models || []))
-			.catch(() => {});
+			.catch((e) => console.warn("Failed to fetch ACE models:", e));
 	}, [open]);
 
 	const textModels = ollamaModels.filter(

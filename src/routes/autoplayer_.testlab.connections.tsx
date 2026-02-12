@@ -83,7 +83,9 @@ function ConnectionsTestPage() {
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,
 							);
-						} catch {}
+						} catch (e) {
+							console.warn("Failed to fetch Ollama models:", e);
+						}
 					} else if (service === "ace-step") {
 						try {
 							const modelsRes = await fetch("/api/autoplayer/ace-models");
@@ -91,7 +93,9 @@ function ConnectionsTestPage() {
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,
 							);
-						} catch {}
+						} catch (e) {
+							console.warn("Failed to fetch ACE models:", e);
+						}
 					}
 
 					setStates((prev) => ({
