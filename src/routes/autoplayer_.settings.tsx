@@ -33,8 +33,20 @@ type TestStatus =
 
 function SettingsPage() {
 	const navigate = useNavigate();
+	const { pl } = Route.useSearch();
 	const settings = useQuery(api.settings.getAll);
 	const setSetting = useMutation(api.settings.set);
+	const activePlaylist = useQuery(
+		api.playlists.getByPlaylistKey,
+		pl ? { playlistKey: pl } : "skip",
+	);
+	const updateParams = useMutation(api.playlists.updateParams);
+
+	// Generation params
+	const [inferSteps, setInferSteps] = useState("12");
+	const [lmTemp, setLmTemp] = useState("0.85");
+	const [lmCfg, setLmCfg] = useState("2.5");
+	const [inferMethod, setInferMethod] = useState("ode");
 
 	// Service URLs
 	const [ollamaUrl, setOllamaUrl] = useState("http://192.168.10.120:11434");
@@ -76,7 +88,34 @@ function SettingsPage() {
 		setImageModel(settings.imageModel || "");
 		setAceModel(settings.aceModel || "");
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
-	}, [settings]);
+
+		// Generation params: prefer active playlist values, fall back to global settings
+		if (activePlaylist) {
+			setInferSteps(
+				activePlaylist.inferenceSteps?.toString() ||
+					settings.aceInferenceSteps ||
+					"12",
+			);
+			setLmTemp(
+				activePlaylist.lmTemperature?.toString() ||
+					settings.aceLmTemperature ||
+					"0.85",
+			);
+			setLmCfg(
+				activePlaylist.lmCfgScale?.toString() ||
+					settings.aceLmCfgScale ||
+					"2.5",
+			);
+			setInferMethod(
+				activePlaylist.inferMethod || settings.aceInferMethod || "ode",
+			);
+		} else {
+			setInferSteps(settings.aceInferenceSteps || "12");
+			setLmTemp(settings.aceLmTemperature || "0.85");
+			setLmCfg(settings.aceLmCfgScale || "2.5");
+			setInferMethod(settings.aceInferMethod || "ode");
+		}
+	}, [settings, activePlaylist]);
 
 	// Fetch available models on mount
 	useEffect(() => {
@@ -127,7 +166,7 @@ function SettingsPage() {
 	);
 
 	const save = async () => {
-		await Promise.all([
+		const promises: Promise<unknown>[] = [
 			setSetting({ key: "ollamaUrl", value: ollamaUrl }),
 			setSetting({ key: "aceStepUrl", value: aceStepUrl }),
 			setSetting({ key: "comfyuiUrl", value: comfyuiUrl }),
@@ -137,7 +176,29 @@ function SettingsPage() {
 			setSetting({ key: "imageModel", value: imageModel }),
 			setSetting({ key: "aceModel", value: aceModel }),
 			setSetting({ key: "openrouterApiKey", value: openrouterApiKey }),
-		]);
+			// Generation param defaults
+			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
+			setSetting({ key: "aceLmTemperature", value: lmTemp }),
+			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
+			setSetting({ key: "aceInferMethod", value: inferMethod }),
+		];
+
+		// Also update active playlist if one exists
+		if (activePlaylist) {
+			promises.push(
+				updateParams({
+					id: activePlaylist._id,
+					inferenceSteps: inferSteps
+						? Number.parseInt(inferSteps, 10)
+						: undefined,
+					lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
+					lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
+					inferMethod: inferMethod || undefined,
+				}),
+			);
+		}
+
+		await Promise.all(promises);
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);
 	};
@@ -430,6 +491,119 @@ function SettingsPage() {
 									onChange={(e) => setAceModel(e.target.value)}
 								/>
 							)}
+						</div>
+					</div>
+				</section>
+
+				{/* ACE-STEP GENERATION PARAMS */}
+				<section>
+					<div className="flex items-center justify-between mb-4 border-b-2 border-white/10 pb-1">
+						<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
+							ACE-STEP GENERATION PARAMS
+						</h3>
+						{activePlaylist && (
+							<span className="text-[10px] font-black uppercase tracking-wider text-yellow-500 animate-pulse">
+								EDITING ACTIVE PLAYLIST
+							</span>
+						)}
+					</div>
+					<div className="space-y-4">
+						{/* Inference Steps */}
+						<div>
+							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
+							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								Inference Steps
+							</label>
+							<Input
+								className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+								placeholder="12"
+								value={inferSteps}
+								onChange={(e) => {
+									if (e.target.value === "" || /^\d+$/.test(e.target.value))
+										setInferSteps(e.target.value);
+								}}
+							/>
+							<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
+								4-16 — HIGHER = BETTER QUALITY, SLOWER
+							</p>
+						</div>
+
+						{/* LM Temperature + CFG Scale — side by side */}
+						<div className="grid grid-cols-2 gap-3">
+							<div>
+								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
+								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+									LM Temperature
+								</label>
+								<Input
+									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+									placeholder="0.85"
+									value={lmTemp}
+									onChange={(e) => {
+										if (
+											e.target.value === "" ||
+											/^\d*\.?\d*$/.test(e.target.value)
+										)
+											setLmTemp(e.target.value);
+									}}
+								/>
+								<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
+									0.1-1.5 — HIGHER = MORE CREATIVE
+								</p>
+							</div>
+							<div>
+								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
+								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+									LM CFG Scale
+								</label>
+								<Input
+									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+									placeholder="2.5"
+									value={lmCfg}
+									onChange={(e) => {
+										if (
+											e.target.value === "" ||
+											/^\d*\.?\d*$/.test(e.target.value)
+										)
+											setLmCfg(e.target.value);
+									}}
+								/>
+								<p className="mt-1 text-[10px] font-bold uppercase text-white/20">
+									1.0-5.0 — HIGHER = FOLLOW PROMPT MORE
+								</p>
+							</div>
+						</div>
+
+						{/* Diffusion Method */}
+						<div>
+							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
+							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								Diffusion Method
+							</label>
+							<div className="flex gap-0">
+								<button
+									type="button"
+									className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+										inferMethod === "ode"
+											? "bg-white text-black"
+											: "bg-transparent text-white hover:bg-white/10"
+									}`}
+									onClick={() => setInferMethod("ode")}
+								>
+									ODE (FASTER)
+								</button>
+								<button
+									type="button"
+									className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+										inferMethod === "sde"
+											? "bg-white text-black"
+											: "bg-transparent text-white hover:bg-white/10"
+									}`}
+									onClick={() => setInferMethod("sde")}
+								>
+									SDE (STOCHASTIC)
+								</button>
+							</div>
 						</div>
 					</div>
 				</section>

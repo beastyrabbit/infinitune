@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
-import { Zap } from "lucide-react";
+import { Disc3, Plus, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
@@ -13,6 +13,7 @@ import { QueueGrid } from "@/components/autoplayer/QueueGrid";
 import { QuickRequest } from "@/components/autoplayer/QuickRequest";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
@@ -95,18 +96,18 @@ function AutoplayerPage() {
 
 	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;
 
+	const createPendingMut = useMutation(api.songs.createPending);
+
 	const handleCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
 			prompt: string;
 			provider: LlmProvider;
 			model: string;
-			lyricsLanguage?: string;
-			targetBpm?: number;
-			targetKey?: string;
-			timeSignature?: string;
-			audioDuration?: number;
 			inferenceSteps?: number;
+			lmTemperature?: number;
+			lmCfgScale?: number;
+			inferMethod?: string;
 		}) => {
 			const key = generatePlaylistKey();
 			await createPlaylist({
@@ -115,12 +116,10 @@ function AutoplayerPage() {
 				llmProvider: data.provider,
 				llmModel: data.model,
 				playlistKey: key,
-				lyricsLanguage: data.lyricsLanguage,
-				targetBpm: data.targetBpm,
-				targetKey: data.targetKey,
-				timeSignature: data.timeSignature,
-				audioDuration: data.audioDuration,
 				inferenceSteps: data.inferenceSteps,
+				lmTemperature: data.lmTemperature,
+				lmCfgScale: data.lmCfgScale,
+				inferMethod: data.inferMethod,
 			});
 			navigate({
 				to: "/autoplayer",
@@ -129,6 +128,22 @@ function AutoplayerPage() {
 		},
 		[createPlaylist, navigate],
 	);
+
+	const handleAddBatch = useCallback(async () => {
+		if (!playlistId || !songs) return;
+		const maxOrder = songs.reduce(
+			(max, s) => Math.max(max, s.orderIndex ?? 0),
+			0,
+		);
+		await Promise.all(
+			Array.from({ length: 5 }, (_, i) =>
+				createPendingMut({
+					playlistId,
+					orderIndex: maxOrder + i + 1,
+				}),
+			),
+		);
+	}, [playlistId, songs, createPendingMut]);
 
 	// Graceful close: stop new generations, let current song finish
 	const handleClosePlaylist = useCallback(async () => {
@@ -272,7 +287,7 @@ function AutoplayerPage() {
 				</div>
 			</header>
 
-			{/* NOW PLAYING + GENERATION CONTROLS */}
+			{/* NOW PLAYING + RIGHT PANEL */}
 			<div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] border-b-4 border-white/20">
 				<div className="border-b-4 md:border-b-0 md:border-r-4 border-white/20">
 					<NowPlaying
@@ -285,7 +300,39 @@ function AutoplayerPage() {
 						}}
 					/>
 				</div>
-				{playlist && <GenerationControls playlist={playlist} />}
+				<div className="flex flex-col bg-gray-950 overflow-y-auto">
+					{playlist && <GenerationControls playlist={playlist} />}
+					{playlist && (
+						<DirectionSteering
+							playlist={playlist}
+							disabled={playlist.status !== "active"}
+						/>
+					)}
+					<QuickRequest
+						onRequest={requestSong}
+						disabled={!playlist || playlist.status !== "active"}
+						provider={playlist?.llmProvider}
+						model={playlist?.llmModel}
+					/>
+					{/* Action buttons */}
+					<div className="flex gap-3 px-6 pb-6">
+						<Button
+							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/30 cursor-not-allowed"
+							disabled
+						>
+							<Disc3 className="h-3.5 w-3.5 mr-1.5" />
+							ADD ALBUM
+						</Button>
+						<Button
+							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
+							onClick={handleAddBatch}
+							disabled={!playlistId || !songs}
+						>
+							<Plus className="h-3.5 w-3.5 mr-1.5" />
+							ADD 5 MORE
+						</Button>
+					</div>
+				</div>
 			</div>
 
 			{/* GENERATION BANNER */}
@@ -301,22 +348,6 @@ function AutoplayerPage() {
 					onRate={rateSong}
 				/>
 			)}
-
-			{/* DIRECTION STEERING + QUICK REQUEST */}
-			<div className="border-b-4 border-white/20">
-				{playlist && (
-					<DirectionSteering
-						playlist={playlist}
-						disabled={playlist.status !== "active"}
-					/>
-				)}
-				<QuickRequest
-					onRequest={requestSong}
-					disabled={!playlist || playlist.status !== "active"}
-					provider={playlist?.llmProvider}
-					model={playlist?.llmModel}
-				/>
-			</div>
 
 			{/* FOOTER */}
 			<footer className="bg-black px-4 py-2 border-t border-white/10">

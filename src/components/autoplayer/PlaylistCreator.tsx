@@ -29,12 +29,10 @@ interface PlaylistCreatorProps {
 		prompt: string;
 		provider: LlmProvider;
 		model: string;
-		lyricsLanguage?: string;
-		targetBpm?: number;
-		targetKey?: string;
-		timeSignature?: string;
-		audioDuration?: number;
 		inferenceSteps?: number;
+		lmTemperature?: number;
+		lmCfgScale?: number;
+		inferMethod?: string;
 	}) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
@@ -126,8 +124,20 @@ export function PlaylistCreator({
 		setLoading(true);
 		setLoadingState(">>> ANALYZING PROMPT <<<");
 
+		// Read generation defaults from settings
+		const inferenceSteps = settings?.aceInferenceSteps
+			? Number.parseInt(settings.aceInferenceSteps, 10)
+			: undefined;
+		const lmTemperature = settings?.aceLmTemperature
+			? Number.parseFloat(settings.aceLmTemperature)
+			: undefined;
+		const lmCfgScale = settings?.aceLmCfgScale
+			? Number.parseFloat(settings.aceLmCfgScale)
+			: undefined;
+		const inferMethod = settings?.aceInferMethod || undefined;
+
 		try {
-			// Call enhance-session to get AI-determined params
+			// Call enhance-session to get AI-determined params (only inferenceSteps used)
 			const res = await fetch("/api/autoplayer/enhance-session", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -147,17 +157,26 @@ export function PlaylistCreator({
 				prompt: prompt.trim(),
 				provider,
 				model,
-				lyricsLanguage: enhancedParams.lyricsLanguage as string | undefined,
-				targetBpm: enhancedParams.targetBpm as number | undefined,
-				targetKey: enhancedParams.targetKey as string | undefined,
-				timeSignature: enhancedParams.timeSignature as string | undefined,
-				audioDuration: enhancedParams.audioDuration as number | undefined,
-				inferenceSteps: enhancedParams.inferenceSteps as number | undefined,
+				inferenceSteps:
+					(enhancedParams.inferenceSteps as number | undefined) ??
+					inferenceSteps,
+				lmTemperature,
+				lmCfgScale,
+				inferMethod,
 			});
 		} catch {
-			// If enhance-session fails, still create playlist without params
+			// If enhance-session fails, still create playlist with settings defaults
 			const name = prompt.trim().slice(0, 50);
-			onCreatePlaylist({ name, prompt: prompt.trim(), provider, model });
+			onCreatePlaylist({
+				name,
+				prompt: prompt.trim(),
+				provider,
+				model,
+				inferenceSteps,
+				lmTemperature,
+				lmCfgScale,
+				inferMethod,
+			});
 		}
 	};
 
