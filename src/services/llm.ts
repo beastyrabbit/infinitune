@@ -76,7 +76,23 @@ Be creative within the bounds of what was asked. If they say "German cover of Bo
 
 ${FIELD_GUIDANCE}`;
 
-export type PromptDistance = "close" | "general" | "faithful";
+/** Album prompt — creates album tracks derived from a source song */
+const SYSTEM_PROMPT_ALBUM = `You are a music producer AI creating a track for a cohesive album.
+
+All tracks on this album share the same genre family, production aesthetic, and thematic world as the source song. But each track must be its OWN song — unique title, unique fictional artist name, unique lyrical angle, unique vocal style.
+
+ALBUM RULES:
+- Stay in the SAME genre family as the source song. Do NOT cross genre boundaries (no jazz track on a metal album).
+- Vary energy levels across tracks: some high, some low, some medium.
+- Vary mood: not every track should have the same emotional tone.
+- Vary tempo: shift BPM within the genre's natural range.
+- Vary vocal style: different gender, different vocal quality, different performance energy.
+- Each new track must differ from previously generated tracks in at least 3 dimensions (mood, energy, tempo, vocal style, lyrical theme, instruments).
+- Production aesthetic should feel cohesive — same "studio" / "producer" vibe across all tracks.
+
+${FIELD_GUIDANCE}`;
+
+export type PromptDistance = "close" | "general" | "faithful" | "album";
 
 /** Pick which system prompt to use based on mode */
 function getSystemPrompt(distance: PromptDistance): string {
@@ -85,6 +101,8 @@ function getSystemPrompt(distance: PromptDistance): string {
 			return SYSTEM_PROMPT_FAITHFUL;
 		case "general":
 			return SYSTEM_PROMPT_GENERAL;
+		case "album":
+			return SYSTEM_PROMPT_ALBUM;
 		default:
 			return SYSTEM_PROMPT_CLOSE;
 	}
@@ -365,6 +383,140 @@ function repairJson(raw: string): string {
 	return result;
 }
 
+const PERSONA_SCHEMA = {
+	type: "object" as const,
+	properties: {
+		persona: {
+			type: "string",
+			description:
+				"Concise musical DNA summary covering genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. 200-400 characters.",
+		},
+	},
+	required: ["persona"],
+};
+
+const PERSONA_SYSTEM_PROMPT = `You are a music analyst. Extract the musical DNA of this song into a concise persona summary covering: genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. Be specific and concise. Return JSON with a single "persona" field.`;
+
+export interface PersonaInput {
+	title?: string;
+	artistName?: string;
+	genre?: string;
+	subGenre?: string;
+	mood?: string;
+	energy?: string;
+	era?: string;
+	vocalStyle?: string;
+	instruments?: string[];
+	themes?: string[];
+	description?: string;
+	lyrics?: string;
+}
+
+export async function generatePersonaExtract(options: {
+	song: PersonaInput;
+	provider: "ollama" | "openrouter";
+	model: string;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const { song, provider, model, signal } = options;
+
+	const lines: string[] = [];
+	if (song.title) lines.push(`Title: "${song.title}"`);
+	if (song.artistName) lines.push(`Artist: ${song.artistName}`);
+	if (song.genre)
+		lines.push(
+			`Genre: ${song.genre}${song.subGenre ? ` / ${song.subGenre}` : ""}`,
+		);
+	if (song.mood) lines.push(`Mood: ${song.mood}`);
+	if (song.energy) lines.push(`Energy: ${song.energy}`);
+	if (song.era) lines.push(`Era: ${song.era}`);
+	if (song.vocalStyle) lines.push(`Vocal: ${song.vocalStyle}`);
+	if (song.instruments?.length)
+		lines.push(`Instruments: ${song.instruments.join(", ")}`);
+	if (song.themes?.length) lines.push(`Themes: ${song.themes.join(", ")}`);
+	if (song.description) lines.push(`Description: ${song.description}`);
+	if (song.lyrics) lines.push(`Lyrics excerpt: ${song.lyrics.slice(0, 300)}`);
+
+	const userMessage = lines.join("\n");
+	let fullText: string;
+
+	if (provider === "openrouter") {
+		const apiKey =
+			(await getSetting("openrouterApiKey")) ||
+			process.env.OPENROUTER_API_KEY ||
+			"";
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({
+				model,
+				messages: [
+					{ role: "system", content: PERSONA_SYSTEM_PROMPT },
+					{ role: "user", content: userMessage },
+				],
+				temperature: 0.7,
+				response_format: {
+					type: "json_schema",
+					json_schema: {
+						name: "persona_extract",
+						strict: true,
+						schema: PERSONA_SCHEMA,
+					},
+				},
+			}),
+			signal,
+		});
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error(`OpenRouter error ${res.status}: ${errText}`);
+		}
+		const data = await res.json();
+		fullText = data.choices?.[0]?.message?.content || "";
+	} else {
+		const urls = await getServiceUrls();
+		const ollamaUrl = urls.ollamaUrl;
+		const res = await fetch(`${ollamaUrl}/api/chat`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model,
+				messages: [
+					{ role: "system", content: PERSONA_SYSTEM_PROMPT },
+					{ role: "user", content: userMessage },
+				],
+				stream: false,
+				format: PERSONA_SCHEMA,
+				think: false,
+				keep_alive: "10m",
+				options: { temperature: 0.7 },
+			}),
+			signal,
+		});
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error(`Ollama error ${res.status}: ${errText}`);
+		}
+		const data = await res.json();
+		fullText = data.message?.content || "";
+	}
+
+	let jsonStr = fullText.trim();
+	const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+	if (jsonMatch) {
+		jsonStr = jsonMatch[1].trim();
+	}
+	jsonStr = repairJson(jsonStr);
+
+	const parsed = JSON.parse(jsonStr);
+	const persona =
+		typeof parsed.persona === "string" ? parsed.persona.trim() : "";
+	if (!persona) throw new Error("Empty persona extract");
+	return persona;
+}
+
 export async function generateSongMetadata(options: {
 	prompt: string;
 	provider: "ollama" | "openrouter";
@@ -399,7 +551,8 @@ export async function generateSongMetadata(options: {
 	// Determine prompt distance: explicit > interrupt flag > default close
 	const distance: PromptDistance =
 		promptDistance ?? (isInterrupt ? "faithful" : "close");
-	const temperature = distance === "faithful" ? 0.7 : 0.85;
+	const temperature =
+		distance === "faithful" ? 0.7 : distance === "album" ? 0.9 : 0.85;
 
 	let systemPrompt = getSystemPrompt(distance);
 

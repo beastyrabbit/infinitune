@@ -23,16 +23,22 @@ function pickAheadFirst(
  * Priority order:
  *   P1: Interrupts (isInterrupt && ready) — oldest _creationTime first (FIFO)
  *   P2: Current-epoch songs — next by orderIndex after currentOrderIndex
- *   P3: Any remaining ready song — next by orderIndex (fill silence)
+ *   P3: Any remaining ready/played song — next by orderIndex (fill silence)
+ *
+ * When `manualMode` is true (user manually selected a song), epoch priority
+ * is skipped and already-played songs are included as candidates so skip
+ * navigates sequentially through the full queue.
  */
 export function pickNextSong(
 	songs: Song[],
 	currentSongId: string | null,
 	playlistEpoch: number,
 	currentOrderIndex?: number,
+	manualMode?: boolean,
 ): Song | null {
+	const PLAYABLE = manualMode ? ["ready", "played"] : ["ready"];
 	const candidates = songs.filter(
-		(s) => s.status === "ready" && s._id !== currentSongId,
+		(s) => PLAYABLE.includes(s.status) && s._id !== currentSongId,
 	);
 
 	if (candidates.length === 0) return null;
@@ -43,12 +49,14 @@ export function pickNextSong(
 		.sort((a, b) => a._creationTime - b._creationTime);
 	if (interrupts.length > 0) return interrupts[0];
 
-	// P2: Current-epoch songs — prefer ahead of current position
-	const currentEpochSongs = candidates.filter(
-		(s) => (s.promptEpoch ?? 0) === playlistEpoch,
-	);
-	const p2 = pickAheadFirst(currentEpochSongs, currentOrderIndex);
-	if (p2) return p2;
+	if (!manualMode) {
+		// P2: Current-epoch songs — prefer ahead of current position
+		const currentEpochSongs = candidates.filter(
+			(s) => (s.promptEpoch ?? 0) === playlistEpoch,
+		);
+		const p2 = pickAheadFirst(currentEpochSongs, currentOrderIndex);
+		if (p2) return p2;
+	}
 
 	// P3: Any remaining ready song — prefer ahead of current position (fill silence)
 	return pickAheadFirst(candidates, currentOrderIndex);

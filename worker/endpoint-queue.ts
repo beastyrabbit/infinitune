@@ -23,7 +23,7 @@ export interface QueueStatus {
   active: number
   errors: number
   lastErrorMessage?: string
-  activeItems: { songId: string; startedAt: number; endpoint?: string }[]
+  activeItems: { songId: string; startedAt: number; endpoint?: string; priority: number }[]
   pendingItems: { songId: string; priority: number; waitingSince: number; endpoint?: string }[]
 }
 
@@ -50,6 +50,7 @@ interface ActiveItem {
   songId: Id<"songs">
   startedAt: number
   endpoint?: string
+  priority: number
   abortController: AbortController
 }
 
@@ -120,6 +121,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
         songId: a.songId as string,
         startedAt: a.startedAt,
         endpoint: a.endpoint,
+        priority: a.priority,
       })),
       pendingItems: this.pending.map((p) => ({
         songId: p.request.songId as string,
@@ -167,7 +169,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
     const abortController = new AbortController()
     const startedAt = Date.now()
 
-    const activeItem: ActiveItem = { songId, startedAt, endpoint: item.request.endpoint, abortController }
+    const activeItem: ActiveItem = { songId, startedAt, endpoint: item.request.endpoint, priority: item.request.priority, abortController }
     this.active.set(songId, activeItem)
 
     item.request

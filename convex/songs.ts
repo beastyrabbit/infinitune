@@ -241,6 +241,16 @@ export const setRating = mutation({
   },
 })
 
+export const updatePersonaExtract = mutation({
+  args: {
+    id: v.id("songs"),
+    personaExtract: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { personaExtract: args.personaExtract })
+  },
+})
+
 export const addListen = mutation({
   args: { id: v.id("songs") },
   handler: async (ctx, args) => {
@@ -316,6 +326,70 @@ export const listAll = query({
       })
     )
     return resolved.sort((a, b) => b._creationTime - a._creationTime)
+  },
+})
+
+export const createMetadataReady = mutation({
+  args: {
+    playlistId: v.id("playlists"),
+    orderIndex: v.number(),
+    promptEpoch: v.optional(v.number()),
+    title: v.string(),
+    artistName: v.string(),
+    genre: v.string(),
+    subGenre: v.string(),
+    lyrics: v.string(),
+    caption: v.string(),
+    coverPrompt: v.optional(v.string()),
+    bpm: v.number(),
+    keyScale: v.string(),
+    timeSignature: v.string(),
+    audioDuration: v.number(),
+    vocalStyle: v.optional(v.string()),
+    mood: v.optional(v.string()),
+    energy: v.optional(v.string()),
+    era: v.optional(v.string()),
+    instruments: v.optional(v.array(v.string())),
+    tags: v.optional(v.array(v.string())),
+    themes: v.optional(v.array(v.string())),
+    language: v.optional(v.string()),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("songs", {
+      ...args,
+      status: "metadata_ready",
+      generationStartedAt: Date.now(),
+    })
+  },
+})
+
+export const listNeedsPersona = query({
+  handler: async (ctx) => {
+    const upSongs = await ctx.db.query("songs")
+      .withIndex("by_user_rating", (q) => q.eq("userRating", "up"))
+      .collect()
+    const downSongs = await ctx.db.query("songs")
+      .withIndex("by_user_rating", (q) => q.eq("userRating", "down"))
+      .collect()
+    return [...upSongs, ...downSongs]
+      .filter((s) => !s.personaExtract && s.title)
+      .slice(0, 20)
+      .map((s) => ({
+        _id: s._id,
+        title: s.title!,
+        artistName: s.artistName,
+        genre: s.genre,
+        subGenre: s.subGenre,
+        mood: s.mood,
+        energy: s.energy,
+        era: s.era,
+        vocalStyle: s.vocalStyle,
+        instruments: s.instruments,
+        themes: s.themes,
+        description: s.description,
+        lyrics: s.lyrics,
+      }))
   },
 })
 
@@ -507,6 +581,35 @@ export const revertToMetadataReady = mutation({
       aceSubmittedAt: undefined,
       aceAudioPath: undefined,
     })
+  },
+})
+
+export const reorderSong = mutation({
+  args: {
+    id: v.id("songs"),
+    newOrderIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const song = await ctx.db.get(args.id)
+    if (!song) return
+    await ctx.db.patch(args.id, { orderIndex: args.newOrderIndex })
+  },
+})
+
+export const reindexPlaylist = mutation({
+  args: { playlistId: v.id("playlists") },
+  handler: async (ctx, args) => {
+    const songs = await ctx.db
+      .query("songs")
+      .withIndex("by_playlist_order", (q) => q.eq("playlistId", args.playlistId))
+      .collect()
+    const sorted = [...songs].sort((a, b) => a.orderIndex - b.orderIndex)
+    for (let i = 0; i < sorted.length; i++) {
+      const cleanIndex = i + 1
+      if (sorted[i].orderIndex !== cleanIndex) {
+        await ctx.db.patch(sorted[i]._id, { orderIndex: cleanIndex })
+      }
+    }
   },
 })
 

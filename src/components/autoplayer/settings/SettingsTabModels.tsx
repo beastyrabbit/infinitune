@@ -35,6 +35,10 @@ export interface ModelsTabProps {
 	setImageModel: (v: string) => void;
 	aceModel: string;
 	setAceModel: (v: string) => void;
+	personaProvider: string;
+	setPersonaProvider: (v: string) => void;
+	personaModel: string;
+	setPersonaModel: (v: string) => void;
 	ollamaModels: ModelOption[];
 	aceModels: ModelOption[];
 	openRouterTextModels: OpenRouterModelOption[];
@@ -217,6 +221,10 @@ export function SettingsTabModels({
 	setImageModel,
 	aceModel,
 	setAceModel,
+	personaProvider,
+	setPersonaProvider,
+	personaModel,
+	setPersonaModel,
 	ollamaModels,
 	aceModels,
 	openRouterTextModels,
@@ -346,6 +354,67 @@ export function SettingsTabModels({
 						/>
 					)}
 				</SettingsField>
+			</SettingsPanel>
+
+			{/* PERSONA MODEL */}
+			<SettingsPanel title="PERSONA MODEL — SONG DNA EXTRACTION">
+				<SettingsField label="Provider">
+					<ProviderToggle
+						options={[
+							{ value: "ollama", label: "OLLAMA" },
+							{ value: "openrouter", label: "OPENROUTER" },
+						]}
+						value={personaProvider}
+						onChange={setPersonaProvider}
+					/>
+				</SettingsField>
+
+				<SettingsField label="Model">
+					{personaProvider === "ollama" && textModels.length > 0 ? (
+						<Select value={personaModel} onValueChange={setPersonaModel}>
+							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+								<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								<SelectItem
+									value="__fallback__"
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									USE TEXT MODEL
+								</SelectItem>
+								{textModels.map((m) => (
+									<SelectItem
+										key={m.name}
+										value={m.name}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{m.name.toUpperCase()}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					) : personaProvider === "openrouter" ? (
+						<OpenRouterModelSelect
+							models={openRouterTextModels}
+							value={personaModel}
+							onChange={setPersonaModel}
+							placeholder="USES TEXT MODEL IF EMPTY"
+							loading={openRouterLoading}
+						/>
+					) : (
+						<Input
+							className={inputClass}
+							placeholder="USES TEXT MODEL IF EMPTY"
+							value={personaModel}
+							onChange={(e) => setPersonaModel(e.target.value)}
+						/>
+					)}
+				</SettingsField>
+
+				<p className="text-[10px] font-bold uppercase text-white/30">
+					EXTRACTS MUSICAL DNA FROM LIKED SONGS. FALLS BACK TO TEXT MODEL IF NOT
+					SET.
+				</p>
 			</SettingsPanel>
 		</div>
 	);

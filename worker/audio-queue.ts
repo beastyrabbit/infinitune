@@ -26,6 +26,7 @@ interface ActiveSlot {
   taskId: string
   submittedAt: number
   submitProcessingMs: number
+  priority: number
   resolve: (result: QueueResult<AudioResult>) => void
   reject: (error: Error) => void
   abortController: AbortController
@@ -204,6 +205,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
         taskId: item.resumeTaskId,
         submittedAt: item.resumeSubmittedAt ?? Date.now(),
         submitProcessingMs: 0,
+        priority: item.request.priority,
         resolve: item.resolve,
         reject: item.reject,
         abortController,
@@ -218,6 +220,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
       taskId: '', // not yet known
       submittedAt: submitStartedAt,
       submitProcessingMs: 0,
+      priority: item.request.priority,
       resolve: item.resolve,
       reject: item.reject,
       abortController,
@@ -260,9 +263,9 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   }
 
   getStatus(): QueueStatus {
-    const activeItems: { songId: string; startedAt: number; endpoint?: string }[] = []
+    const activeItems: { songId: string; startedAt: number; endpoint?: string; priority: number }[] = []
     if (this.active) {
-      activeItems.push({ songId: this.active.songId as string, startedAt: this.active.submittedAt, endpoint: 'ace-step' })
+      activeItems.push({ songId: this.active.songId as string, startedAt: this.active.submittedAt, endpoint: 'ace-step', priority: this.active.priority })
     }
 
     return {

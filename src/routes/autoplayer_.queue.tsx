@@ -124,6 +124,7 @@ function MiniCover({
 // ─── Priority decoding ───────────────────────────────────────────────
 
 function decodePriority(p: number): { label: string; color: string } {
+	if (p >= 20000) return { label: "PERSONA", color: "text-pink-400/60" };
 	if (p >= 10000) return { label: "CLOSING", color: "text-white/20" };
 	if (p >= 5000) return { label: "OLD EPOCH", color: "text-orange-400/60" };
 	if (p >= 100) return { label: "NORMAL", color: "text-white/40" };
@@ -154,18 +155,27 @@ function SongCard({
 	const genre = songInfo?.genre || "";
 
 	const isActive = variant === "active";
+	const isPersona = priority !== undefined && priority >= 20000;
 	const isOldEpoch =
 		priority !== undefined && priority >= 5000 && priority < 10000;
 	const borderColor = isActive
-		? "border-green-500/60"
-		: isOldEpoch
-			? "border-orange-500/20"
-			: "border-white/10";
+		? isPersona
+			? "border-pink-500/60"
+			: "border-green-500/60"
+		: isPersona
+			? "border-pink-500/20"
+			: isOldEpoch
+				? "border-orange-500/20"
+				: "border-white/10";
 	const bgColor = isActive
-		? "bg-green-950/20"
-		: isOldEpoch
-			? "bg-orange-950/10"
-			: "bg-white/[0.02]";
+		? isPersona
+			? "bg-pink-950/20"
+			: "bg-green-950/20"
+		: isPersona
+			? "bg-pink-950/10"
+			: isOldEpoch
+				? "bg-orange-950/10"
+				: "bg-white/[0.02]";
 
 	const decoded = priority !== undefined ? decodePriority(priority) : null;
 
@@ -192,7 +202,12 @@ function SongCard({
 					>
 						{title}
 					</p>
-					{songInfo?.isInterrupt && (
+					{isPersona && (
+						<span className="shrink-0 text-[9px] font-black text-pink-400 border border-pink-400/40 px-1 leading-tight">
+							PERSONA
+						</span>
+					)}
+					{!isPersona && songInfo?.isInterrupt && (
 						<span className="shrink-0 text-[9px] font-black text-cyan-400 border border-cyan-400/40 px-1 leading-tight">
 							REQ
 						</span>
@@ -224,18 +239,24 @@ function SongCard({
 			<div className="shrink-0 text-right flex flex-col items-end gap-0.5">
 				{isActive ? (
 					<>
-						<span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase text-green-400">
-							<span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-							PROCESSING
+						<span
+							className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase ${isPersona ? "text-pink-400" : "text-green-400"}`}
+						>
+							<span
+								className={`h-1.5 w-1.5 rounded-full ${isPersona ? "bg-pink-400" : "bg-green-400"} animate-pulse`}
+							/>
+							{isPersona ? "EXTRACTING" : "PROCESSING"}
 						</span>
 						{endpoint && (
-							<span className="text-[9px] font-mono text-green-400/50 uppercase">
+							<span
+								className={`text-[9px] font-mono uppercase ${isPersona ? "text-pink-400/50" : "text-green-400/50"}`}
+							>
 								{endpoint}
 							</span>
 						)}
 						<LiveTimer
 							startedAt={timerStartedAt}
-							className="text-xs font-mono text-green-400/80 tabular-nums"
+							className={`text-xs font-mono tabular-nums ${isPersona ? "text-pink-400/80" : "text-green-400/80"}`}
 						/>
 					</>
 				) : (
@@ -380,6 +401,7 @@ function EndpointPanel({
 							songInfo={songMap.get(item.songId) ?? null}
 							timerStartedAt={item.startedAt}
 							variant="active"
+							priority={item.priority}
 							endpoint={item.endpoint}
 							index={i}
 						/>

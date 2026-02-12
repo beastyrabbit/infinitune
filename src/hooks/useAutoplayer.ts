@@ -1,6 +1,6 @@
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { asSongId } from "@/lib/convex-helpers";
 import { pickNextSong } from "@/lib/pick-next-song";
 import { playerStore, setCurrentSong, setPlaylist } from "@/lib/player-store";
@@ -29,11 +29,41 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 
 	// User interaction gate — prevents auto-play on page load
 	const userHasInteractedRef = useRef(false);
+	// Tracks explicit user pause — prevents Convex updates from overriding pause
+	const userPausedRef = useRef(false);
+
+	// When user manually picks a song, the epoch transition is over —
+	// skip/end should respect position order, not epoch priority.
+	const [transitionDismissed, setTransitionDismissed] = useState(false);
+	const transitionDismissedRef = useRef(false);
+
+	// Reset when epoch changes (new steer direction)
+	const epochRef = useRef(playlist?.promptEpoch ?? 0);
+	useEffect(() => {
+		const epoch = playlist?.promptEpoch ?? 0;
+		if (epoch !== epochRef.current) {
+			epochRef.current = epoch;
+			transitionDismissedRef.current = false;
+			setTransitionDismissed(false);
+		}
+	}, [playlist?.promptEpoch]);
+
+	const dismissTransition = useCallback(() => {
+		transitionDismissedRef.current = true;
+		setTransitionDismissed(true);
+	}, []);
+
+	// Ref to break the circular dep: handleSongEnded needs loadAndPlay,
+	// but loadAndPlay comes from useAudioPlayer which takes handleSongEnded.
+	const loadAndPlayRef = useRef<((url: string) => void) | undefined>(undefined);
 
 	const handleSongEnded = useCallback(() => {
 		userHasInteractedRef.current = true;
+		userPausedRef.current = false;
 		if (!songs) return;
-		const endedSong = songs.find((s) => s._id === currentSongId);
+		// Read fresh from store — closure value may be stale after manual song selection
+		const liveSongId = playerStore.state.currentSongId;
+		const endedSong = songs.find((s) => s._id === liveSongId);
 		if (!endedSong) return;
 
 		if (endedSong.status === "ready") {
@@ -42,15 +72,22 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 
 		const nextSong = pickNextSong(
 			songs,
-			currentSongId,
+			liveSongId,
 			playlist?.promptEpoch ?? 0,
 			endedSong.orderIndex,
+			transitionDismissedRef.current,
 		);
-		setCurrentSong(nextSong?._id ?? null);
-	}, [songs, currentSongId, playlist?.promptEpoch, updateSongStatus]);
+		if (nextSong) {
+			setCurrentSong(nextSong._id);
+			if (nextSong.audioUrl) loadAndPlayRef.current?.(nextSong.audioUrl);
+		} else {
+			setCurrentSong(null);
+		}
+	}, [songs, playlist?.promptEpoch, updateSongStatus]);
 
 	const { loadAndPlay, seek, play, pause, toggle } =
 		useAudioPlayer(handleSongEnded);
+	loadAndPlayRef.current = loadAndPlay;
 
 	// --- Composed hooks ---
 	usePlaybackTracking(currentSongId, isPlaying, currentTime);
@@ -61,7 +98,9 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 		currentSongId,
 		loadAndPlay,
 		userHasInteractedRef,
+		userPausedRef,
 		playlist,
+		transitionDismissedRef,
 	);
 
 	// Set playlist in store
@@ -72,17 +111,25 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 	// --- User-facing actions ---
 	const userPlay = useCallback(() => {
 		userHasInteractedRef.current = true;
+		userPausedRef.current = false;
 		play();
 	}, [play]);
 
+	const userPause = useCallback(() => {
+		userPausedRef.current = true;
+		pause();
+	}, [pause]);
+
 	const userToggle = useCallback(() => {
 		userHasInteractedRef.current = true;
+		userPausedRef.current = playerStore.state.isPlaying; // toggling from play→pause
 		toggle();
 	}, [toggle]);
 
 	const userLoadAndPlay = useCallback(
 		(url: string) => {
 			userHasInteractedRef.current = true;
+			userPausedRef.current = false;
 			loadAndPlay(url);
 		},
 		[loadAndPlay],
@@ -90,21 +137,26 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 
 	const skipToNext = useCallback(() => {
 		userHasInteractedRef.current = true;
-		if (!songs || !currentSongId) return;
-		const skippedSong = songs.find((s) => s._id === currentSongId);
+		userPausedRef.current = false;
+		// Read fresh from store — closure value may be stale after manual song selection
+		const liveSongId = playerStore.state.currentSongId;
+		if (!songs || !liveSongId) return;
+		const skippedSong = songs.find((s) => s._id === liveSongId);
 		if (skippedSong && skippedSong.status === "ready") {
 			updateSongStatus({ id: skippedSong._id, status: "played" });
 		}
 		const nextSong = pickNextSong(
 			songs,
-			currentSongId,
+			liveSongId,
 			playlist?.promptEpoch ?? 0,
 			skippedSong?.orderIndex,
+			transitionDismissedRef.current,
 		);
 		if (nextSong) {
 			setCurrentSong(nextSong._id);
+			if (nextSong.audioUrl) loadAndPlay(nextSong.audioUrl);
 		}
-	}, [songs, currentSongId, playlist?.promptEpoch, updateSongStatus]);
+	}, [songs, playlist?.promptEpoch, updateSongStatus, loadAndPlay]);
 
 	const requestSong = useCallback(
 		async (interruptPrompt: string) => {
@@ -135,12 +187,14 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 		songs,
 		playlist,
 		play: userPlay,
-		pause,
+		pause: userPause,
 		toggle: userToggle,
 		seek,
 		skipToNext,
 		requestSong,
 		loadAndPlay: userLoadAndPlay,
 		rateSong,
+		transitionDismissed,
+		dismissTransition,
 	};
 }

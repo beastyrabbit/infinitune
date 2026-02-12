@@ -80,9 +80,11 @@ export default defineSchema({
     metadataProcessingMs: v.optional(v.number()),
     coverProcessingMs: v.optional(v.number()),
     audioProcessingMs: v.optional(v.number()),
+    personaExtract: v.optional(v.string()),
   }).index("by_playlist", ["playlistId"])
     .index("by_playlist_status", ["playlistId", "status"])
-    .index("by_playlist_order", ["playlistId", "orderIndex"]),
+    .index("by_playlist_order", ["playlistId", "orderIndex"])
+    .index("by_user_rating", ["userRating"]),
 
   settings: defineTable({
     key: v.string(),

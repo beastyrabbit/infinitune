@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
 import { Disc3, Plus, Zap } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
@@ -26,6 +26,7 @@ import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
+import type { SongMetadata } from "@/services/llm";
 import { api } from "../../convex/_generated/api";
 import type { LlmProvider } from "../../convex/types";
 
@@ -58,6 +59,9 @@ function AutoplayerPage() {
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
 	const [pickerOpen, setPickerOpen] = useState(false);
+	const [albumGenerating, setAlbumGenerating] = useState(false);
+	const [albumProgress, setAlbumProgress] = useState({ current: 0, total: 0 });
+	const albumAbortRef = useRef<AbortController | null>(null);
 
 	// Look up playlist by key from URL
 	const playlistByKey = useQuery(
@@ -79,6 +83,8 @@ function AutoplayerPage() {
 		requestSong,
 		loadAndPlay,
 		rateSong,
+		transitionDismissed,
+		dismissTransition,
 	} = useAutoplayer(playlistId);
 
 	const { currentSongId } = useStore(playerStore);
@@ -101,9 +107,17 @@ function AutoplayerPage() {
 	const playlistEpoch = playlist?.promptEpoch ?? 0;
 	const currentSongEpoch = currentSong ? (currentSong.promptEpoch ?? 0) : 0;
 	const transitionComplete =
-		playlistEpoch === 0 || currentSongEpoch >= playlistEpoch;
+		playlistEpoch === 0 ||
+		currentSongEpoch >= playlistEpoch ||
+		transitionDismissed;
 
 	const createPendingMut = useMutation(api.songs.createPending);
+	const createMetadataReadyMut = useMutation(api.songs.createMetadataReady);
+	const updatePersonaExtractMut = useMutation(api.songs.updatePersonaExtract);
+	const reorderSongMut = useMutation(api.songs.reorderSong);
+	const reindexPlaylistMut = useMutation(api.songs.reindexPlaylist);
+	const settings = useQuery(api.settings.getAll);
+	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
 	const handleCreatePlaylist = useCallback(
 		async (data: {
@@ -153,6 +167,241 @@ function AutoplayerPage() {
 		);
 	}, [playlistId, songs, playlist?.promptEpoch, createPendingMut]);
 
+	const handleAddAlbum = useCallback(async () => {
+		if (!playlistId || !songs || !playlist || !currentSongId || albumGenerating)
+			return;
+		const sourceSong = songs.find((s) => s._id === currentSongId);
+		if (!sourceSong?.title) return;
+
+		const TOTAL_TRACKS = 15;
+		const BATCH_SIZE = 5;
+		const abortController = new AbortController();
+		albumAbortRef.current = abortController;
+
+		setAlbumGenerating(true);
+		setAlbumProgress({ current: 0, total: TOTAL_TRACKS });
+		setAlbumSourceTitle(sourceSong.title ?? null);
+
+		try {
+			const currentEpoch = playlist.promptEpoch ?? 0;
+
+			// Resolve persona provider + model:
+			// 1. Both explicitly set → use them
+			// 2. Neither set (or matches text provider) → fall back to text pair
+			// 3. Provider set but model empty + different from text → skip precheck
+			const explicitPP = settings?.personaProvider || "";
+			const explicitPM = settings?.personaModel || "";
+			let pProvider: "ollama" | "openrouter";
+			let pModel: string;
+			if (explicitPM) {
+				pProvider = (explicitPP || "ollama") as "ollama" | "openrouter";
+				pModel = explicitPM;
+			} else if (!explicitPP || explicitPP === settings?.textProvider) {
+				pProvider = (settings?.textProvider || "ollama") as
+					| "ollama"
+					| "openrouter";
+				pModel = settings?.textModel || "";
+			} else {
+				pProvider = "ollama";
+				pModel = ""; // will skip precheck below
+			}
+
+			// Precheck: ensure source + rated songs have personas before starting
+			if (pModel) {
+				const likedSongDocs = songs.filter(
+					(s) => s.userRating && !s.personaExtract && s.title,
+				);
+				const songsNeedingPersona = [sourceSong, ...likedSongDocs].filter(
+					(s) => s.userRating && !s.personaExtract && s.title,
+				);
+				if (songsNeedingPersona.length > 0) {
+					const precheckPromises = songsNeedingPersona.map((s) =>
+						fetch("/api/autoplayer/extract-persona", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								song: {
+									title: s.title,
+									artistName: s.artistName,
+									genre: s.genre,
+									subGenre: s.subGenre,
+									mood: s.mood,
+									energy: s.energy,
+									era: s.era,
+									vocalStyle: s.vocalStyle,
+									instruments: s.instruments,
+									themes: s.themes,
+									description: s.description,
+									lyrics: s.lyrics?.slice(0, 500),
+								},
+								provider: pProvider,
+								model: pModel,
+							}),
+						})
+							.then(async (res) => {
+								if (!res.ok) return null;
+								const data = await res.json();
+								if (data.persona) {
+									await updatePersonaExtractMut({
+										id: s._id as Parameters<
+											typeof updatePersonaExtractMut
+										>[0]["id"],
+										personaExtract: data.persona,
+									});
+								}
+								return data.persona;
+							})
+							.catch(() => null),
+					);
+					await Promise.allSettled(precheckPromises);
+				}
+			}
+
+			const likedSongs = songs
+				.filter((s) => s.userRating === "up" && s.title)
+				.map((s) => ({
+					title: s.title as string,
+					artistName: s.artistName as string,
+					genre: s.genre as string,
+					mood: s.mood,
+					vocalStyle: s.vocalStyle,
+				}));
+
+			// Gather persona extracts from current-epoch liked songs
+			const personaExtracts = songs
+				.filter(
+					(s) =>
+						s.userRating === "up" &&
+						s.personaExtract &&
+						(s.promptEpoch ?? 0) === currentEpoch,
+				)
+				.map((s) => s.personaExtract as string);
+
+			// Gather persona extracts from down-voted songs (avoid patterns)
+			const avoidPersonaExtracts = songs
+				.filter(
+					(s) =>
+						s.userRating === "down" &&
+						s.personaExtract &&
+						(s.promptEpoch ?? 0) === currentEpoch,
+				)
+				.map((s) => s.personaExtract as string);
+
+			const maxOrder = songs.reduce(
+				(max, s) => Math.max(max, s.orderIndex ?? 0),
+				0,
+			);
+			const epoch = playlist.promptEpoch ?? 0;
+
+			const previousAlbumTracks: SongMetadata[] = [];
+			let completed = 0;
+
+			for (
+				let batchStart = 0;
+				batchStart < TOTAL_TRACKS;
+				batchStart += BATCH_SIZE
+			) {
+				if (abortController.signal.aborted) break;
+
+				const batchCount = Math.min(BATCH_SIZE, TOTAL_TRACKS - batchStart);
+				const batchPromises = Array.from({ length: batchCount }, (_, i) => {
+					const trackNumber = batchStart + i + 1;
+					return fetch("/api/autoplayer/generate-album-track", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							playlistPrompt: playlist.prompt,
+							provider: playlist.llmProvider,
+							model: playlist.llmModel,
+							sourceSong: {
+								title: sourceSong.title,
+								artistName: sourceSong.artistName,
+								genre: sourceSong.genre,
+								subGenre: sourceSong.subGenre,
+								mood: sourceSong.mood,
+								energy: sourceSong.energy,
+								era: sourceSong.era,
+								bpm: sourceSong.bpm,
+								keyScale: sourceSong.keyScale,
+								vocalStyle: sourceSong.vocalStyle,
+								instruments: sourceSong.instruments,
+								themes: sourceSong.themes,
+								description: sourceSong.description,
+								lyrics: sourceSong.lyrics,
+							},
+							likedSongs,
+							personaExtracts:
+								personaExtracts.length > 0 ? personaExtracts : undefined,
+							avoidPersonaExtracts:
+								avoidPersonaExtracts.length > 0
+									? avoidPersonaExtracts
+									: undefined,
+							previousAlbumTracks,
+							trackNumber,
+							totalTracks: TOTAL_TRACKS,
+							lyricsLanguage: playlist.lyricsLanguage,
+							targetKey: playlist.targetKey,
+							timeSignature: playlist.timeSignature,
+							audioDuration: playlist.audioDuration,
+						}),
+						signal: abortController.signal,
+					}).then(async (res) => {
+						if (!res.ok) throw new Error(await res.text());
+						const metadata = (await res.json()) as SongMetadata;
+						await createMetadataReadyMut({
+							playlistId,
+							orderIndex: maxOrder + batchStart + i + 1,
+							promptEpoch: epoch,
+							title: metadata.title,
+							artistName: metadata.artistName,
+							genre: metadata.genre,
+							subGenre: metadata.subGenre,
+							lyrics: metadata.lyrics,
+							caption: metadata.caption,
+							coverPrompt: metadata.coverPrompt,
+							bpm: metadata.bpm,
+							keyScale: metadata.keyScale,
+							timeSignature: metadata.timeSignature,
+							audioDuration: metadata.audioDuration,
+							vocalStyle: metadata.vocalStyle,
+							mood: metadata.mood,
+							energy: metadata.energy,
+							era: metadata.era,
+							instruments: metadata.instruments,
+							tags: metadata.tags,
+							themes: metadata.themes,
+							language: metadata.language,
+							description: metadata.description,
+						});
+						completed++;
+						setAlbumProgress({ current: completed, total: TOTAL_TRACKS });
+						return metadata;
+					});
+				});
+
+				const results = await Promise.allSettled(batchPromises);
+				for (const r of results) {
+					if (r.status === "fulfilled") {
+						previousAlbumTracks.push(r.value);
+					}
+				}
+			}
+		} finally {
+			setAlbumGenerating(false);
+			setAlbumSourceTitle(null);
+			albumAbortRef.current = null;
+		}
+	}, [
+		playlistId,
+		songs,
+		playlist,
+		currentSongId,
+		albumGenerating,
+		createMetadataReadyMut,
+		settings,
+		updatePersonaExtractMut,
+	]);
+
 	// Graceful close: stop new generations, let current song finish
 	const handleClosePlaylist = useCallback(async () => {
 		if (!playlistId) return;
@@ -171,11 +420,21 @@ function AutoplayerPage() {
 		(songId: string) => {
 			const song = songs?.find((s) => s._id === songId);
 			if (song?.audioUrl) {
+				dismissTransition();
 				setCurrentSong(songId);
 				loadAndPlay(song.audioUrl);
 			}
 		},
-		[songs, loadAndPlay],
+		[songs, loadAndPlay, dismissTransition],
+	);
+
+	const handleReorder = useCallback(
+		async (songId: string, newOrderIndex: number) => {
+			if (!playlistId) return;
+			await reorderSongMut({ id: songId as never, newOrderIndex });
+			reindexPlaylistMut({ playlistId });
+		},
+		[playlistId, reorderSongMut, reindexPlaylistMut],
 	);
 
 	// Loading state while Convex query resolves
@@ -308,7 +567,9 @@ function AutoplayerPage() {
 						onSkip={skipToNext}
 						onSeek={seek}
 						onRate={(rating) => {
-							if (currentSongId) rateSong(currentSongId, rating);
+							if (currentSongId) {
+								rateSong(currentSongId, rating);
+							}
 						}}
 					/>
 				</div>
@@ -328,13 +589,32 @@ function AutoplayerPage() {
 					/>
 					{/* Action buttons */}
 					<div className="flex gap-3 px-6 pb-6">
-						<Button
-							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/30 cursor-not-allowed"
-							disabled
-						>
-							<Disc3 className="h-3.5 w-3.5 mr-1.5" />
-							ADD ALBUM
-						</Button>
+						{(() => {
+							const albumEnabled =
+								!!currentSongId && !!currentSong?.title && !albumGenerating;
+							return (
+								<Button
+									className={`flex-1 h-10 rounded-none border-2 font-mono text-xs font-black uppercase transition-colors ${
+										albumGenerating
+											? "border-purple-500 bg-purple-500/20 text-purple-300 animate-pulse"
+											: albumEnabled
+												? "border-purple-500/60 bg-transparent text-purple-400 hover:bg-purple-500 hover:text-white"
+												: "border-white/20 bg-transparent text-white/30 cursor-not-allowed"
+									}`}
+									disabled={!albumEnabled}
+									onClick={handleAddAlbum}
+								>
+									<Disc3
+										className={`h-3.5 w-3.5 mr-1.5 ${albumGenerating ? "animate-spin" : ""}`}
+									/>
+									{albumGenerating
+										? albumProgress.current === 0
+											? "STARTING ALBUM..."
+											: `ALBUM ${albumProgress.current}/${albumProgress.total}`
+										: "ADD ALBUM"}
+								</Button>
+							);
+						})()}
 						<Button
 							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
 							onClick={handleAddBatch}
@@ -346,6 +626,30 @@ function AutoplayerPage() {
 					</div>
 				</div>
 			</div>
+
+			{/* ALBUM PROGRESS BANNER */}
+			{albumGenerating && (
+				<div className="border-b-4 border-purple-500/30 bg-purple-950/40 px-6 py-3">
+					<div className="flex items-center justify-between mb-2">
+						<span className="font-mono text-xs font-black uppercase text-purple-300 flex items-center gap-2">
+							<Disc3 className="h-3.5 w-3.5 animate-spin" />
+							GENERATING ALBUM FROM{" "}
+							{albumSourceTitle ? `"${albumSourceTitle}"` : "..."}
+						</span>
+						<span className="font-mono text-xs font-bold uppercase text-purple-400">
+							{albumProgress.current} / {albumProgress.total} TRACKS
+						</span>
+					</div>
+					<div className="h-2 w-full bg-purple-900/50 overflow-hidden">
+						<div
+							className="h-full bg-purple-500 transition-all duration-300"
+							style={{
+								width: `${albumProgress.total > 0 ? (albumProgress.current / albumProgress.total) * 100 : 0}%`,
+							}}
+						/>
+					</div>
+				</div>
+			)}
 
 			{/* GENERATION BANNER */}
 			{songs && <GenerationBanner songs={songs} />}
@@ -369,7 +673,10 @@ function AutoplayerPage() {
 					transitionComplete={transitionComplete}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
-					onRate={rateSong}
+					onRate={(songId, rating) => {
+						rateSong(songId, rating);
+					}}
+					onReorder={handleReorder}
 				/>
 			)}
 

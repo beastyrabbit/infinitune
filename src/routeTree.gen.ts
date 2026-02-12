@@ -32,6 +32,8 @@ import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
 import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
+import { Route as ApiAutoplayerGenerateAlbumTrackRouteImport } from './routes/api.autoplayer.generate-album-track'
+import { Route as ApiAutoplayerExtractPersonaRouteImport } from './routes/api.autoplayer.extract-persona'
 import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
 import { Route as ApiAutoplayerEnhanceRequestRouteImport } from './routes/api.autoplayer.enhance-request'
 import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
@@ -160,6 +162,18 @@ const ApiAutoplayerGenerateCoverRoute =
     path: '/api/autoplayer/generate-cover',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAutoplayerGenerateAlbumTrackRoute =
+  ApiAutoplayerGenerateAlbumTrackRouteImport.update({
+    id: '/api/autoplayer/generate-album-track',
+    path: '/api/autoplayer/generate-album-track',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerExtractPersonaRoute =
+  ApiAutoplayerExtractPersonaRouteImport.update({
+    id: '/api/autoplayer/extract-persona',
+    path: '/api/autoplayer/extract-persona',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutoplayerEnhanceSessionRoute =
   ApiAutoplayerEnhanceSessionRouteImport.update({
     id: '/api/autoplayer/enhance-session',
@@ -203,6 +217,8 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
+  '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
+  '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -232,6 +248,8 @@ export interface FileRoutesByTo {
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
+  '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
+  '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -263,6 +281,8 @@ export interface FileRoutesById {
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
+  '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
+  '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
@@ -295,6 +315,8 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
+    | '/api/autoplayer/extract-persona'
+    | '/api/autoplayer/generate-album-track'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -324,6 +346,8 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
+    | '/api/autoplayer/extract-persona'
+    | '/api/autoplayer/generate-album-track'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -354,6 +378,8 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
     | '/api/autoplayer/enhance-session'
+    | '/api/autoplayer/extract-persona'
+    | '/api/autoplayer/generate-album-track'
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
@@ -385,6 +411,8 @@ export interface RootRouteChildren {
   ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
   ApiAutoplayerEnhanceRequestRoute: typeof ApiAutoplayerEnhanceRequestRoute
   ApiAutoplayerEnhanceSessionRoute: typeof ApiAutoplayerEnhanceSessionRoute
+  ApiAutoplayerExtractPersonaRoute: typeof ApiAutoplayerExtractPersonaRoute
+  ApiAutoplayerGenerateAlbumTrackRoute: typeof ApiAutoplayerGenerateAlbumTrackRoute
   ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
@@ -560,6 +588,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerGenerateCoverRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/autoplayer/generate-album-track': {
+      id: '/api/autoplayer/generate-album-track'
+      path: '/api/autoplayer/generate-album-track'
+      fullPath: '/api/autoplayer/generate-album-track'
+      preLoaderRoute: typeof ApiAutoplayerGenerateAlbumTrackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/extract-persona': {
+      id: '/api/autoplayer/extract-persona'
+      path: '/api/autoplayer/extract-persona'
+      fullPath: '/api/autoplayer/extract-persona'
+      preLoaderRoute: typeof ApiAutoplayerExtractPersonaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/autoplayer/enhance-session': {
       id: '/api/autoplayer/enhance-session'
       path: '/api/autoplayer/enhance-session'
@@ -632,6 +674,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,
   ApiAutoplayerEnhanceRequestRoute: ApiAutoplayerEnhanceRequestRoute,
   ApiAutoplayerEnhanceSessionRoute: ApiAutoplayerEnhanceSessionRoute,
+  ApiAutoplayerExtractPersonaRoute: ApiAutoplayerExtractPersonaRoute,
+  ApiAutoplayerGenerateAlbumTrackRoute: ApiAutoplayerGenerateAlbumTrackRoute,
   ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,

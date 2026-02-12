@@ -6,7 +6,8 @@ import { EndpointQueues } from './queues'
 import { SongWorker } from './song-worker'
 import { startHttpServer } from './http-server'
 import type { RecentSong } from '../src/services/llm'
-import { calculatePriority } from './priority'
+import { generatePersonaExtract } from '../src/services/llm'
+import { calculatePriority, PERSONA_PRIORITY } from './priority'
 
 const POLL_INTERVAL = 2000 // 2 seconds
 const HEARTBEAT_STALE_MS = 90_000 // 90 seconds = 3 missed 30s heartbeats
@@ -27,9 +28,16 @@ const playlistEpochs = new Map<Id<"playlists">, number>()
 
 let queues: EndpointQueues
 
+// ─── Persona scan state ─────────────────────────────────────────────
+
+const personaPending = new Set<Id<"songs">>()
+let lastPersonaScanAt = 0
+const PERSONA_SCAN_INTERVAL = 24 * 60 * 60 * 1000 // 24 hours
+let forcePersonaScan = false
+
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function getSettings(): Promise<{ textProvider: string; textModel: string; imageProvider: string; imageModel?: string }> {
+async function getSettings(): Promise<{ textProvider: string; textModel: string; imageProvider: string; imageModel?: string; personaProvider: string; personaModel: string }> {
   const convex = getConvexClient()
   const settings = await convex.query(api.settings.getAll)
   return {
@@ -37,7 +45,87 @@ async function getSettings(): Promise<{ textProvider: string; textModel: string;
     textModel: settings.textModel || '',
     imageProvider: settings.imageProvider || 'comfyui',
     imageModel: settings.imageModel,
+    personaProvider: settings.personaProvider || '',
+    personaModel: settings.personaModel || '',
   }
+}
+
+// ─── Persona scan ───────────────────────────────────────────────────
+
+async function runPersonaScan(settings: Awaited<ReturnType<typeof getSettings>>) {
+  const convex = getConvexClient()
+  const needsPersona = await convex.query(api.songs.listNeedsPersona)
+  if (needsPersona.length === 0) return
+
+  // Resolve persona provider + model:
+  // 1. Both explicitly set → use them
+  // 2. Neither set (or persona provider matches text provider) → fall back to text pair
+  // 3. Persona provider set but model empty + different from text provider → skip (can't mix)
+  const explicitPersonaProvider = settings.personaProvider || ''
+  const explicitPersonaModel = settings.personaModel && settings.personaModel !== '__fallback__' ? settings.personaModel : ''
+  let pProvider: 'ollama' | 'openrouter'
+  let pModel: string
+  if (explicitPersonaModel) {
+    pProvider = (explicitPersonaProvider || 'ollama') as 'ollama' | 'openrouter'
+    pModel = explicitPersonaModel
+  } else if (!explicitPersonaProvider || explicitPersonaProvider === settings.textProvider) {
+    pProvider = (settings.textProvider || 'ollama') as 'ollama' | 'openrouter'
+    pModel = settings.textModel
+  } else {
+    console.log(`[persona] Skipping scan: personaProvider is "${explicitPersonaProvider}" but no personaModel set (textProvider is "${settings.textProvider}")`)
+    return
+  }
+  if (!pModel) return
+
+  for (const song of needsPersona) {
+    if (personaPending.has(song._id)) continue
+    personaPending.add(song._id)
+    console.log(`[persona] Queuing "${song.title}" (${song._id})`)
+
+    queues.llm.enqueue({
+      songId: song._id,
+      priority: PERSONA_PRIORITY,
+      endpoint: pProvider,
+      execute: async (signal) => {
+        return await generatePersonaExtract({
+          song: {
+            title: song.title,
+            artistName: song.artistName,
+            genre: song.genre,
+            subGenre: song.subGenre,
+            mood: song.mood,
+            energy: song.energy,
+            era: song.era,
+            vocalStyle: song.vocalStyle,
+            instruments: song.instruments,
+            themes: song.themes,
+            description: song.description,
+            lyrics: song.lyrics?.slice(0, 500),
+          },
+          provider: pProvider,
+          model: pModel,
+          signal,
+        })
+      },
+    }).then(async ({ result, processingMs }) => {
+      await convex.mutation(api.songs.updatePersonaExtract, {
+        id: song._id,
+        personaExtract: result as string,
+      })
+      console.log(`[persona] Done "${song.title}" (${processingMs}ms)`)
+    }).catch((err) => {
+      console.error(`[persona] Failed "${song.title}":`, err instanceof Error ? err.message : err)
+    }).finally(() => {
+      personaPending.delete(song._id)
+    })
+  }
+
+  lastPersonaScanAt = Date.now()
+}
+
+export function triggerPersonaScan() {
+  forcePersonaScan = true
+  console.log('[persona] Manual scan triggered, will run next tick')
 }
 
 // ─── Tick ────────────────────────────────────────────────────────────
@@ -251,7 +339,18 @@ async function tick() {
       }
     }
 
-    // 6. Tick audio polls (only tick-driven endpoint)
+    // 6. Persona scan — daily or on manual trigger
+    const now = Date.now()
+    if (forcePersonaScan || (now - lastPersonaScanAt > PERSONA_SCAN_INTERVAL)) {
+      forcePersonaScan = false
+      try {
+        await runPersonaScan(settings)
+      } catch (err) {
+        console.error('[persona] Scan error:', err instanceof Error ? err.message : err)
+      }
+    }
+
+    // 7. Tick audio polls (only tick-driven endpoint)
     await queues.audio.tickPolls()
   } catch (error: unknown) {
     console.error('[worker] Tick error:', error instanceof Error ? error.message : error)
@@ -357,6 +456,7 @@ async function main() {
       }))
     },
     startTime,
+    onTriggerPersonaScan: triggerPersonaScan,
   }, port)
 
   console.log('[worker] Worker started')

@@ -15,16 +15,20 @@ export function useAutoplay(
 	currentSongId: string | null,
 	loadAndPlay: (url: string) => void,
 	userHasInteractedRef: MutableRefObject<boolean>,
+	userPausedRef: MutableRefObject<boolean>,
 	playlist: Playlist | null | undefined,
+	transitionDismissedRef: MutableRefObject<boolean>,
 ) {
 	const loadedSongIdRef = useRef<string | null>(null);
 
 	// Auto-play when a song becomes ready and nothing is playing,
 	// or when the current song has been played and a new one is available
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ref.current values are stable refs, not reactive deps
 	useEffect(() => {
 		if (!userHasInteractedRef.current) return;
 		if (!songs || !playlistId) return;
 		if (playerStore.state.isPlaying) return;
+		if (userPausedRef.current) return;
 
 		const currentSong = currentSongId
 			? songs.find((s) => s._id === currentSongId)
@@ -37,6 +41,7 @@ export function useAutoplay(
 				currentSongId,
 				playlist?.promptEpoch ?? 0,
 				currentSong?.orderIndex,
+				transitionDismissedRef.current,
 			);
 			if (next?.audioUrl) {
 				setCurrentSong(next._id);
@@ -53,8 +58,10 @@ export function useAutoplay(
 	]);
 
 	// Auto-play when current song changes and has audio
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ref.current values are stable refs, not reactive deps
 	useEffect(() => {
 		if (!userHasInteractedRef.current) return;
+		if (userPausedRef.current) return;
 		if (!currentSongId || !songs) return;
 		if (currentSongId === loadedSongIdRef.current) return;
 		const song = songs.find((s) => s._id === currentSongId);

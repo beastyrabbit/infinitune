@@ -2,7 +2,6 @@ import type { Id } from '../convex/_generated/dataModel'
 import type { EndpointType, IEndpointQueue, QueueStatus } from './endpoint-queue'
 import { RequestResponseQueue } from './request-response-queue'
 import { AudioQueue } from './audio-queue'
-import type { SongMetadata } from '../src/services/llm'
 import type { AcePollResult } from '../src/services/ace'
 
 // ─── Concurrency defaults by provider ────────────────────────────────
@@ -23,14 +22,14 @@ export interface CoverResult {
 
 // ─── Container ───────────────────────────────────────────────────────
 export class EndpointQueues {
-  readonly llm: RequestResponseQueue<SongMetadata>
+  readonly llm: RequestResponseQueue<unknown>
   readonly image: RequestResponseQueue<CoverResult>
   readonly audio: AudioQueue
 
   constructor(
     pollFn: (taskId: string, signal: AbortSignal) => Promise<AcePollResult>,
   ) {
-    this.llm = new RequestResponseQueue<SongMetadata>('llm', LLM_CONCURRENCY.ollama)
+    this.llm = new RequestResponseQueue<unknown>('llm', LLM_CONCURRENCY.ollama)
     this.image = new RequestResponseQueue<CoverResult>('image', IMAGE_CONCURRENCY.comfyui)
     this.audio = new AudioQueue(pollFn)
   }

@@ -13,6 +13,7 @@ const INTERRUPT_PRIORITY = 1
 const NORMAL_BASE = 100
 const EPOCH_AGE_OFFSET = 5000
 const CLOSING_OFFSET = 10000
+export const PERSONA_PRIORITY = 20000
 
 export function calculatePriority(options: {
   isOneshot: boolean

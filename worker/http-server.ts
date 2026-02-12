@@ -7,6 +7,7 @@ interface WorkerHttpContext {
   getSongWorkerCount: () => number
   getPlaylistInfo: () => { id: string; name: string; activeSongWorkers: number }[]
   startTime: number
+  onTriggerPersonaScan?: () => void
 }
 
 const ENDPOINT_TYPES: EndpointType[] = ['llm', 'image', 'audio']
@@ -15,7 +16,7 @@ export function startHttpServer(ctx: WorkerHttpContext, port: number): http.Serv
   const server = http.createServer((req, res) => {
     // CORS headers for frontend
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     res.setHeader('Content-Type', 'application/json')
 
@@ -65,6 +66,13 @@ export function startHttpServer(ctx: WorkerHttpContext, port: number): http.Serv
       })
       res.writeHead(200)
       res.end(body)
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/worker/persona/trigger') {
+      ctx.onTriggerPersonaScan?.()
+      res.writeHead(200)
+      res.end(JSON.stringify({ ok: true, message: 'Persona scan triggered' }))
       return
     }
 

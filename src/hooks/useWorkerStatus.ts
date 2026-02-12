@@ -6,7 +6,12 @@ export interface EndpointStatus {
 	active: number;
 	errors: number;
 	lastErrorMessage?: string;
-	activeItems: { songId: string; startedAt: number; endpoint?: string }[];
+	activeItems: {
+		songId: string;
+		startedAt: number;
+		endpoint?: string;
+		priority: number;
+	}[];
 	pendingItems: {
 		songId: string;
 		priority: number;

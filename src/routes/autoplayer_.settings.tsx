@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { Cpu, Music, Plug } from "lucide-react";
+import { Cpu, Music, Plug, ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { SettingsTabAudioEngine } from "@/components/autoplayer/settings/SettingsTabAudioEngine";
 import type {
@@ -60,6 +60,8 @@ function SettingsPage() {
 	const [imageProvider, setImageProvider] = useState("comfyui");
 	const [imageModel, setImageModel] = useState("");
 	const [aceModel, setAceModel] = useState("");
+	const [personaProvider, setPersonaProvider] = useState("ollama");
+	const [personaModel, setPersonaModel] = useState("");
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
 
 	// Available models
@@ -82,6 +84,7 @@ function SettingsPage() {
 	const [aceTest, setAceTest] = useState<TestStatus>({ state: "idle" });
 
 	const [saved, setSaved] = useState(false);
+	const [personaScanTriggered, setPersonaScanTriggered] = useState(false);
 
 	// Load settings from Convex
 	useEffect(() => {
@@ -95,6 +98,8 @@ function SettingsPage() {
 		setImageProvider(imgProv === "ollama" ? "comfyui" : imgProv);
 		setImageModel(settings.imageModel || "");
 		setAceModel(settings.aceModel || "");
+		setPersonaProvider(settings.personaProvider || "ollama");
+		setPersonaModel(settings.personaModel || "");
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
 
 		if (activePlaylist) {
@@ -205,6 +210,8 @@ function SettingsPage() {
 			setSetting({ key: "imageProvider", value: imageProvider }),
 			setSetting({ key: "imageModel", value: imageModel }),
 			setSetting({ key: "aceModel", value: aceModel }),
+			setSetting({ key: "personaProvider", value: personaProvider }),
+			setSetting({ key: "personaModel", value: personaModel }),
 			setSetting({ key: "openrouterApiKey", value: openrouterApiKey }),
 			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
@@ -340,6 +347,10 @@ function SettingsPage() {
 								setImageModel={setImageModel}
 								aceModel={aceModel}
 								setAceModel={setAceModel}
+								personaProvider={personaProvider}
+								setPersonaProvider={setPersonaProvider}
+								personaModel={personaModel}
+								setPersonaModel={setPersonaModel}
 								ollamaModels={ollamaModels}
 								aceModels={aceModels}
 								openRouterTextModels={openRouterTextModels}
@@ -360,6 +371,39 @@ function SettingsPage() {
 								setInferMethod={setInferMethod}
 								activePlaylist={!!activePlaylist}
 							/>
+						)}
+
+						{/* PERSONA SCAN — visible on models tab */}
+						{activeTab === "models" && (
+							<div className="mt-6">
+								<Button
+									className={`w-full h-10 rounded-none border-2 font-mono text-xs font-black uppercase transition-colors ${
+										personaScanTriggered
+											? "border-pink-500/40 bg-pink-500/20 text-pink-300"
+											: "border-pink-500/40 bg-transparent text-pink-400 hover:bg-pink-500/20"
+									}`}
+									disabled={personaScanTriggered}
+									onClick={async () => {
+										const workerUrl =
+											import.meta.env.VITE_WORKER_API_URL ||
+											"http://localhost:3099";
+										try {
+											await fetch(`${workerUrl}/api/worker/persona/trigger`, {
+												method: "POST",
+											});
+											setPersonaScanTriggered(true);
+											setTimeout(() => setPersonaScanTriggered(false), 3000);
+										} catch {
+											// Worker may be unreachable
+										}
+									}}
+								>
+									<ScanSearch className="h-3.5 w-3.5 mr-1.5" />
+									{personaScanTriggered
+										? "PERSONA SCAN TRIGGERED"
+										: "RUN PERSONA SCAN"}
+								</Button>
+							</div>
 						)}
 
 						{/* SAVE — always visible below content */}
