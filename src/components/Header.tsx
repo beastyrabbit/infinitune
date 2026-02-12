@@ -19,13 +19,12 @@ export default function Header() {
 				>
 					<Menu size={24} />
 				</button>
-				<h1 className="ml-4 text-xl font-semibold">
-					<Link to="/">
-						<img
-							src="/tanstack-word-logo-white.svg"
-							alt="TanStack Logo"
-							className="h-10"
-						/>
+				<h1 className="ml-4">
+					<Link
+						to="/"
+						className="font-mono text-xl font-black tracking-tight uppercase text-white"
+					>
+						INFINITUNE
 					</Link>
 				</h1>
 			</header>
@@ -71,7 +70,7 @@ export default function Header() {
 						}}
 					>
 						<VinylIcon size={20} />
-						<span className="font-medium">Autoplayer</span>
+						<span className="font-medium">Player</span>
 					</Link>
 				</nav>
 			</aside>

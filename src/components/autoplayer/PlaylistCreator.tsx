@@ -186,10 +186,10 @@ export function PlaylistCreator({
 				{/* Header */}
 				<div className="text-center mb-8">
 					<h1 className="text-6xl sm:text-8xl font-black tracking-tighter uppercase">
-						AUTOPLAYER
+						INFINITUNE
 					</h1>
 					<p className="mt-2 text-sm uppercase tracking-widest text-white/30">
-						AI-GENERATED MUSIC {"//"} INFINITE PLAYBACK
+						INFINITE GENERATIVE MUSIC {"//"} AI-POWERED
 					</p>
 				</div>
 
@@ -362,7 +362,7 @@ export function PlaylistCreator({
 				)}
 
 				<p className="mt-4 text-center text-[10px] uppercase tracking-widest text-white/10">
-					AUTOPLAYER V1.0 {"//"} POWERED BY ACE-STEP 1.5
+					INFINITUNE V1.0 {"//"} POWERED BY ACE-STEP 1.5
 				</p>
 			</div>
 		</div>

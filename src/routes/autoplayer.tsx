@@ -478,7 +478,7 @@ function AutoplayerPage() {
 				<div className="flex items-center justify-between px-4 py-3">
 					<div className="flex items-center gap-4">
 						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-							AUTOPLAYER
+							INFINITUNE
 						</h1>
 						<Badge className="rounded-none border-2 border-white/40 bg-transparent font-mono text-xs text-white/60">
 							V1.0
@@ -688,7 +688,7 @@ function AutoplayerPage() {
 			{/* FOOTER */}
 			<footer className="bg-black px-4 py-2 border-t border-white/10">
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
-					<span>{"AUTOPLAYER V1.0 // BRUTALIST INTERFACE"}</span>
+					<span>{"INFINITUNE V1.0 // INFINITE GENERATIVE MUSIC"}</span>
 					<span className="flex items-center gap-3">
 						<EndpointDot label="LLM" status={workerStatus?.queues.llm} />
 						<EndpointDot label="IMG" status={workerStatus?.queues.image} />
