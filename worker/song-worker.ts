@@ -192,7 +192,7 @@ export class SongWorker {
     })
 
     try {
-      const { result: metadata, processingMs } = await this.ctx.queues.llm.enqueue({
+      const { result, processingMs } = await this.ctx.queues.llm.enqueue({
         songId: this.songId,
         priority,
         endpoint: effectiveProvider,
@@ -227,6 +227,8 @@ export class SongWorker {
           return result
         },
       })
+
+      const metadata = result as SongMetadata
 
       if (this.aborted) return
 
@@ -279,6 +281,7 @@ export class SongWorker {
   private startCover(): void {
     if (this.aborted) return
     if (!this.song.coverPrompt) return
+    if (this.song.coverUrl) return // Already has cover art
 
     const songId = this.songId
     const coverPrompt = this.song.coverPrompt
