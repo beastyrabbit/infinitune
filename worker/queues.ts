@@ -13,7 +13,7 @@ const LLM_CONCURRENCY: Record<string, number> = {
 
 const IMAGE_CONCURRENCY: Record<string, number> = {
   comfyui: 1,
-  openrouter: 1,
+  openrouter: 100,
 }
 
 // ─── Cover generation result ─────────────────────────────────────────
@@ -72,6 +72,21 @@ export class EndpointQueues {
   resortAll(): void {
     this.llm.resortPending()
     this.image.resortPending()
-    // Audio submit queue is internal to AudioQueue
+    this.audio.resortPending()
+  }
+
+  /** Recalculate priorities for all pending items across all queues, then re-sort */
+  recalcPendingPriorities(getSongPriority: (songId: Id<"songs">) => number | undefined): void {
+    for (const queue of [this.llm, this.image, this.audio] as IEndpointQueue<unknown>[]) {
+      const status = queue.getStatus()
+      for (const item of status.pendingItems) {
+        const songId = item.songId as Id<"songs">
+        const newPriority = getSongPriority(songId)
+        if (newPriority !== undefined) {
+          queue.updatePendingPriority(songId, newPriority)
+        }
+      }
+      queue.resortPending()
+    }
   }
 }

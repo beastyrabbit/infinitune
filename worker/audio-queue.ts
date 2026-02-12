@@ -260,9 +260,9 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   }
 
   getStatus(): QueueStatus {
-    const activeItems: { songId: string; startedAt: number }[] = []
+    const activeItems: { songId: string; startedAt: number; endpoint?: string }[] = []
     if (this.active) {
-      activeItems.push({ songId: this.active.songId as string, startedAt: this.active.submittedAt })
+      activeItems.push({ songId: this.active.songId as string, startedAt: this.active.submittedAt, endpoint: 'ace-step' })
     }
 
     return {
@@ -276,12 +276,26 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
         songId: p.request.songId as string,
         priority: p.request.priority,
         waitingSince: p.enqueuedAt,
+        endpoint: 'ace-step',
       })),
     }
   }
 
   refreshConcurrency(_maxConcurrency: number): void {
     // Audio is always 1-at-a-time, nothing to change
+  }
+
+  /** Update the priority of a pending item by songId */
+  updatePendingPriority(songId: Id<"songs">, newPriority: number): void {
+    const item = this.pending.find((p) => p.request.songId === songId)
+    if (item) {
+      item.request.priority = newPriority
+    }
+  }
+
+  /** Re-sort pending queue after priority updates */
+  resortPending(): void {
+    this.pending.sort((a, b) => a.request.priority - b.request.priority)
   }
 
   get activePolls(): number {

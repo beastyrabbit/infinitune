@@ -64,6 +64,7 @@ export const create = mutation({
       mode: args.mode ?? "endless",
       status: "active",
       songsGenerated: 0,
+      promptEpoch: 0,
     })
   },
 })

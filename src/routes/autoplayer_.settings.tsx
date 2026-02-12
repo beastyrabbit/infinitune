@@ -11,6 +11,7 @@ import { SettingsTabModels } from "@/components/autoplayer/settings/SettingsTabM
 import { SettingsTabNetwork } from "@/components/autoplayer/settings/SettingsTabNetwork";
 import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
+import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 
@@ -36,6 +37,7 @@ function SettingsPage() {
 		api.playlists.getByPlaylistKey,
 		pl ? { playlistKey: pl } : "skip",
 	);
+	usePlaylistHeartbeat(activePlaylist?._id ?? null);
 	const updateParams = useMutation(api.playlists.updateParams);
 
 	// Tab state

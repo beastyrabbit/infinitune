@@ -5,15 +5,25 @@ interface UpNextBannerProps {
 	songs: Song[];
 	currentSongId: string | null;
 	playlist: Playlist;
+	transitionComplete: boolean;
 }
 
 export function UpNextBanner({
 	songs,
 	currentSongId,
 	playlist,
+	transitionComplete,
 }: UpNextBannerProps) {
 	const playlistEpoch = playlist.promptEpoch ?? 0;
-	const nextSong = pickNextSong(songs, currentSongId, playlistEpoch);
+	const currentSong = currentSongId
+		? songs.find((s) => s._id === currentSongId)
+		: null;
+	const nextSong = pickNextSong(
+		songs,
+		currentSongId,
+		playlistEpoch,
+		currentSong?.orderIndex,
+	);
 	const generatingInterrupt = findGeneratingInterrupt(songs);
 
 	// Generating interrupt takes display priority over next ready song
@@ -37,7 +47,7 @@ export function UpNextBanner({
 
 	const isInterrupt = nextSong.isInterrupt;
 	const isCurrentEpoch = (nextSong.promptEpoch ?? 0) === playlistEpoch;
-	const isFiller = !isCurrentEpoch && playlistEpoch > 0;
+	const isFiller = !transitionComplete && !isCurrentEpoch && playlistEpoch > 0;
 	const title = `"${(nextSong.title ?? "UNKNOWN").toUpperCase()}"`;
 
 	if (isInterrupt) {
@@ -64,7 +74,8 @@ export function UpNextBanner({
 		);
 	}
 
-	const label = playlistEpoch > 0 && isCurrentEpoch ? " [NEW DIRECTION]" : " [READY]";
+	const label =
+		playlistEpoch > 0 && isCurrentEpoch ? " [NEW DIRECTION]" : " [READY]";
 
 	return (
 		<div className="border-y-4 border-white/10 bg-black px-4 py-2">

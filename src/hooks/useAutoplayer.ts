@@ -44,6 +44,7 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 			songs,
 			currentSongId,
 			playlist?.promptEpoch ?? 0,
+			endedSong.orderIndex,
 		);
 		setCurrentSong(nextSong?._id ?? null);
 	}, [songs, currentSongId, playlist?.promptEpoch, updateSongStatus]);
@@ -98,6 +99,7 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 			songs,
 			currentSongId,
 			playlist?.promptEpoch ?? 0,
+			skippedSong?.orderIndex,
 		);
 		if (nextSong) {
 			setCurrentSong(nextSong._id);

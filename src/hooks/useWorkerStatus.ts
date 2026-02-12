@@ -6,8 +6,13 @@ export interface EndpointStatus {
 	active: number;
 	errors: number;
 	lastErrorMessage?: string;
-	activeItems: { songId: string; startedAt: number }[];
-	pendingItems: { songId: string; priority: number; waitingSince: number }[];
+	activeItems: { songId: string; startedAt: number; endpoint?: string }[];
+	pendingItems: {
+		songId: string;
+		priority: number;
+		waitingSince: number;
+		endpoint?: string;
+	}[];
 }
 
 export interface WorkerStatus {

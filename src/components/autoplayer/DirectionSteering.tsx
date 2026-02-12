@@ -9,7 +9,12 @@ import { api } from "../../../convex/_generated/api";
 interface DirectionSteeringProps {
 	playlist: Pick<
 		Playlist,
-		"_id" | "prompt" | "llmProvider" | "llmModel" | "promptEpoch" | "steerHistory"
+		| "_id"
+		| "prompt"
+		| "llmProvider"
+		| "llmModel"
+		| "promptEpoch"
+		| "steerHistory"
 	>;
 	disabled?: boolean;
 }
@@ -93,29 +98,24 @@ export function DirectionSteering({
 			{/* Direction history */}
 			{history.length > 0 && (
 				<div className="mt-3 space-y-1">
-					<p className="text-[10px] font-bold uppercase tracking-widest text-white/60">
-						CURRENT DIRECTION: &quot;{playlist.prompt}&quot;
+					<p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-0.5">
+						HISTORY:
 					</p>
-					<div className="border-t border-white/10 pt-1">
-						<p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-0.5">
-							HISTORY:
-						</p>
-						{[...history]
-							.reverse()
-							.slice(0, 5)
-							.map((entry) => (
-								<p
-									key={entry.epoch}
-									className="text-[10px] uppercase text-white/30 pl-2"
-								>
-									[{entry.epoch}] &rarr;{" "}
-									{entry.direction.length > 60
-										? `${entry.direction.slice(0, 60)}...`
-										: entry.direction}{" "}
-									({formatTimeAgo(entry.at)})
-								</p>
-							))}
-					</div>
+					{[...history]
+						.reverse()
+						.slice(0, 5)
+						.map((entry) => (
+							<p
+								key={entry.epoch}
+								className="text-[10px] uppercase text-white/30 pl-2"
+							>
+								[{entry.epoch}] &rarr;{" "}
+								{entry.direction.length > 60
+									? `${entry.direction.slice(0, 60)}...`
+									: entry.direction}{" "}
+								({formatTimeAgo(entry.at)})
+							</p>
+						))}
 				</div>
 			)}
 		</div>

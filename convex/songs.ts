@@ -510,6 +510,21 @@ export const revertToMetadataReady = mutation({
   },
 })
 
+export const getInAudioPipeline = query({
+  handler: async (ctx) => {
+    const submitting = await ctx.db.query("songs")
+      .filter(q => q.eq(q.field("status"), "submitting_to_ace"))
+      .collect()
+    const generating = await ctx.db.query("songs")
+      .filter(q => q.eq(q.field("status"), "generating_audio"))
+      .collect()
+    const saving = await ctx.db.query("songs")
+      .filter(q => q.eq(q.field("status"), "saving"))
+      .collect()
+    return [...submitting, ...generating, ...saving]
+  },
+})
+
 // ─── Worker queries ─────────────────────────────────────────────────
 
 export const getWorkQueue = query({

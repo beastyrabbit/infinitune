@@ -9,6 +9,7 @@ interface QueueGridProps {
 	songs: Song[];
 	currentSongId: string | null;
 	playlistEpoch: number;
+	transitionComplete: boolean;
 	onSelectSong: (songId: string) => void;
 	onOpenDetail: (songId: string) => void;
 	onRate: (songId: string, rating: "up" | "down") => void;
@@ -84,11 +85,18 @@ export function QueueGrid({
 	songs,
 	currentSongId,
 	playlistEpoch,
+	transitionComplete,
 	onSelectSong,
 	onOpenDetail,
 	onRate,
 }: QueueGridProps) {
-	const sorted = [...songs].sort((a, b) => a.orderIndex - b.orderIndex);
+	// Sort: current-epoch songs first, then older epochs; within same epoch by orderIndex
+	const sorted = [...songs].sort((a, b) => {
+		const aEpoch = a.promptEpoch ?? 0;
+		const bEpoch = b.promptEpoch ?? 0;
+		if (aEpoch !== bEpoch) return bEpoch - aEpoch; // higher epoch first
+		return a.orderIndex - b.orderIndex;
+	});
 
 	const activeStatuses: SongStatus[] = [
 		"pending",
@@ -122,7 +130,6 @@ export function QueueGrid({
 	// Build items with epoch dividers
 	const items: ReactNode[] = [];
 	let lastEpoch: number | null = null;
-	let songIndex = 0;
 
 	for (const song of sorted) {
 		const songEpoch = song.promptEpoch ?? 0;
@@ -157,7 +164,10 @@ export function QueueGrid({
 		const status = getStatusLabel(song.status, isCurrent);
 
 		const isOldEpoch =
-			playlistEpoch > 0 && songEpoch < playlistEpoch && !isCurrent;
+			!transitionComplete &&
+			playlistEpoch > 0 &&
+			songEpoch < playlistEpoch &&
+			!isCurrent;
 		const isInterruptGenerating = song.isInterrupt && isGenerating;
 		const isInterruptReady = song.isInterrupt && song.status === "ready";
 
@@ -174,8 +184,7 @@ export function QueueGrid({
 			cardBorderClass = "border-2 border-green-400";
 		}
 
-		const cardNum = songIndex + 1;
-		songIndex++;
+		const cardNum = Math.round(song.orderIndex);
 
 		items.push(
 			<div
@@ -289,15 +298,12 @@ export function QueueGrid({
 					</p>
 					<div className="flex items-center justify-between mt-1">
 						<div className="flex items-center gap-1">
-							<p className={`text-[10px] uppercase ${status.className}`}>
-								{status.text}
+							<p
+								className={`text-[10px] uppercase ${isOldEpoch ? "text-white/20 font-bold" : status.className}`}
+							>
+								{isOldEpoch ? "[FILLER]" : status.text}
 							</p>
-							{isOldEpoch && (
-								<span className="text-[10px] text-white/20 font-bold">
-									[FILLER]
-								</span>
-							)}
-							{isReady && !isOldEpoch && (
+							{isReady && (
 								<>
 									<button
 										type="button"
@@ -358,7 +364,7 @@ export function QueueGrid({
 					{hasInterruptPending && (
 						<span className="text-cyan-400">1 REQUEST PENDING</span>
 					)}
-					{playlistEpoch > 0 ? (
+					{!transitionComplete && playlistEpoch > 0 ? (
 						<>
 							<span>{newDirReady} NEW DIR</span>
 							<span>{fillerReady} FILLER</span>

@@ -89,6 +89,79 @@ export async function submitToAce(options: {
 	return { taskId };
 }
 
+export async function batchPollAce(
+	taskIds: string[],
+	signal?: AbortSignal,
+): Promise<Map<string, AcePollResult>> {
+	const urls = await getServiceUrls();
+	const aceUrl = urls.aceStepUrl;
+
+	const response = await fetch(`${aceUrl}/query_result`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ task_id_list: taskIds }),
+		signal,
+	});
+
+	const data = await response.json();
+	const results = data.data;
+	const resultMap = new Map<string, AcePollResult>();
+
+	if (!results || !Array.isArray(results)) {
+		for (const id of taskIds) {
+			resultMap.set(id, { status: "not_found" });
+		}
+		return resultMap;
+	}
+
+	// Index ACE results by task_id
+	const aceById = new Map<string, { status: number; result?: string }>();
+	for (const task of results) {
+		if (task.task_id) {
+			aceById.set(task.task_id, task);
+		}
+	}
+
+	for (const id of taskIds) {
+		const task = aceById.get(id);
+		if (!task) {
+			resultMap.set(id, { status: "not_found" });
+			continue;
+		}
+
+		if (task.status === 0) {
+			resultMap.set(id, { status: "running" });
+		} else if (task.status === 2) {
+			resultMap.set(id, { status: "failed", error: "Audio generation failed" });
+		} else if (task.status === 1) {
+			try {
+				const resultItems: { file: string }[] = JSON.parse(task.result ?? "[]");
+				if (resultItems.length > 0) {
+					resultMap.set(id, {
+						status: "succeeded",
+						audioPath: resultItems[0].file,
+						result: resultItems[0],
+					});
+				} else {
+					resultMap.set(id, {
+						status: "failed",
+						error: "No audio files in result",
+					});
+				}
+			} catch {
+				resultMap.set(id, {
+					status: "failed",
+					error: "Failed to parse result JSON",
+				});
+			}
+		} else {
+			resultMap.set(id, { status: "running" });
+		}
+	}
+
+	return resultMap;
+}
+
 export async function pollAce(
 	taskId: string,
 	signal?: AbortSignal,

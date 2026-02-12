@@ -36,13 +36,21 @@ export function useAutoplay(
 				songs,
 				currentSongId,
 				playlist?.promptEpoch ?? 0,
+				currentSong?.orderIndex,
 			);
 			if (next?.audioUrl) {
 				setCurrentSong(next._id);
 				loadAndPlay(next.audioUrl);
 			}
 		}
-	}, [songs, currentSongId, playlistId, loadAndPlay, userHasInteractedRef, playlist?.promptEpoch]);
+	}, [
+		songs,
+		currentSongId,
+		playlistId,
+		loadAndPlay,
+		userHasInteractedRef,
+		playlist?.promptEpoch,
+	]);
 
 	// Auto-play when current song changes and has audio
 	useEffect(() => {

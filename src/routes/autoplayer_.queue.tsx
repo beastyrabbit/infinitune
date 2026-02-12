@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import {
 	type EndpointStatus,
 	useWorkerStatus,
@@ -138,12 +139,14 @@ function SongCard({
 	timerStartedAt,
 	variant,
 	priority,
+	endpoint,
 	index,
 }: {
 	songInfo: SongInfo | null;
 	timerStartedAt: number;
 	variant: "active" | "pending";
 	priority?: number;
+	endpoint?: string;
 	index: number;
 }) {
 	const title = songInfo?.title || "Generating...";
@@ -151,7 +154,8 @@ function SongCard({
 	const genre = songInfo?.genre || "";
 
 	const isActive = variant === "active";
-	const isOldEpoch = priority !== undefined && priority >= 5000 && priority < 10000;
+	const isOldEpoch =
+		priority !== undefined && priority >= 5000 && priority < 10000;
 	const borderColor = isActive
 		? "border-green-500/60"
 		: isOldEpoch
@@ -183,7 +187,9 @@ function SongCard({
 			{/* Song info */}
 			<div className="flex-1 min-w-0">
 				<div className="flex items-center gap-1.5">
-					<p className={`text-xs font-black uppercase truncate leading-tight ${isOldEpoch ? "text-white/30" : ""}`}>
+					<p
+						className={`text-xs font-black uppercase truncate leading-tight ${isOldEpoch ? "text-white/30" : ""}`}
+					>
 						{title}
 					</p>
 					{songInfo?.isInterrupt && (
@@ -193,7 +199,9 @@ function SongCard({
 					)}
 				</div>
 				<div className="flex items-center gap-2 mt-0.5">
-					<p className={`text-[10px] uppercase truncate leading-tight ${isOldEpoch ? "text-white/20" : "text-white/40"}`}>
+					<p
+						className={`text-[10px] uppercase truncate leading-tight ${isOldEpoch ? "text-white/20" : "text-white/40"}`}
+					>
 						{artist}
 						{genre && (
 							<>
@@ -212,7 +220,7 @@ function SongCard({
 				</div>
 			</div>
 
-			{/* Priority + timer */}
+			{/* Priority + timer + endpoint */}
 			<div className="shrink-0 text-right flex flex-col items-end gap-0.5">
 				{isActive ? (
 					<>
@@ -220,6 +228,11 @@ function SongCard({
 							<span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
 							PROCESSING
 						</span>
+						{endpoint && (
+							<span className="text-[9px] font-mono text-green-400/50 uppercase">
+								{endpoint}
+							</span>
+						)}
 						<LiveTimer
 							startedAt={timerStartedAt}
 							className="text-xs font-mono text-green-400/80 tabular-nums"
@@ -228,8 +241,15 @@ function SongCard({
 				) : (
 					<>
 						{decoded && (
-							<span className={`text-[10px] font-bold uppercase ${decoded.color}`}>
+							<span
+								className={`text-[10px] font-bold uppercase ${decoded.color}`}
+							>
 								{decoded.label}
+							</span>
+						)}
+						{endpoint && (
+							<span className="text-[9px] font-mono text-white/20 uppercase">
+								{endpoint}
 							</span>
 						)}
 						{priority !== undefined && (
@@ -360,6 +380,7 @@ function EndpointPanel({
 							songInfo={songMap.get(item.songId) ?? null}
 							timerStartedAt={item.startedAt}
 							variant="active"
+							endpoint={item.endpoint}
 							index={i}
 						/>
 					))}
@@ -381,6 +402,7 @@ function EndpointPanel({
 							timerStartedAt={item.waitingSince}
 							variant="pending"
 							priority={item.priority}
+							endpoint={item.endpoint}
 							index={i}
 						/>
 					))}
@@ -476,6 +498,12 @@ function WorkerOverview({ status }: { status: WorkerStatus }) {
 
 function QueuePage() {
 	const navigate = useNavigate();
+	const { pl } = Route.useSearch();
+	const playlistByKey = useQuery(
+		api.playlists.getByPlaylistKey,
+		pl ? { playlistKey: pl } : "skip",
+	);
+	usePlaylistHeartbeat(playlistByKey?._id ?? null);
 	const { status, error } = useWorkerStatus();
 
 	// Collect all unique song IDs from the worker status

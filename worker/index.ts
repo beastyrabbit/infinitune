@@ -1,11 +1,12 @@
 import { getConvexClient } from './convex-client'
 import { api } from '../convex/_generated/api'
 import type { Doc, Id } from '../convex/_generated/dataModel'
-import { pollAce } from '../src/services/ace'
+import { pollAce, batchPollAce } from '../src/services/ace'
 import { EndpointQueues } from './queues'
 import { SongWorker } from './song-worker'
 import { startHttpServer } from './http-server'
 import type { RecentSong } from '../src/services/llm'
+import { calculatePriority } from './priority'
 
 const POLL_INTERVAL = 2000 // 2 seconds
 const HEARTBEAT_STALE_MS = 90_000 // 90 seconds = 3 missed 30s heartbeats
@@ -20,6 +21,9 @@ const playlistSongs = new Map<Id<"playlists">, Set<Id<"songs">>>()
 
 /** Tracked playlist IDs from last tick */
 const trackedPlaylists = new Set<Id<"playlists">>()
+
+/** Last-seen promptEpoch per playlist, for detecting epoch changes */
+const playlistEpochs = new Map<Id<"playlists">, number>()
 
 let queues: EndpointQueues
 
@@ -70,6 +74,7 @@ async function tick() {
         console.log(`[worker] Playlist ${playlistId} gone, cancelling workers`)
         cancelPlaylistWorkers(playlistId)
         trackedPlaylists.delete(playlistId)
+        playlistEpochs.delete(playlistId)
       }
     }
 
@@ -80,8 +85,42 @@ async function tick() {
       const isClosing = playlist.status === 'closing'
       const isOneshot = playlist.mode === 'oneshot'
 
+      // Track epoch changes
+      const currentEpoch = playlist.promptEpoch ?? 0
+      const lastSeenEpoch = playlistEpochs.get(playlistId) ?? currentEpoch
+      playlistEpochs.set(playlistId, currentEpoch)
+      const epochChanged = currentEpoch > lastSeenEpoch
+
       try {
         const workQueue = await convex.query(api.songs.getWorkQueue, { playlistId })
+
+        // === Epoch change: recalculate priorities for pending queue items ===
+        if (epochChanged) {
+          console.log(`[epoch] Epoch changed ${lastSeenEpoch} → ${currentEpoch} for playlist ${playlistId}`)
+
+          // Build songId → song lookup from all songs in the work queue
+          const allSongs = [
+            ...workQueue.pending,
+            ...workQueue.metadataReady,
+            ...workQueue.generatingAudio,
+            ...workQueue.needsRecovery,
+          ]
+          const songMap = new Map(allSongs.map((s) => [s._id, s]))
+
+          queues.recalcPendingPriorities((songId) => {
+            const song = songMap.get(songId)
+            if (!song) return undefined
+            return calculatePriority({
+              isOneshot,
+              isInterrupt: !!song.interruptPrompt,
+              orderIndex: song.orderIndex,
+              currentOrderIndex: playlist.currentOrderIndex ?? 0,
+              isClosing,
+              currentEpoch,
+              songEpoch: song.promptEpoch ?? 0,
+            })
+          })
+        }
 
         // === Active playlists only: buffer management + retry ===
         if (!isClosing) {
@@ -112,7 +151,6 @@ async function tick() {
         // Songs past pending have started LLM/audio work — let them finish at low priority.
         const deletedSongIds = new Set<string>()
         if (!isClosing) {
-          const currentEpoch = playlist.promptEpoch ?? 0
           const oldPending = workQueue.pending.filter(
             (s) => (s.promptEpoch ?? 0) < currentEpoch && !s.isInterrupt
           )
@@ -127,7 +165,6 @@ async function tick() {
 
         // === Both active and closing: create SongWorkers for actionable songs ===
         // Sort: current-epoch first so they claim queue slots before old-epoch songs.
-        const currentEpoch = playlist.promptEpoch ?? 0
         const actionableSongs = [
           ...workQueue.pending,
           ...workQueue.metadataReady,
@@ -154,6 +191,7 @@ async function tick() {
               const pl = await convex.query(api.playlists.get, { id: playlistId })
               return pl?.status === 'active'
             },
+            getCurrentEpoch: () => playlistEpochs.get(playlistId) ?? 0,
             getSettings,
           })
           songWorkers.set(song._id, worker)
@@ -206,6 +244,7 @@ async function tick() {
           })
           cancelPlaylistWorkers(playlistId)
           trackedPlaylists.delete(playlistId)
+          playlistEpochs.delete(playlistId)
         }
       } catch (error: unknown) {
         console.error(`[worker] Error processing playlist ${playlistId}:`, error instanceof Error ? error.message : error)
@@ -230,6 +269,54 @@ function cancelPlaylistWorkers(playlistId: Id<"playlists">): void {
   playlistSongs.delete(playlistId)
 }
 
+// ─── Startup ACE reconciliation ─────────────────────────────────────
+
+async function reconcileAceState() {
+  const convex = getConvexClient()
+  const songs = await convex.query(api.songs.getInAudioPipeline)
+  if (songs.length === 0) return
+
+  console.log(`[startup] Reconciling ${songs.length} song(s) in audio pipeline...`)
+
+  const taskIds = songs.filter(s => s.aceTaskId).map(s => s.aceTaskId!)
+
+  if (taskIds.length > 0) {
+    let aceStatus: Map<string, { status: string; audioPath?: string }>
+    try {
+      aceStatus = await batchPollAce(taskIds)
+    } catch (error: unknown) {
+      console.log(`[startup] ACE unreachable, reverting all ${songs.length} songs to metadata_ready`)
+      for (const song of songs) {
+        await convex.mutation(api.songs.revertToMetadataReady, { id: song._id })
+      }
+      return
+    }
+
+    for (const song of songs) {
+      if (!song.aceTaskId) {
+        await convex.mutation(api.songs.revertToMetadataReady, { id: song._id })
+        console.log(`[startup] Reverted ${song._id} — no ACE task ID`)
+        continue
+      }
+      const status = aceStatus.get(song.aceTaskId)
+      if (!status || status.status === 'not_found' || status.status === 'failed') {
+        await convex.mutation(api.songs.revertToMetadataReady, { id: song._id })
+        console.log(`[startup] Reverted ${song._id} — ACE task ${song.aceTaskId} is gone`)
+      } else if (status.status === 'succeeded' && status.audioPath) {
+        console.log(`[startup] ACE task ${song.aceTaskId} already done — SongWorker will save`)
+      } else {
+        console.log(`[startup] ACE task ${song.aceTaskId} still running — will resume`)
+      }
+    }
+  } else {
+    // All songs in audio pipeline have no taskId — revert all
+    for (const song of songs) {
+      await convex.mutation(api.songs.revertToMetadataReady, { id: song._id })
+      console.log(`[startup] Reverted ${song._id} — no ACE task ID`)
+    }
+  }
+}
+
 // ─── Startup ─────────────────────────────────────────────────────────
 
 async function main() {
@@ -251,6 +338,9 @@ async function main() {
   queues = new EndpointQueues(
     (taskId, signal) => pollAce(taskId, signal),
   )
+
+  // Reconcile any songs stuck in audio pipeline against ACE's actual state
+  await reconcileAceState()
 
   // Start HTTP server for queue status API
   const port = Number(process.env.WORKER_API_PORT) || 3099

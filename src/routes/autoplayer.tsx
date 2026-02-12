@@ -97,6 +97,12 @@ function AutoplayerPage() {
 
 	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;
 
+	// Transition is complete once the currently playing song is from the current epoch
+	const playlistEpoch = playlist?.promptEpoch ?? 0;
+	const currentSongEpoch = currentSong ? (currentSong.promptEpoch ?? 0) : 0;
+	const transitionComplete =
+		playlistEpoch === 0 || currentSongEpoch >= playlistEpoch;
+
 	const createPendingMut = useMutation(api.songs.createPending);
 
 	const handleCreatePlaylist = useCallback(
@@ -227,9 +233,10 @@ function AutoplayerPage() {
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
-							onClick={() =>
-								navigate({ to: "/autoplayer/oneshot", search: (prev) => prev })
-							}
+							onClick={() => {
+								stopPlayback();
+								navigate({ to: "/autoplayer/oneshot", search: (prev) => prev });
+							}}
 						>
 							<Zap className="h-3.5 w-3.5" />
 							[ONESHOT]
@@ -237,9 +244,10 @@ function AutoplayerPage() {
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-							onClick={() =>
-								navigate({ to: "/autoplayer/library", search: (prev) => prev })
-							}
+							onClick={() => {
+								stopPlayback();
+								navigate({ to: "/autoplayer/library", search: (prev) => prev });
+							}}
 						>
 							[LIBRARY]
 						</button>
@@ -348,6 +356,7 @@ function AutoplayerPage() {
 					songs={songs}
 					currentSongId={currentSongId}
 					playlist={playlist}
+					transitionComplete={transitionComplete}
 				/>
 			)}
 
@@ -356,7 +365,8 @@ function AutoplayerPage() {
 				<QueueGrid
 					songs={songs}
 					currentSongId={currentSongId}
-					playlistEpoch={playlist?.promptEpoch ?? 0}
+					playlistEpoch={playlistEpoch}
+					transitionComplete={transitionComplete}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
 					onRate={rateSong}

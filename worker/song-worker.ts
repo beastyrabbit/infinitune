@@ -33,6 +33,7 @@ interface SongWorkerContext {
   recentSongs: RecentSong[]
   recentDescriptions: string[]
   getPlaylistActive: () => Promise<boolean>
+  getCurrentEpoch?: () => number
   getSettings: () => Promise<{ textProvider: string; textModel: string; imageProvider: string; imageModel?: string }>
 }
 
@@ -65,6 +66,11 @@ export class SongWorker {
     this.songId = song._id
     this.song = song
     this.ctx = ctx
+  }
+
+  /** Get the live current epoch, falling back to the snapshot if callback not provided */
+  private getCurrentEpoch(): number {
+    return this.ctx.getCurrentEpoch?.() ?? this.ctx.playlist.promptEpoch ?? 0
   }
 
   /** Fire-and-forget entry point. Returns when song is ready/errored/cancelled. */
@@ -175,21 +181,21 @@ export class SongWorker {
       promptDistance = Math.random() < 0.6 ? 'close' : 'general'
     }
 
-    const currentEpoch = this.ctx.playlist.promptEpoch ?? 0
-    const songEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
-      isOldEpoch: songEpoch < currentEpoch,
+      currentEpoch: this.getCurrentEpoch(),
+      songEpoch: this.song.promptEpoch ?? 0,
     })
 
     try {
       const { result: metadata, processingMs } = await this.ctx.queues.llm.enqueue({
         songId: this.songId,
         priority,
+        endpoint: effectiveProvider,
         execute: async (signal) => {
           const genOptions = {
             prompt,
@@ -279,15 +285,14 @@ export class SongWorker {
 
     const isOneshot = this.ctx.playlist.mode === 'oneshot'
     const isInterrupt = !!this.song.interruptPrompt
-    const coverCurrentEpoch = this.ctx.playlist.promptEpoch ?? 0
-    const coverSongEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
-      isOldEpoch: coverSongEpoch < coverCurrentEpoch,
+      currentEpoch: this.getCurrentEpoch(),
+      songEpoch: this.song.promptEpoch ?? 0,
     })
 
     // Fire-and-forget — we don't await this
@@ -298,6 +303,7 @@ export class SongWorker {
       return this.ctx.queues.image.enqueue({
         songId,
         priority,
+        endpoint: imageProvider,
         execute: async (signal) => {
           const result = await generateCover({
             coverPrompt,
@@ -372,21 +378,21 @@ export class SongWorker {
 
     const isOneshot = this.ctx.playlist.mode === 'oneshot'
     const isInterrupt = !!this.song.interruptPrompt
-    const audioCurrentEpoch = this.ctx.playlist.promptEpoch ?? 0
-    const audioSongEpoch = this.song.promptEpoch ?? 0
     const priority = calculatePriority({
       isOneshot,
       isInterrupt,
       orderIndex: this.song.orderIndex,
       currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
       isClosing: this.ctx.playlist.status === 'closing',
-      isOldEpoch: audioSongEpoch < audioCurrentEpoch,
+      currentEpoch: this.getCurrentEpoch(),
+      songEpoch: this.song.promptEpoch ?? 0,
     })
 
     try {
       const { result: audioResult, processingMs } = await this.ctx.queues.audio.enqueue({
         songId: this.songId,
         priority,
+        endpoint: 'ace-step',
         execute: async (signal) => {
           const result = await submitToAce({
             lyrics: this.song.lyrics || '',

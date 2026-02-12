@@ -7,6 +7,7 @@ export type EndpointType = 'llm' | 'image' | 'audio'
 export interface QueueRequest<T> {
   songId: Id<"songs">
   priority: number
+  endpoint?: string
   execute: (signal: AbortSignal) => Promise<T>
 }
 
@@ -22,8 +23,8 @@ export interface QueueStatus {
   active: number
   errors: number
   lastErrorMessage?: string
-  activeItems: { songId: string; startedAt: number }[]
-  pendingItems: { songId: string; priority: number; waitingSince: number }[]
+  activeItems: { songId: string; startedAt: number; endpoint?: string }[]
+  pendingItems: { songId: string; priority: number; waitingSince: number; endpoint?: string }[]
 }
 
 // ─── Interface ───────────────────────────────────────────────────────
@@ -33,6 +34,8 @@ export interface IEndpointQueue<T> {
   cancelSong(songId: Id<"songs">): void
   getStatus(): QueueStatus
   refreshConcurrency(maxConcurrency: number): void
+  updatePendingPriority(songId: Id<"songs">, newPriority: number): void
+  resortPending(): void
 }
 
 // ─── Internal tracking types ─────────────────────────────────────────
@@ -46,6 +49,7 @@ interface PendingItem<T> {
 interface ActiveItem {
   songId: Id<"songs">
   startedAt: number
+  endpoint?: string
   abortController: AbortController
 }
 
@@ -115,11 +119,13 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
       activeItems: [...this.active.values()].map((a) => ({
         songId: a.songId as string,
         startedAt: a.startedAt,
+        endpoint: a.endpoint,
       })),
       pendingItems: this.pending.map((p) => ({
         songId: p.request.songId as string,
         priority: p.request.priority,
         waitingSince: p.enqueuedAt,
+        endpoint: p.request.endpoint,
       })),
     }
   }
@@ -127,6 +133,14 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
   refreshConcurrency(maxConcurrency: number): void {
     this.maxConcurrency = maxConcurrency
     this.drain()
+  }
+
+  /** Update the priority of a pending item by songId */
+  updatePendingPriority(songId: Id<"songs">, newPriority: number): void {
+    const item = this.pending.find((p) => p.request.songId === songId)
+    if (item) {
+      item.request.priority = newPriority
+    }
   }
 
   /** Re-sort pending queue (used when priorities change, e.g. playlist goes stale) */
@@ -153,7 +167,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
     const abortController = new AbortController()
     const startedAt = Date.now()
 
-    const activeItem: ActiveItem = { songId, startedAt, abortController }
+    const activeItem: ActiveItem = { songId, startedAt, endpoint: item.request.endpoint, abortController }
     this.active.set(songId, activeItem)
 
     item.request
