@@ -53,6 +53,7 @@ class ProviderSemaphore {
 						this.queue.splice(idx, 1);
 						reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
 					}
+					// If idx < 0, waiter was already resolved by release() - do nothing
 				},
 				{ once: true },
 			);
