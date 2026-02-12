@@ -10,6 +10,7 @@ import VinylIcon from "@/components/ui/vinyl-icon";
 import Volume2Icon from "@/components/ui/volume-2-icon";
 import VolumeXIcon from "@/components/ui/volume-x-icon";
 import XIcon from "@/components/ui/x-icon";
+import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
 	playerStore,
@@ -116,12 +117,6 @@ function matchesFilters(
 }
 
 // ─── Mini Player ────────────────────────────────────────────────────
-
-function formatTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 function MiniPlayer({
 	currentSong,

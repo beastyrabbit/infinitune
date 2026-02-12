@@ -1,11 +1,16 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Loader2, ThumbsDown } from "lucide-react";
-import { useEffect, useState } from "react";
 import LikeIcon from "@/components/ui/like-icon";
+import {
+	formatElapsed,
+	isGenerating as isGeneratingStatus,
+	isPlayable as isPlayableStatus,
+} from "@/lib/format-time";
+import { getStatusBadge } from "@/lib/song-status";
 import type { Song } from "@/types/convex";
-import type { SongStatus } from "../../../convex/types";
 import { CoverArt } from "./CoverArt";
+import { LiveTimer } from "./LiveTimer";
 
 interface SortableSongCardProps {
 	song: Song;
@@ -14,72 +19,6 @@ interface SortableSongCardProps {
 	onSelectSong: (songId: string) => void;
 	onOpenDetail: (songId: string) => void;
 	onRate: (songId: string, rating: "up" | "down") => void;
-}
-
-function getStatusLabel(status: SongStatus, isCurrent: boolean) {
-	if (isCurrent)
-		return { text: "[PLAYING]", className: "text-red-500 font-black" };
-	switch (status) {
-		case "ready":
-			return { text: "[READY]", className: "text-white font-bold" };
-		case "pending":
-			return {
-				text: "[QUEUED]",
-				className: "text-blue-400 animate-pulse font-bold",
-			};
-		case "generating_metadata":
-			return {
-				text: "[WRITING...]",
-				className: "text-yellow-500 animate-pulse font-bold",
-			};
-		case "metadata_ready":
-			return { text: "[METADATA OK]", className: "text-cyan-400 font-bold" };
-		case "submitting_to_ace":
-			return {
-				text: "[SUBMITTING...]",
-				className: "text-yellow-500 animate-pulse font-bold",
-			};
-		case "generating_audio":
-			return {
-				text: "[GENERATING AUDIO...]",
-				className: "text-yellow-500 animate-pulse font-bold",
-			};
-		case "saving":
-			return {
-				text: "[SAVING...]",
-				className: "text-yellow-500 animate-pulse font-bold",
-			};
-		case "played":
-			return { text: "[READY]", className: "text-white/50 font-bold" };
-		case "retry_pending":
-			return {
-				text: "[RETRY PENDING]",
-				className: "text-orange-400 font-bold",
-			};
-		case "error":
-			return { text: "[ERROR]", className: "text-red-400 font-bold" };
-	}
-}
-
-function formatElapsed(ms: number) {
-	const totalSeconds = Math.floor(ms / 1000);
-	if (totalSeconds < 60) return `${totalSeconds}s`;
-	const m = Math.floor(totalSeconds / 60);
-	const s = totalSeconds % 60;
-	return `${m}m${s}s`;
-}
-
-function LiveTimer({ startedAt }: { startedAt: number }) {
-	const [elapsed, setElapsed] = useState(Date.now() - startedAt);
-
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setElapsed(Date.now() - startedAt);
-		}, 1000);
-		return () => clearInterval(interval);
-	}, [startedAt]);
-
-	return <>{formatElapsed(elapsed)}</>;
 }
 
 export function SortableSongCard({
@@ -106,16 +45,10 @@ export function SortableSongCard({
 		opacity: isDragging ? 0.4 : undefined,
 	};
 
-	const isPlayable = song.status === "ready" || song.status === "played";
-	const isGenerating =
-		song.status === "pending" ||
-		song.status.startsWith("generating") ||
-		song.status === "metadata_ready" ||
-		song.status === "submitting_to_ace" ||
-		song.status === "saving";
-	const isReady =
-		song.status === "ready" || song.status === "played" || isCurrent;
-	const status = getStatusLabel(song.status, isCurrent);
+	const isPlayable = isPlayableStatus(song.status);
+	const isGenerating = isGeneratingStatus(song.status);
+	const isReady = isPlayable || isCurrent;
+	const status = getStatusBadge(song.status, isCurrent);
 
 	const isInterruptGenerating = song.isInterrupt && isGenerating;
 	const isInterruptReady = song.isInterrupt && song.status === "ready";

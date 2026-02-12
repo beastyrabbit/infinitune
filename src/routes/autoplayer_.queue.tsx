@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { LiveTimer } from "@/components/autoplayer/LiveTimer";
 import { Badge } from "@/components/ui/badge";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import {
@@ -15,6 +16,7 @@ import {
 	getInitials,
 	getPatternStyle,
 } from "@/lib/cover-utils";
+import { formatMs } from "@/lib/format-time";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -40,34 +42,6 @@ interface SongInfo {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
-
-function formatMs(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	return `${minutes}m ${remainingSeconds}s`;
-}
-
-function LiveTimer({
-	startedAt,
-	className,
-}: {
-	startedAt: number;
-	className?: string;
-}) {
-	const [elapsed, setElapsed] = useState(Date.now() - startedAt);
-
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setElapsed(Date.now() - startedAt);
-		}, 1000);
-		return () => clearInterval(interval);
-	}, [startedAt]);
-
-	return <span className={className}>{formatMs(elapsed)}</span>;
-}
 
 // ─── Mini cover art (no disc effect, just raw art) ──────────────────
 

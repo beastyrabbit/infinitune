@@ -1,5 +1,8 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+
+export { LiveTimer } from "@/components/autoplayer/LiveTimer";
+export { formatElapsed } from "@/lib/format-time";
 
 export type StepStatus = "pending" | "running" | "done" | "error" | "skipped";
 
@@ -10,27 +13,6 @@ export interface StepState {
 	input: unknown;
 	output: unknown;
 	error: string | null;
-}
-
-export function formatElapsed(ms: number) {
-	const totalSeconds = Math.floor(ms / 1000);
-	if (totalSeconds < 60) return `${totalSeconds}s`;
-	const m = Math.floor(totalSeconds / 60);
-	const s = totalSeconds % 60;
-	return `${m}m${s}s`;
-}
-
-export function LiveTimer({ startedAt }: { startedAt: number }) {
-	const [elapsed, setElapsed] = useState(Date.now() - startedAt);
-
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setElapsed(Date.now() - startedAt);
-		}, 1000);
-		return () => clearInterval(interval);
-	}, [startedAt]);
-
-	return <>{formatElapsed(elapsed)}</>;
 }
 
 export function StatusBadge({ status }: { status: StepStatus }) {

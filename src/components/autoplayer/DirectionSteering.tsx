@@ -3,6 +3,7 @@ import { Compass } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatTimeAgo } from "@/lib/format-time";
 import type { Playlist } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 
@@ -17,15 +18,6 @@ interface DirectionSteeringProps {
 		| "steerHistory"
 	>;
 	disabled?: boolean;
-}
-
-function formatTimeAgo(ms: number): string {
-	const seconds = Math.floor((Date.now() - ms) / 1000);
-	if (seconds < 60) return `${seconds}s ago`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}min ago`;
-	const hours = Math.floor(minutes / 60);
-	return `${hours}h ago`;
 }
 
 export function DirectionSteering({

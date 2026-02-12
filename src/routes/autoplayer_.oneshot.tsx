@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
+import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
 	playerStore,
@@ -45,6 +46,7 @@ import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
+import { STATUS_PROGRESS_TEXT } from "@/lib/song-status";
 import type { Id } from "@/types/convex";
 import { api } from "../../convex/_generated/api";
 import type { LlmProvider } from "../../convex/types";
@@ -77,21 +79,6 @@ const LANGUAGES = [
 	{ value: "japanese", label: "JAPANESE" },
 	{ value: "russian", label: "RUSSIAN" },
 ] as const;
-
-const STATUS_TEXT: Record<string, string> = {
-	pending: "WRITING LYRICS...",
-	generating_metadata: "WRITING LYRICS...",
-	metadata_ready: "PREPARING AUDIO...",
-	submitting_to_ace: "PREPARING AUDIO...",
-	generating_audio: "GENERATING AUDIO...",
-	saving: "GENERATING AUDIO...",
-};
-
-function formatTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 // ─── Main Component ─────────────────────────────────────────────────
 
@@ -1012,7 +999,7 @@ function GeneratingDisplay({
 	}, []);
 
 	const statusText = song
-		? STATUS_TEXT[song.status] || "PROCESSING..."
+		? STATUS_PROGRESS_TEXT[song.status] || "PROCESSING..."
 		: "INITIALIZING...";
 
 	return (

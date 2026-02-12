@@ -7,6 +7,7 @@ import LikeIcon from "@/components/ui/like-icon";
 import Volume2Icon from "@/components/ui/volume-2-icon";
 import VolumeXIcon from "@/components/ui/volume-x-icon";
 import XIcon from "@/components/ui/x-icon";
+import { formatTime } from "@/lib/format-time";
 import { playerStore, setVolume, toggleMute } from "@/lib/player-store";
 import type { Song } from "@/types/convex";
 import { CoverArt } from "./CoverArt";
@@ -17,12 +18,6 @@ interface NowPlayingProps {
 	onSkip: () => void;
 	onSeek: (time: number) => void;
 	onRate: (rating: "up" | "down") => void;
-}
-
-function formatTime(seconds: number): string {
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 /** Parse lyrics into structured sections */

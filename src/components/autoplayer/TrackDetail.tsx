@@ -1,6 +1,6 @@
 import { useMutation } from "convex/react";
 import { Loader2, Palette, ThumbsDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ClockIcon from "@/components/ui/clock-icon";
 import FileDescriptionIcon from "@/components/ui/file-description-icon";
 import LikeIcon from "@/components/ui/like-icon";
@@ -8,9 +8,12 @@ import RefreshIcon from "@/components/ui/refresh-icon";
 import TrashIcon from "@/components/ui/trash-icon";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import XIcon from "@/components/ui/x-icon";
+import { formatElapsed, formatTime, isGenerating } from "@/lib/format-time";
+import { STATUS_LABELS } from "@/lib/song-status";
 import type { Song } from "@/types/convex";
 import { api } from "../../../convex/_generated/api";
 import { CoverArt } from "./CoverArt";
+import { LiveTimer } from "./LiveTimer";
 
 interface TrackDetailProps {
 	song: Song;
@@ -18,59 +21,12 @@ interface TrackDetailProps {
 	onDeleted?: () => void;
 }
 
-function formatDuration(seconds: number) {
-	const m = Math.floor(seconds / 60);
-	const s = Math.floor(seconds % 60);
-	return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function formatElapsed(ms: number) {
-	const totalSeconds = Math.floor(ms / 1000);
-	if (totalSeconds < 60) return `${totalSeconds}S`;
-	const m = Math.floor(totalSeconds / 60);
-	const s = totalSeconds % 60;
-	return `${m}M ${s}S`;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-	pending: "QUEUED — WAITING FOR WORKER",
-	generating_metadata: "WRITING LYRICS & METADATA",
-	metadata_ready: "METADATA READY — QUEUED FOR AUDIO",
-	submitting_to_ace: "COVER ART + SUBMITTING TO ENGINE",
-	generating_audio: "AUDIO SYNTHESIS IN PROGRESS",
-	saving: "SAVING TO LIBRARY",
-	ready: "READY TO PLAY",
-	played: "PLAYED",
-	retry_pending: "RETRY PENDING",
-	error: "ERROR",
-};
-
-function LiveTimer({ startedAt }: { startedAt: number }) {
-	const [elapsed, setElapsed] = useState(Date.now() - startedAt);
-
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setElapsed(Date.now() - startedAt);
-		}, 1000);
-		return () => clearInterval(interval);
-	}, [startedAt]);
-
-	return <>{formatElapsed(elapsed)}</>;
-}
-
 export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 	const deleteSong = useMutation(api.songs.deleteSong);
 	const revertStatuses = useMutation(api.songs.revertSingleSong);
 	const [confirmDelete, setConfirmDelete] = useState(false);
 
-	const isGenerating = [
-		"pending",
-		"generating_metadata",
-		"metadata_ready",
-		"submitting_to_ace",
-		"generating_audio",
-		"saving",
-	].includes(song.status);
+	const generating = isGenerating(song.status);
 
 	const ACTIVE_PROCESSING = [
 		"generating_metadata",
@@ -162,7 +118,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 
 							{/* Status */}
 							<div className="flex items-center gap-2">
-								{isGenerating && (
+								{generating && (
 									<Loader2 className="h-4 w-4 animate-spin text-yellow-500" />
 								)}
 								<span
@@ -171,7 +127,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 											? "text-red-500"
 											: song.status === "retry_pending"
 												? "text-orange-400"
-												: isGenerating
+												: generating
 													? "text-yellow-500"
 													: song.status === "ready"
 														? "text-green-500"
@@ -232,7 +188,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 							{/* Generation Time */}
 							<div className="flex items-center gap-2 text-xs font-bold uppercase text-white/40">
 								<ClockIcon size={12} />
-								{isGenerating && song.generationStartedAt ? (
+								{generating && song.generationStartedAt ? (
 									<span className="text-yellow-500">
 										RUNNING: <LiveTimer startedAt={song.generationStartedAt} />
 									</span>
@@ -311,9 +267,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 									DURATION
 								</p>
 								<p className="text-lg font-black">
-									{song.audioDuration
-										? formatDuration(song.audioDuration)
-										: "--"}
+									{song.audioDuration ? formatTime(song.audioDuration) : "--"}
 								</p>
 							</div>
 						</div>
