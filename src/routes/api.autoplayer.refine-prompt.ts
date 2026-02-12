@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
-import { getServiceUrls, getSetting } from "@/lib/server-settings";
+import { callLlmText } from "@/services/llm-client";
 
 const SYSTEM_PROMPT = `You are a music session director. You will receive a current session prompt and a user direction. Merge them into an updated prompt.
 
@@ -52,62 +52,16 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 
 					const userMessage = `Current session prompt:\n"${trimmedPrompt}"\n\nUser direction:\n"${trimmedDirection}"\n\nReturn the updated prompt:`;
 
-					let fullText: string;
-
-					if (provider === "openrouter") {
-						const apiKey =
-							(await getSetting("openrouterApiKey")) ||
-							process.env.OPENROUTER_API_KEY ||
-							"";
-						const res = await fetch(
-							"https://openrouter.ai/api/v1/chat/completions",
-							{
-								method: "POST",
-								headers: {
-									"Content-Type": "application/json",
-									Authorization: `Bearer ${apiKey}`,
-								},
-								body: JSON.stringify({
-									model,
-									messages: [
-										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: userMessage },
-									],
-								}),
-							},
-						);
-						if (!res.ok) {
-							const errText = await res.text();
-							throw new Error(`OpenRouter error ${res.status}: ${errText}`);
-						}
-						const data = await res.json();
-						fullText = data.choices?.[0]?.message?.content || "";
-					} else {
-						const urls = await getServiceUrls();
-						const res = await fetch(`${urls.ollamaUrl}/api/chat`, {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								model,
-								messages: [
-									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: userMessage },
-								],
-								stream: false,
-								keep_alive: "10m",
-								options: { temperature: 0.7 },
-							}),
-						});
-						if (!res.ok) {
-							const errText = await res.text();
-							throw new Error(`Ollama error ${res.status}: ${errText}`);
-						}
-						const data = await res.json();
-						fullText = data.message?.content || "";
-					}
+					const result = await callLlmText({
+						provider: provider as "ollama" | "openrouter",
+						model,
+						system: SYSTEM_PROMPT,
+						prompt: userMessage,
+						temperature: 0.7,
+					});
 
 					return new Response(
-						JSON.stringify({ result: sanitizeLlmText(fullText) }),
+						JSON.stringify({ result: sanitizeLlmText(result) }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {

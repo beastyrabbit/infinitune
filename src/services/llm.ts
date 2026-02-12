@@ -1,4 +1,5 @@
-import { getServiceUrls, getSetting } from "@/lib/server-settings";
+import z from "zod";
+import { callLlmObject } from "@/services/llm-client";
 
 /** Shared field guidance used across all prompt modes */
 const FIELD_GUIDANCE = `Your response must conform to the provided JSON schema. Fill in every field.
@@ -216,28 +217,71 @@ const SONG_SCHEMA = {
 
 export { SYSTEM_PROMPT, SONG_SCHEMA };
 
-export interface SongMetadata {
-	title: string;
-	artistName: string;
-	genre: string;
-	subGenre: string;
-	vocalStyle: string;
-	lyrics: string;
-	caption: string;
-	coverPrompt?: string;
-	bpm: number;
-	keyScale: string;
-	timeSignature: string;
-	audioDuration: number;
-	mood: string;
-	energy: string;
-	era: string;
-	instruments: string[];
-	tags: string[];
-	themes: string[];
-	language: string;
-	description: string;
-}
+export const SongMetadataSchema = z.object({
+	title: z.string().describe("Song title"),
+	artistName: z.string().describe("Fictional artist name"),
+	genre: z.string().describe("Main genre"),
+	subGenre: z.string().describe("Specific sub-genre"),
+	vocalStyle: z
+		.string()
+		.describe(
+			'Vocal description: gender + quality + style, e.g. "female breathy intimate vocal"',
+		),
+	lyrics: z
+		.string()
+		.describe(
+			"Full song lyrics with rich section tags like [Verse 1 - intimate], [Chorus - anthemic], instrumental sections, and dynamic markers",
+		),
+	caption: z
+		.string()
+		.describe(
+			"Audio generation caption: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. No vocals, BPM, key, or duration. Max 300 chars.",
+		),
+	coverPrompt: z
+		.string()
+		.optional()
+		.describe(
+			"Art description only — do NOT include CD/disc framing (added automatically). Include: art style from pool, cinematic scene with specific materials/textures, spatial depth, surreal element, precise lighting, exact pigment color palette. Circular composition. No text/typography. Max 600 chars.",
+		),
+	bpm: z.number().describe("Beats per minute (60-200)"),
+	keyScale: z.string().describe('Musical key, e.g. "C major"'),
+	timeSignature: z.string().describe('Time signature, e.g. "4/4"'),
+	audioDuration: z.number().describe("Duration in seconds (180-300)"),
+	mood: z
+		.string()
+		.describe(
+			"Dominant mood: euphoric, melancholic, aggressive, dreamy, playful, dark, nostalgic, futuristic, romantic, anxious, triumphant, serene, mysterious, rebellious, bittersweet, whimsical, haunting, empowering, contemplative, chaotic",
+		),
+	energy: z.string().describe("Energy level: low, medium, high, extreme"),
+	era: z
+		.string()
+		.describe(
+			"Musical era/decade: 1960s, 1970s, 1980s, 1990s, 2000s, 2010s, 2020s, timeless, futuristic",
+		),
+	instruments: z
+		.array(z.string())
+		.describe(
+			'3-5 specific instruments featured, e.g. "Fender Rhodes", "TR-808 drum machine"',
+		),
+	tags: z
+		.array(z.string())
+		.describe("3-5 searchable tags mixing atmosphere, use case, sonic quality"),
+	themes: z
+		.array(z.string())
+		.describe('2-3 lyrical themes, e.g. "love", "rebellion", "nostalgia"'),
+	language: z
+		.string()
+		.describe(
+			'Language of the lyrics, e.g. "English", "German", "Mixed (English/Spanish)"',
+		),
+	description: z
+		.string()
+		.describe(
+			"Short 1-2 sentence music journalist description of the song story/vibe. Max 200 chars.",
+		),
+});
+
+export type SongMetadata = z.infer<typeof SongMetadataSchema>;
 
 export interface RecentSong {
 	title: string;
@@ -306,94 +350,13 @@ function validateSongMetadata(raw: Record<string, unknown>): SongMetadata {
 	};
 }
 
-/** Repair common LLM JSON output issues: unescaped control chars, markdown artifacts, internal quotes */
-function repairJson(raw: string): string {
-	// Strip markdown bold/italic markers that some LLMs inject
-	const s = raw.replace(/\*\*/g, "");
-
-	// Walk character-by-character to fix issues inside JSON strings
-	let result = "";
-	let inString = false;
-	let escaped = false;
-
-	for (let i = 0; i < s.length; i++) {
-		const ch = s[i];
-
-		if (escaped) {
-			result += ch;
-			escaped = false;
-			continue;
-		}
-
-		if (ch === "\\" && inString) {
-			result += ch;
-			escaped = true;
-			continue;
-		}
-
-		if (ch === '"') {
-			if (!inString) {
-				inString = true;
-				result += ch;
-			} else {
-				// Determine if this quote ends the string or is an unescaped internal quote
-				// Look ahead: if next non-whitespace is a JSON structural char, it's the real end
-				let j = i + 1;
-				while (
-					j < s.length &&
-					(s[j] === " " || s[j] === "\t" || s[j] === "\r" || s[j] === "\n")
-				)
-					j++;
-				const next = s[j];
-				if (
-					next === "," ||
-					next === "}" ||
-					next === "]" ||
-					next === ":" ||
-					next === undefined
-				) {
-					inString = false;
-					result += ch;
-				} else {
-					// Internal quote — escape it
-					result += '\\"';
-				}
-			}
-			continue;
-		}
-
-		if (inString) {
-			if (ch === "\n") {
-				result += "\\n";
-				continue;
-			}
-			if (ch === "\r") {
-				result += "\\r";
-				continue;
-			}
-			if (ch === "\t") {
-				result += "\\t";
-				continue;
-			}
-		}
-
-		result += ch;
-	}
-
-	return result;
-}
-
-const PERSONA_SCHEMA = {
-	type: "object" as const,
-	properties: {
-		persona: {
-			type: "string",
-			description:
-				"Concise musical DNA summary covering genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. 200-400 characters.",
-		},
-	},
-	required: ["persona"],
-};
+const PersonaSchema = z.object({
+	persona: z
+		.string()
+		.describe(
+			"Concise musical DNA summary covering genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. 200-400 characters.",
+		),
+});
 
 const PERSONA_SYSTEM_PROMPT = `You are a music analyst. Extract the musical DNA of this song into a concise persona summary covering: genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. Be specific and concise. Return JSON with a single "persona" field.`;
 
@@ -438,81 +401,20 @@ export async function generatePersonaExtract(options: {
 	if (song.lyrics) lines.push(`Lyrics excerpt: ${song.lyrics.slice(0, 300)}`);
 
 	const userMessage = lines.join("\n");
-	let fullText: string;
 
-	if (provider === "openrouter") {
-		const apiKey =
-			(await getSetting("openrouterApiKey")) ||
-			process.env.OPENROUTER_API_KEY ||
-			"";
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: "system", content: PERSONA_SYSTEM_PROMPT },
-					{ role: "user", content: userMessage },
-				],
-				temperature: 0.7,
-				response_format: {
-					type: "json_schema",
-					json_schema: {
-						name: "persona_extract",
-						strict: true,
-						schema: PERSONA_SCHEMA,
-					},
-				},
-			}),
-			signal,
-		});
-		if (!res.ok) {
-			const errText = await res.text();
-			throw new Error(`OpenRouter error ${res.status}: ${errText}`);
-		}
-		const data = await res.json();
-		fullText = data.choices?.[0]?.message?.content || "";
-	} else {
-		const urls = await getServiceUrls();
-		const ollamaUrl = urls.ollamaUrl;
-		const res = await fetch(`${ollamaUrl}/api/chat`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: "system", content: PERSONA_SYSTEM_PROMPT },
-					{ role: "user", content: userMessage },
-				],
-				stream: false,
-				format: PERSONA_SCHEMA,
-				think: false,
-				keep_alive: "10m",
-				options: { temperature: 0.7 },
-			}),
-			signal,
-		});
-		if (!res.ok) {
-			const errText = await res.text();
-			throw new Error(`Ollama error ${res.status}: ${errText}`);
-		}
-		const data = await res.json();
-		fullText = data.message?.content || "";
-	}
+	const result = await callLlmObject({
+		provider,
+		model,
+		system: PERSONA_SYSTEM_PROMPT,
+		prompt: userMessage,
+		schema: PersonaSchema,
+		schemaName: "persona_extract",
+		temperature: 0.7,
+		signal,
+	});
 
-	let jsonStr = fullText.trim();
-	const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-	if (jsonMatch) {
-		jsonStr = jsonMatch[1].trim();
-	}
-	jsonStr = repairJson(jsonStr);
-
-	const parsed = JSON.parse(jsonStr);
 	const persona =
-		typeof parsed.persona === "string" ? parsed.persona.trim() : "";
+		typeof result.persona === "string" ? result.persona.trim() : "";
 	if (!persona) throw new Error("Empty persona extract");
 	return persona;
 }
@@ -592,80 +494,22 @@ export async function generateSongMetadata(options: {
 		userMessage += `\n\n--- Recent song themes (try a different story/angle) ---\n${recentDescriptions.map((d, i) => `  ${i + 1}. ${d}`).join("\n")}`;
 	}
 
-	let fullText: string;
+	const raw = await callLlmObject({
+		provider,
+		model,
+		system: systemPrompt,
+		prompt: userMessage,
+		schema: SongMetadataSchema,
+		schemaName: "song_specification",
+		temperature,
+		seed:
+			provider === "ollama"
+				? Math.floor(Math.random() * 2147483647)
+				: undefined,
+		signal,
+	});
 
-	if (provider === "openrouter") {
-		const apiKey =
-			(await getSetting("openrouterApiKey")) ||
-			process.env.OPENROUTER_API_KEY ||
-			"";
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: "system", content: systemPrompt },
-					{ role: "user", content: userMessage },
-				],
-				temperature,
-				response_format: {
-					type: "json_schema",
-					json_schema: {
-						name: "song_specification",
-						strict: true,
-						schema: SONG_SCHEMA,
-					},
-				},
-			}),
-			signal,
-		});
-		if (!res.ok) {
-			const errText = await res.text();
-			throw new Error(`OpenRouter error ${res.status}: ${errText}`);
-		}
-		const data = await res.json();
-		fullText = data.choices?.[0]?.message?.content || "";
-	} else {
-		const urls = await getServiceUrls();
-		const ollamaUrl = urls.ollamaUrl;
-		const res = await fetch(`${ollamaUrl}/api/chat`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: "system", content: systemPrompt },
-					{ role: "user", content: userMessage },
-				],
-				stream: false,
-				format: SONG_SCHEMA,
-				think: false,
-				keep_alive: "10m",
-				options: { temperature, seed: Math.floor(Math.random() * 2147483647) },
-			}),
-			signal,
-		});
-		if (!res.ok) {
-			const errText = await res.text();
-			throw new Error(`Ollama error ${res.status}: ${errText}`);
-		}
-		const data = await res.json();
-		fullText = data.message?.content || "";
-	}
-
-	let jsonStr = fullText.trim();
-	const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-	if (jsonMatch) {
-		jsonStr = jsonMatch[1].trim();
-	}
-
-	jsonStr = repairJson(jsonStr);
-
-	const songData = validateSongMetadata(JSON.parse(jsonStr));
+	const songData = validateSongMetadata(raw as Record<string, unknown>);
 
 	if (targetBpm && targetBpm >= 60 && targetBpm <= 220) {
 		songData.bpm = targetBpm;

@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
-import { getServiceUrls, getSetting } from "@/lib/server-settings";
+import { getServiceUrls } from "@/lib/server-settings";
+import { callImageGen } from "@/services/llm-client";
 
 interface WorkflowNode {
 	class_type: string;
@@ -11,23 +12,6 @@ interface WorkflowNode {
 export interface CoverResult {
 	imageBase64: string;
 	format: string;
-}
-
-function asSingleLinePreview(text: string, max = 280): string {
-	return text.replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-function extractBase64FromImageUrl(url: string): string | null {
-	if (!url) return null;
-	if (url.startsWith("data:image/")) {
-		const comma = url.indexOf(",");
-		return comma >= 0 ? url.slice(comma + 1) : null;
-	}
-	// Some APIs may return raw base64 without a data URL prefix.
-	if (/^[A-Za-z0-9+/=\r\n]+$/.test(url) && url.length > 100) {
-		return url.replace(/\s+/g, "");
-	}
-	return null;
 }
 
 export async function generateCover(options: {
@@ -208,78 +192,12 @@ export async function generateCover(options: {
 			throw new Error("OpenRouter image model is required");
 		}
 
-		const openrouterKey =
-			(await getSetting("openrouterApiKey")) ||
-			process.env.OPENROUTER_API_KEY ||
-			"";
-		if (!openrouterKey) {
-			throw new Error("OpenRouter API key not configured");
-		}
-		const requestBase = {
+		const result = await callImageGen({
 			model,
-			messages: [
-				{
-					role: "user",
-					content: [{ type: "text", text: fullPrompt }],
-				},
-			],
-			stream: false,
-		};
-
-		// Some models require both modalities, others image-only.
-		const attempts = [
-			{ ...requestBase, modalities: ["image", "text"] },
-			{ ...requestBase, modalities: ["image"] },
-		];
-
-		let lastError = "Unknown OpenRouter image error";
-		for (const body of attempts) {
-			const response = await fetch(
-				"https://openrouter.ai/api/v1/chat/completions",
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: `Bearer ${openrouterKey}`,
-					},
-					body: JSON.stringify(body),
-					signal,
-				},
-			);
-
-			const contentType = response.headers.get("content-type") || "";
-			if (!response.ok) {
-				const err = await response.text();
-				lastError = `HTTP ${response.status} (${contentType || "unknown content-type"}): ${asSingleLinePreview(err)}`;
-				continue;
-			}
-
-			if (!contentType.toLowerCase().includes("application/json")) {
-				const raw = await response.text();
-				lastError = `Non-JSON response (${contentType || "unknown"}): ${asSingleLinePreview(raw)}`;
-				continue;
-			}
-
-			const data = await response.json();
-			const imageUrl =
-				data?.choices?.[0]?.message?.images?.[0]?.image_url?.url ||
-				data?.choices?.[0]?.message?.images?.[0]?.imageUrl?.url ||
-				data?.output?.find?.(
-					(item: { type?: string }) => item.type === "image_generation_call",
-				)?.result;
-
-			const b64 =
-				typeof imageUrl === "string"
-					? extractBase64FromImageUrl(imageUrl)
-					: null;
-			if (b64) {
-				return { imageBase64: b64, format: "png" };
-			}
-
-			lastError = `No image payload found in OpenRouter response.`;
-		}
-
-		throw new Error(`OpenRouter image generation failed: ${lastError}`);
+			prompt: fullPrompt,
+			signal,
+		});
+		return { imageBase64: result.base64, format: "png" };
 	}
 
 	return null;
