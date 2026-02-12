@@ -111,11 +111,11 @@ function AutoplayerPage() {
 		currentSongEpoch >= playlistEpoch ||
 		transitionDismissed;
 
-	const createPendingMut = useMutation(api.songs.createPending);
-	const createMetadataReadyMut = useMutation(api.songs.createMetadataReady);
-	const updatePersonaExtractMut = useMutation(api.songs.updatePersonaExtract);
-	const reorderSongMut = useMutation(api.songs.reorderSong);
-	const reindexPlaylistMut = useMutation(api.songs.reindexPlaylist);
+	const createPending = useMutation(api.songs.createPending);
+	const createMetadataReady = useMutation(api.songs.createMetadataReady);
+	const updatePersonaExtract = useMutation(api.songs.updatePersonaExtract);
+	const reorderSong = useMutation(api.songs.reorderSong);
+	const reindexPlaylist = useMutation(api.songs.reindexPlaylist);
 	const settings = useQuery(api.settings.getAll);
 	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
@@ -158,14 +158,14 @@ function AutoplayerPage() {
 		);
 		await Promise.all(
 			Array.from({ length: 5 }, (_, i) =>
-				createPendingMut({
+				createPending({
 					playlistId,
 					orderIndex: maxOrder + i + 1,
 					promptEpoch: playlist?.promptEpoch ?? 0,
 				}),
 			),
 		);
-	}, [playlistId, songs, playlist?.promptEpoch, createPendingMut]);
+	}, [playlistId, songs, playlist?.promptEpoch, createPending]);
 
 	const handleAddAlbum = useCallback(async () => {
 		if (!playlistId || !songs || !playlist || !currentSongId || albumGenerating)
@@ -242,9 +242,9 @@ function AutoplayerPage() {
 								if (!res.ok) return null;
 								const data = await res.json();
 								if (data.persona) {
-									await updatePersonaExtractMut({
+									await updatePersonaExtract({
 										id: s._id as Parameters<
-											typeof updatePersonaExtractMut
+											typeof updatePersonaExtract
 										>[0]["id"],
 										personaExtract: data.persona,
 									});
@@ -348,7 +348,7 @@ function AutoplayerPage() {
 					}).then(async (res) => {
 						if (!res.ok) throw new Error(await res.text());
 						const metadata = (await res.json()) as SongMetadata;
-						await createMetadataReadyMut({
+						await createMetadataReady({
 							playlistId,
 							orderIndex: maxOrder + batchStart + i + 1,
 							promptEpoch: epoch,
@@ -397,9 +397,9 @@ function AutoplayerPage() {
 		playlist,
 		currentSongId,
 		albumGenerating,
-		createMetadataReadyMut,
+		createMetadataReady,
 		settings,
-		updatePersonaExtractMut,
+		updatePersonaExtract,
 	]);
 
 	// Graceful close: stop new generations, let current song finish
@@ -431,15 +431,20 @@ function AutoplayerPage() {
 	const handleReorder = useCallback(
 		async (songId: string, newOrderIndex: number) => {
 			if (!playlistId) return;
-			await reorderSongMut({ id: songId as never, newOrderIndex });
-			reindexPlaylistMut({ playlistId });
+			await reorderSong({ id: songId as never, newOrderIndex });
+			reindexPlaylist({ playlistId });
 		},
-		[playlistId, reorderSongMut, reindexPlaylistMut],
+		[playlistId, reorderSong, reindexPlaylist],
 	);
 
 	// Loading state while Convex query resolves
 	if (pl && playlistByKey === undefined) {
-		return <div className="font-mono min-h-screen bg-gray-950" />;
+		return (
+			<div
+				className="font-mono min-h-screen bg-gray-950"
+				suppressHydrationWarning
+			/>
+		);
 	}
 
 	// No pl param or playlist not found — show creator + picker
