@@ -32,6 +32,8 @@ export class RoomManager {
 	}
 
 	removeRoom(id: string): void {
+		const room = this.rooms.get(id);
+		if (room) room.dispose();
 		this.rooms.delete(id);
 		console.log(`[room-manager] Removed room "${id}"`);
 	}

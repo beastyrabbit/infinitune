@@ -32,15 +32,15 @@ export class ConvexSync {
 	}
 
 	private async tick(): Promise<void> {
-		try {
-			const roomsByKey = this.roomManager.getRoomsByPlaylistKey();
-			if (roomsByKey.size === 0) return;
+		const roomsByKey = this.roomManager.getRoomsByPlaylistKey();
+		if (roomsByKey.size === 0) return;
 
-			for (const [playlistKey, rooms] of roomsByKey) {
+		for (const [playlistKey, rooms] of roomsByKey) {
+			try {
 				await this.pollPlaylist(playlistKey, rooms);
+			} catch (err) {
+				console.error(`[convex-sync] Poll error for playlist "${playlistKey}":`, err);
 			}
-		} catch (err) {
-			console.error("[convex-sync] Poll error:", err);
 		}
 	}
 

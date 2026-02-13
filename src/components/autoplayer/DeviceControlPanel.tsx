@@ -13,7 +13,7 @@ import {
 	Volume2,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
 	Device,
 	PlaybackState,
@@ -337,13 +337,6 @@ export function DeviceControlPanel({
 		}
 	}, [playback.volume]);
 
-	const handleRename = useCallback(
-		(deviceId: string, name: string) => {
-			onRenameDevice?.(deviceId, name);
-		},
-		[onRenameDevice],
-	);
-
 	return (
 		<div className="flex flex-col h-full bg-black/50">
 			{/* Top: song info + master controls */}
@@ -542,10 +535,10 @@ export function DeviceControlPanel({
 			</div>
 
 			{/* Rename modal */}
-			{renamingDevice && (
+			{renamingDevice && onRenameDevice && (
 				<RenameModal
 					device={renamingDevice}
-					onRename={handleRename}
+					onRename={onRenameDevice}
 					onClose={() => setRenamingDevice(null)}
 				/>
 			)}

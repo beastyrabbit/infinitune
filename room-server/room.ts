@@ -65,16 +65,8 @@ export class Room {
 		if (this.songQueue.length > 0) {
 			this.sendTo(device.id, { type: "queue", songs: this.songQueue });
 		}
-		// If this is a player and there's a song playing, tell it to load audio
 		if (device.role === "player") {
-			const currentSong = this.getCurrentSong();
-			if (currentSong?.audioUrl) {
-				this.sendTo(device.id, {
-					type: "nextSong",
-					songId: currentSong._id,
-					audioUrl: currentSong.audioUrl,
-				});
-			}
+			this.sendCurrentSongTo(device.id);
 		}
 		this.broadcastState();
 	}
@@ -86,29 +78,19 @@ export class Room {
 
 	setDeviceRole(deviceId: string, role: DeviceRole): void {
 		const device = this.devices.get(deviceId);
-		if (device) {
-			device.role = role;
-			// If switching to player and there's a song playing, send it
-			if (role === "player") {
-				const currentSong = this.getCurrentSong();
-				if (currentSong?.audioUrl) {
-					this.sendTo(deviceId, {
-						type: "nextSong",
-						songId: currentSong._id,
-						audioUrl: currentSong.audioUrl,
-					});
-				}
-			}
-			this.broadcastState();
+		if (!device) return;
+		device.role = role;
+		if (role === "player") {
+			this.sendCurrentSongTo(deviceId);
 		}
+		this.broadcastState();
 	}
 
 	renameDevice(targetDeviceId: string, name: string): void {
 		const device = this.devices.get(targetDeviceId);
-		if (device) {
-			device.name = name;
-			this.broadcastState();
-		}
+		if (!device) return;
+		device.name = name;
+		this.broadcastState();
 	}
 
 	getDeviceCount(): number {
@@ -171,13 +153,13 @@ export class Room {
 		if (action === "resetToDefault" && targetDeviceId) {
 			this.setDeviceMode(targetDeviceId, "default");
 			// Re-send current room state to the device so it syncs back
-			this.sendToDevice(targetDeviceId, {
+			this.sendTo(targetDeviceId, {
 				type: "execute",
 				action: "setVolume",
 				payload: { volume: this.playback.volume },
 				scope: "room",
 			});
-			this.sendToDevice(targetDeviceId, {
+			this.sendTo(targetDeviceId, {
 				type: "execute",
 				action: this.playback.isPlaying ? "play" : "pause",
 				scope: "room",
@@ -209,7 +191,7 @@ export class Room {
 				case "setVolume":
 				case "toggleMute":
 					this.setDeviceMode(targetDeviceId, "individual");
-					this.sendToDevice(targetDeviceId, {
+					this.sendTo(targetDeviceId, {
 						type: "execute",
 						action,
 						payload,
@@ -224,20 +206,15 @@ export class Room {
 		// ── Room-wide commands ──
 		switch (action) {
 			case "play":
-				this.playback.isPlaying = true;
-				this.syncPriorityUntil = Date.now() + 500;
-				this.broadcastExecute("play");
-				break;
 			case "pause":
-				this.playback.isPlaying = false;
-				this.syncPriorityUntil = Date.now() + 500;
-				this.broadcastExecute("pause");
-				break;
-			case "toggle":
-				this.playback.isPlaying = !this.playback.isPlaying;
+			case "toggle": {
+				if (action === "play") this.playback.isPlaying = true;
+				else if (action === "pause") this.playback.isPlaying = false;
+				else this.playback.isPlaying = !this.playback.isPlaying;
 				this.syncPriorityUntil = Date.now() + 500;
 				this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
 				break;
+			}
 			case "skip":
 				this.handleSongEnded();
 				return; // handleSongEnded broadcasts state
@@ -268,9 +245,7 @@ export class Room {
 				if (!songId) return;
 				const song = this.songQueue.find((s) => s._id === songId);
 				if (!song?.audioUrl) return;
-				if (this.playback.currentSongId && this.markPlayedCallback) {
-					this.markPlayedCallback(this.playback.currentSongId).catch(() => {});
-				}
+				this.markCurrentSongPlayed();
 				this.advanceToSong(song);
 				return;
 			}
@@ -318,10 +293,7 @@ export class Room {
 			this.songEndedHandled = false;
 		}, 1000);
 
-		// Mark current song as played
-		if (this.playback.currentSongId && this.markPlayedCallback) {
-			this.markPlayedCallback(this.playback.currentSongId).catch(() => {});
-		}
+		this.markCurrentSongPlayed();
 
 		const currentSong = this.getCurrentSong();
 		const next = pickNextSong(
@@ -354,6 +326,36 @@ export class Room {
 	}
 
 	// ─── Private Helpers ────────────────────────────────────────────
+
+	/** Clean up timers when the room is being removed. */
+	dispose(): void {
+		if (this.stateBroadcastTimer) {
+			clearTimeout(this.stateBroadcastTimer);
+			this.stateBroadcastTimer = null;
+		}
+	}
+
+	/** Mark the currently playing song as "played" via the callback. */
+	private markCurrentSongPlayed(): void {
+		if (this.playback.currentSongId && this.markPlayedCallback) {
+			const songId = this.playback.currentSongId;
+			this.markPlayedCallback(songId).catch((err) => {
+				console.error(`[room] Failed to mark song ${songId} as played:`, err);
+			});
+		}
+	}
+
+	/** Tell a player device to load the current song (used on join and role switch). */
+	private sendCurrentSongTo(deviceId: string): void {
+		const currentSong = this.getCurrentSong();
+		if (currentSong?.audioUrl) {
+			this.sendTo(deviceId, {
+				type: "nextSong",
+				songId: currentSong._id,
+				audioUrl: currentSong.audioUrl,
+			});
+		}
+	}
 
 	private advanceToSong(song: SongData): void {
 		this.playback.currentSongId = song._id;
@@ -455,14 +457,10 @@ export class Room {
 		}
 	}
 
-	private sendToDevice(deviceId: string, msg: ServerMessage): void {
+	private sendTo(deviceId: string, msg: ServerMessage): void {
 		const device = this.devices.get(deviceId);
 		if (device && device.ws.readyState === 1) {
 			device.ws.send(JSON.stringify(msg));
 		}
-	}
-
-	private sendTo(deviceId: string, msg: ServerMessage): void {
-		this.sendToDevice(deviceId, msg);
 	}
 }

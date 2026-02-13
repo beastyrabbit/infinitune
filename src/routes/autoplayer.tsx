@@ -169,7 +169,8 @@ function AutoplayerPage() {
 	const settings = useQuery(api.settings.getAll);
 	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
-	const handleCreatePlaylist = useCallback(
+	/** Shared playlist creation: generates key, calls Convex mutation, returns the key. */
+	const doCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
 			prompt: string;
@@ -179,7 +180,7 @@ function AutoplayerPage() {
 			lmTemperature?: number;
 			lmCfgScale?: number;
 			inferMethod?: string;
-		}) => {
+		}): Promise<string> => {
 			const key = generatePlaylistKey();
 			await createPlaylist({
 				name: data.name,
@@ -192,37 +193,22 @@ function AutoplayerPage() {
 				lmCfgScale: data.lmCfgScale,
 				inferMethod: data.inferMethod,
 			});
-			navigate({
-				to: "/autoplayer",
-				search: { pl: key },
-			});
+			return key;
 		},
-		[createPlaylist, navigate],
+		[createPlaylist],
+	);
+
+	const handleCreatePlaylist = useCallback(
+		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
+			const key = await doCreatePlaylist(data);
+			navigate({ to: "/autoplayer", search: { pl: key } });
+		},
+		[doCreatePlaylist, navigate],
 	);
 
 	const handleCreatePlaylistInRoom = useCallback(
-		async (data: {
-			name: string;
-			prompt: string;
-			provider: LlmProvider;
-			model: string;
-			inferenceSteps?: number;
-			lmTemperature?: number;
-			lmCfgScale?: number;
-			inferMethod?: string;
-		}) => {
-			const key = generatePlaylistKey();
-			await createPlaylist({
-				name: data.name,
-				prompt: data.prompt,
-				llmProvider: data.provider,
-				llmModel: data.model,
-				playlistKey: key,
-				inferenceSteps: data.inferenceSteps,
-				lmTemperature: data.lmTemperature,
-				lmCfgScale: data.lmCfgScale,
-				inferMethod: data.inferMethod,
-			});
+		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
+			const key = await doCreatePlaylist(data);
 
 			// Create a room on the room server
 			const roomId = data.name
@@ -245,7 +231,7 @@ function AutoplayerPage() {
 					}),
 				});
 			} catch {
-				// Room server might not be running — still navigate
+				// Room server might not be running -- still navigate
 			}
 
 			navigate({
@@ -253,7 +239,7 @@ function AutoplayerPage() {
 				search: { pl: key, room: roomId, role: "player", name: data.name },
 			});
 		},
-		[createPlaylist, navigate],
+		[doCreatePlaylist, navigate],
 	);
 
 	const handleAddBatch = useCallback(async () => {
@@ -888,9 +874,7 @@ function AutoplayerPage() {
 					transitionComplete={transitionComplete}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
-					onRate={(songId, rating) => {
-						rateSong(songId, rating);
-					}}
+					onRate={rateSong}
 					onReorder={handleReorder}
 				/>
 			)}

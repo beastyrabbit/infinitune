@@ -162,10 +162,19 @@ function handleNowPlaying(roomId: string | null): ReturnType<typeof jsonResponse
 	return jsonResponse(response);
 }
 
-function readBody(req: import("node:http").IncomingMessage): Promise<string> {
+function readBody(req: import("node:http").IncomingMessage, maxBytes = 16_384): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const chunks: Buffer[] = [];
-		req.on("data", (chunk: Buffer) => chunks.push(chunk));
+		let totalLength = 0;
+		req.on("data", (chunk: Buffer) => {
+			totalLength += chunk.length;
+			if (totalLength > maxBytes) {
+				req.destroy();
+				reject(new Error("Request body too large"));
+				return;
+			}
+			chunks.push(chunk);
+		});
 		req.on("end", () => resolve(Buffer.concat(chunks).toString()));
 		req.on("error", reject);
 	});
@@ -208,9 +217,18 @@ wss.on("connection", (ws) => {
 	});
 
 	ws.on("error", (err) => {
-		console.error("[ws] Connection error:", err.message);
+		console.error("[ws] Connection error:", err);
 	});
 });
+
+/** Look up the room and device for a WebSocket connection. Returns null if not joined. */
+function getRoomContext(ws: WebSocket): { room: import("./room.js").Room; deviceId: string } | null {
+	const mapping = wsRoomMap.get(ws);
+	if (!mapping) return null;
+	const room = roomManager.getRoom(mapping.roomId);
+	if (!room) return null;
+	return { room, deviceId: mapping.deviceId };
+}
 
 function handleClientMessage(ws: WebSocket, msg: import("./protocol.js").ClientMessage): void {
 	switch (msg.type) {
@@ -248,51 +266,33 @@ function handleClientMessage(ws: WebSocket, msg: import("./protocol.js").ClientM
 			break;
 		}
 		case "command": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.handleCommand(mapping.deviceId, msg.action, msg.payload, msg.targetDeviceId);
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.handleCommand(ctx.deviceId, msg.action, msg.payload, msg.targetDeviceId);
 			break;
 		}
 		case "renameDevice": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.renameDevice(msg.targetDeviceId, msg.name);
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.renameDevice(msg.targetDeviceId, msg.name);
 			break;
 		}
 		case "sync": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.handleSync(
-				mapping.deviceId,
-				msg.currentSongId,
-				msg.isPlaying,
-				msg.currentTime,
-				msg.duration,
-			);
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.handleSync(ctx.deviceId, msg.currentSongId, msg.isPlaying, msg.currentTime, msg.duration);
 			break;
 		}
 		case "setRole": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.setDeviceRole(mapping.deviceId, msg.role);
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.setDeviceRole(ctx.deviceId, msg.role);
 			break;
 		}
 		case "songEnded": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.handleSongEnded();
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.handleSongEnded();
 			break;
 		}
 		case "ping": {
-			const mapping = wsRoomMap.get(ws);
-			if (!mapping) return;
-			const room = roomManager.getRoom(mapping.roomId);
-			room?.handlePing(mapping.deviceId, msg.clientTime);
+			const ctx = getRoomContext(ws);
+			if (ctx) ctx.room.handlePing(ctx.deviceId, msg.clientTime);
 			break;
 		}
 	}
@@ -300,7 +300,8 @@ function handleClientMessage(ws: WebSocket, msg: import("./protocol.js").ClientM
 
 // ─── Periodic time sync ─────────────────────────────────────────────
 // Room-level pong broadcasts for clock calibration happen via Room.handlePing.
-// Clients re-ping every 30s on their own to keep offset accurate.
+// Clients send a burst of 5 pings on connect to establish the initial offset.
+// Reconnections re-calibrate automatically.
 
 // ─── Start ──────────────────────────────────────────────────────────
 

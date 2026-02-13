@@ -1,11 +1,11 @@
 import { ConvexHttpClient } from "convex/browser";
-import * as dotenv from "node:fs";
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 function loadEnv() {
 	const envPath = path.join(process.cwd(), ".env.local");
 	try {
-		const content = dotenv.readFileSync(envPath, "utf-8");
+		const content = fs.readFileSync(envPath, "utf-8");
 		for (const line of content.split("\n")) {
 			const trimmed = line.trim();
 			if (!trimmed || trimmed.startsWith("#")) continue;
@@ -17,8 +17,11 @@ function loadEnv() {
 				process.env[key] = value;
 			}
 		}
-	} catch {
-		// .env.local not found, rely on existing env vars
+	} catch (err: unknown) {
+		const code = err instanceof Error && "code" in err ? (err as NodeJS.ErrnoException).code : null;
+		if (code !== "ENOENT") {
+			console.error("[convex-client] Error reading .env.local:", err);
+		}
 	}
 }
 

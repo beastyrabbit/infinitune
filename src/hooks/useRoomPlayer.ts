@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ServerMessage } from "../../room-server/protocol";
 import type { RoomConnection } from "./useRoomConnection";
-import { getMessageHandler } from "./useRoomConnection";
 
 /**
  * Call audio.play(), returning true if playback started.
@@ -112,7 +111,9 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 			};
 
 			if (startAt) {
-				const localStart = startAt + serverTimeOffsetRef.current;
+				// serverTimeOffset ≈ serverClock − localClock (positive = server ahead).
+				// Convert server timestamp to local: local = server − offset.
+				const localStart = startAt - serverTimeOffsetRef.current;
 				const delay = localStart - Date.now();
 				if (delay > 0) {
 					setTimeout(doPlay, delay);
@@ -202,7 +203,7 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 		const conn = connectionRef.current;
 		if (!conn) return;
 
-		const removeHandler = getMessageHandler(conn)((msg: ServerMessage) => {
+		const removeHandler = conn.addMessageHandler((msg: ServerMessage) => {
 			const audio = currentAudioRef.current;
 			if (!audio) return;
 			const liveConn = connectionRef.current;

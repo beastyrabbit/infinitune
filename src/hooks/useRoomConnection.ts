@@ -38,6 +38,7 @@ export interface RoomConnection {
 	setRole: (role: DeviceRole) => void;
 	renameDevice: (targetDeviceId: string, name: string) => void;
 	serverTimeOffset: number;
+	addMessageHandler: (handler: (msg: ServerMessage) => void) => () => void;
 }
 
 function generateDeviceId(): string {
@@ -98,7 +99,8 @@ export function useRoomConnection(
 		let msg: ServerMessage;
 		try {
 			msg = JSON.parse(event.data);
-		} catch {
+		} catch (err) {
+			console.error("[room-ws] Failed to parse server message:", err);
 			return;
 		}
 
@@ -187,7 +189,8 @@ export function useRoomConnection(
 			);
 		});
 
-		ws.addEventListener("error", () => {
+		ws.addEventListener("error", (event) => {
+			console.error("[room-ws] WebSocket error:", event);
 			// Close event will handle reconnect
 		});
 	}, [deviceName, handleMessage, send, playlistKey, roomName]);
@@ -266,17 +269,6 @@ export function useRoomConnection(
 		[],
 	);
 
-	// Attach addMessageHandler to the returned object via a ref hack
-	// so useRoomPlayer can access it without prop drilling
-	const connectionRef = useRef({
-		addMessageHandler,
-	});
-	connectionRef.current.addMessageHandler = addMessageHandler;
-
-	// Export the ref for external access
-	(sendCommand as unknown as Record<string, unknown>).__connectionRef =
-		connectionRef;
-
 	return {
 		playback,
 		currentSong,
@@ -289,17 +281,6 @@ export function useRoomConnection(
 		setRole: setRoleFn,
 		renameDevice: renameDeviceFn,
 		serverTimeOffset,
+		addMessageHandler,
 	};
-}
-
-/** Extract the addMessageHandler from a RoomConnection. */
-export function getMessageHandler(
-	connection: RoomConnection,
-): (handler: (msg: ServerMessage) => void) => () => void {
-	return (
-		(connection.sendCommand as unknown as Record<string, unknown>)
-			.__connectionRef as React.RefObject<{
-			addMessageHandler: (handler: (msg: ServerMessage) => void) => () => void;
-		}>
-	).current.addMessageHandler;
 }
