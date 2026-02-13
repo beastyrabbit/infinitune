@@ -39,6 +39,13 @@ function ProgressBar({
 	onSeek?: (time: number) => void;
 }) {
 	const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+	// Detect large jumps (seek / resume mis-sync) and disable CSS transition
+	// so the bar snaps instantly instead of slowly sliding.
+	const prevPctRef = useRef(pct);
+	const isJump = Math.abs(pct - prevPctRef.current) > 3;
+	prevPctRef.current = pct;
+
 	const handleClick = onSeek
 		? (e: React.MouseEvent<HTMLDivElement>) => {
 				const rect = e.currentTarget.getBoundingClientRect();
@@ -61,7 +68,7 @@ function ProgressBar({
 				onClick={handleClick}
 			>
 				<div
-					className="h-full bg-red-500 transition-[width] duration-1000 ease-linear"
+					className={`h-full bg-red-500 ${isJump ? "" : "transition-[width] duration-1000 ease-linear"}`}
 					style={{ width: `${pct}%` }}
 				/>
 			</div>

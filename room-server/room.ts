@@ -40,6 +40,9 @@ export class Room {
 		| ((songId: string) => Promise<void>)
 		| null = null;
 	private lastSeekAt = 0;
+	// After play/pause/toggle, bypass sync throttle so the player's
+	// immediate sync gets broadcast to controllers right away.
+	private syncPriorityUntil = 0;
 
 	constructor(
 		id: string,
@@ -222,14 +225,17 @@ export class Room {
 		switch (action) {
 			case "play":
 				this.playback.isPlaying = true;
+				this.syncPriorityUntil = Date.now() + 500;
 				this.broadcastExecute("play");
 				break;
 			case "pause":
 				this.playback.isPlaying = false;
+				this.syncPriorityUntil = Date.now() + 500;
 				this.broadcastExecute("pause");
 				break;
 			case "toggle":
 				this.playback.isPlaying = !this.playback.isPlaying;
+				this.syncPriorityUntil = Date.now() + 500;
 				this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
 				break;
 			case "skip":
@@ -239,6 +245,7 @@ export class Room {
 				const time = (payload?.time as number) ?? 0;
 				this.playback.currentTime = time;
 				this.lastSeekAt = Date.now();
+				this.syncPriorityUntil = Date.now() + 500;
 				this.broadcastExecute("seek", { time }, false); // seek goes to all
 				break;
 			}
@@ -290,7 +297,15 @@ export class Room {
 		// are authoritative. If the player's audio is blocked by autoplay policy,
 		// sync would report isPlaying=false and cause UI flicker.
 		if (currentSongId) this.playback.currentSongId = currentSongId;
-		this.throttledBroadcastState();
+
+		// After play/pause/toggle/seek, bypass throttle so the first sync
+		// from the player reaches controllers immediately.
+		if (Date.now() < this.syncPriorityUntil) {
+			this.syncPriorityUntil = 0; // consume: only first sync is priority
+			this.broadcastState();
+		} else {
+			this.throttledBroadcastState();
+		}
 	}
 
 	// ─── Song Ended ─────────────────────────────────────────────────
@@ -345,6 +360,7 @@ export class Room {
 		this.playback.currentTime = 0;
 		this.playback.duration = song.audioDuration ?? 0;
 		this.playback.isPlaying = true;
+		this.syncPriorityUntil = Date.now() + 1000;
 
 		const startAt = Date.now() + 500; // 500ms buffer for network
 
