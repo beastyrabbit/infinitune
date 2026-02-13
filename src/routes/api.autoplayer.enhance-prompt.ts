@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
-import { getServiceUrls, getSetting } from "@/lib/server-settings";
+import { callLlmText } from "@/services/llm-client";
 
 const SYSTEM_PROMPT = `You are a music prompt expert. Expand this brief description into a focused SESSION THEME for an AI music playlist generator.
 
@@ -51,65 +51,20 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 						);
 					}
 
-					let fullText: string;
-
-					if (provider === "openrouter") {
-						const apiKey =
-							(await getSetting("openrouterApiKey")) ||
-							process.env.OPENROUTER_API_KEY ||
-							"";
-						const res = await fetch(
-							"https://openrouter.ai/api/v1/chat/completions",
-							{
-								method: "POST",
-								headers: {
-									"Content-Type": "application/json",
-									Authorization: `Bearer ${apiKey}`,
-								},
-								body: JSON.stringify({
-									model,
-									messages: [
-										{ role: "system", content: SYSTEM_PROMPT },
-										{ role: "user", content: trimmedPrompt },
-									],
-								}),
-							},
-						);
-						if (!res.ok) {
-							const errText = await res.text();
-							throw new Error(`OpenRouter error ${res.status}: ${errText}`);
-						}
-						const data = await res.json();
-						fullText = data.choices?.[0]?.message?.content || "";
-					} else {
-						const urls = await getServiceUrls();
-						const res = await fetch(`${urls.ollamaUrl}/api/chat`, {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								model,
-								messages: [
-									{ role: "system", content: SYSTEM_PROMPT },
-									{ role: "user", content: trimmedPrompt },
-								],
-								stream: false,
-								keep_alive: "10m",
-								options: { temperature: 0.8 },
-							}),
-						});
-						if (!res.ok) {
-							const errText = await res.text();
-							throw new Error(`Ollama error ${res.status}: ${errText}`);
-						}
-						const data = await res.json();
-						fullText = data.message?.content || "";
-					}
+					const result = await callLlmText({
+						provider: provider as "ollama" | "openrouter",
+						model,
+						system: SYSTEM_PROMPT,
+						prompt: trimmedPrompt,
+						temperature: 0.8,
+					});
 
 					return new Response(
-						JSON.stringify({ result: sanitizeLlmText(fullText) }),
+						JSON.stringify({ result: sanitizeLlmText(result) }),
 						{ headers: { "Content-Type": "application/json" } },
 					);
 				} catch (error: unknown) {
+					console.error("[enhance-prompt] LLM call failed:", error);
 					return new Response(
 						JSON.stringify({
 							error:
