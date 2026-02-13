@@ -274,13 +274,15 @@ export class Room {
 	handleSync(
 		_deviceId: string,
 		currentSongId: string | null,
-		isPlaying: boolean,
+		_isPlaying: boolean,
 		currentTime: number,
 		duration: number,
 	): void {
 		this.playback.currentTime = currentTime;
 		this.playback.duration = duration;
-		this.playback.isPlaying = isPlaying;
+		// NOTE: isPlaying is NOT updated from sync. Room commands (play/pause/toggle)
+		// are authoritative. If the player's audio is blocked by autoplay policy,
+		// sync would report isPlaying=false and cause UI flicker.
 		if (currentSongId) this.playback.currentSongId = currentSongId;
 		this.throttledBroadcastState();
 	}

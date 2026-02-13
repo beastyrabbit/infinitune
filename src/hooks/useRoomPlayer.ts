@@ -1,14 +1,25 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ServerMessage } from "../../room-server/protocol";
 import type { RoomConnection } from "./useRoomConnection";
 import { getMessageHandler } from "./useRoomConnection";
 
-/** Call audio.play(), silently ignoring AbortError (caused by rapid load/play racing). */
-function safePlay(audio: HTMLAudioElement): void {
-	audio.play().catch((err) => {
-		if (err instanceof DOMException && err.name === "AbortError") return;
-		console.error(err);
-	});
+/**
+ * Call audio.play(), returning true if playback started.
+ * Silently ignores AbortError (caused by rapid load/play racing).
+ * Returns false if blocked by autoplay policy (NotAllowedError).
+ */
+function tryPlay(audio: HTMLAudioElement): Promise<boolean> {
+	return audio.play().then(
+		() => true,
+		(err) => {
+			if (err instanceof DOMException) {
+				if (err.name === "AbortError") return true; // rapid race, not a real failure
+				if (err.name === "NotAllowedError") return false; // autoplay blocked
+			}
+			console.error(err);
+			return false;
+		},
+	);
 }
 
 /**
@@ -18,6 +29,9 @@ function safePlay(audio: HTMLAudioElement): void {
  * Uses TWO audio elements:
  * - currentAudio: actively playing
  * - preloadAudio: buffering the next song for gapless transitions
+ *
+ * Autoplay unlock: browsers block audio.play() from non-gesture contexts (WebSocket handlers).
+ * When play is blocked, we queue it as "pending" and retry on the first user click/touch.
  *
  * IMPORTANT: Uses refs for the connection to avoid effect re-runs on every state change.
  * The connection object is a new reference every render, so we store it in a ref and
@@ -33,6 +47,11 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 	// Track per-device volume override (set by targeted setVolume commands).
 	// When non-null, room-wide volume sync is skipped. Cleared by room-wide setVolume.
 	const volumeOverrideRef = useRef<number | null>(null);
+
+	// Autoplay unlock: true once audio.play() has succeeded from a user gesture
+	const audioUnlockedRef = useRef(false);
+	const pendingPlayRef = useRef(false);
+	const [needsUnlock, setNeedsUnlock] = useState(false);
 
 	// Store connection in a ref so callbacks always read the latest without re-running effects
 	const connectionRef = useRef(connection);
@@ -56,6 +75,63 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 		if (!audio) return;
 		audio.volume = connection.playback.isMuted ? 0 : connection.playback.volume;
 	}, [connection, connection?.playback.volume, connection?.playback.isMuted]);
+
+	/**
+	 * Attempt to play the current audio element. If blocked by autoplay policy,
+	 * mark as pending so the user-gesture handler can retry.
+	 */
+	const attemptPlay = useCallback(
+		async (audio: HTMLAudioElement, startAt?: number) => {
+			const doPlay = async () => {
+				const ok = await tryPlay(audio);
+				if (ok) {
+					audioUnlockedRef.current = true;
+					pendingPlayRef.current = false;
+					setNeedsUnlock(false);
+				} else {
+					pendingPlayRef.current = true;
+					setNeedsUnlock(true);
+				}
+			};
+
+			if (startAt) {
+				const localStart = startAt + serverTimeOffsetRef.current;
+				const delay = localStart - Date.now();
+				if (delay > 0) {
+					setTimeout(doPlay, delay);
+				} else {
+					doPlay();
+				}
+			} else {
+				doPlay();
+			}
+		},
+		[],
+	);
+
+	// Autoplay unlock: listen for first user gesture to retry pending play
+	useEffect(() => {
+		if (!enabled) return;
+
+		const handleGesture = () => {
+			audioUnlockedRef.current = true;
+			const audio = currentAudioRef.current;
+			if (audio?.src && pendingPlayRef.current) {
+				pendingPlayRef.current = false;
+				setNeedsUnlock(false);
+				tryPlay(audio);
+			}
+		};
+
+		document.addEventListener("click", handleGesture, { once: true });
+		document.addEventListener("touchstart", handleGesture, { once: true });
+		document.addEventListener("keydown", handleGesture, { once: true });
+		return () => {
+			document.removeEventListener("click", handleGesture);
+			document.removeEventListener("touchstart", handleGesture);
+			document.removeEventListener("keydown", handleGesture);
+		};
+	}, [enabled]);
 
 	// Initialize audio elements + sync interval — only runs when enabled toggles
 	useEffect(() => {
@@ -119,14 +195,14 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 					const scope = msg.scope ?? "room";
 					switch (msg.action) {
 						case "play":
-							safePlay(audio);
+							attemptPlay(audio);
 							break;
 						case "pause":
 							audio.pause();
 							break;
 						case "toggle":
 							if (audio.paused) {
-								safePlay(audio);
+								attemptPlay(audio);
 							} else {
 								audio.pause();
 							}
@@ -199,20 +275,8 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 						once: true,
 					});
 
-					// Synchronized start
-					if (msg.startAt) {
-						const localStart = msg.startAt + serverTimeOffsetRef.current;
-						const delay = localStart - Date.now();
-						if (delay > 0) {
-							setTimeout(() => {
-								targetAudio.play().catch(console.error);
-							}, delay);
-						} else {
-							safePlay(targetAudio);
-						}
-					} else {
-						safePlay(targetAudio);
-					}
+					// Attempt synchronized start
+					attemptPlay(targetAudio, msg.startAt);
 					break;
 				}
 
@@ -228,12 +292,12 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 		});
 
 		return removeHandler;
-	}, [enabled]);
+	}, [enabled, attemptPlay]);
 
 	const seek = useCallback((time: number) => {
 		const audio = currentAudioRef.current;
 		if (audio) audio.currentTime = time;
 	}, []);
 
-	return { seek, audioRef: currentAudioRef };
+	return { seek, audioRef: currentAudioRef, needsUnlock };
 }

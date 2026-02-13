@@ -91,7 +91,9 @@ function AutoplayerPage() {
 		name,
 	);
 	const roomController = useRoomController(roomConnection);
-	useRoomPlayer(isRoomMode && roomRole === "player" ? roomConnection : null);
+	const roomPlayer = useRoomPlayer(
+		isRoomMode && roomRole === "player" ? roomConnection : null,
+	);
 
 	// Room mode: query songs/playlist from Convex directly
 	const roomSongs = useQuery(
@@ -723,6 +725,18 @@ function AutoplayerPage() {
 					</div>
 				</div>
 			</header>
+
+			{/* AUTOPLAY UNLOCK BANNER (room player only) */}
+			{isRoomMode && roomRole === "player" && roomPlayer.needsUnlock && (
+				<div className="border-b-4 border-yellow-500/30 bg-yellow-950/40 px-6 py-4 text-center cursor-pointer hover:bg-yellow-900/40 transition-colors">
+					<p className="font-mono text-sm font-black uppercase text-yellow-300 animate-pulse">
+						CLICK ANYWHERE TO START AUDIO PLAYBACK
+					</p>
+					<p className="font-mono text-[10px] font-bold uppercase text-yellow-500/60 mt-1">
+						BROWSER REQUIRES USER INTERACTION BEFORE PLAYING AUDIO
+					</p>
+				</div>
+			)}
 
 			{/* NOW PLAYING / DEVICE CONTROL + RIGHT PANEL */}
 			<div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] border-b-4 border-white/20">

@@ -35,7 +35,7 @@ export function MiniPlayer({
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	// Player audio (only active when role === "player")
-	useRoomPlayer(role === "player" ? connection : null);
+	const roomPlayer = useRoomPlayer(role === "player" ? connection : null);
 
 	// Observe container height for responsive layout
 	useEffect(() => {
@@ -63,6 +63,13 @@ export function MiniPlayer({
 
 	return (
 		<div ref={containerRef} className="h-full w-full bg-black text-white">
+			{role === "player" && roomPlayer.needsUnlock && (
+				<div className="bg-yellow-950/60 px-4 py-2 text-center cursor-pointer hover:bg-yellow-900/40 transition-colors">
+					<p className="font-mono text-[10px] font-black uppercase text-yellow-300 animate-pulse">
+						CLICK TO START AUDIO
+					</p>
+				</div>
+			)}
 			{layoutMode === "compact" ? (
 				<CompactBar
 					song={currentSong}
