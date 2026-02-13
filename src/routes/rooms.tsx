@@ -88,10 +88,11 @@ function RoomsPage() {
 
 	const handleCreate = async () => {
 		if (!newRoomName.trim() || !selectedPlaylistKey) return;
-		const id = newRoomName
+		const id = `${newRoomName
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-|-$/g, "");
+			.replace(/^-|-$/g, "")
+			.slice(0, 24)}-${Date.now().toString(36).slice(-4)}`;
 
 		try {
 			await fetch(`${ROOM_SERVER_URL}/api/v1/rooms`, {
