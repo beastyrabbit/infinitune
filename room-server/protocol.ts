@@ -5,10 +5,14 @@ import z from "zod";
 export const DeviceRoleSchema = z.enum(["player", "controller"]);
 export type DeviceRole = z.infer<typeof DeviceRoleSchema>;
 
+export const DeviceModeSchema = z.enum(["default", "individual"]);
+export type DeviceMode = z.infer<typeof DeviceModeSchema>;
+
 export const DeviceSchema = z.object({
 	id: z.string(),
 	name: z.string(),
 	role: DeviceRoleSchema,
+	mode: DeviceModeSchema.default("default"),
 });
 export type Device = z.infer<typeof DeviceSchema>;
 
@@ -60,6 +64,8 @@ export const CommandActionSchema = z.enum([
 	"toggleMute",
 	"rate",
 	"selectSong",
+	"resetToDefault",
+	"syncAll",
 ]);
 export type CommandAction = z.infer<typeof CommandActionSchema>;
 
@@ -132,6 +138,7 @@ const ExecuteMessageSchema = z.object({
 	type: z.literal("execute"),
 	action: CommandActionSchema,
 	payload: z.record(z.string(), z.unknown()).optional(),
+	scope: z.enum(["room", "device"]).default("room"),
 });
 
 const QueueMessageSchema = z.object({

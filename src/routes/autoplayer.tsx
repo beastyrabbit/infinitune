@@ -744,6 +744,8 @@ function AutoplayerPage() {
 							onToggleDevicePlay={roomController.toggleDevicePlay}
 							onSyncAll={roomController.syncAll}
 							onRenameDevice={roomController.renameDevice}
+							onResetDeviceToDefault={roomController.resetDeviceToDefault}
+							onSeek={roomController.seek}
 						/>
 					) : (
 						<NowPlaying

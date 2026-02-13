@@ -116,6 +116,7 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 
 			switch (msg.type) {
 				case "execute": {
+					const scope = msg.scope ?? "room";
 					switch (msg.action) {
 						case "play":
 							safePlay(audio);
@@ -138,13 +139,13 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 						case "setVolume": {
 							const vol = (msg.payload?.volume as number) ?? 0.8;
 							audio.volume = vol;
-							// Check if this is a room-wide command (clears override)
-							// or a per-device command (sets override).
-							// Room-wide setVolume updates connection.playback.volume,
-							// per-device does not. We detect by comparing to room state.
-							// For simplicity: any setVolume execute sets override,
-							// syncAll sends room-wide which also comes as execute.
-							volumeOverrideRef.current = vol;
+							// Room-wide setVolume clears per-device override;
+							// device-scoped setVolume sets the override.
+							if (scope === "room") {
+								volumeOverrideRef.current = null;
+							} else {
+								volumeOverrideRef.current = vol;
+							}
 							break;
 						}
 						case "toggleMute":

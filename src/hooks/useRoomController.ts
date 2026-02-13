@@ -61,15 +61,14 @@ export function useRoomController(connection: RoomConnection) {
 		[sendCommand],
 	);
 
-	// Reset all players to room defaults (sync everyone back)
-	const syncAll = useCallback(() => {
-		sendCommand("setVolume", { volume: connection.playback.volume });
-		if (connection.playback.isPlaying) {
-			sendCommand("play");
-		} else {
-			sendCommand("pause");
-		}
-	}, [sendCommand, connection.playback.volume, connection.playback.isPlaying]);
+	// Reset a single player back to default mode (re-syncs to room state)
+	const resetDeviceToDefault = useCallback(
+		(deviceId: string) => sendCommand("resetToDefault", undefined, deviceId),
+		[sendCommand],
+	);
+
+	// Reset ALL players to default mode (single command, server handles everything)
+	const syncAll = useCallback(() => sendCommand("syncAll"), [sendCommand]);
 
 	return {
 		play,
@@ -86,6 +85,7 @@ export function useRoomController(connection: RoomConnection) {
 		pauseDevice,
 		playDevice,
 		syncAll,
+		resetDeviceToDefault,
 		renameDevice,
 	};
 }

@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import type {
 	CommandAction,
 	Device,
+	DeviceMode,
 	DeviceRole,
 	PlaybackState,
 	ServerMessage,
@@ -11,6 +12,7 @@ import { pickNextSong } from "./pick-next-song.js";
 
 interface ConnectedDevice extends Device {
 	ws: WebSocket;
+	mode: DeviceMode;
 }
 
 export class Room {
@@ -52,8 +54,8 @@ export class Room {
 
 	// ─── Device Management ──────────────────────────────────────────
 
-	addDevice(device: Device, ws: WebSocket): void {
-		this.devices.set(device.id, { ...device, ws });
+	addDevice(device: Omit<Device, "mode">, ws: WebSocket): void {
+		this.devices.set(device.id, { ...device, ws, mode: "default" });
 		// Send current state + queue to the new device
 		this.sendTo(device.id, this.buildStateMessage());
 		if (this.songQueue.length > 0) {
@@ -117,6 +119,11 @@ export class Room {
 		return Array.from(this.devices.values()).map(({ ws: _, ...d }) => d);
 	}
 
+	private setDeviceMode(deviceId: string, mode: DeviceMode): void {
+		const device = this.devices.get(deviceId);
+		if (device) device.mode = mode;
+	}
+
 	// ─── Song Queue ─────────────────────────────────────────────────
 
 	updateQueue(songs: SongData[], playlistEpoch: number): void {
@@ -156,7 +163,40 @@ export class Room {
 		payload?: Record<string, unknown>,
 		targetDeviceId?: string,
 	): void {
-		// Per-device targeted commands
+		// ── resetToDefault (targeted): reset one player back to default mode ──
+		if (action === "resetToDefault" && targetDeviceId) {
+			this.setDeviceMode(targetDeviceId, "default");
+			// Re-send current room state to the device so it syncs back
+			this.sendToDevice(targetDeviceId, {
+				type: "execute",
+				action: "setVolume",
+				payload: { volume: this.playback.volume },
+				scope: "room",
+			});
+			this.sendToDevice(targetDeviceId, {
+				type: "execute",
+				action: this.playback.isPlaying ? "play" : "pause",
+				scope: "room",
+			});
+			this.broadcastState();
+			return;
+		}
+
+		// ── syncAll (room-wide): reset ALL players to default mode ──
+		if (action === "syncAll") {
+			for (const device of this.devices.values()) {
+				if (device.role === "player") {
+					device.mode = "default";
+				}
+			}
+			// Broadcast room state to all players (bypassing mode filter)
+			this.broadcastExecute("setVolume", { volume: this.playback.volume }, false);
+			this.broadcastExecute(this.playback.isPlaying ? "play" : "pause", undefined, false);
+			this.broadcastState();
+			return;
+		}
+
+		// ── Per-device targeted commands ──
 		if (targetDeviceId) {
 			switch (action) {
 				case "play":
@@ -164,17 +204,20 @@ export class Room {
 				case "toggle":
 				case "setVolume":
 				case "toggleMute":
+					this.setDeviceMode(targetDeviceId, "individual");
 					this.sendToDevice(targetDeviceId, {
 						type: "execute",
 						action,
 						payload,
+						scope: "device",
 					});
+					this.broadcastState(); // update controllers about mode change
 					break;
 			}
-			// Targeted commands don't update room-wide state
 			return;
 		}
 
+		// ── Room-wide commands ──
 		switch (action) {
 			case "play":
 				this.playback.isPlaying = true;
@@ -194,7 +237,7 @@ export class Room {
 			case "seek": {
 				const time = (payload?.time as number) ?? 0;
 				this.playback.currentTime = time;
-				this.broadcastExecute("seek", { time });
+				this.broadcastExecute("seek", { time }, false); // seek goes to all
 				break;
 			}
 			case "setVolume": {
@@ -208,8 +251,7 @@ export class Room {
 				this.broadcastExecute("toggleMute");
 				break;
 			case "rate": {
-				// Rating is just forwarded — Convex mutation happens elsewhere
-				this.broadcastExecute("rate", payload);
+				this.broadcastExecute("rate", payload, false); // rating goes to all
 				break;
 			}
 			case "selectSong": {
@@ -217,7 +259,6 @@ export class Room {
 				if (!songId) return;
 				const song = this.songQueue.find((s) => s._id === songId);
 				if (!song?.audioUrl) return;
-				// Mark previous song as played
 				if (this.playback.currentSongId && this.markPlayedCallback) {
 					this.markPlayedCallback(this.playback.currentSongId).catch(() => {});
 				}
@@ -358,9 +399,18 @@ export class Room {
 		}
 	}
 
-	private broadcastExecute(action: CommandAction, payload?: Record<string, unknown>): void {
-		const msg: ServerMessage = { type: "execute", action, payload };
-		this.broadcastToPlayers(msg);
+	private broadcastExecute(
+		action: CommandAction,
+		payload?: Record<string, unknown>,
+		respectMode = true,
+	): void {
+		const msg: ServerMessage = { type: "execute", action, payload, scope: "room" };
+		const data = JSON.stringify(msg);
+		for (const device of this.devices.values()) {
+			if (device.role !== "player" || device.ws.readyState !== 1) continue;
+			if (respectMode && device.mode === "individual") continue;
+			device.ws.send(data);
+		}
 	}
 
 	private broadcastToPlayers(msg: ServerMessage): void {

@@ -6,6 +6,7 @@ import {
 	Pencil,
 	Play,
 	RefreshCw,
+	RotateCcw,
 	SkipForward,
 	ThumbsDown,
 	ThumbsUp,
@@ -30,18 +31,35 @@ function ProgressBar({
 	currentTime,
 	duration,
 	className = "",
+	onSeek,
 }: {
 	currentTime: number;
 	duration: number;
 	className?: string;
+	onSeek?: (time: number) => void;
 }) {
 	const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+	const handleClick = onSeek
+		? (e: React.MouseEvent<HTMLDivElement>) => {
+				const rect = e.currentTarget.getBoundingClientRect();
+				const ratio = Math.max(
+					0,
+					Math.min(1, (e.clientX - rect.left) / rect.width),
+				);
+				onSeek(ratio * duration);
+			}
+		: undefined;
 	return (
 		<div className={`flex items-center gap-2 ${className}`}>
 			<span className="text-[10px] font-bold text-white/40 tabular-nums w-8 text-right flex-shrink-0">
 				{formatTime(currentTime)}
 			</span>
-			<div className="flex-1 h-1 bg-white/10 overflow-hidden">
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: progress bar seek is mouse-only */}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: progress bar seek */}
+			<div
+				className={`flex-1 h-1 bg-white/10 overflow-hidden ${onSeek ? "cursor-pointer hover:h-1.5 transition-[height]" : ""}`}
+				onClick={handleClick}
+			>
 				<div
 					className="h-full bg-red-500 transition-[width] duration-1000 ease-linear"
 					style={{ width: `${pct}%` }}
@@ -129,6 +147,8 @@ interface DeviceControlPanelProps {
 	onToggleDevicePlay?: (deviceId: string) => void;
 	onSyncAll?: () => void;
 	onRenameDevice?: (deviceId: string, name: string) => void;
+	onResetDeviceToDefault?: (deviceId: string) => void;
+	onSeek?: (time: number) => void;
 }
 
 export function DeviceControlPanel({
@@ -143,6 +163,8 @@ export function DeviceControlPanel({
 	onToggleDevicePlay,
 	onSyncAll,
 	onRenameDevice,
+	onResetDeviceToDefault,
+	onSeek,
 }: DeviceControlPanelProps) {
 	const playerDevices = devices.filter((d) => d.role === "player");
 	const [renamingDevice, setRenamingDevice] = useState<Device | null>(null);
@@ -300,6 +322,7 @@ export function DeviceControlPanel({
 						currentTime={playback.currentTime}
 						duration={playback.duration}
 						className="mt-2"
+						onSeek={onSeek}
 					/>
 				</div>
 			</div>
@@ -315,72 +338,103 @@ export function DeviceControlPanel({
 					</span>
 				</div>
 				<div className="space-y-2">
-					{playerDevices.map((device) => (
-						<div
-							key={device.id}
-							className="border-2 border-white/10 bg-white/5 px-3 py-2"
-						>
-							<div className="flex items-center gap-3">
-								<div className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
-								<Volume2 className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
-								<div className="min-w-0 flex-1">
-									<div className="text-xs font-bold uppercase text-white/80 truncate">
-										{device.name}
+					{playerDevices.map((device) => {
+						const isIndividual = device.mode === "individual";
+						return (
+							<div
+								key={device.id}
+								className={`border-2 px-3 py-2 ${
+									isIndividual
+										? "border-yellow-500/40 bg-yellow-500/5"
+										: "border-white/10 bg-white/5"
+								}`}
+							>
+								<div className="flex items-center gap-3">
+									<div
+										className={`h-2 w-2 rounded-full flex-shrink-0 ${
+											isIndividual ? "bg-yellow-500" : "bg-green-500"
+										}`}
+									/>
+									<Volume2 className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
+									<div className="min-w-0 flex-1">
+										<div className="flex items-center gap-2">
+											<span className="text-xs font-bold uppercase text-white/80 truncate">
+												{device.name}
+											</span>
+											{isIndividual && (
+												<span className="text-[9px] font-black uppercase text-yellow-400 flex-shrink-0">
+													INDIVIDUAL
+												</span>
+											)}
+										</div>
+									</div>
+									<div className="flex items-center gap-1 flex-shrink-0">
+										{isIndividual && onResetDeviceToDefault && (
+											<button
+												type="button"
+												onClick={() => onResetDeviceToDefault(device.id)}
+												className="h-6 px-1.5 flex items-center justify-center gap-0.5 border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-colors"
+												title="Reset to default — follow room settings"
+											>
+												<RotateCcw className="h-2.5 w-2.5" />
+												<span className="text-[9px] font-black uppercase">
+													DEFAULT
+												</span>
+											</button>
+										)}
+										{onRenameDevice && (
+											<button
+												type="button"
+												onClick={() => setRenamingDevice(device)}
+												className="h-6 w-6 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"
+												title="Rename device"
+											>
+												<Pencil className="h-2.5 w-2.5" />
+											</button>
+										)}
+										{onToggleDevicePlay && (
+											<button
+												type="button"
+												onClick={() => onToggleDevicePlay(device.id)}
+												className="h-6 w-6 flex items-center justify-center border border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+												title="Toggle play/pause for this device"
+											>
+												{playback.isPlaying ? (
+													<Pause className="h-2.5 w-2.5" />
+												) : (
+													<Play className="h-2.5 w-2.5" />
+												)}
+											</button>
+										)}
 									</div>
 								</div>
-								<div className="flex items-center gap-1 flex-shrink-0">
-									{onRenameDevice && (
-										<button
-											type="button"
-											onClick={() => setRenamingDevice(device)}
-											className="h-6 w-6 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"
-											title="Rename device"
-										>
-											<Pencil className="h-2.5 w-2.5" />
-										</button>
-									)}
-									{onToggleDevicePlay && (
-										<button
-											type="button"
-											onClick={() => onToggleDevicePlay(device.id)}
-											className="h-6 w-6 flex items-center justify-center border border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors"
-											title="Toggle play/pause for this device"
-										>
-											{playback.isPlaying ? (
-												<Pause className="h-2.5 w-2.5" />
-											) : (
-												<Play className="h-2.5 w-2.5" />
-											)}
-										</button>
-									)}
-								</div>
+								<ProgressBar
+									currentTime={playback.currentTime}
+									duration={playback.duration}
+									className="mt-1.5"
+								/>
+								{onSetDeviceVolume && (
+									<div className="flex items-center gap-2 mt-1.5">
+										<Volume2 className="h-2.5 w-2.5 text-white/30 flex-shrink-0" />
+										<input
+											type="range"
+											min={0}
+											max={1}
+											step={0.01}
+											defaultValue={playback.volume}
+											onChange={(e) =>
+												onSetDeviceVolume(
+													device.id,
+													Number.parseFloat(e.target.value),
+												)
+											}
+											className="flex-1 h-1 accent-red-500 cursor-pointer"
+										/>
+									</div>
+								)}
 							</div>
-							<ProgressBar
-								currentTime={playback.currentTime}
-								duration={playback.duration}
-								className="mt-1.5"
-							/>
-							{onSetDeviceVolume && (
-								<div className="flex items-center gap-2 mt-1.5">
-									<Volume2 className="h-2.5 w-2.5 text-white/30 flex-shrink-0" />
-									<input
-										type="range"
-										min={0}
-										max={1}
-										step={0.01}
-										defaultValue={playback.volume}
-										onChange={(e) =>
-											onSetDeviceVolume(
-												device.id,
-												Number.parseFloat(e.target.value),
-											)
-										}
-										className="flex-1 h-1 accent-red-500 cursor-pointer"
-									/>
-								</div>
-							)}
-						</div>
-					))}
+						);
+					})}
 					{playerDevices.length === 0 && (
 						<div className="border-2 border-dashed border-white/10 px-3 py-4 text-center">
 							<Monitor className="h-4 w-4 text-white/15 mx-auto mb-1" />
