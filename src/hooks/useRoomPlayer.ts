@@ -258,11 +258,12 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 
 				case "nextSong": {
 					const preload = preloadAudioRef.current;
-					// Check if we already preloaded this song
+					// Check if we already preloaded this song (readyState >= 2 = buffered enough to play)
 					if (
 						preload &&
 						preloadSongIdRef.current === msg.songId &&
-						preload.src
+						preload.src &&
+						preload.readyState >= 2
 					) {
 						// Swap preloaded audio to current
 						const oldAudio = currentAudioRef.current;
