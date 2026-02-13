@@ -1,0 +1,1597 @@
+- generic [ref=e61]:
+  - banner [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - heading "INFINITUNE" [level=1] [ref=e65]
+        - generic [ref=e66]: "ROOM: MY ROOM // CONTROLLER"
+      - generic [ref=e67]:
+        - generic [ref=e68]: CONNECTED | DEVICES:3 | QUEUE:94
+        - button "[MINI]" [ref=e69]:
+          - img [ref=e70]
+          - text: "[MINI]"
+        - button "[ROOMS]" [ref=e75]:
+          - img [ref=e76]
+          - text: "[ROOMS]"
+        - button "[ONESHOT]" [ref=e82]:
+          - img [ref=e83]
+          - text: "[ONESHOT]"
+        - button "[LIBRARY]" [ref=e85]
+        - button "[QUEUE]" [ref=e86]
+        - button "[SETTINGS]" [ref=e87]
+        - button "[CLOSE]" [ref=e88]
+        - button "[FORCE CLOSE]" [ref=e89]
+  - generic [ref=e90]:
+    - generic [ref=e92]:
+      - generic [ref=e93]:
+        - generic [ref=e94]:
+          - heading "Critical Pressure Point" [level=2] [ref=e2391]
+          - paragraph [ref=e96]: Terminal Echo
+          - paragraph [ref=e97]: Electronic / UK Hardcore / Hard Techno
+        - generic [ref=e98]:
+          - button [ref=e99]:
+            - img [ref=e100]
+          - button [ref=e102]:
+            - img [ref=e103]
+          - button [ref=e105]:
+            - img [ref=e106]
+          - link [ref=e109] [cursor=pointer]:
+            - /url: /api/autoplayer/audio/jh7anjgg2m48pw882n45kmj3eh8109qg?aceAudioPath=%2Fv1%2Faudio%3Fpath%3D%252Fmnt%252Fai-music%252Ftmpdir%252Fapi_audio%252F002f7a34-602f-a9ff-f721-7d223bda9932.mp3
+            - img [ref=e110]
+        - generic [ref=e113]:
+          - generic [ref=e114]:
+            - generic [ref=e115]: ALL PLAYERS
+            - generic [ref=e116]:
+              - button "SYNC ALL — reset all players to room defaults" [ref=e117]:
+                - img [ref=e118]
+              - button [ref=e123]:
+                - img [ref=e124]
+              - button [ref=e127]:
+                - img [ref=e128]
+          - generic [ref=e130]:
+            - generic [ref=e131]: 0:00
+            - generic [ref=e134]: 3:57
+      - generic [ref=e135]:
+        - generic [ref=e136]:
+          - heading "PLAYERS" [level=3] [ref=e137]
+          - generic [ref=e138]: 1 CONNECTED
+        - generic [ref=e2392]:
+          - generic [ref=e2393]:
+            - img [ref=e2395]
+            - generic [ref=e2400]: mini-player
+            - generic [ref=e2401]:
+              - button "Rename device" [ref=e2402]:
+                - img [ref=e2403]
+              - button "Toggle play/pause for this device" [ref=e2406]:
+                - img [ref=e2407]
+          - generic [ref=e2410]:
+            - generic [ref=e2411]: 0:00
+            - generic [ref=e2413]: 3:57
+          - generic [ref=e2414]:
+            - img [ref=e2415]
+            - slider [ref=e2419] [cursor=pointer]: "0.8"
+    - generic [ref=e169]:
+      - generic [ref=e170]:
+        - generic [ref=e171]: GENERATION CONTROLS
+        - generic [ref=e172]:
+          - generic [ref=e173]:
+            - img [ref=e174] [cursor=pointer]
+            - text: PLAYLIST PROMPT
+          - textbox [ref=e180]: I WANT 2010 TECHNO BEATS WITH ENGLISH LYRICS, INFUSED WITH THE COMPRESSED ENERGY AND ELECTRONIC STYLE OF S3RL, BUT WITH A SHARPER SENSE OF DIRECTION AND PURPOSE. INCORPORATE HIGH-PITCHED SAMPLES FOR ACCENTS, NOT CHAOS. DRIVEN BY A DOMINANT, PUNCHY 808 BASS AND A SOLID, AGGRESSIVE HARD BASS GROOVE. USE DRAMATIC BUILDUPS AND HEAVY DROPS WITH INTENTION, ENSURING EACH ELEMENT SERVES THE SONG'S NARRATIVE. TOPICS CAN BE FROM CRIME TO TECH TO LOVE, WITH EACH SONG FOCUSING CLEARLY ON ONE THEME, GUIDING THE ENERGY TOWARD A COHESIVE AND PURPOSEFUL AUDIO EXPERIENCE.
+          - generic [ref=e181]:
+            - generic [ref=e182]: DEEPSEEK/DEEPSEEK-V3.2 / OPENROUTER
+            - button "UPDATE" [disabled]
+      - generic [ref=e183]:
+        - generic [ref=e184]:
+          - img [ref=e185]
+          - text: STEER DIRECTION
+        - generic [ref=e188]:
+          - textbox "NO MORE LOVE SONGS... / MORE BASS... / MORE TECHNO..." [ref=e189]
+          - button "STEER" [disabled]
+        - generic [ref=e190]:
+          - paragraph [ref=e191]: "HISTORY:"
+          - paragraph [ref=e192]: "[2] → I WANT 2010 TECHNO BEATS WITH ENGLISH LYRICS, INFUSED WITH T... (23h ago)"
+          - paragraph [ref=e193]: "[1] → I WANT 2010 TECHNO BEATS WITH ENGLISH LYRICS, INFUSED WITH T... (24h ago)"
+      - generic [ref=e194]:
+        - generic [ref=e195]:
+          - img [ref=e196]
+          - text: QUICK REQUEST — ONE-OFF SONG
+        - generic [ref=e198]:
+          - textbox "ACOUSTIC COVER OF BOHEMIAN RHAPSODY..." [ref=e199]
+          - button "SEND" [disabled]
+      - generic [ref=e200]:
+        - button "ADD ALBUM" [ref=e201]:
+          - img
+          - text: ADD ALBUM
+        - button "ADD 5 MORE" [ref=e202]:
+          - img
+          - text: ADD 5 MORE
+  - paragraph [ref=e204]: ">>> UP NEXT: \"THE INGRESS POINT\" [NEW DIRECTION] <<<"
+  - generic [ref=e205]:
+    - generic [ref=e206]:
+      - generic [ref=e207]: QUEUE [94 TRACKS]
+      - generic [ref=e208]:
+        - generic [ref=e209]: 94 READY
+        - generic [ref=e210]: 0 GENERATING
+    - generic [ref=e212]:
+      - button "Critical Pressure Point cover 51 ▶ NOW PLAYING Critical Pressure Point Terminal Echo [OR] [PLAYING] 1x 7m 20s" [ref=e2420]:
+        - button "Critical Pressure Point cover 51 ▶ NOW PLAYING" [ref=e2421] [cursor=pointer]:
+          - img "Critical Pressure Point cover" [ref=e217]
+          - generic [ref=e219]: "51"
+          - generic [ref=e2422]: ▶ NOW PLAYING
+        - button "Critical Pressure Point Terminal Echo [OR] [PLAYING] 1x 7m 20s" [ref=e2423] [cursor=pointer]:
+          - paragraph [ref=e221]: Critical Pressure Point
+          - paragraph [ref=e222]: Terminal Echo [OR]
+          - generic [ref=e223]:
+            - generic [ref=e224]:
+              - paragraph [ref=e225]: "[PLAYING]"
+              - button [ref=e226]:
+                - img [ref=e227]
+              - button [ref=e231]:
+                - img [ref=e232]
+              - generic [ref=e234]: 1x
+            - paragraph [ref=e235]: 7m 20s
+      - button "Devotion to a Single Flaw cover 52 Devotion to a Single Flaw Paradox Engine [OR] [READY] 6x 9m 9s" [ref=e236]:
+        - button "Devotion to a Single Flaw cover 52" [ref=e237] [cursor=pointer]:
+          - img "Devotion to a Single Flaw cover" [ref=e240]
+          - generic [ref=e242]: "52"
+        - button "Devotion to a Single Flaw Paradox Engine [OR] [READY] 6x 9m 9s" [ref=e243] [cursor=pointer]:
+          - paragraph [ref=e244]: Devotion to a Single Flaw
+          - paragraph [ref=e245]: Paradox Engine [OR]
+          - generic [ref=e246]:
+            - generic [ref=e247]:
+              - paragraph [ref=e248]: "[READY]"
+              - button [ref=e249]:
+                - img [ref=e250]
+              - button [ref=e254]:
+                - img [ref=e255]
+              - generic [ref=e257]: 6x
+            - paragraph [ref=e258]: 9m 9s
+      - button "The Last Whorl cover 53 The Last Whorl Phantom Protocol [OR] [READY] 6x 4m 11s" [ref=e259]:
+        - button "The Last Whorl cover 53" [ref=e260] [cursor=pointer]:
+          - img "The Last Whorl cover" [ref=e263]
+          - generic [ref=e265]: "53"
+        - button "The Last Whorl Phantom Protocol [OR] [READY] 6x 4m 11s" [ref=e266] [cursor=pointer]:
+          - paragraph [ref=e267]: The Last Whorl
+          - paragraph [ref=e268]: Phantom Protocol [OR]
+          - generic [ref=e269]:
+            - generic [ref=e270]:
+              - paragraph [ref=e271]: "[READY]"
+              - button [ref=e272]:
+                - img [ref=e273]
+              - button [ref=e277]:
+                - img [ref=e278]
+              - generic [ref=e280]: 6x
+            - paragraph [ref=e281]: 4m 11s
+      - button "Coolant Garden cover 54 Coolant Garden Static Embrace [OR] [READY] 2x 5m 7s" [ref=e282]:
+        - button "Coolant Garden cover 54" [ref=e283] [cursor=pointer]:
+          - img "Coolant Garden cover" [ref=e286]
+          - generic [ref=e288]: "54"
+        - button "Coolant Garden Static Embrace [OR] [READY] 2x 5m 7s" [ref=e289] [cursor=pointer]:
+          - paragraph [ref=e290]: Coolant Garden
+          - paragraph [ref=e291]: Static Embrace [OR]
+          - generic [ref=e292]:
+            - generic [ref=e293]:
+              - paragraph [ref=e294]: "[READY]"
+              - button [ref=e295]:
+                - img [ref=e296]
+              - button [ref=e300]:
+                - img [ref=e301]
+              - generic [ref=e303]: 2x
+            - paragraph [ref=e304]: 5m 7s
+      - button "Coolant Bloom cover 55 Coolant Bloom Transmission Bloom [OR] [READY] 16m 1s" [ref=e305]:
+        - button "Coolant Bloom cover 55" [ref=e306] [cursor=pointer]:
+          - img "Coolant Bloom cover" [ref=e309]
+          - generic [ref=e311]: "55"
+        - button "Coolant Bloom Transmission Bloom [OR] [READY] 16m 1s" [ref=e312] [cursor=pointer]:
+          - paragraph [ref=e313]: Coolant Bloom
+          - paragraph [ref=e314]: Transmission Bloom [OR]
+          - generic [ref=e315]:
+            - generic [ref=e316]:
+              - paragraph [ref=e317]: "[READY]"
+              - button [ref=e318]:
+                - img [ref=e319]
+              - button [ref=e323]:
+                - img [ref=e324]
+            - paragraph [ref=e326]: 16m 1s
+      - button "The Spike In The Silent Line cover 56 The Spike In The Silent Line Signal Ghost [OR] [READY] 2x 3m 33s" [ref=e327]:
+        - button "The Spike In The Silent Line cover 56" [ref=e328] [cursor=pointer]:
+          - img "The Spike In The Silent Line cover" [ref=e331]
+          - generic [ref=e333]: "56"
+        - button "The Spike In The Silent Line Signal Ghost [OR] [READY] 2x 3m 33s" [ref=e334] [cursor=pointer]:
+          - paragraph [ref=e335]: The Spike In The Silent Line
+          - paragraph [ref=e336]: Signal Ghost [OR]
+          - generic [ref=e337]:
+            - generic [ref=e338]:
+              - paragraph [ref=e339]: "[READY]"
+              - button [ref=e340]:
+                - img [ref=e341]
+              - button [ref=e345]:
+                - img [ref=e346]
+              - generic [ref=e348]: 2x
+            - paragraph [ref=e349]: 3m 33s
+      - button "Covenant Breach cover 57 Covenant Breach Sector Breach [OR] [READY] 1x 2m 35s" [ref=e350]:
+        - button "Covenant Breach cover 57" [ref=e351] [cursor=pointer]:
+          - img "Covenant Breach cover" [ref=e354]
+          - generic [ref=e356]: "57"
+        - button "Covenant Breach Sector Breach [OR] [READY] 1x 2m 35s" [ref=e357] [cursor=pointer]:
+          - paragraph [ref=e358]: Covenant Breach
+          - paragraph [ref=e359]: Sector Breach [OR]
+          - generic [ref=e360]:
+            - generic [ref=e361]:
+              - paragraph [ref=e362]: "[READY]"
+              - button [ref=e363]:
+                - img [ref=e364]
+              - button [ref=e368]:
+                - img [ref=e369]
+              - generic [ref=e371]: 1x
+            - paragraph [ref=e372]: 2m 35s
+      - button "Buffer Bloom cover 58 Buffer Bloom Axiom Recoil [OR] [READY] 1x 5m 50s" [ref=e373]:
+        - button "Buffer Bloom cover 58" [ref=e374] [cursor=pointer]:
+          - img "Buffer Bloom cover" [ref=e377]
+          - generic [ref=e379]: "58"
+        - button "Buffer Bloom Axiom Recoil [OR] [READY] 1x 5m 50s" [ref=e380] [cursor=pointer]:
+          - paragraph [ref=e381]: Buffer Bloom
+          - paragraph [ref=e382]: Axiom Recoil [OR]
+          - generic [ref=e383]:
+            - generic [ref=e384]:
+              - paragraph [ref=e385]: "[READY]"
+              - button [ref=e386]:
+                - img [ref=e387]
+              - button [ref=e391]:
+                - img [ref=e392]
+              - generic [ref=e394]: 1x
+            - paragraph [ref=e395]: 5m 50s
+      - button "The Rack's Last Lullaby cover 59 The Rack's Last Lullaby Fault Injection [OR] [READY] 7m 27s" [ref=e396]:
+        - button "The Rack's Last Lullaby cover 59" [ref=e397] [cursor=pointer]:
+          - img "The Rack's Last Lullaby cover" [ref=e400]
+          - generic [ref=e402]: "59"
+        - button "The Rack's Last Lullaby Fault Injection [OR] [READY] 7m 27s" [ref=e403] [cursor=pointer]:
+          - paragraph [ref=e404]: The Rack's Last Lullaby
+          - paragraph [ref=e405]: Fault Injection [OR]
+          - generic [ref=e406]:
+            - generic [ref=e407]:
+              - paragraph [ref=e408]: "[READY]"
+              - button [ref=e409]:
+                - img [ref=e410]
+              - button [ref=e414]:
+                - img [ref=e415]
+            - paragraph [ref=e417]: 7m 27s
+      - button "The Weld Seam's Prayer cover 60 The Weld Seam's Prayer Weld Seam Protocol [OR] [READY] 1x 2m 56s" [ref=e418]:
+        - button "The Weld Seam's Prayer cover 60" [ref=e419] [cursor=pointer]:
+          - img "The Weld Seam's Prayer cover" [ref=e422]
+          - generic [ref=e424]: "60"
+        - button "The Weld Seam's Prayer Weld Seam Protocol [OR] [READY] 1x 2m 56s" [ref=e425] [cursor=pointer]:
+          - paragraph [ref=e426]: The Weld Seam's Prayer
+          - paragraph [ref=e427]: Weld Seam Protocol [OR]
+          - generic [ref=e428]:
+            - generic [ref=e429]:
+              - paragraph [ref=e430]: "[READY]"
+              - button [ref=e431]:
+                - img [ref=e432]
+              - button [ref=e436]:
+                - img [ref=e437]
+              - generic [ref=e439]: 1x
+            - paragraph [ref=e440]: 2m 56s
+      - button "The Pulse I'll Make cover 61 The Pulse I'll Make Error Cascade [OR] [READY] 1x 5m 35s" [ref=e441]:
+        - button "The Pulse I'll Make cover 61" [ref=e442] [cursor=pointer]:
+          - img "The Pulse I'll Make cover" [ref=e445]
+          - generic [ref=e447]: "61"
+        - button "The Pulse I'll Make Error Cascade [OR] [READY] 1x 5m 35s" [ref=e448] [cursor=pointer]:
+          - paragraph [ref=e449]: The Pulse I'll Make
+          - paragraph [ref=e450]: Error Cascade [OR]
+          - generic [ref=e451]:
+            - generic [ref=e452]:
+              - paragraph [ref=e453]: "[READY]"
+              - button [ref=e454]:
+                - img [ref=e455]
+              - button [ref=e459]:
+                - img [ref=e460]
+              - generic [ref=e462]: 1x
+            - paragraph [ref=e463]: 5m 35s
+      - button "Signal Spiral cover 62 Signal Spiral Recursive Terminal [OR] [READY] 1x 3m 2s" [ref=e464]:
+        - button "Signal Spiral cover 62" [ref=e465] [cursor=pointer]:
+          - img "Signal Spiral cover" [ref=e468]
+          - generic [ref=e470]: "62"
+        - button "Signal Spiral Recursive Terminal [OR] [READY] 1x 3m 2s" [ref=e471] [cursor=pointer]:
+          - paragraph [ref=e472]: Signal Spiral
+          - paragraph [ref=e473]: Recursive Terminal [OR]
+          - generic [ref=e474]:
+            - generic [ref=e475]:
+              - paragraph [ref=e476]: "[READY]"
+              - button [ref=e477]:
+                - img [ref=e478]
+              - button [ref=e482]:
+                - img [ref=e483]
+              - generic [ref=e485]: 1x
+            - paragraph [ref=e486]: 3m 2s
+      - button "The Graft's Confession cover 63 The Graft's Confession Chimeric Residue [OR] [READY] 1x 4m 15s" [ref=e487]:
+        - button "The Graft's Confession cover 63" [ref=e488] [cursor=pointer]:
+          - img "The Graft's Confession cover" [ref=e491]
+          - generic [ref=e493]: "63"
+        - button "The Graft's Confession Chimeric Residue [OR] [READY] 1x 4m 15s" [ref=e494] [cursor=pointer]:
+          - paragraph [ref=e495]: The Graft's Confession
+          - paragraph [ref=e496]: Chimeric Residue [OR]
+          - generic [ref=e497]:
+            - generic [ref=e498]:
+              - paragraph [ref=e499]: "[READY]"
+              - button [ref=e500]:
+                - img [ref=e501]
+              - button [ref=e505]:
+                - img [ref=e506]
+              - generic [ref=e508]: 1x
+            - paragraph [ref=e509]: 4m 15s
+      - button "Cargo of Ash cover 64 Cargo of Ash Static Interceptor [OR] [READY] 1x 2m 51s" [ref=e510]:
+        - button "Cargo of Ash cover 64" [ref=e511] [cursor=pointer]:
+          - img "Cargo of Ash cover" [ref=e514]
+          - generic [ref=e516]: "64"
+        - button "Cargo of Ash Static Interceptor [OR] [READY] 1x 2m 51s" [ref=e517] [cursor=pointer]:
+          - paragraph [ref=e518]: Cargo of Ash
+          - paragraph [ref=e519]: Static Interceptor [OR]
+          - generic [ref=e520]:
+            - generic [ref=e521]:
+              - paragraph [ref=e522]: "[READY]"
+              - button [ref=e523]:
+                - img [ref=e524]
+              - button [ref=e528]:
+                - img [ref=e529]
+              - generic [ref=e531]: 1x
+            - paragraph [ref=e532]: 2m 51s
+      - button "The Demolition Hymn cover 65 The Demolition Hymn Ductile Pulse [OR] [READY] 3m 55s" [ref=e533]:
+        - button "The Demolition Hymn cover 65" [ref=e534] [cursor=pointer]:
+          - img "The Demolition Hymn cover" [ref=e537]
+          - generic [ref=e539]: "65"
+        - button "The Demolition Hymn Ductile Pulse [OR] [READY] 3m 55s" [ref=e540] [cursor=pointer]:
+          - paragraph [ref=e541]: The Demolition Hymn
+          - paragraph [ref=e542]: Ductile Pulse [OR]
+          - generic [ref=e543]:
+            - generic [ref=e544]:
+              - paragraph [ref=e545]: "[READY]"
+              - button [ref=e546]:
+                - img [ref=e547]
+              - button [ref=e551]:
+                - img [ref=e552]
+            - paragraph [ref=e554]: 3m 55s
+      - button "Chlorophyll Trace cover 66 Chlorophyll Trace Autoclave Protocol [OR] [READY] 5x 5m 19s" [ref=e555]:
+        - button "Chlorophyll Trace cover 66" [ref=e556] [cursor=pointer]:
+          - img "Chlorophyll Trace cover" [ref=e559]
+          - generic [ref=e561]: "66"
+        - button "Chlorophyll Trace Autoclave Protocol [OR] [READY] 5x 5m 19s" [ref=e562] [cursor=pointer]:
+          - paragraph [ref=e563]: Chlorophyll Trace
+          - paragraph [ref=e564]: Autoclave Protocol [OR]
+          - generic [ref=e565]:
+            - generic [ref=e566]:
+              - paragraph [ref=e567]: "[READY]"
+              - button [ref=e568]:
+                - img [ref=e569]
+              - button [ref=e573]:
+                - img [ref=e574]
+              - generic [ref=e576]: 5x
+            - paragraph [ref=e577]: 5m 19s
+      - button "The Anchor Flaw cover 67 The Anchor Flaw Faultline Conduit [OR] [READY] 2m 15s" [ref=e578]:
+        - button "The Anchor Flaw cover 67" [ref=e579] [cursor=pointer]:
+          - img "The Anchor Flaw cover" [ref=e582]
+          - generic [ref=e584]: "67"
+        - button "The Anchor Flaw Faultline Conduit [OR] [READY] 2m 15s" [ref=e585] [cursor=pointer]:
+          - paragraph [ref=e586]: The Anchor Flaw
+          - paragraph [ref=e587]: Faultline Conduit [OR]
+          - generic [ref=e588]:
+            - generic [ref=e589]:
+              - paragraph [ref=e590]: "[READY]"
+              - button [ref=e591]:
+                - img [ref=e592]
+              - button [ref=e596]:
+                - img [ref=e597]
+            - paragraph [ref=e599]: 2m 15s
+      - button "The Static's Covenant cover 68 The Static's Covenant Oblique Protocol [OR] [READY] 3m 23s" [ref=e600]:
+        - button "The Static's Covenant cover 68" [ref=e601] [cursor=pointer]:
+          - img "The Static's Covenant cover" [ref=e604]
+          - generic [ref=e606]: "68"
+        - button "The Static's Covenant Oblique Protocol [OR] [READY] 3m 23s" [ref=e607] [cursor=pointer]:
+          - paragraph [ref=e608]: The Static's Covenant
+          - paragraph [ref=e609]: Oblique Protocol [OR]
+          - generic [ref=e610]:
+            - generic [ref=e611]:
+              - paragraph [ref=e612]: "[READY]"
+              - button [ref=e613]:
+                - img [ref=e614]
+              - button [ref=e618]:
+                - img [ref=e619]
+            - paragraph [ref=e621]: 3m 23s
+      - button "The Error's Grace cover 69 The Error's Grace Resonant Anomaly [OR] [READY] 2m 49s" [ref=e622]:
+        - button "The Error's Grace cover 69" [ref=e623] [cursor=pointer]:
+          - img "The Error's Grace cover" [ref=e626]
+          - generic [ref=e628]: "69"
+        - button "The Error's Grace Resonant Anomaly [OR] [READY] 2m 49s" [ref=e629] [cursor=pointer]:
+          - paragraph [ref=e630]: The Error's Grace
+          - paragraph [ref=e631]: Resonant Anomaly [OR]
+          - generic [ref=e632]:
+            - generic [ref=e633]:
+              - paragraph [ref=e634]: "[READY]"
+              - button [ref=e635]:
+                - img [ref=e636]
+              - button [ref=e640]:
+                - img [ref=e641]
+            - paragraph [ref=e643]: 2m 49s
+      - button "The Archive's Grip cover 70 The Archive's Grip Coldfire Array [OR] [READY] 1x 5m 38s" [ref=e2424]:
+        - button "The Archive's Grip cover 70" [ref=e2425] [cursor=pointer]:
+          - img "The Archive's Grip cover" [ref=e648]
+          - generic [ref=e650]: "70"
+        - button "The Archive's Grip Coldfire Array [OR] [READY] 1x 5m 38s" [ref=e2426] [cursor=pointer]:
+          - paragraph [ref=e653]: The Archive's Grip
+          - paragraph [ref=e654]: Coldfire Array [OR]
+          - generic [ref=e655]:
+            - generic [ref=e656]:
+              - paragraph [ref=e657]: "[READY]"
+              - button [ref=e658]:
+                - img [ref=e659]
+              - button [ref=e663]:
+                - img [ref=e664]
+              - generic [ref=e666]: 1x
+            - paragraph [ref=e667]: 5m 38s
+      - button "The Corrosion Prayer cover 71 The Corrosion Prayer Static Lattice [OR] [READY] 1x 10m 56s" [ref=e668]:
+        - button "The Corrosion Prayer cover 71" [ref=e669] [cursor=pointer]:
+          - img "The Corrosion Prayer cover" [ref=e672]
+          - generic [ref=e674]: "71"
+        - button "The Corrosion Prayer Static Lattice [OR] [READY] 1x 10m 56s" [ref=e675] [cursor=pointer]:
+          - paragraph [ref=e676]: The Corrosion Prayer
+          - paragraph [ref=e677]: Static Lattice [OR]
+          - generic [ref=e678]:
+            - generic [ref=e679]:
+              - paragraph [ref=e680]: "[READY]"
+              - button [ref=e681]:
+                - img [ref=e682]
+              - button [ref=e686]:
+                - img [ref=e687]
+              - generic [ref=e689]: 1x
+            - paragraph [ref=e690]: 10m 56s
+      - button "The Last Known Vector cover 72 The Last Known Vector Spool Terminal [OR] [READY] 12m 48s" [ref=e691]:
+        - button "The Last Known Vector cover 72" [ref=e692] [cursor=pointer]:
+          - img "The Last Known Vector cover" [ref=e695]
+          - generic [ref=e697]: "72"
+        - button "The Last Known Vector Spool Terminal [OR] [READY] 12m 48s" [ref=e698] [cursor=pointer]:
+          - paragraph [ref=e699]: The Last Known Vector
+          - paragraph [ref=e700]: Spool Terminal [OR]
+          - generic [ref=e701]:
+            - generic [ref=e702]:
+              - paragraph [ref=e703]: "[READY]"
+              - button [ref=e704]:
+                - img [ref=e705]
+              - button [ref=e709]:
+                - img [ref=e710]
+            - paragraph [ref=e712]: 12m 48s
+      - button "The Ingress Point cover 73 The Ingress Point The Signal Curators [OR] [READY] 4x 3m 45s" [ref=e713]:
+        - button "The Ingress Point cover 73" [ref=e714] [cursor=pointer]:
+          - img "The Ingress Point cover" [ref=e717]
+          - generic [ref=e719]: "73"
+        - button "The Ingress Point The Signal Curators [OR] [READY] 4x 3m 45s" [ref=e720] [cursor=pointer]:
+          - paragraph [ref=e721]: The Ingress Point
+          - paragraph [ref=e722]: The Signal Curators [OR]
+          - generic [ref=e723]:
+            - generic [ref=e724]:
+              - paragraph [ref=e725]: "[READY]"
+              - button [ref=e726]:
+                - img [ref=e727]
+              - button [ref=e731]:
+                - img [ref=e732]
+              - generic [ref=e734]: 4x
+            - paragraph [ref=e735]: 3m 45s
+      - button "The Last Calibration cover 74 The Last Calibration Scaffold Directive [OR] [READY] 16m 9s" [ref=e736]:
+        - button "The Last Calibration cover 74" [ref=e737] [cursor=pointer]:
+          - img "The Last Calibration cover" [ref=e740]
+          - generic [ref=e742]: "74"
+        - button "The Last Calibration Scaffold Directive [OR] [READY] 16m 9s" [ref=e743] [cursor=pointer]:
+          - paragraph [ref=e744]: The Last Calibration
+          - paragraph [ref=e745]: Scaffold Directive [OR]
+          - generic [ref=e746]:
+            - generic [ref=e747]:
+              - paragraph [ref=e748]: "[READY]"
+              - button [ref=e749]:
+                - img [ref=e750]
+              - button [ref=e754]:
+                - img [ref=e755]
+            - paragraph [ref=e757]: 16m 9s
+      - button "The Final, Beautiful Error cover 75 The Final, Beautiful Error The Gilded Protocol [OR] [READY] 3x 3m 22s" [ref=e758]:
+        - button "The Final, Beautiful Error cover 75" [ref=e759] [cursor=pointer]:
+          - img "The Final, Beautiful Error cover" [ref=e762]
+          - generic [ref=e764]: "75"
+        - button "The Final, Beautiful Error The Gilded Protocol [OR] [READY] 3x 3m 22s" [ref=e765] [cursor=pointer]:
+          - paragraph [ref=e766]: The Final, Beautiful Error
+          - paragraph [ref=e767]: The Gilded Protocol [OR]
+          - generic [ref=e768]:
+            - generic [ref=e769]:
+              - paragraph [ref=e770]: "[READY]"
+              - button [ref=e771]:
+                - img [ref=e772]
+              - button [ref=e776]:
+                - img [ref=e777]
+              - generic [ref=e779]: 3x
+            - paragraph [ref=e780]: 3m 22s
+      - button "The First Permission cover 76 The First Permission Fault Protocol [OR] [READY] 2x 10m 21s" [ref=e781]:
+        - button "The First Permission cover 76" [ref=e782] [cursor=pointer]:
+          - img "The First Permission cover" [ref=e785]
+          - generic [ref=e787]: "76"
+        - button "The First Permission Fault Protocol [OR] [READY] 2x 10m 21s" [ref=e788] [cursor=pointer]:
+          - paragraph [ref=e789]: The First Permission
+          - paragraph [ref=e790]: Fault Protocol [OR]
+          - generic [ref=e791]:
+            - generic [ref=e792]:
+              - paragraph [ref=e793]: "[READY]"
+              - button [ref=e794]:
+                - img [ref=e795]
+              - button [ref=e799]:
+                - img [ref=e800]
+              - generic [ref=e802]: 2x
+            - paragraph [ref=e803]: 10m 21s
+      - button "The Crucible Covenant cover 77 The Crucible Covenant Forged Inertia [OR] [READY] 13m 42s" [ref=e804]:
+        - button "The Crucible Covenant cover 77" [ref=e805] [cursor=pointer]:
+          - img "The Crucible Covenant cover" [ref=e808]
+          - generic [ref=e810]: "77"
+        - button "The Crucible Covenant Forged Inertia [OR] [READY] 13m 42s" [ref=e811] [cursor=pointer]:
+          - paragraph [ref=e812]: The Crucible Covenant
+          - paragraph [ref=e813]: Forged Inertia [OR]
+          - generic [ref=e814]:
+            - generic [ref=e815]:
+              - paragraph [ref=e816]: "[READY]"
+              - button [ref=e817]:
+                - img [ref=e818]
+              - button [ref=e822]:
+                - img [ref=e823]
+            - paragraph [ref=e825]: 13m 42s
+      - button "The Fabricator's Oath cover 78 The Fabricator's Oath Voxel Mantle [OR] [READY] 15m 20s" [ref=e826]:
+        - button "The Fabricator's Oath cover 78" [ref=e827] [cursor=pointer]:
+          - img "The Fabricator's Oath cover" [ref=e830]
+          - generic [ref=e832]: "78"
+        - button "The Fabricator's Oath Voxel Mantle [OR] [READY] 15m 20s" [ref=e833] [cursor=pointer]:
+          - paragraph [ref=e834]: The Fabricator's Oath
+          - paragraph [ref=e835]: Voxel Mantle [OR]
+          - generic [ref=e836]:
+            - generic [ref=e837]:
+              - paragraph [ref=e838]: "[READY]"
+              - button [ref=e839]:
+                - img [ref=e840]
+              - button [ref=e844]:
+                - img [ref=e845]
+            - paragraph [ref=e847]: 15m 20s
+      - button "The Substrate Whisper cover 79 The Substrate Whisper Static Covenant [OR] [READY] 11m 33s" [ref=e848]:
+        - button "The Substrate Whisper cover 79" [ref=e849] [cursor=pointer]:
+          - img "The Substrate Whisper cover" [ref=e852]
+          - generic [ref=e854]: "79"
+        - button "The Substrate Whisper Static Covenant [OR] [READY] 11m 33s" [ref=e855] [cursor=pointer]:
+          - paragraph [ref=e856]: The Substrate Whisper
+          - paragraph [ref=e857]: Static Covenant [OR]
+          - generic [ref=e858]:
+            - generic [ref=e859]:
+              - paragraph [ref=e860]: "[READY]"
+              - button [ref=e861]:
+                - img [ref=e862]
+              - button [ref=e866]:
+                - img [ref=e867]
+            - paragraph [ref=e869]: 11m 33s
+      - button "The Memory Cache Waltz cover 80 The Memory Cache Waltz Cipher Echo [OR] [READY] 13m 11s" [ref=e870]:
+        - button "The Memory Cache Waltz cover 80" [ref=e871] [cursor=pointer]:
+          - img "The Memory Cache Waltz cover" [ref=e874]
+          - generic [ref=e876]: "80"
+        - button "The Memory Cache Waltz Cipher Echo [OR] [READY] 13m 11s" [ref=e877] [cursor=pointer]:
+          - paragraph [ref=e878]: The Memory Cache Waltz
+          - paragraph [ref=e879]: Cipher Echo [OR]
+          - generic [ref=e880]:
+            - generic [ref=e881]:
+              - paragraph [ref=e882]: "[READY]"
+              - button [ref=e883]:
+                - img [ref=e884]
+              - button [ref=e888]:
+                - img [ref=e889]
+            - paragraph [ref=e891]: 13m 11s
+      - button "The Stamp's Devotion cover 81 The Stamp's Devotion Cold Frame Assembly [OR] [READY] 1x 9m 39s" [ref=e892]:
+        - button "The Stamp's Devotion cover 81" [ref=e893] [cursor=pointer]:
+          - img "The Stamp's Devotion cover" [ref=e896]
+          - generic [ref=e898]: "81"
+        - button "The Stamp's Devotion Cold Frame Assembly [OR] [READY] 1x 9m 39s" [ref=e899] [cursor=pointer]:
+          - paragraph [ref=e900]: The Stamp's Devotion
+          - paragraph [ref=e901]: Cold Frame Assembly [OR]
+          - generic [ref=e902]:
+            - generic [ref=e903]:
+              - paragraph [ref=e904]: "[READY]"
+              - button [ref=e905]:
+                - img [ref=e906]
+              - button [ref=e910]:
+                - img [ref=e911]
+              - generic [ref=e913]: 1x
+            - paragraph [ref=e914]: 9m 39s
+      - button "The Permafrost Protocol cover 82 The Permafrost Protocol Faultline Cascade [OR] [READY] 16m 6s" [ref=e915]:
+        - button "The Permafrost Protocol cover 82" [ref=e916] [cursor=pointer]:
+          - img "The Permafrost Protocol cover" [ref=e919]
+          - generic [ref=e921]: "82"
+        - button "The Permafrost Protocol Faultline Cascade [OR] [READY] 16m 6s" [ref=e922] [cursor=pointer]:
+          - paragraph [ref=e923]: The Permafrost Protocol
+          - paragraph [ref=e924]: Faultline Cascade [OR]
+          - generic [ref=e925]:
+            - generic [ref=e926]:
+              - paragraph [ref=e927]: "[READY]"
+              - button [ref=e928]:
+                - img [ref=e929]
+              - button [ref=e933]:
+                - img [ref=e934]
+            - paragraph [ref=e936]: 16m 6s
+      - button "The Fuse And The Fracture cover 83 The Fuse And The Fracture Relay Halo [OR] [READY] 4m 5s" [ref=e937]:
+        - button "The Fuse And The Fracture cover 83" [ref=e938] [cursor=pointer]:
+          - img "The Fuse And The Fracture cover" [ref=e941]
+          - generic [ref=e943]: "83"
+        - button "The Fuse And The Fracture Relay Halo [OR] [READY] 4m 5s" [ref=e944] [cursor=pointer]:
+          - paragraph [ref=e945]: The Fuse And The Fracture
+          - paragraph [ref=e946]: Relay Halo [OR]
+          - generic [ref=e947]:
+            - generic [ref=e948]:
+              - paragraph [ref=e949]: "[READY]"
+              - button [ref=e950]:
+                - img [ref=e951]
+              - button [ref=e955]:
+                - img [ref=e956]
+            - paragraph [ref=e958]: 4m 5s
+      - button "The Graft's Hymn cover 84 The Graft's Hymn Suture Protocol [OR] [READY] 5m 47s" [ref=e959]:
+        - button "The Graft's Hymn cover 84" [ref=e960] [cursor=pointer]:
+          - img "The Graft's Hymn cover" [ref=e963]
+          - generic [ref=e965]: "84"
+        - button "The Graft's Hymn Suture Protocol [OR] [READY] 5m 47s" [ref=e966] [cursor=pointer]:
+          - paragraph [ref=e967]: The Graft's Hymn
+          - paragraph [ref=e968]: Suture Protocol [OR]
+          - generic [ref=e969]:
+            - generic [ref=e970]:
+              - paragraph [ref=e971]: "[READY]"
+              - button [ref=e972]:
+                - img [ref=e973]
+              - button [ref=e977]:
+                - img [ref=e978]
+            - paragraph [ref=e980]: 5m 47s
+      - button "The Reservoir Mandate cover 85 The Reservoir Mandate Fault State [OR] [READY] 4x 2m 17s" [ref=e981]:
+        - button "The Reservoir Mandate cover 85" [ref=e982] [cursor=pointer]:
+          - img "The Reservoir Mandate cover" [ref=e985]
+          - generic [ref=e987]: "85"
+        - button "The Reservoir Mandate Fault State [OR] [READY] 4x 2m 17s" [ref=e988] [cursor=pointer]:
+          - paragraph [ref=e989]: The Reservoir Mandate
+          - paragraph [ref=e990]: Fault State [OR]
+          - generic [ref=e991]:
+            - generic [ref=e992]:
+              - paragraph [ref=e993]: "[READY]"
+              - button [ref=e994]:
+                - img [ref=e995]
+              - button [ref=e999]:
+                - img [ref=e1000]
+              - generic [ref=e1002]: 4x
+            - paragraph [ref=e1003]: 2m 17s
+      - button "The Glitch Hymn cover 86 The Glitch Hymn Protocol Breaker [OR] [READY] 12m 29s" [ref=e1004]:
+        - button "The Glitch Hymn cover 86" [ref=e1005] [cursor=pointer]:
+          - img "The Glitch Hymn cover" [ref=e1008]
+          - generic [ref=e1010]: "86"
+        - button "The Glitch Hymn Protocol Breaker [OR] [READY] 12m 29s" [ref=e1011] [cursor=pointer]:
+          - paragraph [ref=e1012]: The Glitch Hymn
+          - paragraph [ref=e1013]: Protocol Breaker [OR]
+          - generic [ref=e1014]:
+            - generic [ref=e1015]:
+              - paragraph [ref=e1016]: "[READY]"
+              - button [ref=e1017]:
+                - img [ref=e1018]
+              - button [ref=e1022]:
+                - img [ref=e1023]
+            - paragraph [ref=e1025]: 12m 29s
+      - button "The Paradox Key cover 87 The Paradox Key Binary Sanctum [OR] [READY] 3m 48s" [ref=e1026]:
+        - button "The Paradox Key cover 87" [ref=e1027] [cursor=pointer]:
+          - img "The Paradox Key cover" [ref=e1030]
+          - generic [ref=e1032]: "87"
+        - button "The Paradox Key Binary Sanctum [OR] [READY] 3m 48s" [ref=e1033] [cursor=pointer]:
+          - paragraph [ref=e1034]: The Paradox Key
+          - paragraph [ref=e1035]: Binary Sanctum [OR]
+          - generic [ref=e1036]:
+            - generic [ref=e1037]:
+              - paragraph [ref=e1038]: "[READY]"
+              - button [ref=e1039]:
+                - img [ref=e1040]
+              - button [ref=e1044]:
+                - img [ref=e1045]
+            - paragraph [ref=e1047]: 3m 48s
+      - button "The Circuit's First Tremor cover 88 The Circuit's First Tremor Flaw Cascade [OR] [READY] 4m 39s" [ref=e1048]:
+        - button "The Circuit's First Tremor cover 88" [ref=e1049] [cursor=pointer]:
+          - img "The Circuit's First Tremor cover" [ref=e1052]
+          - generic [ref=e1054]: "88"
+        - button "The Circuit's First Tremor Flaw Cascade [OR] [READY] 4m 39s" [ref=e1055] [cursor=pointer]:
+          - paragraph [ref=e1056]: The Circuit's First Tremor
+          - paragraph [ref=e1057]: Flaw Cascade [OR]
+          - generic [ref=e1058]:
+            - generic [ref=e1059]:
+              - paragraph [ref=e1060]: "[READY]"
+              - button [ref=e1061]:
+                - img [ref=e1062]
+              - button [ref=e1066]:
+                - img [ref=e1067]
+            - paragraph [ref=e1069]: 4m 39s
+      - button "The Echo in the Static cover 89 The Echo in the Static Signal Corruptor [OR] [READY] 1x 5m 30s" [ref=e1070]:
+        - button "The Echo in the Static cover 89" [ref=e1071] [cursor=pointer]:
+          - img "The Echo in the Static cover" [ref=e1074]
+          - generic [ref=e1076]: "89"
+        - button "The Echo in the Static Signal Corruptor [OR] [READY] 1x 5m 30s" [ref=e1077] [cursor=pointer]:
+          - paragraph [ref=e1078]: The Echo in the Static
+          - paragraph [ref=e1079]: Signal Corruptor [OR]
+          - generic [ref=e1080]:
+            - generic [ref=e1081]:
+              - paragraph [ref=e1082]: "[READY]"
+              - button [ref=e1083]:
+                - img [ref=e1084]
+              - button [ref=e1088]:
+                - img [ref=e1089]
+              - generic [ref=e1091]: 1x
+            - paragraph [ref=e1092]: 5m 30s
+      - button "The Redacted Covenant cover 90 The Redacted Covenant Chassis Echo [OR] [READY] 10m 14s" [ref=e1093]:
+        - button "The Redacted Covenant cover 90" [ref=e1094] [cursor=pointer]:
+          - img "The Redacted Covenant cover" [ref=e1097]
+          - generic [ref=e1099]: "90"
+        - button "The Redacted Covenant Chassis Echo [OR] [READY] 10m 14s" [ref=e1100] [cursor=pointer]:
+          - paragraph [ref=e1101]: The Redacted Covenant
+          - paragraph [ref=e1102]: Chassis Echo [OR]
+          - generic [ref=e1103]:
+            - generic [ref=e1104]:
+              - paragraph [ref=e1105]: "[READY]"
+              - button [ref=e1106]:
+                - img [ref=e1107]
+              - button [ref=e1111]:
+                - img [ref=e1112]
+            - paragraph [ref=e1114]: 10m 14s
+      - button "The Clockwork Wound cover 91 The Clockwork Wound Piston Halo [OR] [READY] 13m 49s" [ref=e1115]:
+        - button "The Clockwork Wound cover 91" [ref=e1116] [cursor=pointer]:
+          - img "The Clockwork Wound cover" [ref=e1119]
+          - generic [ref=e1121]: "91"
+        - button "The Clockwork Wound Piston Halo [OR] [READY] 13m 49s" [ref=e1122] [cursor=pointer]:
+          - paragraph [ref=e1123]: The Clockwork Wound
+          - paragraph [ref=e1124]: Piston Halo [OR]
+          - generic [ref=e1125]:
+            - generic [ref=e1126]:
+              - paragraph [ref=e1127]: "[READY]"
+              - button [ref=e1128]:
+                - img [ref=e1129]
+              - button [ref=e1133]:
+                - img [ref=e1134]
+            - paragraph [ref=e1136]: 13m 49s
+      - button "The Ghost in the Registry cover 92 The Ghost in the Registry Archival Rites [OR] [READY] 4m 42s" [ref=e1137]:
+        - button "The Ghost in the Registry cover 92" [ref=e1138] [cursor=pointer]:
+          - img "The Ghost in the Registry cover" [ref=e1141]
+          - generic [ref=e1143]: "92"
+        - button "The Ghost in the Registry Archival Rites [OR] [READY] 4m 42s" [ref=e1144] [cursor=pointer]:
+          - paragraph [ref=e1145]: The Ghost in the Registry
+          - paragraph [ref=e1146]: Archival Rites [OR]
+          - generic [ref=e1147]:
+            - generic [ref=e1148]:
+              - paragraph [ref=e1149]: "[READY]"
+              - button [ref=e1150]:
+                - img [ref=e1151]
+              - button [ref=e1155]:
+                - img [ref=e1156]
+            - paragraph [ref=e1158]: 4m 42s
+      - button "The Unreadable Protocol cover 93 The Unreadable Protocol Logic's Halo [OR] [READY] 6m 20s" [ref=e1159]:
+        - button "The Unreadable Protocol cover 93" [ref=e1160] [cursor=pointer]:
+          - img "The Unreadable Protocol cover" [ref=e1163]
+          - generic [ref=e1165]: "93"
+        - button "The Unreadable Protocol Logic's Halo [OR] [READY] 6m 20s" [ref=e1166] [cursor=pointer]:
+          - paragraph [ref=e1167]: The Unreadable Protocol
+          - paragraph [ref=e1168]: Logic's Halo [OR]
+          - generic [ref=e1169]:
+            - generic [ref=e1170]:
+              - paragraph [ref=e1171]: "[READY]"
+              - button [ref=e1172]:
+                - img [ref=e1173]
+              - button [ref=e1177]:
+                - img [ref=e1178]
+            - paragraph [ref=e1180]: 6m 20s
+      - button "The Null Manifest cover 94 The Null Manifest Vectr Plague [OR] [READY] 2m 42s" [ref=e1181]:
+        - button "The Null Manifest cover 94" [ref=e1182] [cursor=pointer]:
+          - img "The Null Manifest cover" [ref=e1185]
+          - generic [ref=e1187]: "94"
+        - button "The Null Manifest Vectr Plague [OR] [READY] 2m 42s" [ref=e1188] [cursor=pointer]:
+          - paragraph [ref=e1189]: The Null Manifest
+          - paragraph [ref=e1190]: Vectr Plague [OR]
+          - generic [ref=e1191]:
+            - generic [ref=e1192]:
+              - paragraph [ref=e1193]: "[READY]"
+              - button [ref=e1194]:
+                - img [ref=e1195]
+              - button [ref=e1199]:
+                - img [ref=e1200]
+            - paragraph [ref=e1202]: 2m 42s
+    - generic [ref=e1203]:
+      - generic [ref=e1205]: ──── >>> STEER ──── EPOCH 1 ────
+      - generic [ref=e1206]:
+        - button "Governor Override cover 37 Governor Override Coldline Process [OR] [READY] 1x 14m 0s" [ref=e1207]:
+          - button "Governor Override cover 37" [ref=e1208] [cursor=pointer]:
+            - img "Governor Override cover" [ref=e1211]
+            - generic [ref=e1213]: "37"
+          - button "Governor Override Coldline Process [OR] [READY] 1x 14m 0s" [ref=e1214] [cursor=pointer]:
+            - paragraph [ref=e1215]: Governor Override
+            - paragraph [ref=e1216]: Coldline Process [OR]
+            - generic [ref=e1217]:
+              - generic [ref=e1218]:
+                - paragraph [ref=e1219]: "[READY]"
+                - button [ref=e1220]:
+                  - img [ref=e1221]
+                - button [ref=e1225]:
+                  - img [ref=e1226]
+                - generic [ref=e1228]: 1x
+              - paragraph [ref=e1229]: 14m 0s
+        - button "Fractal Shell cover 38 Fractal Shell Terminal Velocity [OR] [READY] 2x 15m 23s" [ref=e1230]:
+          - button "Fractal Shell cover 38" [ref=e1231] [cursor=pointer]:
+            - img "Fractal Shell cover" [ref=e1234]
+            - generic [ref=e1236]: "38"
+          - button "Fractal Shell Terminal Velocity [OR] [READY] 2x 15m 23s" [ref=e1237] [cursor=pointer]:
+            - paragraph [ref=e1238]: Fractal Shell
+            - paragraph [ref=e1239]: Terminal Velocity [OR]
+            - generic [ref=e1240]:
+              - generic [ref=e1241]:
+                - paragraph [ref=e1242]: "[READY]"
+                - button [ref=e1243]:
+                  - img [ref=e1244]
+                - button [ref=e1248]:
+                  - img [ref=e1249]
+                - generic [ref=e1251]: 2x
+              - paragraph [ref=e1252]: 15m 23s
+        - button "Fist of Light cover 39 Fist of Light Shatter Protocol [OR] [READY] 1x 16m 58s" [ref=e1253]:
+          - button "Fist of Light cover 39" [ref=e1254] [cursor=pointer]:
+            - img "Fist of Light cover" [ref=e1257]
+            - generic [ref=e1259]: "39"
+          - button "Fist of Light Shatter Protocol [OR] [READY] 1x 16m 58s" [ref=e1260] [cursor=pointer]:
+            - paragraph [ref=e1261]: Fist of Light
+            - paragraph [ref=e1262]: Shatter Protocol [OR]
+            - generic [ref=e1263]:
+              - generic [ref=e1264]:
+                - paragraph [ref=e1265]: "[READY]"
+                - button [ref=e1266]:
+                  - img [ref=e1267]
+                - button [ref=e1271]:
+                  - img [ref=e1272]
+                - generic [ref=e1274]: 1x
+              - paragraph [ref=e1275]: 16m 58s
+        - button "Fractured, Screaming, Human cover 40 Fractured, Screaming, Human Fatal Surge [OR] [READY] 1x 18m 29s" [ref=e1276]:
+          - button "Fractured, Screaming, Human cover 40" [ref=e1277] [cursor=pointer]:
+            - img "Fractured, Screaming, Human cover" [ref=e1280]
+            - generic [ref=e1282]: "40"
+          - button "Fractured, Screaming, Human Fatal Surge [OR] [READY] 1x 18m 29s" [ref=e1283] [cursor=pointer]:
+            - paragraph [ref=e1284]: Fractured, Screaming, Human
+            - paragraph [ref=e1285]: Fatal Surge [OR]
+            - generic [ref=e1286]:
+              - generic [ref=e1287]:
+                - paragraph [ref=e1288]: "[READY]"
+                - button [ref=e1289]:
+                  - img [ref=e1290]
+                - button [ref=e1294]:
+                  - img [ref=e1295]
+                - generic [ref=e1297]: 1x
+              - paragraph [ref=e1298]: 18m 29s
+        - button "Chaotic Kiss cover 41 Chaotic Kiss Syntax Overload [OR] [READY] 1x 15m 52s" [ref=e1299]:
+          - button "Chaotic Kiss cover 41" [ref=e1300] [cursor=pointer]:
+            - img "Chaotic Kiss cover" [ref=e1303]
+            - generic [ref=e1305]: "41"
+          - button "Chaotic Kiss Syntax Overload [OR] [READY] 1x 15m 52s" [ref=e1306] [cursor=pointer]:
+            - paragraph [ref=e1307]: Chaotic Kiss
+            - paragraph [ref=e1308]: Syntax Overload [OR]
+            - generic [ref=e1309]:
+              - generic [ref=e1310]:
+                - paragraph [ref=e1311]: "[READY]"
+                - button [ref=e1312]:
+                  - img [ref=e1313]
+                - button [ref=e1317]:
+                  - img [ref=e1318]
+                - generic [ref=e1320]: 1x
+              - paragraph [ref=e1321]: 15m 52s
+        - button "Cathode Ray Kiss cover 42 Cathode Ray Kiss Plasma Cascade [OR] [READY] 1x 4m 55s" [ref=e1322]:
+          - button "Cathode Ray Kiss cover 42" [ref=e1323] [cursor=pointer]:
+            - img "Cathode Ray Kiss cover" [ref=e1326]
+            - generic [ref=e1328]: "42"
+          - button "Cathode Ray Kiss Plasma Cascade [OR] [READY] 1x 4m 55s" [ref=e1329] [cursor=pointer]:
+            - paragraph [ref=e1330]: Cathode Ray Kiss
+            - paragraph [ref=e1331]: Plasma Cascade [OR]
+            - generic [ref=e1332]:
+              - generic [ref=e1333]:
+                - paragraph [ref=e1334]: "[READY]"
+                - button [ref=e1335]:
+                  - img [ref=e1336]
+                - button [ref=e1340]:
+                  - img [ref=e1341]
+                - generic [ref=e1343]: 1x
+              - paragraph [ref=e1344]: 4m 55s
+        - button "Coolant Garden cover 43 Coolant Garden Riot Protocol [OR] [READY] 2m 39s" [ref=e1345]:
+          - button "Coolant Garden cover 43" [ref=e1346] [cursor=pointer]:
+            - img "Coolant Garden cover" [ref=e1349]
+            - generic [ref=e1351]: "43"
+          - button "Coolant Garden Riot Protocol [OR] [READY] 2m 39s" [ref=e1352] [cursor=pointer]:
+            - paragraph [ref=e1353]: Coolant Garden
+            - paragraph [ref=e1354]: Riot Protocol [OR]
+            - generic [ref=e1355]:
+              - generic [ref=e1356]:
+                - paragraph [ref=e1357]: "[READY]"
+                - button [ref=e1358]:
+                  - img [ref=e1359]
+                - button [ref=e1363]:
+                  - img [ref=e1364]
+              - paragraph [ref=e1366]: 2m 39s
+        - button "Sacrament of Grease cover 44 Sacrament of Grease Static Halo [OR] [READY] 2m 21s" [ref=e1367]:
+          - button "Sacrament of Grease cover 44" [ref=e1368] [cursor=pointer]:
+            - img "Sacrament of Grease cover" [ref=e1371]
+            - generic [ref=e1373]: "44"
+          - button "Sacrament of Grease Static Halo [OR] [READY] 2m 21s" [ref=e1374] [cursor=pointer]:
+            - paragraph [ref=e1375]: Sacrament of Grease
+            - paragraph [ref=e1376]: Static Halo [OR]
+            - generic [ref=e1377]:
+              - generic [ref=e1378]:
+                - paragraph [ref=e1379]: "[READY]"
+                - button [ref=e1380]:
+                  - img [ref=e1381]
+                - button [ref=e1385]:
+                  - img [ref=e1386]
+              - paragraph [ref=e1388]: 2m 21s
+        - button "The Glitch in the Gears cover 45 The Glitch in the Gears Fractal Protocol [OR] [READY] 2x 3m 23s" [ref=e1389]:
+          - button "The Glitch in the Gears cover 45" [ref=e1390] [cursor=pointer]:
+            - img "The Glitch in the Gears cover" [ref=e1393]
+            - generic [ref=e1395]: "45"
+          - button "The Glitch in the Gears Fractal Protocol [OR] [READY] 2x 3m 23s" [ref=e1396] [cursor=pointer]:
+            - paragraph [ref=e1397]: The Glitch in the Gears
+            - paragraph [ref=e1398]: Fractal Protocol [OR]
+            - generic [ref=e1399]:
+              - generic [ref=e1400]:
+                - paragraph [ref=e1401]: "[READY]"
+                - button [ref=e1402]:
+                  - img [ref=e1403]
+                - button [ref=e1407]:
+                  - img [ref=e1408]
+                - generic [ref=e1410]: 2x
+              - paragraph [ref=e1411]: 3m 23s
+        - button "Final Glitch Protocol cover 46 Final Glitch Protocol Sector Null [OR] [READY] 3x 2m 8s" [ref=e1412]:
+          - button "Final Glitch Protocol cover 46" [ref=e1413] [cursor=pointer]:
+            - img "Final Glitch Protocol cover" [ref=e1416]
+            - generic [ref=e1418]: "46"
+          - button "Final Glitch Protocol Sector Null [OR] [READY] 3x 2m 8s" [ref=e1419] [cursor=pointer]:
+            - paragraph [ref=e1420]: Final Glitch Protocol
+            - paragraph [ref=e1421]: Sector Null [OR]
+            - generic [ref=e1422]:
+              - generic [ref=e1423]:
+                - paragraph [ref=e1424]: "[READY]"
+                - button [ref=e1425]:
+                  - img [ref=e1426]
+                - button [ref=e1430]:
+                  - img [ref=e1431]
+                - generic [ref=e1433]: 3x
+              - paragraph [ref=e1434]: 2m 8s
+        - button "Fiberglass Seraph cover 47 Fiberglass Seraph Shattergrid [OR] [READY] 1x 2m 58s" [ref=e1435]:
+          - button "Fiberglass Seraph cover 47" [ref=e1436] [cursor=pointer]:
+            - img "Fiberglass Seraph cover" [ref=e1439]
+            - generic [ref=e1441]: "47"
+          - button "Fiberglass Seraph Shattergrid [OR] [READY] 1x 2m 58s" [ref=e1442] [cursor=pointer]:
+            - paragraph [ref=e1443]: Fiberglass Seraph
+            - paragraph [ref=e1444]: Shattergrid [OR]
+            - generic [ref=e1445]:
+              - generic [ref=e1446]:
+                - paragraph [ref=e1447]: "[READY]"
+                - button [ref=e1448]:
+                  - img [ref=e1449]
+                - button [ref=e1453]:
+                  - img [ref=e1454]
+                - generic [ref=e1456]: 1x
+              - paragraph [ref=e1457]: 2m 58s
+        - button "Breach In Quadrant Three cover 48 Breach In Quadrant Three Faultline Dagger [OR] [READY] 1x 3m 7s" [ref=e1458]:
+          - button "Breach In Quadrant Three cover 48" [ref=e1459] [cursor=pointer]:
+            - img "Breach In Quadrant Three cover" [ref=e1462]
+            - generic [ref=e1464]: "48"
+          - button "Breach In Quadrant Three Faultline Dagger [OR] [READY] 1x 3m 7s" [ref=e1465] [cursor=pointer]:
+            - paragraph [ref=e1466]: Breach In Quadrant Three
+            - paragraph [ref=e1467]: Faultline Dagger [OR]
+            - generic [ref=e1468]:
+              - generic [ref=e1469]:
+                - paragraph [ref=e1470]: "[READY]"
+                - button [ref=e1471]:
+                  - img [ref=e1472]
+                - button [ref=e1476]:
+                  - img [ref=e1477]
+                - generic [ref=e1479]: 1x
+              - paragraph [ref=e1480]: 3m 7s
+        - button "Ghost in the Grid cover 49 Ghost in the Grid Signal Scramble [OR] [READY] 4m 37s" [ref=e1481]:
+          - button "Ghost in the Grid cover 49" [ref=e1482] [cursor=pointer]:
+            - img "Ghost in the Grid cover" [ref=e1485]
+            - generic [ref=e1487]: "49"
+          - button "Ghost in the Grid Signal Scramble [OR] [READY] 4m 37s" [ref=e1488] [cursor=pointer]:
+            - paragraph [ref=e1489]: Ghost in the Grid
+            - paragraph [ref=e1490]: Signal Scramble [OR]
+            - generic [ref=e1491]:
+              - generic [ref=e1492]:
+                - paragraph [ref=e1493]: "[READY]"
+                - button [ref=e1494]:
+                  - img [ref=e1495]
+                - button [ref=e1499]:
+                  - img [ref=e1500]
+              - paragraph [ref=e1502]: 4m 37s
+        - button "Static Transmission cover 50 Static Transmission Circuit Bloom [OR] [READY] 6m 15s" [ref=e1503]:
+          - button "Static Transmission cover 50" [ref=e1504] [cursor=pointer]:
+            - img "Static Transmission cover" [ref=e1507]
+            - generic [ref=e1509]: "50"
+          - button "Static Transmission Circuit Bloom [OR] [READY] 6m 15s" [ref=e1510] [cursor=pointer]:
+            - paragraph [ref=e1511]: Static Transmission
+            - paragraph [ref=e1512]: Circuit Bloom [OR]
+            - generic [ref=e1513]:
+              - generic [ref=e1514]:
+                - paragraph [ref=e1515]: "[READY]"
+                - button [ref=e1516]:
+                  - img [ref=e1517]
+                - button [ref=e1521]:
+                  - img [ref=e1522]
+              - paragraph [ref=e1524]: 6m 15s
+    - generic [ref=e1525]:
+      - generic [ref=e1527]: ──── >>> STEER ──── EPOCH 0 ────
+      - generic [ref=e1528]:
+        - button "Ghost in the Machine cover 01 Ghost in the Machine Circuit Ghost [OR] [READY] 1x 6m 8s" [ref=e1529]:
+          - button "Ghost in the Machine cover 01" [ref=e1530] [cursor=pointer]:
+            - img "Ghost in the Machine cover" [ref=e1533]
+            - generic [ref=e1535]: "01"
+          - button "Ghost in the Machine Circuit Ghost [OR] [READY] 1x 6m 8s" [ref=e1536] [cursor=pointer]:
+            - paragraph [ref=e1537]: Ghost in the Machine
+            - paragraph [ref=e1538]: Circuit Ghost [OR]
+            - generic [ref=e1539]:
+              - generic [ref=e1540]:
+                - paragraph [ref=e1541]: "[READY]"
+                - button [ref=e1542]:
+                  - img [ref=e1543]
+                - button [ref=e1547]:
+                  - img [ref=e1548]
+                - generic [ref=e1550]: 1x
+              - paragraph [ref=e1551]: 6m 8s
+        - button "The Neon Grid cover 02 The Neon Grid Neon Grid [OR] [READY] 1x 7m 50s" [ref=e1552]:
+          - button "The Neon Grid cover 02" [ref=e1553] [cursor=pointer]:
+            - img "The Neon Grid cover" [ref=e1556]
+            - generic [ref=e1558]: "02"
+          - button "The Neon Grid Neon Grid [OR] [READY] 1x 7m 50s" [ref=e1559] [cursor=pointer]:
+            - paragraph [ref=e1560]: The Neon Grid
+            - paragraph [ref=e1561]: Neon Grid [OR]
+            - generic [ref=e1562]:
+              - generic [ref=e1563]:
+                - paragraph [ref=e1564]: "[READY]"
+                - button [ref=e1565]:
+                  - img [ref=e1566]
+                - button [ref=e1570]:
+                  - img [ref=e1571]
+                - generic [ref=e1573]: 1x
+              - paragraph [ref=e1574]: 7m 50s
+        - button "Silent Transfer cover 03 Silent Transfer Mirror Protocol [OR] [READY] 1x 9m 29s" [ref=e1575]:
+          - button "Silent Transfer cover 03" [ref=e1576] [cursor=pointer]:
+            - img "Silent Transfer cover" [ref=e1579]
+            - generic [ref=e1581]: "03"
+          - button "Silent Transfer Mirror Protocol [OR] [READY] 1x 9m 29s" [ref=e1582] [cursor=pointer]:
+            - paragraph [ref=e1583]: Silent Transfer
+            - paragraph [ref=e1584]: Mirror Protocol [OR]
+            - generic [ref=e1585]:
+              - generic [ref=e1586]:
+                - paragraph [ref=e1587]: "[READY]"
+                - button [ref=e1588]:
+                  - img [ref=e1589]
+                - button [ref=e1593]:
+                  - img [ref=e1594]
+                - generic [ref=e1596]: 1x
+              - paragraph [ref=e1597]: 9m 29s
+        - button "Concrete Serotonin cover 04 Concrete Serotonin Basement Signal [OR] [READY] 1x 11m 11s" [ref=e1598]:
+          - button "Concrete Serotonin cover 04" [ref=e1599] [cursor=pointer]:
+            - img "Concrete Serotonin cover" [ref=e1602]
+            - generic [ref=e1604]: "04"
+          - button "Concrete Serotonin Basement Signal [OR] [READY] 1x 11m 11s" [ref=e1605] [cursor=pointer]:
+            - paragraph [ref=e1606]: Concrete Serotonin
+            - paragraph [ref=e1607]: Basement Signal [OR]
+            - generic [ref=e1608]:
+              - generic [ref=e1609]:
+                - paragraph [ref=e1610]: "[READY]"
+                - button [ref=e1611]:
+                  - img [ref=e1612]
+                - button [ref=e1616]:
+                  - img [ref=e1617]
+                - generic [ref=e1619]: 1x
+              - paragraph [ref=e1620]: 11m 11s
+        - button "Deletion Notice cover 05 Deletion Notice Aether Collapse [OR] [READY] 12m 50s" [ref=e1621]:
+          - button "Deletion Notice cover 05" [ref=e1622] [cursor=pointer]:
+            - img "Deletion Notice cover" [ref=e1625]
+            - generic [ref=e1627]: "05"
+          - button "Deletion Notice Aether Collapse [OR] [READY] 12m 50s" [ref=e1628] [cursor=pointer]:
+            - paragraph [ref=e1629]: Deletion Notice
+            - paragraph [ref=e1630]: Aether Collapse [OR]
+            - generic [ref=e1631]:
+              - generic [ref=e1632]:
+                - paragraph [ref=e1633]: "[READY]"
+                - button [ref=e1634]:
+                  - img [ref=e1635]
+                - button [ref=e1639]:
+                  - img [ref=e1640]
+              - paragraph [ref=e1642]: 12m 50s
+        - button "Cracked Surface Tension cover 06 Cracked Surface Tension Rupture State [OR] [READY] 8m 30s" [ref=e1643]:
+          - button "Cracked Surface Tension cover 06" [ref=e1644] [cursor=pointer]:
+            - img "Cracked Surface Tension cover" [ref=e1647]
+            - generic [ref=e1649]: "06"
+          - button "Cracked Surface Tension Rupture State [OR] [READY] 8m 30s" [ref=e1650] [cursor=pointer]:
+            - paragraph [ref=e1651]: Cracked Surface Tension
+            - paragraph [ref=e1652]: Rupture State [OR]
+            - generic [ref=e1653]:
+              - generic [ref=e1654]:
+                - paragraph [ref=e1655]: "[READY]"
+                - button [ref=e1656]:
+                  - img [ref=e1657]
+                - button [ref=e1661]:
+                  - img [ref=e1662]
+              - paragraph [ref=e1664]: 8m 30s
+        - button "Accept The Feed cover 07 Accept The Feed Static Veil [OR] [READY] 6m 16s" [ref=e1665]:
+          - button "Accept The Feed cover 07" [ref=e1666] [cursor=pointer]:
+            - img "Accept The Feed cover" [ref=e1669]
+            - generic [ref=e1671]: "07"
+          - button "Accept The Feed Static Veil [OR] [READY] 6m 16s" [ref=e1672] [cursor=pointer]:
+            - paragraph [ref=e1673]: Accept The Feed
+            - paragraph [ref=e1674]: Static Veil [OR]
+            - generic [ref=e1675]:
+              - generic [ref=e1676]:
+                - paragraph [ref=e1677]: "[READY]"
+                - button [ref=e1678]:
+                  - img [ref=e1679]
+                - button [ref=e1683]:
+                  - img [ref=e1684]
+              - paragraph [ref=e1686]: 6m 16s
+        - button "Glitch In The Protocol cover 08 Glitch In The Protocol Gridlock Vector [OR] [READY] 3x 3m 57s" [ref=e1687]:
+          - button "Glitch In The Protocol cover 08" [ref=e1688] [cursor=pointer]:
+            - img "Glitch In The Protocol cover" [ref=e1691]
+            - generic [ref=e1693]: "08"
+          - button "Glitch In The Protocol Gridlock Vector [OR] [READY] 3x 3m 57s" [ref=e1694] [cursor=pointer]:
+            - paragraph [ref=e1695]: Glitch In The Protocol
+            - paragraph [ref=e1696]: Gridlock Vector [OR]
+            - generic [ref=e1697]:
+              - generic [ref=e1698]:
+                - paragraph [ref=e1699]: "[READY]"
+                - button [ref=e1700]:
+                  - img [ref=e1701]
+                - button [ref=e1705]:
+                  - img [ref=e1706]
+                - generic [ref=e1708]: 3x
+              - paragraph [ref=e1709]: 3m 57s
+        - button "Anomalous Purchase Order cover 09 Anomalous Purchase Order Vault Seven [OR] [READY] 1x 2m 30s" [ref=e1710]:
+          - button "Anomalous Purchase Order cover 09" [ref=e1711] [cursor=pointer]:
+            - img "Anomalous Purchase Order cover" [ref=e1714]
+            - generic [ref=e1716]: "09"
+          - button "Anomalous Purchase Order Vault Seven [OR] [READY] 1x 2m 30s" [ref=e1717] [cursor=pointer]:
+            - paragraph [ref=e1718]: Anomalous Purchase Order
+            - paragraph [ref=e1719]: Vault Seven [OR]
+            - generic [ref=e1720]:
+              - generic [ref=e1721]:
+                - paragraph [ref=e1722]: "[READY]"
+                - button [ref=e1723]:
+                  - img [ref=e1724]
+                - button [ref=e1728]:
+                  - img [ref=e1729]
+                - generic [ref=e1731]: 1x
+              - paragraph [ref=e1732]: 2m 30s
+        - button "Chassis Scream cover 10 Chassis Scream Weld Fault [OR] [READY] 1x 5m 41s" [ref=e1733]:
+          - button "Chassis Scream cover 10" [ref=e1734] [cursor=pointer]:
+            - img "Chassis Scream cover" [ref=e1737]
+            - generic [ref=e1739]: "10"
+          - button "Chassis Scream Weld Fault [OR] [READY] 1x 5m 41s" [ref=e1740] [cursor=pointer]:
+            - paragraph [ref=e1741]: Chassis Scream
+            - paragraph [ref=e1742]: Weld Fault [OR]
+            - generic [ref=e1743]:
+              - generic [ref=e1744]:
+                - paragraph [ref=e1745]: "[READY]"
+                - button [ref=e1746]:
+                  - img [ref=e1747]
+                - button [ref=e1751]:
+                  - img [ref=e1752]
+                - generic [ref=e1754]: 1x
+              - paragraph [ref=e1755]: 5m 41s
+        - button "Run The Protocol cover 11 Run The Protocol Tracer Fragment [OR] [READY] 3m 59s" [ref=e1756]:
+          - button "Run The Protocol cover 11" [ref=e1757] [cursor=pointer]:
+            - img "Run The Protocol cover" [ref=e1760]
+            - generic [ref=e1762]: "11"
+          - button "Run The Protocol Tracer Fragment [OR] [READY] 3m 59s" [ref=e1763] [cursor=pointer]:
+            - paragraph [ref=e1764]: Run The Protocol
+            - paragraph [ref=e1765]: Tracer Fragment [OR]
+            - generic [ref=e1766]:
+              - generic [ref=e1767]:
+                - paragraph [ref=e1768]: "[READY]"
+                - button [ref=e1769]:
+                  - img [ref=e1770]
+                - button [ref=e1774]:
+                  - img [ref=e1775]
+              - paragraph [ref=e1777]: 3m 59s
+        - button "Redline Protocol cover 12 Redline Protocol Fault Injection [OR] [READY] 7m 14s" [ref=e1778]:
+          - button "Redline Protocol cover 12" [ref=e1779] [cursor=pointer]:
+            - img "Redline Protocol cover" [ref=e1782]
+            - generic [ref=e1784]: "12"
+          - button "Redline Protocol Fault Injection [OR] [READY] 7m 14s" [ref=e1785] [cursor=pointer]:
+            - paragraph [ref=e1786]: Redline Protocol
+            - paragraph [ref=e1787]: Fault Injection [OR]
+            - generic [ref=e1788]:
+              - generic [ref=e1789]:
+                - paragraph [ref=e1790]: "[READY]"
+                - button [ref=e1791]:
+                  - img [ref=e1792]
+                - button [ref=e1796]:
+                  - img [ref=e1797]
+              - paragraph [ref=e1799]: 7m 14s
+        - button "Gutter Current cover 13 Gutter Current Rotor Riot [OR] [READY] 4x 2m 14s" [ref=e1800]:
+          - button "Gutter Current cover 13" [ref=e1801] [cursor=pointer]:
+            - img "Gutter Current cover" [ref=e1804]
+            - generic [ref=e1806]: "13"
+          - button "Gutter Current Rotor Riot [OR] [READY] 4x 2m 14s" [ref=e1807] [cursor=pointer]:
+            - paragraph [ref=e1808]: Gutter Current
+            - paragraph [ref=e1809]: Rotor Riot [OR]
+            - generic [ref=e1810]:
+              - generic [ref=e1811]:
+                - paragraph [ref=e1812]: "[READY]"
+                - button [ref=e1813]:
+                  - img [ref=e1814]
+                - button [ref=e1818]:
+                  - img [ref=e1819]
+                - generic [ref=e1821]: 4x
+              - paragraph [ref=e1822]: 2m 14s
+        - button "Ascension Syntax cover 14 Ascension Syntax Particle Cascade [OR] [READY] 1x 4m 24s" [ref=e1823]:
+          - button "Ascension Syntax cover 14" [ref=e1824] [cursor=pointer]:
+            - img "Ascension Syntax cover" [ref=e1827]
+            - generic [ref=e1829]: "14"
+          - button "Ascension Syntax Particle Cascade [OR] [READY] 1x 4m 24s" [ref=e1830] [cursor=pointer]:
+            - paragraph [ref=e1831]: Ascension Syntax
+            - paragraph [ref=e1832]: Particle Cascade [OR]
+            - generic [ref=e1833]:
+              - generic [ref=e1834]:
+                - paragraph [ref=e1835]: "[READY]"
+                - button [ref=e1836]:
+                  - img [ref=e1837]
+                - button [ref=e1841]:
+                  - img [ref=e1842]
+                - generic [ref=e1844]: 1x
+              - paragraph [ref=e1845]: 4m 24s
+        - button "Final Seed cover 15 Final Seed Bit Rot Protocol [OR] [READY] 2m 4s" [ref=e1846]:
+          - button "Final Seed cover 15" [ref=e1847] [cursor=pointer]:
+            - img "Final Seed cover" [ref=e1850]
+            - generic [ref=e1852]: "15"
+          - button "Final Seed Bit Rot Protocol [OR] [READY] 2m 4s" [ref=e1853] [cursor=pointer]:
+            - paragraph [ref=e1854]: Final Seed
+            - paragraph [ref=e1855]: Bit Rot Protocol [OR]
+            - generic [ref=e1856]:
+              - generic [ref=e1857]:
+                - paragraph [ref=e1858]: "[READY]"
+                - button [ref=e1859]:
+                  - img [ref=e1860]
+                - button [ref=e1864]:
+                  - img [ref=e1865]
+              - paragraph [ref=e1867]: 2m 4s
+        - button "Bloom Fracture cover 16 Bloom Fracture Void Link [OR] [READY] 2m 11s" [ref=e1868]:
+          - button "Bloom Fracture cover 16" [ref=e1869] [cursor=pointer]:
+            - img "Bloom Fracture cover" [ref=e1872]
+            - generic [ref=e1874]: "16"
+          - button "Bloom Fracture Void Link [OR] [READY] 2m 11s" [ref=e1875] [cursor=pointer]:
+            - paragraph [ref=e1876]: Bloom Fracture
+            - paragraph [ref=e1877]: Void Link [OR]
+            - generic [ref=e1878]:
+              - generic [ref=e1879]:
+                - paragraph [ref=e1880]: "[READY]"
+                - button [ref=e1881]:
+                  - img [ref=e1882]
+                - button [ref=e1886]:
+                  - img [ref=e1887]
+              - paragraph [ref=e1889]: 2m 11s
+        - button "Flesh Algorithm cover 17 Flesh Algorithm Glitch Halo [OR] [READY] 3m 49s" [ref=e1890]:
+          - button "Flesh Algorithm cover 17" [ref=e1891] [cursor=pointer]:
+            - img "Flesh Algorithm cover" [ref=e1894]
+            - generic [ref=e1896]: "17"
+          - button "Flesh Algorithm Glitch Halo [OR] [READY] 3m 49s" [ref=e1897] [cursor=pointer]:
+            - paragraph [ref=e1898]: Flesh Algorithm
+            - paragraph [ref=e1899]: Glitch Halo [OR]
+            - generic [ref=e1900]:
+              - generic [ref=e1901]:
+                - paragraph [ref=e1902]: "[READY]"
+                - button [ref=e1903]:
+                  - img [ref=e1904]
+                - button [ref=e1908]:
+                  - img [ref=e1909]
+              - paragraph [ref=e1911]: 3m 49s
+        - button "Erasure Protocol cover 18 Erasure Protocol Void Syntax [OR] [READY] 5m 29s" [ref=e1912]:
+          - button "Erasure Protocol cover 18" [ref=e1913] [cursor=pointer]:
+            - img "Erasure Protocol cover" [ref=e1916]
+            - generic [ref=e1918]: "18"
+          - button "Erasure Protocol Void Syntax [OR] [READY] 5m 29s" [ref=e1919] [cursor=pointer]:
+            - paragraph [ref=e1920]: Erasure Protocol
+            - paragraph [ref=e1921]: Void Syntax [OR]
+            - generic [ref=e1922]:
+              - generic [ref=e1923]:
+                - paragraph [ref=e1924]: "[READY]"
+                - button [ref=e1925]:
+                  - img [ref=e1926]
+                - button [ref=e1930]:
+                  - img [ref=e1931]
+              - paragraph [ref=e1933]: 5m 29s
+        - button "The Unseen Weight cover 19 The Unseen Weight Halo Collapse [OR] [READY] 1x 3m 11s" [ref=e1934]:
+          - button "The Unseen Weight cover 19" [ref=e1935] [cursor=pointer]:
+            - img "The Unseen Weight cover" [ref=e1938]
+            - generic [ref=e1940]: "19"
+          - button "The Unseen Weight Halo Collapse [OR] [READY] 1x 3m 11s" [ref=e1941] [cursor=pointer]:
+            - paragraph [ref=e1942]: The Unseen Weight
+            - paragraph [ref=e1943]: Halo Collapse [OR]
+            - generic [ref=e1944]:
+              - generic [ref=e1945]:
+                - paragraph [ref=e1946]: "[READY]"
+                - button [ref=e1947]:
+                  - img [ref=e1948]
+                - button [ref=e1952]:
+                  - img [ref=e1953]
+                - generic [ref=e1955]: 1x
+              - paragraph [ref=e1956]: 3m 11s
+        - button "The Last Frequency cover 20 The Last Frequency Signal Collapse [OR] [READY] 3m 59s" [ref=e1957]:
+          - button "The Last Frequency cover 20" [ref=e1958] [cursor=pointer]:
+            - img "The Last Frequency cover" [ref=e1961]
+            - generic [ref=e1963]: "20"
+          - button "The Last Frequency Signal Collapse [OR] [READY] 3m 59s" [ref=e1964] [cursor=pointer]:
+            - paragraph [ref=e1965]: The Last Frequency
+            - paragraph [ref=e1966]: Signal Collapse [OR]
+            - generic [ref=e1967]:
+              - generic [ref=e1968]:
+                - paragraph [ref=e1969]: "[READY]"
+                - button [ref=e1970]:
+                  - img [ref=e1971]
+                - button [ref=e1975]:
+                  - img [ref=e1976]
+              - paragraph [ref=e1978]: 3m 59s
+        - button "Thermal Ghost cover 21 Thermal Ghost Hex Codex [OR] [READY] 1x 2m 17s" [ref=e1979]:
+          - button "Thermal Ghost cover 21" [ref=e1980] [cursor=pointer]:
+            - img "Thermal Ghost cover" [ref=e1983]
+            - generic [ref=e1985]: "21"
+          - button "Thermal Ghost Hex Codex [OR] [READY] 1x 2m 17s" [ref=e1986] [cursor=pointer]:
+            - paragraph [ref=e1987]: Thermal Ghost
+            - paragraph [ref=e1988]: Hex Codex [OR]
+            - generic [ref=e1989]:
+              - generic [ref=e1990]:
+                - paragraph [ref=e1991]: "[READY]"
+                - button [ref=e1992]:
+                  - img [ref=e1993]
+                - button [ref=e1997]:
+                  - img [ref=e1998]
+                - generic [ref=e2000]: 1x
+              - paragraph [ref=e2001]: 2m 17s
+        - button "Bleach Protocol cover 22 Bleach Protocol Circuit Scrub [OR] [READY] 5x 5m 38s" [ref=e2002]:
+          - button "Bleach Protocol cover 22" [ref=e2003] [cursor=pointer]:
+            - img "Bleach Protocol cover" [ref=e2006]
+            - generic [ref=e2008]: "22"
+          - button "Bleach Protocol Circuit Scrub [OR] [READY] 5x 5m 38s" [ref=e2009] [cursor=pointer]:
+            - paragraph [ref=e2010]: Bleach Protocol
+            - paragraph [ref=e2011]: Circuit Scrub [OR]
+            - generic [ref=e2012]:
+              - generic [ref=e2013]:
+                - paragraph [ref=e2014]: "[READY]"
+                - button [ref=e2015]:
+                  - img [ref=e2016]
+                - button [ref=e2020]:
+                  - img [ref=e2021]
+                - generic [ref=e2023]: 5x
+              - paragraph [ref=e2024]: 5m 38s
+        - button "Static Apology cover 23 Static Apology Circuit Memory [OR] [READY] 1x 7m 15s" [ref=e2025]:
+          - button "Static Apology cover 23" [ref=e2026] [cursor=pointer]:
+            - img "Static Apology cover" [ref=e2029]
+            - generic [ref=e2031]: "23"
+          - button "Static Apology Circuit Memory [OR] [READY] 1x 7m 15s" [ref=e2032] [cursor=pointer]:
+            - paragraph [ref=e2033]: Static Apology
+            - paragraph [ref=e2034]: Circuit Memory [OR]
+            - generic [ref=e2035]:
+              - generic [ref=e2036]:
+                - paragraph [ref=e2037]: "[READY]"
+                - button [ref=e2038]:
+                  - img [ref=e2039]
+                - button [ref=e2043]:
+                  - img [ref=e2044]
+                - generic [ref=e2046]: 1x
+              - paragraph [ref=e2047]: 7m 15s
+        - button "Send Me A Pulse cover 24 Send Me A Pulse Pulse Static [OR] [READY] 1x 10m 33s" [ref=e2048]:
+          - button "Send Me A Pulse cover 24" [ref=e2049] [cursor=pointer]:
+            - img "Send Me A Pulse cover" [ref=e2052]
+            - generic [ref=e2054]: "24"
+          - button "Send Me A Pulse Pulse Static [OR] [READY] 1x 10m 33s" [ref=e2055] [cursor=pointer]:
+            - paragraph [ref=e2056]: Send Me A Pulse
+            - paragraph [ref=e2057]: Pulse Static [OR]
+            - generic [ref=e2058]:
+              - generic [ref=e2059]:
+                - paragraph [ref=e2060]: "[READY]"
+                - button [ref=e2061]:
+                  - img [ref=e2062]
+                - button [ref=e2066]:
+                  - img [ref=e2067]
+                - generic [ref=e2069]: 1x
+              - paragraph [ref=e2070]: 10m 33s
+        - button "Contamination Signature cover 25 Contamination Signature Mirrored Logic [OR] [READY] 1x 4m 59s" [ref=e2071]:
+          - button "Contamination Signature cover 25" [ref=e2072] [cursor=pointer]:
+            - img "Contamination Signature cover" [ref=e2075]
+            - generic [ref=e2077]: "25"
+          - button "Contamination Signature Mirrored Logic [OR] [READY] 1x 4m 59s" [ref=e2078] [cursor=pointer]:
+            - paragraph [ref=e2079]: Contamination Signature
+            - paragraph [ref=e2080]: Mirrored Logic [OR]
+            - generic [ref=e2081]:
+              - generic [ref=e2082]:
+                - paragraph [ref=e2083]: "[READY]"
+                - button [ref=e2084]:
+                  - img [ref=e2085]
+                - button [ref=e2089]:
+                  - img [ref=e2090]
+                - generic [ref=e2092]: 1x
+              - paragraph [ref=e2093]: 4m 59s
+        - button "Killswitch Protocol cover 26 Killswitch Protocol Terminal Overdrive [OR] [READY] 1x 8m 16s" [ref=e2094]:
+          - button "Killswitch Protocol cover 26" [ref=e2095] [cursor=pointer]:
+            - img "Killswitch Protocol cover" [ref=e2098]
+            - generic [ref=e2100]: "26"
+          - button "Killswitch Protocol Terminal Overdrive [OR] [READY] 1x 8m 16s" [ref=e2101] [cursor=pointer]:
+            - paragraph [ref=e2102]: Killswitch Protocol
+            - paragraph [ref=e2103]: Terminal Overdrive [OR]
+            - generic [ref=e2104]:
+              - generic [ref=e2105]:
+                - paragraph [ref=e2106]: "[READY]"
+                - button [ref=e2107]:
+                  - img [ref=e2108]
+                - button [ref=e2112]:
+                  - img [ref=e2113]
+                - generic [ref=e2115]: 1x
+              - paragraph [ref=e2116]: 8m 16s
+        - button "Terminal Velocity cover 27 Terminal Velocity Signal Collapse [OR] [READY] 1x 6m 2s" [ref=e2117]:
+          - button "Terminal Velocity cover 27" [ref=e2118] [cursor=pointer]:
+            - img "Terminal Velocity cover" [ref=e2121]
+            - generic [ref=e2123]: "27"
+          - button "Terminal Velocity Signal Collapse [OR] [READY] 1x 6m 2s" [ref=e2124] [cursor=pointer]:
+            - paragraph [ref=e2125]: Terminal Velocity
+            - paragraph [ref=e2126]: Signal Collapse [OR]
+            - generic [ref=e2127]:
+              - generic [ref=e2128]:
+                - paragraph [ref=e2129]: "[READY]"
+                - button [ref=e2130]:
+                  - img [ref=e2131]
+                - button [ref=e2135]:
+                  - img [ref=e2136]
+                - generic [ref=e2138]: 1x
+              - paragraph [ref=e2139]: 6m 2s
+        - button "Fiber-Optic Angel cover 28 Fiber-Optic Angel Neon Echo [OR] [READY] 1x 3m 39s" [ref=e2140]:
+          - button "Fiber-Optic Angel cover 28" [ref=e2141] [cursor=pointer]:
+            - img "Fiber-Optic Angel cover" [ref=e2144]
+            - generic [ref=e2146]: "28"
+          - button "Fiber-Optic Angel Neon Echo [OR] [READY] 1x 3m 39s" [ref=e2147] [cursor=pointer]:
+            - paragraph [ref=e2148]: Fiber-Optic Angel
+            - paragraph [ref=e2149]: Neon Echo [OR]
+            - generic [ref=e2150]:
+              - generic [ref=e2151]:
+                - paragraph [ref=e2152]: "[READY]"
+                - button [ref=e2153]:
+                  - img [ref=e2154]
+                - button [ref=e2158]:
+                  - img [ref=e2159]
+                - generic [ref=e2161]: 1x
+              - paragraph [ref=e2162]: 3m 39s
+        - button "Magnetic Ghost cover 29 Magnetic Ghost Circuit Hymn [OR] [READY] 1x 2m 35s" [ref=e2163]:
+          - button "Magnetic Ghost cover 29" [ref=e2164] [cursor=pointer]:
+            - img "Magnetic Ghost cover" [ref=e2167]
+            - generic [ref=e2169]: "29"
+          - button "Magnetic Ghost Circuit Hymn [OR] [READY] 1x 2m 35s" [ref=e2170] [cursor=pointer]:
+            - paragraph [ref=e2171]: Magnetic Ghost
+            - paragraph [ref=e2172]: Circuit Hymn [OR]
+            - generic [ref=e2173]:
+              - generic [ref=e2174]:
+                - paragraph [ref=e2175]: "[READY]"
+                - button [ref=e2176]:
+                  - img [ref=e2177]
+                - button [ref=e2181]:
+                  - img [ref=e2182]
+                - generic [ref=e2184]: 1x
+              - paragraph [ref=e2185]: 2m 35s
+        - button "Static Salvation cover 30 Static Salvation Sector Collapse [OR] [READY] 3m 36s" [ref=e2186]:
+          - button "Static Salvation cover 30" [ref=e2187] [cursor=pointer]:
+            - img "Static Salvation cover" [ref=e2190]
+            - generic [ref=e2192]: "30"
+          - button "Static Salvation Sector Collapse [OR] [READY] 3m 36s" [ref=e2193] [cursor=pointer]:
+            - paragraph [ref=e2194]: Static Salvation
+            - paragraph [ref=e2195]: Sector Collapse [OR]
+            - generic [ref=e2196]:
+              - generic [ref=e2197]:
+                - paragraph [ref=e2198]: "[READY]"
+                - button [ref=e2199]:
+                  - img [ref=e2200]
+                - button [ref=e2204]:
+                  - img [ref=e2205]
+              - paragraph [ref=e2207]: 3m 36s
+        - button "Cathode Ray Kiss cover 31 Cathode Ray Kiss Dataspike Riot [OR] [READY] 1x 5m 16s" [ref=e2208]:
+          - button "Cathode Ray Kiss cover 31" [ref=e2209] [cursor=pointer]:
+            - img "Cathode Ray Kiss cover" [ref=e2212]
+            - generic [ref=e2214]: "31"
+          - button "Cathode Ray Kiss Dataspike Riot [OR] [READY] 1x 5m 16s" [ref=e2215] [cursor=pointer]:
+            - paragraph [ref=e2216]: Cathode Ray Kiss
+            - paragraph [ref=e2217]: Dataspike Riot [OR]
+            - generic [ref=e2218]:
+              - generic [ref=e2219]:
+                - paragraph [ref=e2220]: "[READY]"
+                - button [ref=e2221]:
+                  - img [ref=e2222]
+                - button [ref=e2226]:
+                  - img [ref=e2227]
+                - generic [ref=e2229]: 1x
+              - paragraph [ref=e2230]: 5m 16s
+        - button "Skeleton Key cover 32 Skeleton Key The Fractal Core [OR] [READY] 1x 6m 57s" [ref=e2231]:
+          - button "Skeleton Key cover 32" [ref=e2232] [cursor=pointer]:
+            - img "Skeleton Key cover" [ref=e2235]
+            - generic [ref=e2237]: "32"
+          - button "Skeleton Key The Fractal Core [OR] [READY] 1x 6m 57s" [ref=e2238] [cursor=pointer]:
+            - paragraph [ref=e2239]: Skeleton Key
+            - paragraph [ref=e2240]: The Fractal Core [OR]
+            - generic [ref=e2241]:
+              - generic [ref=e2242]:
+                - paragraph [ref=e2243]: "[READY]"
+                - button [ref=e2244]:
+                  - img [ref=e2245]
+                - button [ref=e2249]:
+                  - img [ref=e2250]
+                - generic [ref=e2252]: 1x
+              - paragraph [ref=e2253]: 6m 57s
+        - button "Bloom of Corruption cover 33 Bloom of Corruption Stasis Loop [OR] [READY] 7x 8m 37s" [ref=e2254]:
+          - button "Bloom of Corruption cover 33" [ref=e2255] [cursor=pointer]:
+            - img "Bloom of Corruption cover" [ref=e2258]
+            - generic [ref=e2260]: "33"
+          - button "Bloom of Corruption Stasis Loop [OR] [READY] 7x 8m 37s" [ref=e2261] [cursor=pointer]:
+            - paragraph [ref=e2262]: Bloom of Corruption
+            - paragraph [ref=e2263]: Stasis Loop [OR]
+            - generic [ref=e2264]:
+              - generic [ref=e2265]:
+                - paragraph [ref=e2266]: "[READY]"
+                - button [ref=e2267]:
+                  - img [ref=e2268]
+                - button [ref=e2272]:
+                  - img [ref=e2273]
+                - generic [ref=e2275]: 7x
+              - paragraph [ref=e2276]: 8m 37s
+        - button "Girder Bloom cover 34 Girder Bloom Bleed Voltage [OR] [READY] 10m 18s" [ref=e2277]:
+          - button "Girder Bloom cover 34" [ref=e2278] [cursor=pointer]:
+            - img "Girder Bloom cover" [ref=e2281]
+            - generic [ref=e2283]: "34"
+          - button "Girder Bloom Bleed Voltage [OR] [READY] 10m 18s" [ref=e2284] [cursor=pointer]:
+            - paragraph [ref=e2285]: Girder Bloom
+            - paragraph [ref=e2286]: Bleed Voltage [OR]
+            - generic [ref=e2287]:
+              - generic [ref=e2288]:
+                - paragraph [ref=e2289]: "[READY]"
+                - button [ref=e2290]:
+                  - img [ref=e2291]
+                - button [ref=e2295]:
+                  - img [ref=e2296]
+              - paragraph [ref=e2298]: 10m 18s
+        - button "Neon Gutter Communion cover 35 Neon Gutter Communion Binary Rites [OR] [READY] 19m 10s" [ref=e2299]:
+          - button "Neon Gutter Communion cover 35" [ref=e2300] [cursor=pointer]:
+            - img "Neon Gutter Communion cover" [ref=e2303]
+            - generic [ref=e2305]: "35"
+          - button "Neon Gutter Communion Binary Rites [OR] [READY] 19m 10s" [ref=e2306] [cursor=pointer]:
+            - paragraph [ref=e2307]: Neon Gutter Communion
+            - paragraph [ref=e2308]: Binary Rites [OR]
+            - generic [ref=e2309]:
+              - generic [ref=e2310]:
+                - paragraph [ref=e2311]: "[READY]"
+                - button [ref=e2312]:
+                  - img [ref=e2313]
+                - button [ref=e2317]:
+                  - img [ref=e2318]
+              - paragraph [ref=e2320]: 19m 10s
+        - button "Final Decryption cover 36 Final Decryption Compile Override [OR] [READY] 20m 51s" [ref=e2321]:
+          - button "Final Decryption cover 36" [ref=e2322] [cursor=pointer]:
+            - img "Final Decryption cover" [ref=e2325]
+            - generic [ref=e2327]: "36"
+          - button "Final Decryption Compile Override [OR] [READY] 20m 51s" [ref=e2328] [cursor=pointer]:
+            - paragraph [ref=e2329]: Final Decryption
+            - paragraph [ref=e2330]: Compile Override [OR]
+            - generic [ref=e2331]:
+              - generic [ref=e2332]:
+                - paragraph [ref=e2333]: "[READY]"
+                - button [ref=e2334]:
+                  - img [ref=e2335]
+                - button [ref=e2339]:
+                  - img [ref=e2340]
+              - paragraph [ref=e2342]: 20m 51s
+    - status [ref=e2343]
+  - contentinfo [ref=e2344]:
+    - generic [ref=e2345]:
+      - generic [ref=e2346]: INFINITUNE V1.0 // INFINITE GENERATIVE MUSIC
+      - generic [ref=e2347]:
+        - generic [ref=e2348]: "LLM:"
+        - generic [ref=e2350]: "IMG:"
+        - generic [ref=e2352]: "AUD:"
+      - generic [ref=e2354]:
+        - img [ref=e2355] [cursor=pointer]
+        - text: 94 TRACKS // 94 READY
+      - generic [ref=e2361]: "[LIVE]"

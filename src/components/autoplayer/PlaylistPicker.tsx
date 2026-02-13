@@ -1,5 +1,5 @@
-import { useQuery } from "convex/react";
-import { Search, X } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import { Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { api } from "../../../convex/_generated/api";
@@ -11,7 +11,9 @@ interface PlaylistPickerProps {
 
 export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 	const playlists = useQuery(api.playlists.listAll);
+	const removePlaylist = useMutation(api.playlists.remove);
 	const [search, setSearch] = useState("");
+	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
 	const filtered = useMemo(() => {
 		if (!playlists) return [];
@@ -83,53 +85,89 @@ export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 						</div>
 					) : (
 						filtered.map((p) => (
-							<button
-								type="button"
+							<div
 								key={p._id}
-								className="w-full px-4 py-3 flex items-center justify-between hover:bg-white/5 transition-colors text-left"
-								onClick={() => {
-									if (p.playlistKey) {
-										onSelect(p.playlistKey);
-									}
-								}}
-								disabled={!p.playlistKey}
+								className="flex items-center hover:bg-white/5 transition-colors"
 							>
-								<div className="min-w-0 flex-1">
-									<p className="text-sm font-black uppercase text-white/80 truncate">
-										{p.name}
-									</p>
-									<div className="flex items-center gap-2 mt-0.5">
-										<span className="text-[10px] uppercase tracking-wider text-white/30">
-											{p.llmProvider.toUpperCase()} / {p.llmModel.toUpperCase()}
-										</span>
-										<span className="text-[10px] uppercase text-white/20">
-											| {p.songsGenerated} TRACKS
-										</span>
+								<button
+									type="button"
+									className="flex-1 px-4 py-3 flex items-center justify-between text-left min-w-0"
+									onClick={() => {
+										if (p.playlistKey) {
+											onSelect(p.playlistKey);
+										}
+									}}
+									disabled={!p.playlistKey}
+								>
+									<div className="min-w-0 flex-1">
+										<p className="text-sm font-black uppercase text-white/80 truncate">
+											{p.name}
+										</p>
+										<div className="flex items-center gap-2 mt-0.5">
+											<span className="text-[10px] uppercase tracking-wider text-white/30">
+												{p.llmProvider.toUpperCase()} /{" "}
+												{p.llmModel.toUpperCase()}
+											</span>
+											<span className="text-[10px] uppercase text-white/20">
+												| {p.songsGenerated} TRACKS
+											</span>
+										</div>
 									</div>
-								</div>
-								<div className="flex items-center gap-2 shrink-0 ml-3">
-									<span
-										className={`border px-1.5 py-0.5 text-[10px] font-black uppercase ${
-											p.mode === "oneshot"
-												? "border-yellow-500/40 text-yellow-500/80"
-												: "border-white/20 text-white/40"
-										}`}
-									>
-										{p.mode === "oneshot" ? "ONESHOT" : "ENDLESS"}
-									</span>
-									<span
-										className={`border px-1.5 py-0.5 text-[10px] font-black uppercase ${
-											p.status === "active"
-												? "border-green-500/40 text-green-500/80"
-												: p.status === "closing"
+									<div className="flex items-center gap-2 shrink-0 ml-3">
+										<span
+											className={`border px-1.5 py-0.5 text-[10px] font-black uppercase ${
+												p.mode === "oneshot"
 													? "border-yellow-500/40 text-yellow-500/80"
 													: "border-white/20 text-white/40"
-										}`}
+											}`}
+										>
+											{p.mode === "oneshot" ? "ONESHOT" : "ENDLESS"}
+										</span>
+										<span
+											className={`border px-1.5 py-0.5 text-[10px] font-black uppercase ${
+												p.status === "active"
+													? "border-green-500/40 text-green-500/80"
+													: p.status === "closing"
+														? "border-yellow-500/40 text-yellow-500/80"
+														: "border-white/20 text-white/40"
+											}`}
+										>
+											{p.status.toUpperCase()}
+										</span>
+									</div>
+								</button>
+								{/* Delete button */}
+								{confirmDeleteId === p._id ? (
+									<div className="flex items-center gap-1 pr-3 shrink-0">
+										<button
+											type="button"
+											className="px-2 py-1 text-[10px] font-black uppercase bg-red-500 text-white hover:bg-red-400 transition-colors"
+											onClick={() => {
+												removePlaylist({ id: p._id });
+												setConfirmDeleteId(null);
+											}}
+										>
+											DELETE
+										</button>
+										<button
+											type="button"
+											className="px-2 py-1 text-[10px] font-black uppercase text-white/40 hover:text-white/60 transition-colors"
+											onClick={() => setConfirmDeleteId(null)}
+										>
+											CANCEL
+										</button>
+									</div>
+								) : (
+									<button
+										type="button"
+										className="pr-3 pl-1 py-3 text-white/15 hover:text-red-500 transition-colors shrink-0"
+										onClick={() => setConfirmDeleteId(p._id)}
+										title="Remove playlist"
 									>
-										{p.status.toUpperCase()}
-									</span>
-								</div>
-							</button>
+										<Trash2 className="h-3.5 w-3.5" />
+									</button>
+								)}
+							</div>
 						))
 					)}
 				</div>

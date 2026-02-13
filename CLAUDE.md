@@ -9,10 +9,12 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 ## Commands
 
 ```bash
-# Development (all three needed simultaneously)
-pnpm dev              # Vite dev server on :3000
+# Development (all needed simultaneously)
+pnpm dev:all          # All four processes at once (recommended)
+pnpm dev              # Vite dev server on :5173
 npx convex dev        # Convex backend (real-time DB)
 pnpm worker           # Background song generation worker
+pnpm room-server      # Room server on :5174 (multi-device playback)
 
 # Quality
 pnpm check            # Biome lint + format
@@ -42,6 +44,16 @@ Audio files served from local storage
 
 **Browser ↔ Convex**: Real-time push via `useQuery()` WebSocket subscriptions. No polling.
 **Worker → Convex**: HTTP client polls for pending songs, writes results back via mutations.
+**Room Server ↔ Convex**: HTTP client polls song queues per room (~2s). Marks songs as played via mutations.
+**Browser ↔ Room Server**: WebSocket for real-time playback coordination across devices.
+
+### Room Server (Multi-Device Playback)
+
+Standalone Node.js process on `:5174` that coordinates playback across multiple devices (like Sonos/Spotify Connect). Devices join a **room** as either **player** (outputs audio) or **controller** (remote control, no audio). All players in a room play the same song with synchronized start times. Any device can send commands (play/pause/skip/seek/volume).
+
+WebSocket protocol: Zod-validated messages in `room-server/protocol.ts`. REST API: `GET /api/v1/rooms`, `POST /api/v1/rooms`, `GET /api/v1/now-playing?room={id}` (Waybar compatible), `GET /api/v1/openapi.json`.
+
+The worker is **completely untouched** — it keeps generating songs into Convex. The room server reads from Convex and pushes updates to connected devices.
 
 ### Song Generation Pipeline
 
@@ -101,6 +113,10 @@ Server-side API endpoints live at `src/routes/api.autoplayer.*.ts`. These are PO
 
 Convex auto-generates types in `convex/_generated/` — never edit those files. `routeTree.gen.ts` is also auto-generated.
 
+## Commit Discipline
+
+Commit regularly after editing files. Don't batch up large sets of changes — make small, focused commits as you go. Pushing is not required immediately, but frequent commits keep work safe and history clean.
+
 ## Code Style
 
 - **Formatter**: Biome — tabs, double quotes, organized imports
@@ -121,3 +137,14 @@ Convex auto-generates types in `convex/_generated/` — never edit those files. 
 - Song mutations: `convex/songs.ts`
 - LLM client gateway: `src/services/llm-client.ts` (Vercel AI SDK + per-provider semaphore)
 - ComfyUI workflows: `src/data/comfyui-workflow-*.json`
+- Room server entry: `room-server/index.ts`
+- Room server protocol (Zod schemas): `room-server/protocol.ts`
+- Room state management: `room-server/room.ts`
+- Room manager: `room-server/room-manager.ts`
+- Room↔Convex sync: `room-server/convex-sync.ts`
+- Room connection hook: `src/hooks/useRoomConnection.ts`
+- Room player hook: `src/hooks/useRoomPlayer.ts`
+- Room controller hook: `src/hooks/useRoomController.ts`
+- Mini player: `src/components/mini-player/MiniPlayer.tsx`
+- Mini player route: `src/routes/autoplayer_.mini.tsx`
+- Room selection page: `src/routes/rooms.tsx`
