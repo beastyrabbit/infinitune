@@ -77,6 +77,23 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 	}, [connection, connection?.playback.volume, connection?.playback.isMuted]);
 
 	/**
+	 * Send an immediate sync pulse to the server so controllers see updated
+	 * position/state without waiting for the next 1s interval.
+	 */
+	const sendImmediateSync = useCallback(() => {
+		const audio = currentAudioRef.current;
+		const conn = connectionRef.current;
+		if (audio?.src && conn) {
+			conn.sendSync(
+				conn.playback.currentSongId,
+				!audio.paused,
+				audio.currentTime,
+				audio.duration || 0,
+			);
+		}
+	}, []);
+
+	/**
 	 * Attempt to play the current audio element. If blocked by autoplay policy,
 	 * mark as pending so the user-gesture handler can retry.
 	 */
@@ -196,20 +213,27 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 					switch (msg.action) {
 						case "play":
 							attemptPlay(audio);
+							// Sync after a short delay to let play() start
+							setTimeout(sendImmediateSync, 100);
 							break;
 						case "pause":
 							audio.pause();
+							sendImmediateSync();
 							break;
 						case "toggle":
 							if (audio.paused) {
 								attemptPlay(audio);
+								setTimeout(sendImmediateSync, 100);
 							} else {
 								audio.pause();
+								sendImmediateSync();
 							}
 							break;
 						case "seek": {
 							const time = (msg.payload?.time as number) ?? 0;
 							audio.currentTime = time;
+							// currentTime updates synchronously, sync right away
+							sendImmediateSync();
 							break;
 						}
 						case "setVolume": {
@@ -292,7 +316,7 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 		});
 
 		return removeHandler;
-	}, [enabled, attemptPlay]);
+	}, [enabled, attemptPlay, sendImmediateSync]);
 
 	const seek = useCallback((time: number) => {
 		const audio = currentAudioRef.current;

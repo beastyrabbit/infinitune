@@ -39,6 +39,7 @@ export class Room {
 	private markPlayedCallback:
 		| ((songId: string) => Promise<void>)
 		| null = null;
+	private lastSeekAt = 0;
 
 	constructor(
 		id: string,
@@ -237,6 +238,7 @@ export class Room {
 			case "seek": {
 				const time = (payload?.time as number) ?? 0;
 				this.playback.currentTime = time;
+				this.lastSeekAt = Date.now();
 				this.broadcastExecute("seek", { time }, false); // seek goes to all
 				break;
 			}
@@ -278,7 +280,11 @@ export class Room {
 		currentTime: number,
 		duration: number,
 	): void {
-		this.playback.currentTime = currentTime;
+		// After a seek, briefly ignore sync-reported currentTime to prevent
+		// stale values from overwriting the authoritative seek position.
+		if (Date.now() - this.lastSeekAt > 500) {
+			this.playback.currentTime = currentTime;
+		}
 		this.playback.duration = duration;
 		// NOTE: isPlaying is NOT updated from sync. Room commands (play/pause/toggle)
 		// are authoritative. If the player's audio is blocked by autoplay policy,

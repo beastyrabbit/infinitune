@@ -13,7 +13,7 @@ import {
 	Volume2,
 	X,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	Device,
 	PlaybackState,
@@ -135,6 +135,157 @@ function RenameModal({
 	);
 }
 
+/**
+ * Per-device card with local state for volume and play/pause.
+ * Extracted so each device can have its own useState hooks.
+ */
+function DeviceCard({
+	device,
+	playback,
+	onSetDeviceVolume,
+	onToggleDevicePlay,
+	onResetDeviceToDefault,
+	onStartRename,
+}: {
+	device: Device;
+	playback: PlaybackState;
+	onSetDeviceVolume?: (deviceId: string, volume: number) => void;
+	onToggleDevicePlay?: (deviceId: string) => void;
+	onResetDeviceToDefault?: (deviceId: string) => void;
+	onStartRename?: () => void;
+}) {
+	const isIndividual = device.mode === "individual";
+	const [localVolume, setLocalVolume] = useState(playback.volume);
+	const [localPlaying, setLocalPlaying] = useState(playback.isPlaying);
+	const volumeDragging = useRef(false);
+
+	// Default-mode devices: sync volume from room state when not dragging
+	useEffect(() => {
+		if (!isIndividual && !volumeDragging.current) {
+			setLocalVolume(playback.volume);
+		}
+	}, [playback.volume, isIndividual]);
+
+	// Default-mode devices: sync play state from room
+	useEffect(() => {
+		if (!isIndividual) {
+			setLocalPlaying(playback.isPlaying);
+		}
+	}, [playback.isPlaying, isIndividual]);
+
+	// When mode resets to default (e.g. DEFAULT button or SYNC ALL), snap to room state
+	const prevModeRef = useRef(device.mode);
+	useEffect(() => {
+		if (prevModeRef.current === "individual" && !isIndividual) {
+			setLocalVolume(playback.volume);
+			setLocalPlaying(playback.isPlaying);
+		}
+		prevModeRef.current = device.mode;
+	}, [isIndividual, playback.volume, playback.isPlaying, device.mode]);
+
+	return (
+		<div
+			className={`border-2 px-3 py-2 ${
+				isIndividual
+					? "border-yellow-500/40 bg-yellow-500/5"
+					: "border-white/10 bg-white/5"
+			}`}
+		>
+			<div className="flex items-center gap-3">
+				<div
+					className={`h-2 w-2 rounded-full flex-shrink-0 ${
+						isIndividual ? "bg-yellow-500" : "bg-green-500"
+					}`}
+				/>
+				<Volume2 className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2">
+						<span className="text-xs font-bold uppercase text-white/80 truncate">
+							{device.name}
+						</span>
+						{isIndividual && (
+							<span className="text-[9px] font-black uppercase text-yellow-400 flex-shrink-0">
+								INDIVIDUAL
+							</span>
+						)}
+					</div>
+				</div>
+				<div className="flex items-center gap-1 flex-shrink-0">
+					{isIndividual && onResetDeviceToDefault && (
+						<button
+							type="button"
+							onClick={() => onResetDeviceToDefault(device.id)}
+							className="h-6 px-1.5 flex items-center justify-center gap-0.5 border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-colors"
+							title="Reset to default — follow room settings"
+						>
+							<RotateCcw className="h-2.5 w-2.5" />
+							<span className="text-[9px] font-black uppercase">DEFAULT</span>
+						</button>
+					)}
+					{onStartRename && (
+						<button
+							type="button"
+							onClick={onStartRename}
+							className="h-6 w-6 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"
+							title="Rename device"
+						>
+							<Pencil className="h-2.5 w-2.5" />
+						</button>
+					)}
+					{onToggleDevicePlay && (
+						<button
+							type="button"
+							onClick={() => {
+								onToggleDevicePlay(device.id);
+								setLocalPlaying(!localPlaying);
+							}}
+							className="h-6 w-6 flex items-center justify-center border border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors"
+							title="Toggle play/pause for this device"
+						>
+							{localPlaying ? (
+								<Pause className="h-2.5 w-2.5" />
+							) : (
+								<Play className="h-2.5 w-2.5" />
+							)}
+						</button>
+					)}
+				</div>
+			</div>
+			<ProgressBar
+				currentTime={playback.currentTime}
+				duration={playback.duration}
+				className="mt-1.5"
+			/>
+			{onSetDeviceVolume && (
+				<div className="flex items-center gap-2 mt-1.5">
+					<Volume2 className="h-2.5 w-2.5 text-white/30 flex-shrink-0" />
+					<input
+						type="range"
+						min={0}
+						max={1}
+						step={0.01}
+						value={localVolume}
+						onPointerDown={() => {
+							volumeDragging.current = true;
+						}}
+						onPointerUp={() => {
+							setTimeout(() => {
+								volumeDragging.current = false;
+							}, 300);
+						}}
+						onChange={(e) => {
+							const v = Number.parseFloat(e.target.value);
+							setLocalVolume(v);
+							onSetDeviceVolume(device.id, v);
+						}}
+						className="flex-1 h-1 accent-red-500 cursor-pointer"
+					/>
+				</div>
+			)}
+		</div>
+	);
+}
+
 interface DeviceControlPanelProps {
 	devices: Device[];
 	playback: PlaybackState;
@@ -169,6 +320,15 @@ export function DeviceControlPanel({
 	const playerDevices = devices.filter((d) => d.role === "player");
 	const [renamingDevice, setRenamingDevice] = useState<Device | null>(null);
 	const [showLyrics, setShowLyrics] = useState(false);
+
+	// Local volume state for ALL PLAYERS slider — immediate feedback, server sync when idle
+	const [roomVolume, setRoomVolume] = useState(playback.volume);
+	const roomVolumeDragging = useRef(false);
+	useEffect(() => {
+		if (!roomVolumeDragging.current) {
+			setRoomVolume(playback.volume);
+		}
+	}, [playback.volume]);
 
 	const handleRename = useCallback(
 		(deviceId: string, name: string) => {
@@ -309,12 +469,24 @@ export function DeviceControlPanel({
 								min={0}
 								max={1}
 								step={0.01}
-								value={playback.volume}
-								onChange={(e) => onSetVolume(Number.parseFloat(e.target.value))}
+								value={roomVolume}
+								onPointerDown={() => {
+									roomVolumeDragging.current = true;
+								}}
+								onPointerUp={() => {
+									setTimeout(() => {
+										roomVolumeDragging.current = false;
+									}, 300);
+								}}
+								onChange={(e) => {
+									const v = Number.parseFloat(e.target.value);
+									setRoomVolume(v);
+									onSetVolume(v);
+								}}
 								className="flex-1 h-1 accent-red-500 cursor-pointer"
 							/>
 							<span className="text-[10px] font-bold text-white/40 tabular-nums w-8 text-right flex-shrink-0">
-								{Math.round(playback.volume * 100)}%
+								{Math.round(roomVolume * 100)}%
 							</span>
 						</div>
 					)}
@@ -338,103 +510,19 @@ export function DeviceControlPanel({
 					</span>
 				</div>
 				<div className="space-y-2">
-					{playerDevices.map((device) => {
-						const isIndividual = device.mode === "individual";
-						return (
-							<div
-								key={device.id}
-								className={`border-2 px-3 py-2 ${
-									isIndividual
-										? "border-yellow-500/40 bg-yellow-500/5"
-										: "border-white/10 bg-white/5"
-								}`}
-							>
-								<div className="flex items-center gap-3">
-									<div
-										className={`h-2 w-2 rounded-full flex-shrink-0 ${
-											isIndividual ? "bg-yellow-500" : "bg-green-500"
-										}`}
-									/>
-									<Volume2 className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
-									<div className="min-w-0 flex-1">
-										<div className="flex items-center gap-2">
-											<span className="text-xs font-bold uppercase text-white/80 truncate">
-												{device.name}
-											</span>
-											{isIndividual && (
-												<span className="text-[9px] font-black uppercase text-yellow-400 flex-shrink-0">
-													INDIVIDUAL
-												</span>
-											)}
-										</div>
-									</div>
-									<div className="flex items-center gap-1 flex-shrink-0">
-										{isIndividual && onResetDeviceToDefault && (
-											<button
-												type="button"
-												onClick={() => onResetDeviceToDefault(device.id)}
-												className="h-6 px-1.5 flex items-center justify-center gap-0.5 border border-green-500/40 bg-green-500/10 text-green-400 hover:bg-green-500 hover:text-black transition-colors"
-												title="Reset to default — follow room settings"
-											>
-												<RotateCcw className="h-2.5 w-2.5" />
-												<span className="text-[9px] font-black uppercase">
-													DEFAULT
-												</span>
-											</button>
-										)}
-										{onRenameDevice && (
-											<button
-												type="button"
-												onClick={() => setRenamingDevice(device)}
-												className="h-6 w-6 flex items-center justify-center text-white/20 hover:text-white/60 transition-colors"
-												title="Rename device"
-											>
-												<Pencil className="h-2.5 w-2.5" />
-											</button>
-										)}
-										{onToggleDevicePlay && (
-											<button
-												type="button"
-												onClick={() => onToggleDevicePlay(device.id)}
-												className="h-6 w-6 flex items-center justify-center border border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors"
-												title="Toggle play/pause for this device"
-											>
-												{playback.isPlaying ? (
-													<Pause className="h-2.5 w-2.5" />
-												) : (
-													<Play className="h-2.5 w-2.5" />
-												)}
-											</button>
-										)}
-									</div>
-								</div>
-								<ProgressBar
-									currentTime={playback.currentTime}
-									duration={playback.duration}
-									className="mt-1.5"
-								/>
-								{onSetDeviceVolume && (
-									<div className="flex items-center gap-2 mt-1.5">
-										<Volume2 className="h-2.5 w-2.5 text-white/30 flex-shrink-0" />
-										<input
-											type="range"
-											min={0}
-											max={1}
-											step={0.01}
-											defaultValue={playback.volume}
-											onChange={(e) =>
-												onSetDeviceVolume(
-													device.id,
-													Number.parseFloat(e.target.value),
-												)
-											}
-											className="flex-1 h-1 accent-red-500 cursor-pointer"
-										/>
-									</div>
-								)}
-							</div>
-						);
-					})}
+					{playerDevices.map((device) => (
+						<DeviceCard
+							key={device.id}
+							device={device}
+							playback={playback}
+							onSetDeviceVolume={onSetDeviceVolume}
+							onToggleDevicePlay={onToggleDevicePlay}
+							onResetDeviceToDefault={onResetDeviceToDefault}
+							onStartRename={
+								onRenameDevice ? () => setRenamingDevice(device) : undefined
+							}
+						/>
+					))}
 					{playerDevices.length === 0 && (
 						<div className="border-2 border-dashed border-white/10 px-3 py-4 text-center">
 							<Monitor className="h-4 w-4 text-white/15 mx-auto mb-1" />
