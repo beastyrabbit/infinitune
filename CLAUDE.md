@@ -23,7 +23,7 @@ npx tsc --noEmit      # Type check
 pnpm dlx shadcn@latest add <component>
 ```
 
-Pre-commit hooks (lefthook): gitleaks, biome-check, typecheck.
+Pre-commit hooks (lefthook): gitleaks, biome-check, typecheck. Note: codebase has some pre-existing Biome warnings (e.g., `noExplicitAny` in worker/) — these are known and not blockers.
 
 ## Architecture
 
@@ -85,6 +85,10 @@ The main hook orchestrates several sub-hooks:
 - `usePlaylistLifecycle` — close playlist when done
 - `usePlaylistHeartbeat` — keep-alive signal
 
+### LLM Client (llm-client.ts)
+
+All LLM calls go through `src/services/llm-client.ts` — a gateway using Vercel AI SDK (`ai` package) with per-provider semaphores (ollama:1, openrouter:5). Three exports: `callLlmText()` for plain text, `callLlmObject<T>()` for Zod-validated structured output, `callImageGen()` for images. Provider factory handles Ollama (`ollama-ai-provider-v2`) and OpenRouter (`@openrouter/ai-sdk-provider` with `response-healing` plugin).
+
 ### API Routes
 
 Server-side API endpoints live at `src/routes/api.autoplayer.*.ts`. These are POST handlers (TanStack Start + Nitro) that call services (LLM, ACE-Step, ComfyUI) and return JSON.
@@ -103,6 +107,7 @@ Convex auto-generates types in `convex/_generated/` — never edit those files. 
 - **Path alias**: `@/` → `src/` (e.g., `@/components/ui/button`, `@/hooks/useAutoplayer`)
 - **Convex imports**: `import { api } from "../../convex/_generated/api"` (not aliased)
 - **UI components**: shadcn/radix in `src/components/ui/`
+- **Zod imports**: `import z from "zod"` (default import — Zod 4, not `{ z }`)
 - **Route files**: `autoplayer.tsx` is the main player; `autoplayer_.*.tsx` are nested routes (underscore = layout escape)
 
 ## File Locations
@@ -114,4 +119,5 @@ Convex auto-generates types in `convex/_generated/` — never edit those files. 
 - Queue selection: `src/lib/pick-next-song.ts`
 - Convex schema: `convex/schema.ts`
 - Song mutations: `convex/songs.ts`
+- LLM client gateway: `src/services/llm-client.ts` (Vercel AI SDK + per-provider semaphore)
 - ComfyUI workflows: `src/data/comfyui-workflow-*.json`
