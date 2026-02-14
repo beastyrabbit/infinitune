@@ -52,7 +52,9 @@ export class SongWorker {
 	private ctx: SongWorkerContext
 	private aborted = false
 	private _status: SongWorkerStatus = "running"
-	private coverBase64?: string
+	/** Cached cover image (base64 PNG). Set by startCover(), consumed by saveAndFinalize().
+	 *  May be undefined if cover generation is still in-flight or failed. */
+	private coverBase64: string | null = null
 
 	get status(): SongWorkerStatus {
 		return this._status
@@ -459,16 +461,24 @@ export class SongWorker {
 		// Save to NFS
 		try {
 			// Determine cover data for NFS — prefer captured base64, fallback to downloading from API
-			let coverBase64ForNfs: string | null = this.coverBase64 ?? null
+			let coverBase64ForNfs: string | null = this.coverBase64
+			this.coverBase64 = null // free memory
 			if (!coverBase64ForNfs && this.song.coverUrl && !this.song.coverUrl.startsWith("data:")) {
 				try {
 					const apiBase = process.env.API_URL ?? "http://localhost:5175"
-					const resp = await fetch(`${apiBase}${this.song.coverUrl}`)
+					const resp = await fetch(`${apiBase}${this.song.coverUrl}`, {
+						signal: AbortSignal.timeout(10_000),
+					})
 					if (resp.ok) {
 						coverBase64ForNfs = Buffer.from(await resp.arrayBuffer()).toString("base64")
+					} else {
+						console.warn(`  [song-worker] Cover download returned ${resp.status} for ${this.songId}`)
 					}
-				} catch {
-					// Best-effort — continue without cover in NFS
+				} catch (err) {
+					console.warn(
+						`  [song-worker] Failed to download cover for NFS (${this.songId}):`,
+						err instanceof Error ? err.message : err,
+					)
 				}
 			}
 

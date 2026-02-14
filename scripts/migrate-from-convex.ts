@@ -1,12 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * One-time migration: Convex cloud → SQLite + NFS covers
+ * Migration script: Convex cloud → SQLite + NFS covers
  *
  * Usage: pnpm migrate:convex
  *
- * 1. Runs `npx convex export --include-file-storage` to dump the cloud DB as a ZIP
+ * 1. Runs `npx convex export --include-file-storage --path <zip>` to dump the cloud DB
  * 2. Imports playlists, songs, and settings into the local SQLite database
- * 3. Downloads cover images from Convex file storage → data/covers/ + NFS song folders
+ * 3. Extracts cover images from the Convex export → data/covers/ + NFS song folders
  *
  * Idempotent — safe to run multiple times. Existing records are skipped.
  */
@@ -39,14 +39,19 @@ function ask(question: string): Promise<string> {
 	})
 }
 
-/** Parse a JSONL file into an array of objects */
+/** Parse a JSONL file into an array of objects, skipping malformed lines */
 function parseJsonl<T = Record<string, unknown>>(filePath: string): T[] {
 	if (!fs.existsSync(filePath)) return []
-	return fs
-		.readFileSync(filePath, "utf-8")
-		.split("\n")
-		.filter((line) => line.trim())
-		.map((line) => JSON.parse(line) as T)
+	const lines = fs.readFileSync(filePath, "utf-8").split("\n").filter((line) => line.trim())
+	const results: T[] = []
+	for (let i = 0; i < lines.length; i++) {
+		try {
+			results.push(JSON.parse(lines[i]) as T)
+		} catch (err) {
+			console.warn(`[migrate] Skipping malformed JSON at ${filePath}:${i + 1}: ${err instanceof Error ? err.message : err}`)
+		}
+	}
+	return results
 }
 
 /** Find a JSONL file for a table — handles both flat and nested export formats */
@@ -90,12 +95,11 @@ interface StorageEntry {
 	_id: string
 	_creationTime: number
 	sha256?: string
-	size?: number
-	contentType?: string
 }
 
-function buildStorageMap(exportDir: string): Map<string, Buffer> {
-	const map = new Map<string, Buffer>()
+/** Build a map of storageId → file path (lazy — reads on demand, not all into RAM) */
+function buildStoragePathMap(exportDir: string): Map<string, string> {
+	const map = new Map<string, string>()
 	const storageDir = findStorageDir(exportDir)
 	if (!storageDir) return map
 
@@ -104,7 +108,8 @@ function buildStorageMap(exportDir: string): Map<string, Buffer> {
 	const entries: StorageEntry[] = storageJsonl ? parseJsonl(storageJsonl) : []
 
 	for (const entry of entries) {
-		// Try finding the file by storage ID first, then sha256
+		if (!entry._id) continue
+
 		const candidates = [
 			path.join(storageDir, entry._id),
 			entry.sha256 ? path.join(storageDir, entry.sha256) : null,
@@ -112,19 +117,17 @@ function buildStorageMap(exportDir: string): Map<string, Buffer> {
 
 		for (const candidate of candidates) {
 			if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-				map.set(entry._id, fs.readFileSync(candidate))
+				map.set(entry._id, candidate)
 				break
 			}
 		}
 	}
 
 	// Also scan storage dir for any files not in the JSONL (belt & suspenders)
-	if (fs.existsSync(storageDir)) {
-		for (const file of fs.readdirSync(storageDir)) {
-			const filePath = path.join(storageDir, file)
-			if (fs.statSync(filePath).isFile() && !map.has(file)) {
-				map.set(file, fs.readFileSync(filePath))
-			}
+	for (const file of fs.readdirSync(storageDir)) {
+		const filePath = path.join(storageDir, file)
+		if (fs.statSync(filePath).isFile() && !map.has(file)) {
+			map.set(file, filePath)
 		}
 	}
 
@@ -145,9 +148,10 @@ async function exportFromConvex(): Promise<void> {
 			cwd: PROJECT_ROOT,
 			stdio: "inherit",
 		})
-	} catch {
-		console.error("[migrate] Failed to run `npx convex export`. Make sure you're authenticated.")
-		console.error("  Run: npx convex login")
+	} catch (err) {
+		console.error("[migrate] Failed to run `npx convex export`.")
+		console.error("  Error:", err instanceof Error ? err.message : err)
+		console.error("  Common fix: npx convex login")
 		process.exit(1)
 	}
 }
@@ -161,10 +165,20 @@ function unzipExport(): void {
 	fs.mkdirSync(EXPORT_DIR, { recursive: true })
 
 	console.log("[migrate] Unzipping export...")
-	execFileSync("unzip", ["-q", "-o", EXPORT_ZIP, "-d", EXPORT_DIR], {
-		cwd: PROJECT_ROOT,
-		stdio: "inherit",
-	})
+	try {
+		execFileSync("unzip", ["-q", "-o", EXPORT_ZIP, "-d", EXPORT_DIR], {
+			cwd: PROJECT_ROOT,
+			stdio: "inherit",
+		})
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err)
+		if (msg.includes("ENOENT")) {
+			console.error("[migrate] `unzip` command not found. Install it with: sudo apt install unzip (or brew install unzip)")
+		} else {
+			console.error(`[migrate] Failed to unzip ${EXPORT_ZIP}: ${msg}`)
+		}
+		process.exit(1)
+	}
 }
 
 // ─── Import Playlists ────────────────────────────────────────────────
@@ -213,34 +227,38 @@ function importPlaylists(exportDir: string): { imported: number; skipped: number
 			continue
 		}
 
-		db.insert(schema.playlists)
-			.values({
-				id: row._id,
-				createdAt: row._creationTime,
-				name: row.name,
-				prompt: row.prompt,
-				llmProvider: row.llmProvider,
-				llmModel: row.llmModel,
-				mode: row.mode ?? "endless",
-				status: row.status,
-				songsGenerated: row.songsGenerated,
-				playlistKey: row.playlistKey ?? null,
-				lyricsLanguage: row.lyricsLanguage ?? null,
-				targetBpm: row.targetBpm ?? null,
-				targetKey: row.targetKey ?? null,
-				timeSignature: row.timeSignature ?? null,
-				audioDuration: row.audioDuration ?? null,
-				inferenceSteps: row.inferenceSteps ?? null,
-				lmTemperature: row.lmTemperature ?? null,
-				lmCfgScale: row.lmCfgScale ?? null,
-				inferMethod: row.inferMethod ?? null,
-				currentOrderIndex: row.currentOrderIndex ?? null,
-				lastSeenAt: row.lastSeenAt ?? null,
-				promptEpoch: row.promptEpoch ?? 0,
-				steerHistory: row.steerHistory ? JSON.stringify(row.steerHistory) : null,
-			})
-			.run()
-		imported++
+		try {
+			db.insert(schema.playlists)
+				.values({
+					id: row._id,
+					createdAt: row._creationTime,
+					name: row.name,
+					prompt: row.prompt,
+					llmProvider: row.llmProvider,
+					llmModel: row.llmModel,
+					mode: row.mode ?? "endless",
+					status: row.status,
+					songsGenerated: row.songsGenerated,
+					playlistKey: row.playlistKey ?? null,
+					lyricsLanguage: row.lyricsLanguage ?? null,
+					targetBpm: row.targetBpm ?? null,
+					targetKey: row.targetKey ?? null,
+					timeSignature: row.timeSignature ?? null,
+					audioDuration: row.audioDuration ?? null,
+					inferenceSteps: row.inferenceSteps ?? null,
+					lmTemperature: row.lmTemperature ?? null,
+					lmCfgScale: row.lmCfgScale ?? null,
+					inferMethod: row.inferMethod ?? null,
+					currentOrderIndex: row.currentOrderIndex ?? null,
+					lastSeenAt: row.lastSeenAt ?? null,
+					promptEpoch: row.promptEpoch ?? 0,
+					steerHistory: row.steerHistory ? JSON.stringify(row.steerHistory) : null,
+				})
+				.run()
+			imported++
+		} catch (err) {
+			console.error(`[migrate] Failed to import playlist ${row._id}: ${err instanceof Error ? err.message : err}`)
+		}
 	}
 
 	return { imported, skipped }
@@ -303,7 +321,7 @@ interface ConvexSong {
 
 function importSongs(
 	exportDir: string,
-	storageMap: Map<string, Buffer>,
+	storagePathMap: Map<string, string>,
 ): { imported: number; skipped: number; covers: number } {
 	const jsonlPath = findJsonl(exportDir, "songs")
 	if (!jsonlPath) {
@@ -327,8 +345,8 @@ function importSongs(
 
 		// Resolve cover image from Convex file storage
 		let coverUrl = row.coverUrl ?? null
-		if (row.coverStorageId && storageMap.has(row.coverStorageId)) {
-			const coverBuffer = storageMap.get(row.coverStorageId)!
+		if (row.coverStorageId && storagePathMap.has(row.coverStorageId)) {
+			const coverBuffer = fs.readFileSync(storagePathMap.get(row.coverStorageId)!)
 
 			// Save to data/covers/{songId}.png (served by API)
 			const coverFilename = `${row._id}.png`
@@ -347,60 +365,64 @@ function importSongs(
 			covers++
 		}
 
-		db.insert(schema.songs)
-			.values({
-				id: row._id,
-				createdAt: row._creationTime,
-				playlistId: row.playlistId,
-				orderIndex: row.orderIndex,
-				title: row.title ?? null,
-				artistName: row.artistName ?? null,
-				genre: row.genre ?? null,
-				subGenre: row.subGenre ?? null,
-				lyrics: row.lyrics ?? null,
-				caption: row.caption ?? null,
-				coverPrompt: row.coverPrompt ?? null,
-				coverUrl,
-				bpm: row.bpm ?? null,
-				keyScale: row.keyScale ?? null,
-				timeSignature: row.timeSignature ?? null,
-				audioDuration: row.audioDuration ?? null,
-				vocalStyle: row.vocalStyle ?? null,
-				mood: row.mood ?? null,
-				energy: row.energy ?? null,
-				era: row.era ?? null,
-				instruments: row.instruments ? JSON.stringify(row.instruments) : null,
-				tags: row.tags ? JSON.stringify(row.tags) : null,
-				themes: row.themes ? JSON.stringify(row.themes) : null,
-				language: row.language ?? null,
-				description: row.description ?? null,
-				status: row.status,
-				aceTaskId: row.aceTaskId ?? null,
-				aceSubmittedAt: row.aceSubmittedAt ?? null,
-				audioUrl: row.audioUrl ?? null,
-				storagePath: row.storagePath ?? null,
-				aceAudioPath: row.aceAudioPath ?? null,
-				errorMessage: row.errorMessage ?? null,
-				retryCount: row.retryCount ?? 0,
-				erroredAtStatus: row.erroredAtStatus ?? null,
-				cancelledAtStatus: row.cancelledAtStatus ?? null,
-				generationStartedAt: row.generationStartedAt ?? null,
-				generationCompletedAt: row.generationCompletedAt ?? null,
-				isInterrupt: row.isInterrupt ?? null,
-				interruptPrompt: row.interruptPrompt ?? null,
-				llmProvider: row.llmProvider ?? null,
-				llmModel: row.llmModel ?? null,
-				promptEpoch: row.promptEpoch ?? null,
-				userRating: row.userRating ?? null,
-				playDurationMs: row.playDurationMs ?? null,
-				listenCount: row.listenCount ?? 0,
-				metadataProcessingMs: row.metadataProcessingMs ?? null,
-				coverProcessingMs: row.coverProcessingMs ?? null,
-				audioProcessingMs: row.audioProcessingMs ?? null,
-				personaExtract: row.personaExtract ?? null,
-			})
-			.run()
-		imported++
+		try {
+			db.insert(schema.songs)
+				.values({
+					id: row._id,
+					createdAt: row._creationTime,
+					playlistId: row.playlistId,
+					orderIndex: row.orderIndex,
+					title: row.title ?? null,
+					artistName: row.artistName ?? null,
+					genre: row.genre ?? null,
+					subGenre: row.subGenre ?? null,
+					lyrics: row.lyrics ?? null,
+					caption: row.caption ?? null,
+					coverPrompt: row.coverPrompt ?? null,
+					coverUrl,
+					bpm: row.bpm ?? null,
+					keyScale: row.keyScale ?? null,
+					timeSignature: row.timeSignature ?? null,
+					audioDuration: row.audioDuration ?? null,
+					vocalStyle: row.vocalStyle ?? null,
+					mood: row.mood ?? null,
+					energy: row.energy ?? null,
+					era: row.era ?? null,
+					instruments: row.instruments ? JSON.stringify(row.instruments) : null,
+					tags: row.tags ? JSON.stringify(row.tags) : null,
+					themes: row.themes ? JSON.stringify(row.themes) : null,
+					language: row.language ?? null,
+					description: row.description ?? null,
+					status: row.status,
+					aceTaskId: row.aceTaskId ?? null,
+					aceSubmittedAt: row.aceSubmittedAt ?? null,
+					audioUrl: row.audioUrl ?? null,
+					storagePath: row.storagePath ?? null,
+					aceAudioPath: row.aceAudioPath ?? null,
+					errorMessage: row.errorMessage ?? null,
+					retryCount: row.retryCount ?? 0,
+					erroredAtStatus: row.erroredAtStatus ?? null,
+					cancelledAtStatus: row.cancelledAtStatus ?? null,
+					generationStartedAt: row.generationStartedAt ?? null,
+					generationCompletedAt: row.generationCompletedAt ?? null,
+					isInterrupt: row.isInterrupt ?? null,
+					interruptPrompt: row.interruptPrompt ?? null,
+					llmProvider: row.llmProvider ?? null,
+					llmModel: row.llmModel ?? null,
+					promptEpoch: row.promptEpoch ?? null,
+					userRating: row.userRating ?? null,
+					playDurationMs: row.playDurationMs ?? null,
+					listenCount: row.listenCount ?? 0,
+					metadataProcessingMs: row.metadataProcessingMs ?? null,
+					coverProcessingMs: row.coverProcessingMs ?? null,
+					audioProcessingMs: row.audioProcessingMs ?? null,
+					personaExtract: row.personaExtract ?? null,
+				})
+				.run()
+			imported++
+		} catch (err) {
+			console.error(`[migrate] Failed to import song ${row._id}: ${err instanceof Error ? err.message : err}`)
+		}
 	}
 
 	return { imported, skipped, covers }
@@ -437,15 +459,19 @@ function importSettings(exportDir: string): { imported: number; skipped: number 
 			continue
 		}
 
-		db.insert(schema.settings)
-			.values({
-				id: row._id,
-				createdAt: row._creationTime,
-				key: row.key,
-				value: row.value,
-			})
-			.run()
-		imported++
+		try {
+			db.insert(schema.settings)
+				.values({
+					id: row._id,
+					createdAt: row._creationTime,
+					key: row.key,
+					value: row.value,
+				})
+				.run()
+			imported++
+		} catch (err) {
+			console.error(`[migrate] Failed to import setting ${row.key}: ${err instanceof Error ? err.message : err}`)
+		}
 	}
 
 	return { imported, skipped }
@@ -467,10 +493,10 @@ async function main() {
 	// Step 3: Ensure SQLite schema
 	ensureSchema()
 
-	// Step 4: Build storage map (cover blobs)
+	// Step 4: Build storage path map (lazy — reads files on demand)
 	console.log("[migrate] Indexing file storage...")
-	const storageMap = buildStorageMap(EXPORT_DIR)
-	console.log(`[migrate] Found ${storageMap.size} storage files`)
+	const storagePathMap = buildStoragePathMap(EXPORT_DIR)
+	console.log(`[migrate] Found ${storagePathMap.size} storage files`)
 
 	// Step 5: Import data
 	console.log("\n[migrate] Importing playlists...")
@@ -478,7 +504,7 @@ async function main() {
 	console.log(`  → ${playlists.imported} imported, ${playlists.skipped} skipped`)
 
 	console.log("[migrate] Importing songs...")
-	const songs = importSongs(EXPORT_DIR, storageMap)
+	const songs = importSongs(EXPORT_DIR, storagePathMap)
 	console.log(`  → ${songs.imported} imported, ${songs.skipped} skipped, ${songs.covers} covers saved`)
 
 	console.log("[migrate] Importing settings...")
@@ -495,6 +521,7 @@ async function main() {
 	console.log(`  Songs:     ${songs.imported} imported, ${songs.skipped} skipped`)
 	console.log(`  Covers:    ${songs.covers} saved to data/covers/ + NFS`)
 	console.log(`  Settings:  ${settings.imported} imported, ${settings.skipped} skipped`)
+	console.log(`  Note:      ${EXPORT_ZIP} retained for re-runs. Delete when done.`)
 	console.log("═══════════════════════════════════════════════════════\n")
 }
 

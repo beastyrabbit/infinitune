@@ -93,7 +93,8 @@ function main() {
 		let resolvedPath: string
 		try {
 			resolvedPath = fs.realpathSync(dirPath)
-		} catch {
+		} catch (err) {
+			console.warn(`  [rebuild] Cannot resolve symlink ${dirPath}: ${err instanceof Error ? err.message : err}`)
 			errors++
 			continue
 		}
@@ -102,6 +103,7 @@ function main() {
 
 		const logPath = path.join(resolvedPath, "generation.log")
 		if (!fs.existsSync(logPath)) {
+			console.warn(`  [rebuild] No generation.log in ${resolvedPath}, skipping`)
 			errors++
 			continue
 		}
@@ -117,8 +119,15 @@ function main() {
 		let log: GenerationLog
 		try {
 			log = JSON.parse(fs.readFileSync(logPath, "utf-8"))
-		} catch {
-			console.warn(`  [rebuild] Failed to parse ${logPath}`)
+		} catch (err) {
+			console.warn(`  [rebuild] Failed to parse ${logPath}: ${err instanceof Error ? err.message : err}`)
+			errors++
+			continue
+		}
+
+		// Validate required fields
+		if (!log.aceAudioPath) {
+			console.warn(`  [rebuild] Missing aceAudioPath in ${logPath}, skipping`)
 			errors++
 			continue
 		}
@@ -142,9 +151,18 @@ function main() {
 		}
 
 		// Determine creation time from generatedAt or file mtime
-		const createdAt = log.generatedAt
-			? new Date(log.generatedAt).getTime()
-			: fs.statSync(logPath).mtimeMs
+		let createdAt: number
+		if (log.generatedAt) {
+			const parsed = new Date(log.generatedAt).getTime()
+			if (Number.isNaN(parsed)) {
+				console.warn(`  [rebuild] Invalid generatedAt "${log.generatedAt}" for ${songId}, using file mtime`)
+				createdAt = fs.statSync(logPath).mtimeMs
+			} else {
+				createdAt = parsed
+			}
+		} else {
+			createdAt = fs.statSync(logPath).mtimeMs
+		}
 
 		db.insert(schema.songs)
 			.values({
@@ -181,9 +199,9 @@ function main() {
 		imported++
 	}
 
-	// Update playlist song count
+	// Update playlist song count (imported + previously existing)
 	db.update(schema.playlists)
-		.set({ songsGenerated: imported })
+		.set({ songsGenerated: imported + skipped })
 		.where(eq(schema.playlists.id, playlistId))
 		.run()
 
@@ -226,4 +244,9 @@ function getOrCreateImportPlaylist(): string {
 	return id
 }
 
-main()
+try {
+	main()
+} catch (err) {
+	console.error("[rebuild] Fatal error:", err)
+	process.exit(1)
+}

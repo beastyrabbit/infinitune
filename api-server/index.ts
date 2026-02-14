@@ -107,8 +107,16 @@ startBridge().catch((err: Error) => {
 // Graceful shutdown
 async function shutdown() {
 	console.log("[api-server] Shutting down...")
-	await closeRabbit()
-	sqlite.close()
+	try {
+		await closeRabbit()
+	} catch (err) {
+		console.error("[api-server] Error closing RabbitMQ:", err instanceof Error ? err.message : err)
+	}
+	try {
+		sqlite.close()
+	} catch (err) {
+		console.error("[api-server] Error closing SQLite:", err instanceof Error ? err.message : err)
+	}
 	process.exit(0)
 }
 process.on("SIGINT", shutdown)
