@@ -26,9 +26,9 @@
 <tr>
 <td width="50%">
 
-**Playlist Creator** — describe your music, pick an LLM, hit start
+**Playlist Creator** — describe your music, choose local or room mode, hit start
 
-![Playlist Creator](public/screenshots/playlist-creator.png)
+![Playlist Creator](split-start-button.png)
 
 </td>
 <td width="50%">
@@ -36,6 +36,22 @@
 **Queue Grid** — vinyl covers generated per-song by ComfyUI
 
 ![Queue Grid](public/screenshots/queue-grid.png)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Rooms** — create rooms linked to playlists for multi-device playback
+
+![Rooms](rooms-create-form.png)
+
+</td>
+<td width="50%">
+
+**Controller** — per-device volume, play/pause, seek, and device renaming
+
+![Controller](controller-view.png)
 
 </td>
 </tr>
@@ -67,6 +83,7 @@ Infinitune runs on a **Framework Desktop** (AMD Ryzen / dedicated GPU) hosting a
 |:--|:-----------|
 | **Frontend** | React 19 · TanStack Router · Tailwind CSS 4 |
 | **Backend** | Convex (real-time database + mutations/queries) |
+| **Room Server** | Node.js WebSocket server · multi-device sync · REST API |
 | **Worker** | Node.js background process · per-song workers · endpoint queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
 | **Cover Art** | ComfyUI (image generation) |
@@ -89,7 +106,9 @@ pnpm dev
 pnpm worker
 ```
 
-> All three processes need to run simultaneously. Configure service URLs in Settings (`/autoplayer/settings`) or via environment variables.
+> All three processes need to run simultaneously. Or use `pnpm dev:all` to start everything at once (including the room server).
+>
+> For multi-device playback, the room server runs on `:5174` — start it separately with `pnpm room-server` or use `pnpm dev:all`.
 
 ## Environment Variables
 
@@ -116,21 +135,29 @@ Worker (Node.js)
   ├── LLM → song metadata + lyrics
   ├── ComfyUI → cover art
   └── ACE-Step → audio generation
+
+Room Server (Node.js :5174)
+  ↕ WebSocket (device sync)
+  ↕ HTTP polling (Convex song queues)
+  └── REST API (room management)
 ```
 
 The frontend creates playlists and displays songs in real-time. The worker polls Convex for pending songs, orchestrates the generation pipeline (LLM → cover art → audio), and writes results back. Convex's real-time subscriptions push updates to the browser instantly.
+
+The **Room Server** enables multi-device synchronized playback (like Sonos/Spotify Connect). Devices join rooms as **players** (audio output) or **controllers** (remote control). The server coordinates playback timing, manages per-device volume/mode, and bridges song data from Convex.
 
 ## Project Structure
 
 ```
 src/
   routes/          # File-based routes + API endpoints
-  components/      # React components (autoplayer/, ui/)
+  components/      # React components (autoplayer/, ui/, mini-player/)
   services/        # LLM, ACE-Step, cover art integrations
-  hooks/           # Custom React hooks
+  hooks/           # Custom React hooks (incl. room hooks)
   lib/             # Utilities + player store
 convex/            # Database schema, mutations, queries
 worker/            # Background song generation worker
+room-server/       # Multi-device playback server (WebSocket + REST)
 ```
 
 <div align="center">
