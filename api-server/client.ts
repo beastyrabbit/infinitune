@@ -348,6 +348,13 @@ export class InfinituneApiClient {
 		return this.patch(`/api/songs/${id}/cover`, { coverUrl })
 	}
 
+	uploadCover(
+		id: string,
+		imageBase64: string,
+	): Promise<{ ok: true; coverUrl: string }> {
+		return this.post(`/api/songs/${id}/upload-cover`, { imageBase64 })
+	}
+
 	updateCoverProcessingMs(
 		id: string,
 		coverProcessingMs: number,

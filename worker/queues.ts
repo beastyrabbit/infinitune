@@ -1,4 +1,3 @@
-import type { Id } from '../convex/_generated/dataModel'
 import type { EndpointType, IEndpointQueue, QueueStatus } from './endpoint-queue'
 import { RequestResponseQueue } from './request-response-queue'
 import { AudioQueue } from './audio-queue'
@@ -53,7 +52,7 @@ export class EndpointQueues {
     // Audio submit concurrency is always 1
   }
 
-  cancelAllForSong(songId: Id<"songs">): void {
+  cancelAllForSong(songId: string): void {
     this.llm.cancelSong(songId)
     this.image.cancelSong(songId)
     this.audio.cancelSong(songId)
@@ -75,11 +74,11 @@ export class EndpointQueues {
   }
 
   /** Recalculate priorities for all pending items across all queues, then re-sort */
-  recalcPendingPriorities(getSongPriority: (songId: Id<"songs">) => number | undefined): void {
+  recalcPendingPriorities(getSongPriority: (songId: string) => number | undefined): void {
     for (const queue of [this.llm, this.image, this.audio] as IEndpointQueue<unknown>[]) {
       const status = queue.getStatus()
       for (const item of status.pendingItems) {
-        const songId = item.songId as Id<"songs">
+        const songId = item.songId as string
         const newPriority = getSongPriority(songId)
         if (newPriority !== undefined) {
           queue.updatePendingPriority(songId, newPriority)

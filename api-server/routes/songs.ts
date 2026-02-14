@@ -4,6 +4,7 @@ import { db, sqlite } from "../db/index"
 import { songs, playlists } from "../db/schema"
 import { songToWire } from "../wire"
 import { publishEvent, publishWork } from "../rabbit"
+import { saveCover } from "../covers"
 
 const ACTIVE_STATUSES = [
 	"pending",
@@ -620,6 +621,24 @@ app.patch("/:id/cover", async (c) => {
 	if (row) await emitSongEvent(row.playlistId, "updated", id)
 
 	return c.json({ ok: true })
+})
+
+// POST /api/songs/:id/upload-cover — upload cover image (base64)
+app.post("/:id/upload-cover", async (c) => {
+	const id = c.req.param("id")
+	const { imageBase64 } = await c.req.json<{ imageBase64: string }>()
+
+	const buffer = Buffer.from(imageBase64, "base64")
+	const { urlPath } = saveCover(buffer, "png")
+
+	const apiUrl = process.env.API_URL ?? "http://localhost:5175"
+	const coverUrl = `${apiUrl}${urlPath}`
+	await db.update(songs).set({ coverUrl }).where(eq(songs.id, id))
+
+	const [row] = await db.select().from(songs).where(eq(songs.id, id))
+	if (row) await emitSongEvent(row.playlistId, "updated", id)
+
+	return c.json({ ok: true, coverUrl })
 })
 
 // PATCH /api/songs/:id/cover-processing-ms
