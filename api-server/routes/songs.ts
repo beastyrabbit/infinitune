@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { eq, and, inArray, isNotNull, sql, desc } from "drizzle-orm"
 import { db, sqlite } from "../db/index"
 import { songs, playlists } from "../db/schema"
 import { songToWire, parseJsonField } from "../wire"
@@ -78,12 +78,15 @@ async function updateAndEmit(
 
 // ─── Queries ────────────────────────────────────────────────────────
 
-// GET /api/songs — list all songs (with metadata)
+// GET /api/songs — list all songs (with metadata), newest first
 app.get("/", async (c) => {
-	const rows = await db.select().from(songs)
-	const withMetadata = rows.filter((s) => s.title)
-	const sorted = withMetadata.sort((a, b) => b.createdAt - a.createdAt)
-	return c.json(sorted.map(songToWire))
+	const rows = await db
+		.select()
+		.from(songs)
+		.where(isNotNull(songs.title))
+		.orderBy(desc(songs.createdAt))
+		.limit(200)
+	return c.json(rows.map(songToWire))
 })
 
 // Shared handler for fetching songs by playlist, ordered by orderIndex
@@ -771,28 +774,31 @@ app.post("/:id/revert", async (c) => {
 app.post("/revert-transient/:playlistId", async (c) => {
 	const playlistId = c.req.param("playlistId")
 
-	const rows = await db
-		.select()
-		.from(songs)
-		.where(eq(songs.playlistId, playlistId))
+	// Batch revert generating_metadata → pending
+	await db
+		.update(songs)
+		.set({ status: "pending" })
+		.where(
+			and(
+				eq(songs.playlistId, playlistId),
+				eq(songs.status, "generating_metadata"),
+			),
+		)
 
-	for (const song of rows) {
-		if (song.status === "generating_metadata") {
-			await db
-				.update(songs)
-				.set({ status: "pending" })
-				.where(eq(songs.id, song.id))
-		} else if (
-			["submitting_to_ace", "generating_audio", "saving"].includes(
-				song.status,
-			)
-		) {
-			await db
-				.update(songs)
-				.set({ status: "metadata_ready" })
-				.where(eq(songs.id, song.id))
-		}
-	}
+	// Batch revert audio-pipeline statuses → metadata_ready
+	await db
+		.update(songs)
+		.set({ status: "metadata_ready" })
+		.where(
+			and(
+				eq(songs.playlistId, playlistId),
+				inArray(songs.status, [
+					"submitting_to_ace",
+					"generating_audio",
+					"saving",
+				]),
+			),
+		)
 
 	await emitSongEvent(playlistId, "updated")
 
@@ -803,27 +809,22 @@ app.post("/revert-transient/:playlistId", async (c) => {
 app.post("/recover/:playlistId", async (c) => {
 	const playlistId = c.req.param("playlistId")
 
-	const recoveryMap: Record<string, string> = {
-		generating_metadata: "pending",
-		submitting_to_ace: "metadata_ready",
-		saving: "generating_audio",
-	}
-
-	const rows = await db
-		.select()
-		.from(songs)
-		.where(eq(songs.playlistId, playlistId))
+	const recoveryMap: [string, string][] = [
+		["generating_metadata", "pending"],
+		["submitting_to_ace", "metadata_ready"],
+		["saving", "generating_audio"],
+	]
 
 	let recovered = 0
-	for (const song of rows) {
-		const revertTo = recoveryMap[song.status]
-		if (revertTo) {
-			await db
-				.update(songs)
-				.set({ status: revertTo })
-				.where(eq(songs.id, song.id))
-			recovered++
-		}
+	for (const [fromStatus, toStatus] of recoveryMap) {
+		const result = await db
+			.update(songs)
+			.set({ status: toStatus })
+			.where(
+				and(eq(songs.playlistId, playlistId), eq(songs.status, fromStatus)),
+			)
+			.returning({ id: songs.id })
+		recovered += result.length
 	}
 
 	if (recovered > 0) {

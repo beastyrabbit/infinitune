@@ -24,19 +24,13 @@ app.get("/:key", async (c) => {
 app.post("/", async (c) => {
 	const { key, value } = await c.req.json<{ key: string; value: string }>()
 
-	const [existing] = await db
-		.select()
-		.from(settings)
-		.where(eq(settings.key, key))
-
-	if (existing) {
-		await db
-			.update(settings)
-			.set({ value })
-			.where(eq(settings.key, key))
-	} else {
-		await db.insert(settings).values({ key, value })
-	}
+	await db
+		.insert(settings)
+		.values({ key, value })
+		.onConflictDoUpdate({
+			target: settings.key,
+			set: { value },
+		})
 
 	await publishEvent("settings", { key })
 

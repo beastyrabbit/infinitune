@@ -244,8 +244,7 @@ app.post("/:id/heartbeat", async (c) => {
 	if (!row) return c.json({ ok: true })
 
 	const patch: Record<string, unknown> = { lastSeenAt: Date.now() }
-	const shouldReactivate =
-		row.status === "closing" || row.status === "closed"
+	const shouldReactivate = row.status === "closing"
 	if (shouldReactivate) {
 		patch.status = "active"
 	}

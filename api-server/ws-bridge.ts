@@ -23,7 +23,7 @@ export function removeClient(ws: WSClient) {
  * Broadcast a message to all connected browser clients.
  */
 function broadcast(message: string) {
-	for (const client of clients) {
+	for (const client of [...clients]) {
 		try {
 			client.send(message)
 		} catch (err) {

@@ -82,6 +82,8 @@ function useWsInvalidation() {
 	}, []);
 }
 
+// useWsInvalidation runs before QueryClientProvider renders, but works because
+// queryClient is a module-level singleton imported directly (not via React context).
 export default function ApiProvider({
 	children,
 }: {
