@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
 import { Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -9,7 +8,16 @@ import {
 	StatusBadge,
 	type StepState,
 } from "@/components/autoplayer/test/shared";
-import { api } from "../../convex/_generated/api";
+import {
+	useCreateSong,
+	useCurrentPlaylist,
+	useIncrementSongsGenerated,
+	useMarkReady,
+	useSettings,
+	useUpdateAceTask,
+	useUpdateCover,
+	useUpdateStoragePath,
+} from "@/integrations/api/hooks";
 import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/e2e")({
@@ -44,16 +52,16 @@ function createInitialSteps(): Record<string, StepState> {
 }
 
 function PipelineTestPage() {
-	const settings = useQuery(api.settings.getAll);
-	const currentPlaylist = useQuery(api.playlists.getCurrent);
+	const settings = useSettings();
+	const currentPlaylist = useCurrentPlaylist();
 	const playlistId = currentPlaylist?._id ?? null;
 
-	const createSong = useMutation(api.songs.create);
-	const updateAceTask = useMutation(api.songs.updateAceTask);
-	const updateCover = useMutation(api.songs.updateCover);
-	const updateStoragePath = useMutation(api.songs.updateStoragePath);
-	const markReady = useMutation(api.songs.markReady);
-	const incrementSongs = useMutation(api.playlists.incrementSongsGenerated);
+	const createSong = useCreateSong();
+	const updateAceTask = useUpdateAceTask();
+	const updateCover = useUpdateCover();
+	const updateStoragePath = useUpdateStoragePath();
+	const markReady = useMarkReady();
+	const incrementSongs = useIncrementSongsGenerated();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [steps, setSteps] =
@@ -187,12 +195,12 @@ function PipelineTestPage() {
 						input: createInput,
 					});
 
-					const songId = await createSong(createInput as never);
-					cd.songId = songId;
+					const song = await createSong(createInput);
+					cd.songId = song._id;
 					updateStep("create", {
 						status: "done",
 						completedAt: Date.now(),
-						output: { songId },
+						output: { songId: song._id },
 					});
 				}
 
@@ -235,7 +243,7 @@ function PipelineTestPage() {
 
 						cd.taskId = aceData.taskId;
 						await updateAceTask({
-							id: cd.songId as never,
+							id: cd.songId ?? "",
 							aceTaskId: aceData.taskId,
 						});
 						updateStep("ace", {
@@ -285,7 +293,7 @@ function PipelineTestPage() {
 									);
 									if (cd.songId) {
 										await updateCover({
-											id: cd.songId as never,
+											id: cd.songId ?? "",
 											coverUrl: `data:image/png;base64,${coverData.imageBase64}`,
 										});
 									}
@@ -420,7 +428,7 @@ function PipelineTestPage() {
 							const saveData = await saveRes.json();
 							if (cd.songId) {
 								await updateStoragePath({
-									id: cd.songId as never,
+									id: cd.songId ?? "",
 									storagePath: saveData.storagePath,
 									aceAudioPath: cd.audioPath ?? "",
 								});
@@ -461,8 +469,8 @@ function PipelineTestPage() {
 
 					const encodedAudioPath = encodeURIComponent(cd.audioPath ?? "");
 					const finalAudioUrl = `/api/autoplayer/audio/${cd.songId}?aceAudioPath=${encodedAudioPath}`;
-					await markReady({ id: cd.songId as never, audioUrl: finalAudioUrl });
-					await incrementSongs({ id: playlistId as never });
+					await markReady({ id: cd.songId ?? "", audioUrl: finalAudioUrl });
+					await incrementSongs({ id: playlistId });
 
 					setAudioUrl(finalAudioUrl);
 					updateStep("ready", {

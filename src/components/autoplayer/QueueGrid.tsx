@@ -11,7 +11,7 @@ import {
 import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Song } from "@/types/convex";
-import type { SongStatus } from "../../../convex/types";
+import type { SongStatus } from "../../../api-server/types";
 import { SortableSongCard } from "./SortableSongCard";
 
 interface QueueGridProps {

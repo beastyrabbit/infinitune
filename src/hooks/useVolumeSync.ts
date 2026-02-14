@@ -1,17 +1,16 @@
 import { useStore } from "@tanstack/react-store";
-import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef } from "react";
+import { useSetSetting, useSetting } from "@/integrations/api/hooks";
 import { playerStore, setVolume } from "@/lib/player-store";
-import { api } from "../../convex/_generated/api";
 
 export function useVolumeSync() {
-	const savedVolume = useQuery(api.settings.get, { key: "volume" });
-	const setSetting = useMutation(api.settings.set);
+	const savedVolume = useSetting("volume");
+	const setSetting = useSetSetting();
 	const { volume } = useStore(playerStore);
 	const initializedRef = useRef(false);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	// On mount: apply saved volume from Convex
+	// On mount: apply saved volume from API
 	useEffect(() => {
 		if (savedVolume === undefined || initializedRef.current) return;
 		initializedRef.current = true;
@@ -23,7 +22,7 @@ export function useVolumeSync() {
 		}
 	}, [savedVolume]);
 
-	// On volume change: debounce write-back to Convex
+	// On volume change: debounce write-back to API
 	useEffect(() => {
 		if (!initializedRef.current) return;
 		if (debounceRef.current) clearTimeout(debounceRef.current);

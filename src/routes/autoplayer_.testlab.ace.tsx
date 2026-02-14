@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -8,7 +7,7 @@ import {
 	LiveTimer,
 	StatusBadge,
 } from "@/components/autoplayer/test/shared";
-import { api } from "../../convex/_generated/api";
+import { useSettings } from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/testlab/ace")({
 	component: AceTestPage,
@@ -17,7 +16,7 @@ export const Route = createFileRoute("/autoplayer_/testlab/ace")({
 type TaskStatus = "idle" | "submitting" | "running" | "succeeded" | "failed";
 
 function AceTestPage() {
-	const settings = useQuery(api.settings.getAll);
+	const settings = useSettings();
 
 	const [caption, setCaption] = useState(
 		"upbeat electronic dance, synthesizer leads, driving bass, energetic drums",

@@ -1,12 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
 	CollapsibleJson,
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
-import { api } from "../../convex/_generated/api";
+import { useSettings } from "@/integrations/api/hooks";
 import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/llm")({
@@ -25,7 +24,7 @@ interface Generation {
 }
 
 function LlmTestPage() {
-	const settings = useQuery(api.settings.getAll);
+	const settings = useSettings();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [provider, setProvider] = useState<"ollama" | "openrouter">("ollama");

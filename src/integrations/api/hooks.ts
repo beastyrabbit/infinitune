@@ -385,3 +385,42 @@ export function useAddListen() {
 		await api.post(`/api/songs/${args.id}/listen`);
 	}, []);
 }
+
+// ─── Additional Hooks (needed by frontend migration) ─────────────────
+
+export function usePlaylistByKey(
+	key: string | null,
+): Playlist | null | undefined {
+	const { data } = useQuery({
+		queryKey: ["playlists", "by-key", key],
+		queryFn: () =>
+			api.get<Playlist | null>(
+				`/api/playlists/by-key/${encodeURIComponent(key ?? "")}`,
+			),
+		enabled: !!key,
+	});
+	return key ? data : null;
+}
+
+export function useSongsBatch(ids: string[]): Song[] | undefined {
+	const key = ids.slice().sort().join(",");
+	const { data } = useQuery({
+		queryKey: ["songs", "batch", key],
+		queryFn: () => api.post<Song[]>("/api/songs/batch", { ids }),
+		enabled: ids.length > 0,
+	});
+	return ids.length > 0 ? data : [];
+}
+
+export function useUpdatePlaylistPosition() {
+	const qc = useQueryClient();
+	return useCallback(
+		async (args: { id: string; currentOrderIndex: number }) => {
+			await api.patch(`/api/playlists/${args.id}/position`, {
+				currentOrderIndex: args.currentOrderIndex,
+			});
+			qc.invalidateQueries({ queryKey: ["playlists"] });
+		},
+		[qc],
+	);
+}

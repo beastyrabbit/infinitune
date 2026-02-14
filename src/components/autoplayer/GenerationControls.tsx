@@ -1,16 +1,15 @@
-import { useMutation } from "convex/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import VinylIcon from "@/components/ui/vinyl-icon";
+import { useUpdatePlaylistPrompt } from "@/integrations/api/hooks";
 import type { Playlist } from "@/types/convex";
-import { api } from "../../../convex/_generated/api";
 
 interface GenerationControlsProps {
 	playlist: Playlist;
 }
 
 export function GenerationControls({ playlist }: GenerationControlsProps) {
-	const updatePrompt = useMutation(api.playlists.updatePrompt);
+	const updatePrompt = useUpdatePlaylistPrompt();
 
 	const [prompt, setPromptValue] = useState(playlist.prompt);
 

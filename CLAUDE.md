@@ -117,6 +117,10 @@ Server-side API endpoints live at `src/routes/api.autoplayer.*.ts`. These are PO
 
 Convex auto-generates types in `convex/_generated/` — never edit those files. `routeTree.gen.ts` is also auto-generated.
 
+## Ports
+
+Vite dev server on 5173, room server on 5174, API server (Hono) on 5175 (registered in `/home/beasty/projects/.ports`).
+
 ## Commit Discipline
 
 Commit regularly after editing files. Don't batch up large sets of changes — make small, focused commits as you go. Pushing is not required immediately, but frequent commits keep work safe and history clean.

@@ -1,4 +1,4 @@
-import type { SongStatus } from "../../convex/types";
+import type { SongStatus } from "../../api-server/types";
 
 /** Descriptive labels for the track detail panel */
 export const STATUS_LABELS: Record<string, string> = {
