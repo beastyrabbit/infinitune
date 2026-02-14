@@ -107,28 +107,28 @@ function buildStoragePathMap(exportDir: string): Map<string, string> {
 	const storageJsonl = findJsonl(exportDir, "_storage")
 	const entries: StorageEntry[] = storageJsonl ? parseJsonl(storageJsonl) : []
 
-	for (const entry of entries) {
-		if (!entry._id) continue
-
-		const candidates = [
-			path.join(storageDir, entry._id),
-			entry.sha256 ? path.join(storageDir, entry.sha256) : null,
-		].filter(Boolean) as string[]
-
-		for (const candidate of candidates) {
-			if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-				map.set(entry._id, candidate)
-				break
-			}
+	// Index all files in storage dir by stem (without extension) and full name
+	const filesByStem = new Map<string, string>()
+	for (const file of fs.readdirSync(storageDir)) {
+		const filePath = path.join(storageDir, file)
+		if (fs.statSync(filePath).isFile()) {
+			filesByStem.set(file, filePath)
+			// Also map without extension — Convex IDs don't include the extension
+			const stem = file.replace(/\.[^.]+$/, "")
+			if (stem !== file) filesByStem.set(stem, filePath)
 		}
 	}
 
-	// Also scan storage dir for any files not in the JSONL (belt & suspenders)
-	for (const file of fs.readdirSync(storageDir)) {
-		const filePath = path.join(storageDir, file)
-		if (fs.statSync(filePath).isFile() && !map.has(file)) {
-			map.set(file, filePath)
-		}
+	// Match JSONL entries by _id or sha256
+	for (const entry of entries) {
+		if (!entry._id) continue
+		const match = filesByStem.get(entry._id) ?? (entry.sha256 ? filesByStem.get(entry.sha256) : undefined)
+		if (match) map.set(entry._id, match)
+	}
+
+	// Also add any files not yet mapped (belt & suspenders)
+	for (const [key, filePath] of filesByStem) {
+		if (!map.has(key)) map.set(key, filePath)
 	}
 
 	return map
@@ -428,6 +428,68 @@ function importSongs(
 	return { imported, skipped, covers }
 }
 
+// ─── Backfill Covers ─────────────────────────────────────────────────
+
+/** Fix covers for songs that were imported before the storage mapping bug was fixed */
+function backfillCovers(
+	exportDir: string,
+	storagePathMap: Map<string, string>,
+): number {
+	const jsonlPath = findJsonl(exportDir, "songs")
+	if (!jsonlPath) return 0
+
+	fs.mkdirSync(COVERS_DIR, { recursive: true })
+
+	// Find songs with Convex cloud cover URLs
+	const songsNeedingCovers = db
+		.select({ id: schema.songs.id, coverUrl: schema.songs.coverUrl, storagePath: schema.songs.storagePath })
+		.from(schema.songs)
+		.all()
+		.filter((s) => s.coverUrl?.includes("convex.cloud"))
+
+	if (songsNeedingCovers.length === 0) return 0
+
+	// Build a map of songId → coverStorageId from the Convex export
+	const rows = parseJsonl<ConvexSong>(jsonlPath)
+	const coverStorageMap = new Map<string, string>()
+	for (const row of rows) {
+		if (row.coverStorageId) coverStorageMap.set(row._id, row.coverStorageId)
+	}
+
+	let fixed = 0
+	for (const song of songsNeedingCovers) {
+		const storageId = coverStorageMap.get(song.id)
+		if (!storageId || !storagePathMap.has(storageId)) continue
+
+		try {
+			const coverBuffer = fs.readFileSync(storagePathMap.get(storageId)!)
+			const coverFilename = `${song.id}.png`
+			fs.writeFileSync(path.join(COVERS_DIR, coverFilename), coverBuffer)
+			const localCoverUrl = `/covers/${coverFilename}`
+
+			// Update SQLite
+			db.update(schema.songs)
+				.set({ coverUrl: localCoverUrl })
+				.where(eq(schema.songs.id, song.id))
+				.run()
+
+			// Write to NFS folder
+			const nfsDir = resolveNfsSongDir(song.storagePath ?? null, song.id)
+			if (nfsDir) {
+				const nfsCoverPath = path.join(nfsDir, "cover.png")
+				if (!fs.existsSync(nfsCoverPath)) {
+					fs.writeFileSync(nfsCoverPath, coverBuffer)
+				}
+			}
+			fixed++
+		} catch (err) {
+			console.error(`[migrate] Failed to backfill cover for ${song.id}: ${err instanceof Error ? err.message : err}`)
+		}
+	}
+
+	return fixed
+}
+
 // ─── Import Settings ─────────────────────────────────────────────────
 
 interface ConvexSetting {
@@ -511,15 +573,21 @@ async function main() {
 	const settings = importSettings(EXPORT_DIR)
 	console.log(`  → ${settings.imported} imported, ${settings.skipped} skipped`)
 
-	// Step 6: Cleanup
+	// Step 6: Backfill covers for previously imported songs with Convex URLs
+	console.log("[migrate] Backfilling covers for songs with Convex URLs...")
+	const backfilled = backfillCovers(EXPORT_DIR, storagePathMap)
+	console.log(`  → ${backfilled} covers backfilled`)
+
+	// Step 7: Cleanup
 	console.log("\n[migrate] Cleaning up temporary files...")
 	fs.rmSync(EXPORT_DIR, { recursive: true })
 
+	const totalCovers = songs.covers + backfilled
 	console.log("\n═══════════════════════════════════════════════════════")
 	console.log("  Migration complete!")
 	console.log(`  Playlists: ${playlists.imported} imported, ${playlists.skipped} skipped`)
 	console.log(`  Songs:     ${songs.imported} imported, ${songs.skipped} skipped`)
-	console.log(`  Covers:    ${songs.covers} saved to data/covers/ + NFS`)
+	console.log(`  Covers:    ${totalCovers} saved to data/covers/ + NFS`)
 	console.log(`  Settings:  ${settings.imported} imported, ${settings.skipped} skipped`)
 	console.log(`  Note:      ${EXPORT_ZIP} retained for re-runs. Delete when done.`)
 	console.log("═══════════════════════════════════════════════════════\n")
