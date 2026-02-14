@@ -18,7 +18,7 @@ import {
 } from "@/lib/cover-utils";
 import { formatMs } from "@/lib/format-time";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 
 export const Route = createFileRoute("/autoplayer_/queue")({
 	component: QueuePage,

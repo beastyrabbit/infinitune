@@ -10,7 +10,7 @@ import XIcon from "@/components/ui/x-icon";
 import { useDeleteSong, useRevertSong } from "@/integrations/api/hooks";
 import { formatElapsed, formatTime, isGenerating } from "@/lib/format-time";
 import { STATUS_LABELS } from "@/lib/song-status";
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 import { CoverArt } from "./CoverArt";
 import { LiveTimer } from "./LiveTimer";
 

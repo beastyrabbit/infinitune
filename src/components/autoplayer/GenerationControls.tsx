@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useUpdatePlaylistPrompt } from "@/integrations/api/hooks";
-import type { Playlist } from "@/types/convex";
+import type { Playlist } from "@/types";
 
 interface GenerationControlsProps {
 	playlist: Playlist;

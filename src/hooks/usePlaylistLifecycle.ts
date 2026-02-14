@@ -3,7 +3,7 @@ import {
 	useUpdatePlaylistPosition,
 	useUpdatePlaylistStatus,
 } from "@/integrations/api/hooks";
-import type { Playlist, Song } from "@/types/convex";
+import type { Playlist, Song } from "@/types";
 
 /**
  * Manages playlist lifecycle side-effects:

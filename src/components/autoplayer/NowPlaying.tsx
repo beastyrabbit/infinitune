@@ -9,7 +9,7 @@ import VolumeXIcon from "@/components/ui/volume-x-icon";
 import XIcon from "@/components/ui/x-icon";
 import { formatTime } from "@/lib/format-time";
 import { playerStore, setVolume, toggleMute } from "@/lib/player-store";
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 import { CoverArt } from "./CoverArt";
 
 interface NowPlayingProps {

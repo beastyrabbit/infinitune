@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUpdatePlaylistPrompt } from "@/integrations/api/hooks";
 import { formatTimeAgo } from "@/lib/format-time";
-import type { Playlist } from "@/types/convex";
+import type { Playlist } from "@/types";
 
 interface DirectionSteeringProps {
 	playlist: Pick<

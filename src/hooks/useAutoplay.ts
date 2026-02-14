@@ -1,7 +1,7 @@
 import { type MutableRefObject, useEffect, useRef } from "react";
 import { pickNextSong } from "@/lib/pick-next-song";
 import { playerStore, setCurrentSong } from "@/lib/player-store";
-import type { Id, Playlist, Song } from "@/types/convex";
+import type { Id, Playlist, Song } from "@/types";
 
 /**
  * Auto-plays songs when they become ready, gated on prior user interaction.

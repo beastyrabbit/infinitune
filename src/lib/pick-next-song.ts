@@ -1,4 +1,4 @@
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 
 /**
  * Pick the candidate ahead of `idx` first, wrapping to the lowest orderIndex

@@ -1,5 +1,5 @@
 import { findGeneratingInterrupt, pickNextSong } from "@/lib/pick-next-song";
-import type { Playlist, Song } from "@/types/convex";
+import type { Playlist, Song } from "@/types";
 
 interface UpNextBannerProps {
 	songs: Song[];

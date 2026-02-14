@@ -19,3 +19,6 @@ scripts/results/
 .playwright-mcp/
 temp-nas/*
 !temp-nas/.gitkeep
+data/
+convex-export*
+controller-snapshot.md

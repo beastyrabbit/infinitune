@@ -8,7 +8,7 @@ import {
 	isPlayable as isPlayableStatus,
 } from "@/lib/format-time";
 import { getStatusBadge } from "@/lib/song-status";
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 import { CoverArt } from "./CoverArt";
 import { LiveTimer } from "./LiveTimer";
 

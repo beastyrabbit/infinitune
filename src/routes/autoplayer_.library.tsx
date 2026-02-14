@@ -20,7 +20,7 @@ import {
 	setVolume,
 	toggleMute,
 } from "@/lib/player-store";
-import type { Song } from "@/types/convex";
+import type { Song } from "@/types";
 
 export const Route = createFileRoute("/autoplayer_/library")({
 	component: LibraryPage,
