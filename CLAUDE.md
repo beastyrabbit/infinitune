@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Infinitune is an AI-powered infinite music generator. Users describe a vibe via prompt, and a background worker orchestrates a pipeline (LLM → ComfyUI → ACE-Step) to generate songs with metadata, lyrics, cover art, and audio in real-time. The browser displays songs as they're generated via Convex real-time subscriptions.
+Infinitune is an AI-powered infinite music generator. Users describe a vibe via prompt, and a background worker orchestrates a pipeline (LLM → ComfyUI → ACE-Step) to generate songs with metadata, lyrics, cover art, and audio in real-time. The browser displays songs as they're generated via React Query + WebSocket event invalidation.
 
 ## Commands
 
@@ -12,7 +12,7 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 # Development (all needed simultaneously)
 pnpm dev:all          # All four processes at once (recommended)
 pnpm dev              # Vite dev server on :5173
-npx convex dev        # Convex backend (real-time DB)
+pnpm api-server       # Hono API server on :5175 (SQLite + RabbitMQ)
 pnpm worker           # Background song generation worker
 pnpm room-server      # Room server on :5174 (multi-device playback)
 
@@ -32,21 +32,27 @@ Pre-commit hooks (lefthook): gitleaks, biome-check, typecheck. Note: codebase ha
 ## Architecture
 
 ```
-Browser (React 19 + TanStack Router)
-  ↕ real-time WebSocket subscriptions
-Convex (database + mutations/queries)
-  ↕ HTTP polling (~2s)
+Browser (React 19 + TanStack Router + React Query)
+  ↕ HTTP fetch + WebSocket event invalidation
+API Server (Hono on :5175)
+  ├── SQLite (Drizzle ORM, WAL mode)
+  ├── RabbitMQ publisher (events on every mutation)
+  └── WebSocket bridge → Browser (invalidation events)
 Worker (Node.js, tsx watch)
+  ├── RabbitMQ consumer (work.metadata, work.audio, work.retry queues)
+  ├── HTTP → API Server (queries + mutations)
   ├── LLM (Ollama/OpenRouter) → metadata + lyrics
   ├── ComfyUI → cover art
   └── ACE-Step 1.5 → audio synthesis
-  ↕ NFS
-Audio files served from local storage
+Room Server (:5174)
+  ├── RabbitMQ consumer (songs.{playlistId} events)
+  ├── HTTP → API Server
+  └── WebSocket → Devices (broadcasts playback state)
 ```
 
-**Browser ↔ Convex**: Real-time push via `useQuery()` WebSocket subscriptions. No polling.
-**Worker → Convex**: HTTP client polls for pending songs, writes results back via mutations.
-**Room Server ↔ Convex**: HTTP client polls song queues per room (~2s). Marks songs as played via mutations.
+**Browser ↔ API Server**: React Query fetches data via HTTP. WebSocket bridge forwards RabbitMQ events to trigger query invalidation (sub-ms reactivity).
+**Worker ↔ API Server**: Event-driven via RabbitMQ work queues. Worker consumes tasks, calls API for reads/writes.
+**Room Server ↔ API Server**: Subscribes to RabbitMQ `songs.*` events. Fetches updated queues via HTTP when relevant playlists change.
 **Browser ↔ Room Server**: WebSocket for real-time playback coordination across devices.
 
 ### Room Server (Multi-Device Playback)
@@ -55,7 +61,7 @@ Standalone Node.js process on `:5174` that coordinates playback across multiple 
 
 WebSocket protocol: Zod-validated messages in `room-server/protocol.ts`. REST API: `GET /api/v1/rooms`, `POST /api/v1/rooms`, `GET /api/v1/now-playing?room={id}` (Waybar compatible), `GET /api/v1/openapi.json`.
 
-The worker is **completely untouched** — it keeps generating songs into Convex. The room server reads from Convex and pushes updates to connected devices.
+The worker consumes work from RabbitMQ queues and calls the API server for reads/writes. The room server subscribes to RabbitMQ song events and pushes updates to connected devices.
 
 ### Song Generation Pipeline
 
@@ -97,7 +103,7 @@ Used for `transitionDismissed`, `userPaused`, `userHasInteracted`.
 The main hook orchestrates several sub-hooks:
 - `useAudioPlayer` — HTML5 Audio lifecycle
 - `useAutoplay` — auto-advance when song ready
-- `usePlaybackTracking` — send currentTime to Convex
+- `usePlaybackTracking` — send currentTime to API server
 - `usePlaylistLifecycle` — close playlist when done
 - `usePlaylistHeartbeat` — keep-alive signal
 
@@ -109,13 +115,17 @@ All LLM calls go through `src/services/llm-client.ts` — a gateway using Vercel
 
 Server-side API endpoints live at `src/routes/api.autoplayer.*.ts`. These are POST handlers (TanStack Start + Nitro) that call services (LLM, ACE-Step, ComfyUI) and return JSON.
 
-## Convex Schema (Key Tables)
+## Database Schema (SQLite + Drizzle)
 
-- **playlists**: prompt, llmProvider/Model, mode (endless/oneshot), status (active/closing/closed), promptEpoch, steerHistory, generation params
-- **songs**: playlistId (FK), orderIndex, status, all metadata fields, audioUrl, coverUrl, aceTaskId, isInterrupt, userRating, personaExtract, timing metrics
+- **playlists**: prompt, llmProvider/Model, mode (endless/oneshot), status (active/closing/closed), promptEpoch, steerHistory (JSON text), generation params
+- **songs**: playlistId (FK with cascade delete), orderIndex, status, all metadata fields, audioUrl, coverUrl, aceTaskId, isInterrupt, userRating, personaExtract, timing metrics
 - **settings**: key/value store for service URLs and model config
 
-Convex auto-generates types in `convex/_generated/` — never edit those files. `routeTree.gen.ts` is also auto-generated.
+Schema defined in `api-server/db/schema.ts` (Drizzle ORM). IDs are cuid2 strings. Arrays/objects stored as JSON text columns. Wire format includes `_id` and `_creationTime` mapped from `id`/`createdAt` for backward compatibility. `routeTree.gen.ts` is auto-generated by TanStack Router.
+
+## Ports
+
+Vite dev server on 5173, room server on 5174, API server (Hono) on 5175 (registered in `/home/beasty/projects/.ports`).
 
 ## Commit Discipline
 
@@ -125,7 +135,7 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 
 - **Formatter**: Biome — tabs, double quotes, organized imports
 - **Path alias**: `@/` → `src/` (e.g., `@/components/ui/button`, `@/hooks/useAutoplayer`)
-- **Convex imports**: `import { api } from "../../convex/_generated/api"` (not aliased)
+- **Type imports**: `import type { Song, Playlist } from "@/types/convex"` (re-exports from `api-server/types`)
 - **UI components**: shadcn/radix in `src/components/ui/`
 - **Zod imports**: `import z from "zod"` (default import — Zod 4, not `{ z }`)
 - **Route files**: `autoplayer.tsx` is the main player; `autoplayer_.*.tsx` are nested routes (underscore = layout escape)
@@ -137,15 +147,25 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - LLM prompts & schemas: `src/services/llm.ts`
 - Player state: `src/lib/player-store.ts`
 - Queue selection: `src/lib/pick-next-song.ts`
-- Convex schema: `convex/schema.ts`
-- Song mutations: `convex/songs.ts`
+- Database schema: `api-server/db/schema.ts`
+- API routes (songs): `api-server/routes/songs.ts`
+- API routes (playlists): `api-server/routes/playlists.ts`
+- API routes (settings): `api-server/routes/settings.ts`
+- API server entry: `api-server/index.ts`
+- RabbitMQ helpers: `api-server/rabbit.ts`
+- WebSocket bridge: `api-server/ws-bridge.ts`
+- Wire mappers: `api-server/wire.ts`
+- API client (server-side): `api-server/client.ts`
+- Shared types: `api-server/types.ts`
+- React Query hooks: `src/integrations/api/hooks.ts`
+- API provider: `src/integrations/api/provider.tsx`
 - LLM client gateway: `src/services/llm-client.ts` (Vercel AI SDK + per-provider semaphore)
 - ComfyUI workflows: `src/data/comfyui-workflow-*.json`
 - Room server entry: `room-server/index.ts`
 - Room server protocol (Zod schemas): `room-server/protocol.ts`
 - Room state management: `room-server/room.ts`
 - Room manager: `room-server/room-manager.ts`
-- Room↔Convex sync: `room-server/convex-sync.ts`
+- Room↔API event sync: `room-server/event-sync.ts`
 - Room connection hook: `src/hooks/useRoomConnection.ts`
 - Room player hook: `src/hooks/useRoomPlayer.ts`
 - Room controller hook: `src/hooks/useRoomController.ts`

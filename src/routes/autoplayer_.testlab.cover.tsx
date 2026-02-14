@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -7,7 +6,7 @@ import {
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
-import { api } from "../../convex/_generated/api";
+import { useSettings } from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/testlab/cover")({
 	component: CoverTestPage,
@@ -26,7 +25,7 @@ interface CoverGeneration {
 }
 
 function CoverTestPage() {
-	const settings = useQuery(api.settings.getAll);
+	const settings = useSettings();
 
 	const [coverPrompt, setCoverPrompt] = useState(
 		"cinematic matte painting, neon-drenched cyberpunk cityscape at midnight, towering holographic advertisements reflecting off rain-slicked streets, moody blue and magenta lighting, atmospheric fog, dystopian beauty",

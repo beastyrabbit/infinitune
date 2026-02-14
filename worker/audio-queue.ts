@@ -1,4 +1,3 @@
-import type { Id } from '../convex/_generated/dataModel'
 import type { IEndpointQueue, QueueRequest, QueueResult, QueueStatus } from './endpoint-queue'
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -22,7 +21,7 @@ interface PendingItem {
 }
 
 interface ActiveSlot {
-  songId: Id<"songs">
+  songId: string
   taskId: string
   submittedAt: number
   submitProcessingMs: number
@@ -89,7 +88,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
    * working on it.
    */
   resumePoll(
-    songId: Id<"songs">,
+    songId: string,
     taskId: string,
     submittedAt: number,
   ): Promise<QueueResult<AudioResult>> {
@@ -245,7 +244,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
       })
   }
 
-  cancelSong(songId: Id<"songs">): void {
+  cancelSong(songId: string): void {
     // Remove from pending (includes resumed polls waiting in queue)
     const idx = this.pending.findIndex((p) => p.request.songId === songId)
     if (idx !== -1) {
@@ -289,7 +288,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
   }
 
   /** Update the priority of a pending item by songId */
-  updatePendingPriority(songId: Id<"songs">, newPriority: number): void {
+  updatePendingPriority(songId: string, newPriority: number): void {
     const item = this.pending.find((p) => p.request.songId === songId)
     if (item) {
       item.request.priority = newPriority

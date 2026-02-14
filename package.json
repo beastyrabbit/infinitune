@@ -12,17 +12,20 @@
     "check": "biome check",
     "worker": "tsx watch --tsconfig tsconfig.json worker/index.ts",
     "room-server": "tsx watch --tsconfig tsconfig.json room-server/index.ts",
-    "dev:all": "npx concurrently -n vite,convex,worker,rooms -c blue,magenta,green,yellow \"pnpm dev\" \"npx convex dev\" \"pnpm worker\" \"pnpm room-server\""
+    "api-server": "tsx watch --tsconfig tsconfig.json api-server/index.ts",
+    "dev:all": "npx concurrently -n vite,api,worker,rooms -c blue,magenta,green,yellow \"pnpm dev\" \"pnpm api-server\" \"pnpm worker\" \"pnpm room-server\""
   },
   "dependencies": {
-    "@convex-dev/react-query": "0.1.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@hono/node-ws": "^1.3.0",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",
+    "@paralleldrive/cuid2": "^3.3.0",
     "@tailwindcss/vite": "^4.0.6",
     "@tanstack/react-devtools": "^0.7.0",
+    "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-router": "^1.132.0",
     "@tanstack/react-router-devtools": "^1.132.0",
     "@tanstack/react-router-ssr-query": "^1.131.7",
@@ -31,10 +34,13 @@
     "@tanstack/router-plugin": "^1.132.0",
     "@tanstack/store": "^0.8.0",
     "ai": "^6.0.84",
+    "amqplib": "^0.10.9",
+    "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "convex": "^1.27.3",
+    "drizzle-orm": "^0.45.1",
     "highlight.js": "^11.11.1",
+    "hono": "^4.11.9",
     "lucide-react": "^0.561.0",
     "motion": "^12.34.0",
     "nitro": "npm:nitro-nightly@latest",
@@ -57,17 +63,26 @@
     "@tanstack/devtools-vite": "^0.3.11",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
+    "@types/amqplib": "^0.10.8",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.4",
     "concurrently": "^9.2.1",
+    "drizzle-kit": "^0.31.9",
     "jsdom": "^27.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vitest": "^3.0.5",
     "web-vitals": "^5.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
   }
 }

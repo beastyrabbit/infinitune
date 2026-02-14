@@ -1,5 +1,4 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import {
 	ArrowLeft,
 	Headphones,
@@ -21,7 +20,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { api } from "../../convex/_generated/api";
+import { usePlaylistsAll } from "@/integrations/api/hooks";
 import type { RoomInfo } from "../../room-server/protocol";
 
 const ROOM_SERVER_URL =
@@ -59,7 +58,7 @@ function RoomsPage() {
 		}
 	}, [deviceNameInput]);
 
-	const rawPlaylists = useQuery(api.playlists.listAll) ?? [];
+	const rawPlaylists = usePlaylistsAll() ?? [];
 	const playlists = [...rawPlaylists].sort(
 		(a, b) => b._creationTime - a._creationTime,
 	);

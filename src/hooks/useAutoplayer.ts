@@ -1,35 +1,32 @@
 import { useStore } from "@tanstack/react-store";
-import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { asSongId } from "@/lib/convex-helpers";
+import {
+	useCreatePending,
+	usePlaylist,
+	useSetRating,
+	useSongQueue,
+	useUpdateSongStatus,
+} from "@/integrations/api/hooks";
 import { pickNextSong } from "@/lib/pick-next-song";
 import { playerStore, setCurrentSong, setPlaylist } from "@/lib/player-store";
-import type { Id } from "@/types/convex";
-import { api } from "../../convex/_generated/api";
 import { useAudioPlayer } from "./useAudioPlayer";
 import { useAutoplay } from "./useAutoplay";
 import { usePlaybackTracking } from "./usePlaybackTracking";
 import { usePlaylistLifecycle } from "./usePlaylistLifecycle";
 
-export function useAutoplayer(playlistId: Id<"playlists"> | null) {
+export function useAutoplayer(playlistId: string | null) {
 	// --- Data loading ---
-	const songs = useQuery(
-		api.songs.getQueue,
-		playlistId ? { playlistId } : "skip",
-	);
-	const playlist = useQuery(
-		api.playlists.get,
-		playlistId ? { id: playlistId } : "skip",
-	);
+	const songs = useSongQueue(playlistId);
+	const playlist = usePlaylist(playlistId);
 
 	const { currentSongId, isPlaying, currentTime } = useStore(playerStore);
-	const updateSongStatus = useMutation(api.songs.updateStatus);
-	const createPending = useMutation(api.songs.createPending);
-	const setRatingMut = useMutation(api.songs.setRating);
+	const updateSongStatus = useUpdateSongStatus();
+	const createPending = useCreatePending();
+	const setRatingMut = useSetRating();
 
 	// User interaction gate — prevents auto-play on page load
 	const userHasInteractedRef = useRef(false);
-	// Tracks explicit user pause — prevents Convex updates from overriding pause
+	// Tracks explicit user pause — prevents updates from overriding pause
 	const userPausedRef = useRef(false);
 
 	// When user manually picks a song, the epoch transition is over —
@@ -180,7 +177,7 @@ export function useAutoplayer(playlistId: Id<"playlists"> | null) {
 
 	const rateSong = useCallback(
 		(songId: string, rating: "up" | "down") => {
-			setRatingMut({ id: asSongId(songId), rating });
+			setRatingMut({ id: songId, rating });
 		},
 		[setRatingMut],
 	);

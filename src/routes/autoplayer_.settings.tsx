@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
 import { Cpu, Music, Plug, ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { SettingsTabAudioEngine } from "@/components/autoplayer/settings/SettingsTabAudioEngine";
@@ -12,8 +11,13 @@ import { SettingsTabNetwork } from "@/components/autoplayer/settings/SettingsTab
 import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
+import {
+	usePlaylistByKey,
+	useSetSetting,
+	useSettings,
+	useUpdatePlaylistParams,
+} from "@/integrations/api/hooks";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
-import { api } from "../../convex/_generated/api";
 
 export const Route = createFileRoute("/autoplayer_/settings")({
 	component: SettingsPage,
@@ -31,14 +35,11 @@ const TABS: { id: Tab; label: string; icon: typeof Plug }[] = [
 function SettingsPage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
-	const settings = useQuery(api.settings.getAll);
-	const setSetting = useMutation(api.settings.set);
-	const activePlaylist = useQuery(
-		api.playlists.getByPlaylistKey,
-		pl ? { playlistKey: pl } : "skip",
-	);
+	const settings = useSettings();
+	const setSetting = useSetSetting();
+	const activePlaylist = usePlaylistByKey(pl ?? null);
 	usePlaylistHeartbeat(activePlaylist?._id ?? null);
-	const updateParams = useMutation(api.playlists.updateParams);
+	const updateParams = useUpdatePlaylistParams();
 
 	// Tab state
 	const [activeTab, setActiveTab] = useState<Tab>("network");

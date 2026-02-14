@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
-import { getConvexClient } from "./convex-client.js";
-import { ConvexSync } from "./convex-sync.js";
+import { apiClient } from "./api-client.js";
+import { EventSync } from "./event-sync.js";
 import {
 	ClientMessageSchema,
 	CreateRoomRequestSchema,
@@ -13,11 +13,10 @@ import { RoomManager } from "./room-manager.js";
 
 const PORT = Number(process.env.ROOM_SERVER_PORT ?? 5174);
 const roomManager = new RoomManager();
-const convexClient = getConvexClient();
-const convexSync = new ConvexSync(convexClient, roomManager);
+const eventSync = new EventSync(apiClient, roomManager);
 
 // Wire up the "mark played" callback
-roomManager.setMarkPlayedCallback((songId) => convexSync.markSongPlayed(songId));
+roomManager.setMarkPlayedCallback((songId) => eventSync.markSongPlayed(songId));
 
 // Track which room each WebSocket belongs to
 const wsRoomMap = new Map<WebSocket, { roomId: string; deviceId: string }>();
@@ -243,7 +242,7 @@ function handleClientMessage(ws: WebSocket, msg: import("./protocol.js").ClientM
 			if (!roomManager.getRoom(msg.roomId) && msg.playlistKey) {
 				const roomName = msg.roomName || msg.roomId;
 				roomManager.createRoom(msg.roomId, roomName, msg.playlistKey);
-				convexSync.syncRoom(roomManager.getRoom(msg.roomId)!);
+				eventSync.syncRoom(roomManager.getRoom(msg.roomId)!);
 			}
 
 			const room = roomManager.joinRoom(
@@ -305,7 +304,7 @@ function handleClientMessage(ws: WebSocket, msg: import("./protocol.js").ClientM
 
 // ─── Start ──────────────────────────────────────────────────────────
 
-convexSync.start();
+eventSync.start();
 
 server.listen(PORT, () => {
 	console.log(`[room-server] Listening on :${PORT}`);

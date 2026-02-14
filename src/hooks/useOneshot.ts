@@ -1,6 +1,4 @@
-import { useQuery } from "convex/react";
-import type { Id } from "@/types/convex";
-import { api } from "../../convex/_generated/api";
+import { usePlaylist, useSongQueue } from "@/integrations/api/hooks";
 
 export type OneshotPhase =
 	| "idle"
@@ -9,15 +7,9 @@ export type OneshotPhase =
 	| "ready"
 	| "error";
 
-export function useOneshot(playlistId: Id<"playlists"> | null) {
-	const songs = useQuery(
-		api.songs.getQueue,
-		playlistId ? { playlistId } : "skip",
-	);
-	const playlist = useQuery(
-		api.playlists.get,
-		playlistId ? { id: playlistId } : "skip",
-	);
+export function useOneshot(playlistId: string | null) {
+	const songs = useSongQueue(playlistId);
+	const playlist = usePlaylist(playlistId);
 
 	if (!playlistId || !songs) {
 		return {

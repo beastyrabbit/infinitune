@@ -1,8 +1,7 @@
-import { useMutation, useQuery } from "convex/react";
 import { Search, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import VinylIcon from "@/components/ui/vinyl-icon";
-import { api } from "../../../convex/_generated/api";
+import { useDeletePlaylist, usePlaylistsAll } from "@/integrations/api/hooks";
 
 interface PlaylistPickerProps {
 	onSelect: (playlistKey: string) => void;
@@ -10,8 +9,8 @@ interface PlaylistPickerProps {
 }
 
 export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
-	const playlists = useQuery(api.playlists.listAll);
-	const removePlaylist = useMutation(api.playlists.remove);
+	const playlists = usePlaylistsAll();
+	const removePlaylist = useDeletePlaylist();
 	const [search, setSearch] = useState("");
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 

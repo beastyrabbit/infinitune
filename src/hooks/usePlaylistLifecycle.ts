@@ -1,7 +1,9 @@
-import { useMutation } from "convex/react";
 import { useEffect } from "react";
-import type { Id, Playlist, Song } from "@/types/convex";
-import { api } from "../../convex/_generated/api";
+import {
+	useUpdatePlaylistPosition,
+	useUpdatePlaylistStatus,
+} from "@/integrations/api/hooks";
+import type { Playlist, Song } from "@/types/convex";
 
 /**
  * Manages playlist lifecycle side-effects:
@@ -9,15 +11,13 @@ import { api } from "../../convex/_generated/api";
  * - Auto-closes playlists when all transient songs have finished.
  */
 export function usePlaylistLifecycle(
-	playlistId: Id<"playlists"> | null,
+	playlistId: string | null,
 	playlist: Playlist | null | undefined,
 	songs: Song[] | undefined,
 	currentSongId: string | null,
 ) {
-	const updateCurrentPosition = useMutation(
-		api.playlists.updateCurrentPosition,
-	);
-	const updatePlaylistStatus = useMutation(api.playlists.updateStatus);
+	const updateCurrentPosition = useUpdatePlaylistPosition();
+	const updatePlaylistStatus = useUpdatePlaylistStatus();
 
 	// Update playlist's current position when song changes
 	useEffect(() => {

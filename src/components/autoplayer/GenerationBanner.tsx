@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import type { Song } from "@/types/convex";
-import { type SongStatus, TRANSIENT_STATUSES } from "../../../convex/types";
+import { type SongStatus, TRANSIENT_STATUSES } from "../../../api-server/types";
 
 interface GenerationBannerProps {
 	songs: Song[];

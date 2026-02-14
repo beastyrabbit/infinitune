@@ -1,11 +1,9 @@
-import type { Id } from '../convex/_generated/dataModel'
-
 // ─── Endpoint Types ──────────────────────────────────────────────────
 export type EndpointType = 'llm' | 'image' | 'audio'
 
 // ─── Queue Request / Result ──────────────────────────────────────────
 export interface QueueRequest<T> {
-  songId: Id<"songs">
+  songId: string
   priority: number
   endpoint?: string
   execute: (signal: AbortSignal) => Promise<T>
@@ -31,10 +29,10 @@ export interface QueueStatus {
 export interface IEndpointQueue<T> {
   readonly type: EndpointType
   enqueue(request: QueueRequest<T>): Promise<QueueResult<T>>
-  cancelSong(songId: Id<"songs">): void
+  cancelSong(songId: string): void
   getStatus(): QueueStatus
   refreshConcurrency(maxConcurrency: number): void
-  updatePendingPriority(songId: Id<"songs">, newPriority: number): void
+  updatePendingPriority(songId: string, newPriority: number): void
   resortPending(): void
 }
 
@@ -47,7 +45,7 @@ interface PendingItem<T> {
 }
 
 interface ActiveItem {
-  songId: Id<"songs">
+  songId: string
   startedAt: number
   endpoint?: string
   priority: number
@@ -60,7 +58,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
   protected maxConcurrency: number
 
   private pending: PendingItem<T>[] = []
-  private active = new Map<Id<"songs">, ActiveItem>()
+  private active = new Map<string, ActiveItem>()
   private draining = false
   private errorCount = 0
   private lastErrorMessage?: string
@@ -93,7 +91,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
     })
   }
 
-  cancelSong(songId: Id<"songs">): void {
+  cancelSong(songId: string): void {
     // Remove from pending
     const pendingIdx = this.pending.findIndex(
       (p) => p.request.songId === songId,
@@ -138,7 +136,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
   }
 
   /** Update the priority of a pending item by songId */
-  updatePendingPriority(songId: Id<"songs">, newPriority: number): void {
+  updatePendingPriority(songId: string, newPriority: number): void {
     const item = this.pending.find((p) => p.request.songId === songId)
     if (item) {
       item.request.priority = newPriority

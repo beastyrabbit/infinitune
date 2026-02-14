@@ -1,6 +1,6 @@
 import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 
-import ConvexProvider from "../integrations/convex/provider";
+import ApiProvider from "../integrations/api/provider";
 
 import appCss from "../styles.css?url";
 
@@ -46,7 +46,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<HeadContent />
 			</head>
 			<body>
-				<ConvexProvider>{children}</ConvexProvider>
+				<ApiProvider>{children}</ApiProvider>
 				<Scripts />
 			</body>
 		</html>
