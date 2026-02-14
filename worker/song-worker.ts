@@ -52,6 +52,7 @@ export class SongWorker {
 	private ctx: SongWorkerContext
 	private aborted = false
 	private _status: SongWorkerStatus = "running"
+	private coverBase64?: string
 
 	get status(): SongWorkerStatus {
 		return this._status
@@ -307,9 +308,13 @@ export class SongWorker {
 				},
 			})
 		}).then(async ({ result: coverResult, processingMs }) => {
+			// Capture base64 for NFS save in saveAndFinalize()
+			this.coverBase64 = coverResult.imageBase64
+
 			// Upload cover image to API server
 			try {
-				await this.ctx.apiClient.uploadCover(songId, coverResult.imageBase64)
+				const uploadResult = await this.ctx.apiClient.uploadCover(songId, coverResult.imageBase64)
+				this.song = { ...this.song, coverUrl: uploadResult.coverUrl }
 				console.log(`  [song-worker] Cover uploaded for ${songId} (${processingMs}ms)`)
 				await this.ctx.apiClient.updateCoverProcessingMs(songId, processingMs)
 				return
@@ -453,6 +458,20 @@ export class SongWorker {
 
 		// Save to NFS
 		try {
+			// Determine cover data for NFS — prefer captured base64, fallback to downloading from API
+			let coverBase64ForNfs: string | null = this.coverBase64 ?? null
+			if (!coverBase64ForNfs && this.song.coverUrl && !this.song.coverUrl.startsWith("data:")) {
+				try {
+					const apiBase = process.env.API_URL ?? "http://localhost:5175"
+					const resp = await fetch(`${apiBase}${this.song.coverUrl}`)
+					if (resp.ok) {
+						coverBase64ForNfs = Buffer.from(await resp.arrayBuffer()).toString("base64")
+					}
+				} catch {
+					// Best-effort — continue without cover in NFS
+				}
+			}
+
 			const saveResult = await saveSongToNfs({
 				songId: this.songId,
 				title: this.song.title || "Unknown",
@@ -475,6 +494,7 @@ export class SongWorker {
 				timeSignature: this.song.timeSignature || "4/4",
 				audioDuration: this.song.audioDuration || 240,
 				aceAudioPath: audioPath,
+				coverBase64: coverBase64ForNfs,
 			})
 			await this.ctx.apiClient.updateStoragePath(this.songId, {
 				storagePath: saveResult.storagePath,
