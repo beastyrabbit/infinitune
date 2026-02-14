@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, sqlite } from "../db/index"
 import { songs, playlists } from "../db/schema"
-import { songToWire } from "../wire"
+import { songToWire, parseJsonField } from "../wire"
 import { publishEvent, publishWork } from "../rabbit"
 import { saveCover } from "../covers"
 import { ACTIVE_STATUSES, TRANSIENT_STATUSES } from "../types"
@@ -151,8 +151,8 @@ app.get("/needs-persona", async (c) => {
 			energy: s.energy,
 			era: s.era,
 			vocalStyle: s.vocalStyle,
-			instruments: s.instruments ? JSON.parse(s.instruments) : undefined,
-			themes: s.themes ? JSON.parse(s.themes) : undefined,
+			instruments: parseJsonField<string[]>(s.instruments),
+			themes: parseJsonField<string[]>(s.themes),
 			description: s.description,
 			lyrics: s.lyrics,
 		}))
@@ -297,6 +297,12 @@ app.get("/:id", async (c) => {
 // POST /api/songs — create a song (full metadata, status=generating_metadata)
 app.post("/", async (c) => {
 	const body = await c.req.json()
+	if (!body.playlistId || typeof body.playlistId !== "string") {
+		return c.json({ error: "playlistId is required" }, 400)
+	}
+	if (body.orderIndex == null || typeof body.orderIndex !== "number") {
+		return c.json({ error: "orderIndex is required (number)" }, 400)
+	}
 	const [row] = await db
 		.insert(songs)
 		.values({
@@ -370,6 +376,12 @@ app.post("/create-pending", async (c) => {
 // POST /api/songs/create-metadata-ready — create with metadata already done
 app.post("/create-metadata-ready", async (c) => {
 	const body = await c.req.json()
+	if (!body.playlistId || typeof body.playlistId !== "string") {
+		return c.json({ error: "playlistId is required" }, 400)
+	}
+	if (body.orderIndex == null || typeof body.orderIndex !== "number") {
+		return c.json({ error: "orderIndex is required (number)" }, 400)
+	}
 	const [row] = await db
 		.insert(songs)
 		.values({

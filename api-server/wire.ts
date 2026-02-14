@@ -7,7 +7,7 @@ import type { Playlist, Song, Setting } from "./db/schema"
 
 type WithWireFields<T> = T & { _id: string; _creationTime: number }
 
-function parseJsonField<T>(value: string | null): T | undefined {
+export function parseJsonField<T>(value: string | null): T | undefined {
 	if (!value) return undefined
 	try {
 		return JSON.parse(value) as T

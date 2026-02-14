@@ -74,6 +74,11 @@ app.get("/:id", async (c) => {
 // POST /api/playlists — create a playlist
 app.post("/", async (c) => {
 	const body = await c.req.json()
+	for (const field of ["name", "prompt", "llmProvider", "llmModel"] as const) {
+		if (!body[field] || typeof body[field] !== "string") {
+			return c.json({ error: `${field} is required` }, 400)
+		}
+	}
 	const [row] = await db
 		.insert(playlists)
 		.values({
