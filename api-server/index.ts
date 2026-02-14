@@ -1,9 +1,7 @@
-// @ts-expect-error — @hono/node-server has no type declarations
 import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-// @ts-expect-error — @hono/node-server/serve-static has no type declarations
 import { serveStatic } from "@hono/node-server/serve-static"
 import { ensureSchema } from "./db/migrate"
 import settingsRoutes from "./routes/settings"
