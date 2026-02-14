@@ -338,6 +338,12 @@ app.post("/", async (c) => {
 // POST /api/songs/create-pending — create a pending song (worker creates these)
 app.post("/create-pending", async (c) => {
 	const body = await c.req.json()
+	if (!body.playlistId || typeof body.playlistId !== "string") {
+		return c.json({ error: "playlistId is required" }, 400)
+	}
+	if (body.orderIndex == null || typeof body.orderIndex !== "number") {
+		return c.json({ error: "orderIndex is required (number)" }, 400)
+	}
 	const [row] = await db
 		.insert(songs)
 		.values({

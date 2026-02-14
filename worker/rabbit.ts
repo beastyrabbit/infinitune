@@ -85,7 +85,8 @@ export async function connectWorkerRabbit(
 						"[worker-rabbit] Error processing metadata message:",
 						err instanceof Error ? err.message : err,
 					)
-					ch.nack(msg, false, true)
+					// Don't requeue if already redelivered (prevents infinite loop)
+				ch.nack(msg, false, !msg.fields.redelivered)
 				}
 			})
 
@@ -102,7 +103,8 @@ export async function connectWorkerRabbit(
 						"[worker-rabbit] Error processing audio message:",
 						err instanceof Error ? err.message : err,
 					)
-					ch.nack(msg, false, true)
+					// Don't requeue if already redelivered (prevents infinite loop)
+				ch.nack(msg, false, !msg.fields.redelivered)
 				}
 			})
 
@@ -119,7 +121,8 @@ export async function connectWorkerRabbit(
 						"[worker-rabbit] Error processing retry message:",
 						err instanceof Error ? err.message : err,
 					)
-					ch.nack(msg, false, true)
+					// Don't requeue if already redelivered (prevents infinite loop)
+				ch.nack(msg, false, !msg.fields.redelivered)
 				}
 			})
 

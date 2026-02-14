@@ -18,16 +18,19 @@ let connecting = false
 async function connect(): Promise<AmqpChannel> {
 	if (channel) return channel
 	if (connecting) {
-		// Wait for ongoing connection attempt (with timeout)
-		const maxWait = 30_000
-		const start = Date.now()
-		while (connecting) {
-			if (Date.now() - start > maxWait) {
-				throw new Error("[rabbit] Timed out waiting for connection")
-			}
-			await new Promise((r) => setTimeout(r, 100))
-		}
-		if (channel) return channel
+		// Wait for ongoing connection via polling (with timeout)
+		return new Promise<AmqpChannel>((resolve, reject) => {
+			const interval = setInterval(() => {
+				if (channel) {
+					clearInterval(interval)
+					resolve(channel)
+				}
+			}, 100)
+			setTimeout(() => {
+				clearInterval(interval)
+				reject(new Error("[rabbit] Timed out waiting for connection"))
+			}, 30_000)
+		})
 	}
 
 	connecting = true

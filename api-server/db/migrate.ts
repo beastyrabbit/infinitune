@@ -3,6 +3,10 @@ import { sqlite } from "./index"
 /**
  * Auto-create tables on startup using raw SQL (no migration files needed).
  * Idempotent — safe to call on every startup.
+ *
+ * Uses raw DDL instead of drizzle-kit migrations because this is a local-only
+ * app with no production deployments to manage. `CREATE TABLE IF NOT EXISTS`
+ * is sufficient. If schema versioning becomes needed, switch to drizzle-kit push/migrate.
  */
 export function ensureSchema() {
 	sqlite.exec(`
