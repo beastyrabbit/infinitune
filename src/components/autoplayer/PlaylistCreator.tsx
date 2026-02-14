@@ -1,5 +1,5 @@
 import { useQuery } from "convex/react";
-import { Library, List, Zap } from "lucide-react";
+import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import GearIcon from "@/components/ui/gear-icon";
@@ -23,6 +23,8 @@ interface ModelOption {
 	vision?: boolean;
 }
 
+type PlaybackMode = "local" | "room";
+
 interface PlaylistCreatorProps {
 	onCreatePlaylist: (data: {
 		name: string;
@@ -38,6 +40,25 @@ interface PlaylistCreatorProps {
 	onOpenLibrary?: () => void;
 	onOpenOneshot?: () => void;
 	onOpenPlaylists?: () => void;
+	onOpenRooms?: () => void;
+	onCreatePlaylistInRoom?: (data: {
+		name: string;
+		prompt: string;
+		provider: LlmProvider;
+		model: string;
+		inferenceSteps?: number;
+		lmTemperature?: number;
+		lmCfgScale?: number;
+		inferMethod?: string;
+	}) => void;
+}
+
+function slugify(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 30);
 }
 
 export function PlaylistCreator({
@@ -46,6 +67,8 @@ export function PlaylistCreator({
 	onOpenLibrary,
 	onOpenOneshot,
 	onOpenPlaylists,
+	onOpenRooms,
+	onCreatePlaylistInRoom,
 }: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>("ollama");
@@ -54,9 +77,20 @@ export function PlaylistCreator({
 	const [loading, setLoading] = useState(false);
 	const [enhancing, setEnhancing] = useState(false);
 	const [loadingState, setLoadingState] = useState("");
+	const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("local");
+	const [roomName, setRoomName] = useState("");
+	const [roomNameEdited, setRoomNameEdited] = useState(false);
 	const modelSetByUserOrSettings = useRef(false);
 
 	const settings = useQuery(api.settings.getAll);
+
+	// Auto-generate room name from prompt (unless user has manually edited it)
+	useEffect(() => {
+		if (!roomNameEdited && prompt.trim()) {
+			const words = prompt.trim().split(/\s+/).slice(0, 4).join(" ");
+			setRoomName(words);
+		}
+	}, [prompt, roomNameEdited]);
 
 	// Apply defaults from settings once loaded — takes priority over ollama fallback
 	const settingsApplied = useRef(false);
@@ -119,12 +153,14 @@ export function PlaylistCreator({
 		}
 	};
 
-	const handleStart = async () => {
-		if (!prompt.trim() || !model.trim()) return;
+	const preparePlaylistData = async () => {
 		setLoading(true);
-		setLoadingState(">>> ANALYZING PROMPT <<<");
+		setLoadingState(
+			playbackMode === "room"
+				? ">>> CREATING ROOM <<<"
+				: ">>> ANALYZING PROMPT <<<",
+		);
 
-		// Read generation defaults from settings
 		const inferenceSteps = settings?.aceInferenceSteps
 			? Number.parseInt(settings.aceInferenceSteps, 10)
 			: undefined;
@@ -137,7 +173,6 @@ export function PlaylistCreator({
 		const inferMethod = settings?.aceInferMethod || undefined;
 
 		try {
-			// Call enhance-session to get AI-determined params (only inferenceSteps used)
 			const res = await fetch("/api/autoplayer/enhance-session", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -151,9 +186,8 @@ export function PlaylistCreator({
 
 			setLoadingState(">>> INITIALIZING <<<");
 
-			const name = prompt.trim().slice(0, 50);
-			onCreatePlaylist({
-				name,
+			return {
+				name: roomName.trim() || prompt.trim().slice(0, 50),
 				prompt: prompt.trim(),
 				provider,
 				model,
@@ -163,12 +197,10 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
-			});
+			};
 		} catch {
-			// If enhance-session fails, still create playlist with settings defaults
-			const name = prompt.trim().slice(0, 50);
-			onCreatePlaylist({
-				name,
+			return {
+				name: roomName.trim() || prompt.trim().slice(0, 50),
 				prompt: prompt.trim(),
 				provider,
 				model,
@@ -176,9 +208,27 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
-			});
+			};
 		}
 	};
+
+	const handleStart = async () => {
+		if (!prompt.trim() || !model.trim()) return;
+		const data = await preparePlaylistData();
+
+		if (playbackMode === "room" && onCreatePlaylistInRoom) {
+			onCreatePlaylistInRoom(data);
+		} else {
+			onCreatePlaylist(data);
+		}
+	};
+
+	const isRoom = playbackMode === "room";
+	const canStart =
+		prompt.trim() &&
+		model.trim() &&
+		!loading &&
+		(isRoom ? roomName.trim() : true);
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white flex items-center justify-center p-4">
@@ -203,6 +253,16 @@ export function PlaylistCreator({
 							</span>
 						</div>
 						<div className="flex items-center gap-3">
+							{onOpenRooms && (
+								<button
+									type="button"
+									className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500"
+									onClick={onOpenRooms}
+								>
+									<Radio className="h-4 w-4" />
+									[ROOMS]
+								</button>
+							)}
 							{onOpenOneshot && (
 								<button
 									type="button"
@@ -332,15 +392,84 @@ export function PlaylistCreator({
 							</div>
 						</div>
 
+						{/* Playback mode toggle */}
+						{onCreatePlaylistInRoom && (
+							<div>
+								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
+								<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+									PLAYBACK
+								</label>
+								<div className="flex gap-0">
+									<button
+										type="button"
+										className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
+											!isRoom
+												? "bg-red-500 text-white border-red-500"
+												: "bg-transparent text-white/50 hover:bg-white/5"
+										}`}
+										onClick={() => setPlaybackMode("local")}
+									>
+										<Headphones className="h-3.5 w-3.5" />
+										LOCAL
+									</button>
+									<button
+										type="button"
+										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
+											isRoom
+												? "bg-green-600 text-white border-green-600"
+												: "bg-transparent text-white/50 hover:bg-white/5"
+										}`}
+										onClick={() => setPlaybackMode("room")}
+									>
+										<Radio className="h-3.5 w-3.5" />
+										ROOM
+									</button>
+								</div>
+
+								{/* Room name input — slides in when room mode */}
+								<div
+									className={`grid transition-all duration-200 ${
+										isRoom
+											? "grid-rows-[1fr] opacity-100 mt-3"
+											: "grid-rows-[0fr] opacity-0"
+									}`}
+								>
+									<div className="overflow-hidden">
+										<div className="flex items-center gap-2">
+											<Monitor className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+											<Input
+												className="h-9 rounded-none border-2 border-green-600/30 bg-green-600/5 font-mono text-sm font-bold uppercase text-green-400 placeholder:text-green-600/30 focus-visible:ring-0 focus-visible:border-green-500"
+												placeholder="ROOM NAME"
+												value={roomName}
+												onChange={(e) => {
+													setRoomName(e.target.value);
+													setRoomNameEdited(true);
+												}}
+											/>
+											<span className="text-[10px] text-white/20 font-mono whitespace-nowrap">
+												/{slugify(roomName || "room")}
+											</span>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
+
 						{/* Start button */}
 						<Button
-							className="w-full h-14 rounded-none border-4 border-white/20 bg-red-500 font-mono text-lg font-black uppercase text-white hover:bg-white hover:text-black hover:border-white disabled:opacity-30"
+							className={`w-full h-14 rounded-none border-4 font-mono text-lg font-black uppercase text-white disabled:opacity-30 transition-colors ${
+								isRoom
+									? "border-green-600/40 bg-green-600 hover:bg-white hover:text-black hover:border-white"
+									: "border-white/20 bg-red-500 hover:bg-white hover:text-black hover:border-white"
+							}`}
 							onClick={handleStart}
-							disabled={!prompt.trim() || !model.trim() || loading}
+							disabled={!canStart}
 						>
 							{loading
 								? loadingState || ">>> INITIALIZING <<<"
-								: ">>> START LISTENING <<<"}
+								: isRoom
+									? ">>> START IN ROOM <<<"
+									: ">>> START LISTENING <<<"}
 						</Button>
 					</div>
 				</div>

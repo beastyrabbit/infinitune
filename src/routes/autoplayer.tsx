@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { useMutation, useQuery } from "convex/react";
-import { Disc3, Plus, Zap } from "lucide-react";
+import { Disc3, Minimize2, Plus, Radio, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
@@ -18,9 +19,13 @@ import { Button } from "@/components/ui/button";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
+import { useRoomConnection } from "@/hooks/useRoomConnection";
+import { useRoomController } from "@/hooks/useRoomController";
+import { useRoomPlayer } from "@/hooks/useRoomPlayer";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import type { EndpointStatus } from "@/hooks/useWorkerStatus";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
+import { asSongId } from "@/lib/convex-helpers";
 import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -55,7 +60,10 @@ export const Route = createFileRoute("/autoplayer")({
 
 function AutoplayerPage() {
 	const navigate = useNavigate();
-	const { pl } = Route.useSearch();
+	const { pl, room, role, name, dn } = Route.useSearch();
+	const isRoomMode = !!room;
+	const roomRole = role ?? "player";
+	const deviceName = dn || `autoplayer-${roomRole}`;
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
 	const [pickerOpen, setPickerOpen] = useState(false);
@@ -72,25 +80,45 @@ function AutoplayerPage() {
 
 	const createPlaylist = useMutation(api.playlists.create);
 	const updateStatus = useMutation(api.playlists.updateStatus);
-	// revertTransientStatuses is no longer needed — the worker handles recovery on restart
+	const setRatingMut = useMutation(api.songs.setRating);
 
-	const {
-		songs,
-		playlist,
-		toggle,
-		seek,
-		skipToNext,
-		requestSong,
-		loadAndPlay,
-		rateSong,
-		transitionDismissed,
-		dismissTransition,
-	} = useAutoplayer(playlistId);
+	// --- Room mode hooks (no-op when room is null) ---
+	const roomConnection = useRoomConnection(
+		room ?? null,
+		deviceName,
+		roomRole,
+		pl,
+		name,
+	);
+	const roomController = useRoomController(roomConnection);
+	const roomPlayer = useRoomPlayer(
+		isRoomMode && roomRole === "player" ? roomConnection : null,
+	);
 
-	const { currentSongId } = useStore(playerStore);
+	// Room mode: query songs/playlist from Convex directly
+	const roomSongs = useQuery(
+		api.songs.getQueue,
+		isRoomMode && playlistId ? { playlistId } : "skip",
+	);
+	const roomPlaylist = useQuery(
+		api.playlists.get,
+		isRoomMode && playlistId ? { id: playlistId } : "skip",
+	);
+
+	// Local mode hooks (no-op when in room mode)
+	const autoplayer = useAutoplayer(isRoomMode ? null : playlistId);
+
+	const { currentSongId: localCurrentSongId } = useStore(playerStore);
 
 	useVolumeSync();
 	usePlaylistHeartbeat(playlistId);
+
+	// --- Derive effective state ---
+	const songs = isRoomMode ? roomSongs : autoplayer.songs;
+	const playlist = isRoomMode ? roomPlaylist : autoplayer.playlist;
+	const currentSongId = isRoomMode
+		? roomConnection.playback.currentSongId
+		: localCurrentSongId;
 
 	// Navigate away when playlist becomes closed
 	useEffect(() => {
@@ -106,10 +134,32 @@ function AutoplayerPage() {
 	// Transition is complete once the currently playing song is from the current epoch
 	const playlistEpoch = playlist?.promptEpoch ?? 0;
 	const currentSongEpoch = currentSong ? (currentSong.promptEpoch ?? 0) : 0;
+	const transitionDismissed = isRoomMode
+		? false
+		: autoplayer.transitionDismissed;
 	const transitionComplete =
 		playlistEpoch === 0 ||
 		currentSongEpoch >= playlistEpoch ||
 		transitionDismissed;
+
+	// --- Unified action callbacks ---
+	const toggle = isRoomMode ? roomController.toggle : autoplayer.toggle;
+	const seek = isRoomMode ? roomController.seek : autoplayer.seek;
+	const skipToNext = isRoomMode ? roomController.skip : autoplayer.skipToNext;
+	const rateSong = useCallback(
+		(songId: string, rating: "up" | "down") => {
+			if (isRoomMode) {
+				roomController.rate(songId, rating);
+				setRatingMut({ id: asSongId(songId), rating });
+			} else {
+				autoplayer.rateSong(songId, rating);
+			}
+		},
+		[isRoomMode, roomController, autoplayer, setRatingMut],
+	);
+	const requestSong = autoplayer.requestSong;
+	const loadAndPlay = autoplayer.loadAndPlay;
+	const dismissTransition = autoplayer.dismissTransition;
 
 	const createPending = useMutation(api.songs.createPending);
 	const createMetadataReady = useMutation(api.songs.createMetadataReady);
@@ -119,7 +169,8 @@ function AutoplayerPage() {
 	const settings = useQuery(api.settings.getAll);
 	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
-	const handleCreatePlaylist = useCallback(
+	/** Shared playlist creation: generates key, calls Convex mutation, returns the key. */
+	const doCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
 			prompt: string;
@@ -129,7 +180,7 @@ function AutoplayerPage() {
 			lmTemperature?: number;
 			lmCfgScale?: number;
 			inferMethod?: string;
-		}) => {
+		}): Promise<string> => {
 			const key = generatePlaylistKey();
 			await createPlaylist({
 				name: data.name,
@@ -142,12 +193,53 @@ function AutoplayerPage() {
 				lmCfgScale: data.lmCfgScale,
 				inferMethod: data.inferMethod,
 			});
+			return key;
+		},
+		[createPlaylist],
+	);
+
+	const handleCreatePlaylist = useCallback(
+		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
+			const key = await doCreatePlaylist(data);
+			navigate({ to: "/autoplayer", search: { pl: key } });
+		},
+		[doCreatePlaylist, navigate],
+	);
+
+	const handleCreatePlaylistInRoom = useCallback(
+		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
+			const key = await doCreatePlaylist(data);
+
+			// Create a room on the room server
+			const roomId = data.name
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, "-")
+				.replace(/^-|-$/g, "")
+				.slice(0, 30);
+			const roomServerUrl =
+				typeof window !== "undefined"
+					? `http://${window.location.hostname}:5174`
+					: "http://localhost:5174";
+			try {
+				await fetch(`${roomServerUrl}/api/v1/rooms`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						id: roomId,
+						name: data.name,
+						playlistKey: key,
+					}),
+				});
+			} catch {
+				// Room server might not be running -- still navigate
+			}
+
 			navigate({
 				to: "/autoplayer",
-				search: { pl: key },
+				search: { pl: key, room: roomId, role: "player", name: data.name },
 			});
 		},
-		[createPlaylist, navigate],
+		[doCreatePlaylist, navigate],
 	);
 
 	const handleAddBatch = useCallback(async () => {
@@ -418,6 +510,10 @@ function AutoplayerPage() {
 
 	const handleSelectSong = useCallback(
 		(songId: string) => {
+			if (isRoomMode) {
+				roomController.selectSong(songId);
+				return;
+			}
 			const song = songs?.find((s) => s._id === songId);
 			if (song?.audioUrl) {
 				dismissTransition();
@@ -425,7 +521,7 @@ function AutoplayerPage() {
 				loadAndPlay(song.audioUrl);
 			}
 		},
-		[songs, loadAndPlay, dismissTransition],
+		[isRoomMode, roomController, songs, loadAndPlay, dismissTransition],
 	);
 
 	const handleReorder = useCallback(
@@ -453,9 +549,11 @@ function AutoplayerPage() {
 			<>
 				<PlaylistCreator
 					onCreatePlaylist={handleCreatePlaylist}
+					onCreatePlaylistInRoom={handleCreatePlaylistInRoom}
 					onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
 					onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
 					onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
+					onOpenRooms={() => navigate({ to: "/rooms" })}
 					onOpenPlaylists={() => setPickerOpen(true)}
 				/>
 				{pickerOpen && (
@@ -480,13 +578,35 @@ function AutoplayerPage() {
 						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
 							INFINITUNE
 						</h1>
-						<Badge className="rounded-none border-2 border-white/40 bg-transparent font-mono text-xs text-white/60">
-							V1.0
-						</Badge>
+						{isRoomMode ? (
+							<Badge className="rounded-none border-2 border-green-500/60 bg-green-500/10 font-mono text-xs text-green-400">
+								ROOM: {(name ?? room ?? "").toUpperCase()}
+								{" // "}
+								{roomRole.toUpperCase()}
+							</Badge>
+						) : (
+							<Badge className="rounded-none border-2 border-white/40 bg-transparent font-mono text-xs text-white/60">
+								V1.0
+							</Badge>
+						)}
 					</div>
 					<div className="flex items-center gap-4">
 						<span className="hidden sm:inline text-xs uppercase tracking-widest text-white/30">
-							{playlist?.status === "closing" ? (
+							{isRoomMode ? (
+								<>
+									{roomConnection.connected ? (
+										<span className="text-green-400">CONNECTED</span>
+									) : (
+										<span className="text-red-500 animate-pulse">
+											DISCONNECTED
+										</span>
+									)}
+									{" | "}
+									DEVICES:{roomConnection.devices.length}
+									{" | "}
+									QUEUE:{songs?.length ?? 0}
+								</>
+							) : playlist?.status === "closing" ? (
 								<span className="text-yellow-500 animate-pulse">
 									CLOSING — FINISHING CURRENT SONG...
 								</span>
@@ -494,6 +614,35 @@ function AutoplayerPage() {
 								<>MODE:AUTO | QUEUE:{songs?.length ?? 0}</>
 							)}
 						</span>
+						{isRoomMode && (
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500 flex items-center gap-1"
+								onClick={() =>
+									navigate({
+										to: "/autoplayer/mini",
+										search: {
+											room,
+											role: roomRole,
+											pl,
+											name,
+											dn,
+										},
+									})
+								}
+							>
+								<Minimize2 className="h-3.5 w-3.5" />
+								[MINI]
+							</button>
+						)}
+						<button
+							type="button"
+							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
+							onClick={() => navigate({ to: "/rooms" })}
+						>
+							<Radio className="h-3.5 w-3.5" />
+							[ROOMS]
+						</button>
 						<button
 							type="button"
 							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
@@ -563,20 +712,67 @@ function AutoplayerPage() {
 				</div>
 			</header>
 
-			{/* NOW PLAYING + RIGHT PANEL */}
+			{/* AUTOPLAY UNLOCK BANNER (room player only) */}
+			{isRoomMode && roomRole === "player" && roomPlayer.needsUnlock && (
+				<div className="border-b-4 border-yellow-500/30 bg-yellow-950/40 px-6 py-4 text-center cursor-pointer hover:bg-yellow-900/40 transition-colors">
+					<p className="font-mono text-sm font-black uppercase text-yellow-300 animate-pulse">
+						CLICK ANYWHERE TO START AUDIO PLAYBACK
+					</p>
+					<p className="font-mono text-[10px] font-bold uppercase text-yellow-500/60 mt-1">
+						BROWSER REQUIRES USER INTERACTION BEFORE PLAYING AUDIO
+					</p>
+				</div>
+			)}
+
+			{/* NOW PLAYING / DEVICE CONTROL + RIGHT PANEL */}
 			<div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] border-b-4 border-white/20">
 				<div className="border-b-4 md:border-b-0 md:border-r-4 border-white/20">
-					<NowPlaying
-						song={currentSong}
-						onToggle={toggle}
-						onSkip={skipToNext}
-						onSeek={seek}
-						onRate={(rating) => {
-							if (currentSongId) {
-								rateSong(currentSongId, rating);
+					{isRoomMode && roomRole === "controller" ? (
+						<DeviceControlPanel
+							devices={roomConnection.devices}
+							playback={roomConnection.playback}
+							currentSong={roomConnection.currentSong}
+							onToggle={toggle}
+							onSkip={skipToNext}
+							onRate={
+								currentSongId
+									? (rating) => rateSong(currentSongId, rating)
+									: undefined
 							}
-						}}
-					/>
+							onSetVolume={roomController.setVolume}
+							onSetDeviceVolume={roomController.setDeviceVolume}
+							onToggleDevicePlay={roomController.toggleDevicePlay}
+							onSyncAll={roomController.syncAll}
+							onRenameDevice={roomController.renameDevice}
+							onResetDeviceToDefault={roomController.resetDeviceToDefault}
+							onSeek={roomController.seek}
+						/>
+					) : (
+						<NowPlaying
+							song={currentSong}
+							onToggle={toggle}
+							onSkip={skipToNext}
+							onSeek={seek}
+							onRate={(rating) => {
+								if (currentSongId) {
+									rateSong(currentSongId, rating);
+								}
+							}}
+							{...(isRoomMode
+								? {
+										playbackOverride: {
+											isPlaying: roomConnection.playback.isPlaying,
+											currentTime: roomConnection.playback.currentTime,
+											duration: roomConnection.playback.duration,
+											volume: roomConnection.playback.volume,
+											isMuted: roomConnection.playback.isMuted,
+										},
+										onSetVolume: roomController.setVolume,
+										onToggleMute: roomController.toggleMute,
+									}
+								: {})}
+						/>
+					)}
 				</div>
 				<div className="flex flex-col bg-gray-950 overflow-y-auto">
 					{playlist && <GenerationControls playlist={playlist} />}
@@ -678,9 +874,7 @@ function AutoplayerPage() {
 					transitionComplete={transitionComplete}
 					onSelectSong={handleSelectSong}
 					onOpenDetail={setDetailSongId}
-					onRate={(songId, rating) => {
-						rateSong(songId, rating);
-					}}
+					onRate={rateSong}
 					onReorder={handleReorder}
 				/>
 			)}

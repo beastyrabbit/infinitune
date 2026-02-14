@@ -18,6 +18,16 @@ interface NowPlayingProps {
 	onSkip: () => void;
 	onSeek: (time: number) => void;
 	onRate: (rating: "up" | "down") => void;
+	/** Room mode: override playback state instead of reading from playerStore */
+	playbackOverride?: {
+		isPlaying: boolean;
+		currentTime: number;
+		duration: number;
+		volume: number;
+		isMuted: boolean;
+	};
+	onSetVolume?: (volume: number) => void;
+	onToggleMute?: () => void;
 }
 
 /** Parse lyrics into structured sections */
@@ -50,9 +60,15 @@ export function NowPlaying({
 	onSkip,
 	onSeek,
 	onRate,
+	playbackOverride,
+	onSetVolume,
+	onToggleMute,
 }: NowPlayingProps) {
+	const storeState = useStore(playerStore);
 	const { isPlaying, currentTime, duration, volume, isMuted } =
-		useStore(playerStore);
+		playbackOverride ?? storeState;
+	const handleSetVolume = onSetVolume ?? setVolume;
+	const handleToggleMute = onToggleMute ?? toggleMute;
 	const [isDownloading, setIsDownloading] = useState(false);
 	const [showLyrics, setShowLyrics] = useState(false);
 	const lyricsRef = useRef<HTMLDivElement>(null);
@@ -294,7 +310,7 @@ export function NowPlaying({
 						<div className="ml-auto flex items-center gap-2 bg-black/40 backdrop-blur-sm border-2 border-white/30 px-3 py-1">
 							<button
 								type="button"
-								onClick={toggleMute}
+								onClick={handleToggleMute}
 								className="text-white/70 hover:text-white"
 							>
 								{isMuted ? (
@@ -317,15 +333,15 @@ export function NowPlaying({
 										0,
 										Math.min(1, (e.clientX - rect.left) / rect.width),
 									);
-									setVolume(pct);
+									handleSetVolume(pct);
 								}}
 								onKeyDown={(e) => {
 									if (e.key === "ArrowRight") {
 										e.preventDefault();
-										setVolume(Math.min(1, volume + 0.05));
+										handleSetVolume(Math.min(1, volume + 0.05));
 									} else if (e.key === "ArrowLeft") {
 										e.preventDefault();
-										setVolume(Math.max(0, volume - 0.05));
+										handleSetVolume(Math.max(0, volume - 0.05));
 									}
 								}}
 							>
