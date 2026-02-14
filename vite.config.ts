@@ -8,6 +8,11 @@ import { defineConfig } from "vite";
 import viteTsConfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig(({ mode }) => ({
+	server: {
+		proxy: {
+			"/covers": "http://localhost:5175",
+		},
+	},
 	resolve: {
 		alias: {
 			"@": fileURLToPath(new URL("./src", import.meta.url)),

@@ -124,11 +124,18 @@ function AutoplayerPage() {
 		? roomConnection.playback.currentSongId
 		: localCurrentSongId;
 
-	// Navigate away when playlist becomes closed
+	// Navigate away when playlist transitions to closed (not on initial load)
+	const prevStatusRef = useRef<string | null>(null);
 	useEffect(() => {
-		if (playlist?.status === "closed") {
+		const status = playlist?.status ?? null;
+		if (
+			prevStatusRef.current &&
+			prevStatusRef.current !== "closed" &&
+			status === "closed"
+		) {
 			navigate({ to: "/autoplayer" });
 		}
+		prevStatusRef.current = status;
 	}, [playlist?.status, navigate]);
 
 	const { status: workerStatus } = useWorkerStatus();
