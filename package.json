@@ -10,12 +10,13 @@
     "format": "biome format",
     "lint": "biome lint",
     "check": "biome check",
-    "worker": "tsx watch --tsconfig tsconfig.json worker/index.ts",
-    "room-server": "tsx watch --tsconfig tsconfig.json room-server/index.ts",
-    "api-server": "tsx watch --tsconfig tsconfig.json api-server/index.ts",
+    "worker": "tsx watch --env-file=.env.local --tsconfig tsconfig.json worker/index.ts",
+    "room-server": "tsx watch --env-file=.env.local --tsconfig tsconfig.json room-server/index.ts",
+    "api-server": "tsx watch --env-file=.env.local --tsconfig tsconfig.json api-server/index.ts",
     "dev:all": "npx concurrently -n vite,api,worker,rooms -c blue,magenta,green,yellow \"pnpm dev\" \"pnpm api-server\" \"pnpm worker\" \"pnpm room-server\"",
-    "migrate:convex": "tsx scripts/migrate-from-convex.ts",
-    "rebuild:nfs": "tsx scripts/rebuild-from-nfs.ts"
+    "migrate:convex": "tsx --env-file=.env.local scripts/migrate-from-convex.ts",
+    "rebuild:nfs": "tsx --env-file=.env.local scripts/rebuild-from-nfs.ts",
+    "tag:mp3s": "tsx --env-file=.env.local scripts/tag-mp3s.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

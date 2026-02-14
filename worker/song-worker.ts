@@ -1,9 +1,12 @@
+import fs from "node:fs"
+import path from "node:path"
 import type { InfinituneApiClient } from "../api-server/client"
 import type { Song, Playlist } from "../api-server/types"
 import { generateSongMetadata, type PromptDistance, type RecentSong, type SongMetadata } from "../src/services/llm"
 import { submitToAce } from "../src/services/ace"
 import { generateCover } from "../src/services/cover"
 import { saveSongToNfs } from "../src/services/storage"
+import { tagMp3 } from "../scripts/tag-mp3s"
 import type { EndpointQueues } from "./queues"
 import { calculatePriority } from "./priority"
 
@@ -513,6 +516,29 @@ export class SongWorker {
 			// Update duration if silence was trimmed
 			if (saveResult.effectiveDuration) {
 				await this.ctx.apiClient.updateAudioDuration(this.songId, saveResult.effectiveDuration)
+			}
+
+			// Write ID3 tags to the MP3
+			try {
+				const mp3Path = path.join(saveResult.storagePath, "audio.mp3")
+				const coverPath = path.join(saveResult.storagePath, "cover.png")
+				tagMp3(mp3Path, {
+					title: this.song.title || "Untitled",
+					artist: this.song.artistName || "Infinitune",
+					album: this.ctx.playlist.name,
+					genre: this.song.genre || "Electronic",
+					subGenre: this.song.subGenre ?? null,
+					bpm: this.song.bpm ?? null,
+					year: new Date().getFullYear().toString(),
+					trackNumber: this.song.orderIndex + 1,
+					lyrics: this.song.lyrics ?? null,
+					comment: this.song.caption ?? null,
+					mood: this.song.mood ?? null,
+					energy: this.song.energy ?? null,
+					coverPath: fs.existsSync(coverPath) ? coverPath : null,
+				})
+			} catch (err) {
+				console.warn(`  [song-worker] ID3 tagging failed for ${this.songId}:`, err instanceof Error ? err.message : err)
 			}
 		} catch (e: unknown) {
 			console.error(`  [song-worker] NFS save failed for ${this.songId}, continuing:`, e instanceof Error ? e.message : e)
