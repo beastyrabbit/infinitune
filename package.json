@@ -13,12 +13,15 @@
     "worker": "tsx watch --tsconfig tsconfig.json worker/index.ts",
     "room-server": "tsx watch --tsconfig tsconfig.json room-server/index.ts",
     "api-server": "tsx watch --tsconfig tsconfig.json api-server/index.ts",
-    "dev:all": "npx concurrently -n vite,api,worker,rooms -c blue,magenta,green,yellow \"pnpm dev\" \"pnpm api-server\" \"pnpm worker\" \"pnpm room-server\""
+    "dev:all": "npx concurrently -n vite,api,worker,rooms -c blue,magenta,green,yellow \"pnpm dev\" \"pnpm api-server\" \"pnpm worker\" \"pnpm room-server\"",
+    "migrate:convex": "tsx scripts/migrate-from-convex.ts",
+    "rebuild:nfs": "tsx scripts/rebuild-from-nfs.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@hono/node-server": "^1.19.9",
     "@hono/node-ws": "^1.3.0",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@openrouter/ai-sdk-provider": "^2.2.3",

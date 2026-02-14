@@ -1,9 +1,7 @@
-// @ts-expect-error — @hono/node-server has no type declarations
 import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-// @ts-expect-error — @hono/node-server/serve-static has no type declarations
 import { serveStatic } from "@hono/node-server/serve-static"
 import { ensureSchema } from "./db/migrate"
 import settingsRoutes from "./routes/settings"
@@ -109,8 +107,16 @@ startBridge().catch((err: Error) => {
 // Graceful shutdown
 async function shutdown() {
 	console.log("[api-server] Shutting down...")
-	await closeRabbit()
-	sqlite.close()
+	try {
+		await closeRabbit()
+	} catch (err) {
+		console.error("[api-server] Error closing RabbitMQ:", err instanceof Error ? err.message : err)
+	}
+	try {
+		sqlite.close()
+	} catch (err) {
+		console.error("[api-server] Error closing SQLite:", err instanceof Error ? err.message : err)
+	}
 	process.exit(0)
 }
 process.on("SIGINT", shutdown)
