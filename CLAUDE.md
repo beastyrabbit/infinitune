@@ -27,6 +27,8 @@ pnpm dlx shadcn@latest add <component>
 
 Pre-commit hooks (lefthook): gitleaks, biome-check, typecheck. Note: codebase has some pre-existing Biome warnings (e.g., `noExplicitAny` in worker/) — these are known and not blockers.
 
+**Testing gap:** Room server (`room-server/`) has no test coverage. Priority targets: `pick-next-song.ts`, `room.ts` (state machine), `protocol.ts` (schema validation).
+
 ## Architecture
 
 ```
@@ -62,6 +64,8 @@ Each song flows through statuses: `pending` → `generating_metadata` → `metad
 The worker spawns a `SongWorker` per song. Endpoint queues manage concurrency with priority (interrupts > epoch songs > filler).
 
 ### Queue Priority (pick-next-song.ts)
+
+**WARNING:** `pick-next-song.ts` exists in BOTH `src/lib/` and `room-server/` with identical logic. Changes to queue priority must be applied to both files.
 
 1. **Interrupts** (user-requested songs) — FIFO by creation time
 2. **Current-epoch songs** — next by orderIndex after current position
@@ -148,3 +152,4 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - Mini player: `src/components/mini-player/MiniPlayer.tsx`
 - Mini player route: `src/routes/autoplayer_.mini.tsx`
 - Room selection page: `src/routes/rooms.tsx`
+- Device control panel: `src/components/autoplayer/DeviceControlPanel.tsx`
