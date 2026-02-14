@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
-import { useMutation, useQuery } from "convex/react";
 import { Disc3, Minimize2, Plus, Radio, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
@@ -25,15 +24,27 @@ import { useRoomPlayer } from "@/hooks/useRoomPlayer";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import type { EndpointStatus } from "@/hooks/useWorkerStatus";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
-import { asSongId } from "@/lib/convex-helpers";
+import {
+	useCreateMetadataReady,
+	useCreatePending,
+	useCreatePlaylist,
+	usePlaylist,
+	usePlaylistByKey,
+	useReindexPlaylist,
+	useReorderSong,
+	useSetRating,
+	useSettings,
+	useSongQueue,
+	useUpdatePersonaExtract,
+	useUpdatePlaylistStatus,
+} from "@/integrations/api/hooks";
 import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
 import type { SongMetadata } from "@/services/llm";
-import { api } from "../../convex/_generated/api";
-import type { LlmProvider } from "../../convex/types";
+import type { LlmProvider } from "../../api-server/types";
 
 function EndpointDot({
 	label,
@@ -72,15 +83,12 @@ function AutoplayerPage() {
 	const albumAbortRef = useRef<AbortController | null>(null);
 
 	// Look up playlist by key from URL
-	const playlistByKey = useQuery(
-		api.playlists.getByPlaylistKey,
-		pl ? { playlistKey: pl } : "skip",
-	);
+	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const playlistId = playlistByKey?._id ?? null;
 
-	const createPlaylist = useMutation(api.playlists.create);
-	const updateStatus = useMutation(api.playlists.updateStatus);
-	const setRatingMut = useMutation(api.songs.setRating);
+	const createPlaylist = useCreatePlaylist();
+	const updateStatus = useUpdatePlaylistStatus();
+	const setRatingMut = useSetRating();
 
 	// --- Room mode hooks (no-op when room is null) ---
 	const roomConnection = useRoomConnection(
@@ -95,14 +103,10 @@ function AutoplayerPage() {
 		isRoomMode && roomRole === "player" ? roomConnection : null,
 	);
 
-	// Room mode: query songs/playlist from Convex directly
-	const roomSongs = useQuery(
-		api.songs.getQueue,
-		isRoomMode && playlistId ? { playlistId } : "skip",
-	);
-	const roomPlaylist = useQuery(
-		api.playlists.get,
-		isRoomMode && playlistId ? { id: playlistId } : "skip",
+	// Room mode: query songs/playlist from API directly
+	const roomSongs = useSongQueue(isRoomMode && playlistId ? playlistId : null);
+	const roomPlaylist = usePlaylist(
+		isRoomMode && playlistId ? playlistId : null,
 	);
 
 	// Local mode hooks (no-op when in room mode)
@@ -150,7 +154,7 @@ function AutoplayerPage() {
 		(songId: string, rating: "up" | "down") => {
 			if (isRoomMode) {
 				roomController.rate(songId, rating);
-				setRatingMut({ id: asSongId(songId), rating });
+				setRatingMut({ id: songId, rating });
 			} else {
 				autoplayer.rateSong(songId, rating);
 			}
@@ -161,15 +165,15 @@ function AutoplayerPage() {
 	const loadAndPlay = autoplayer.loadAndPlay;
 	const dismissTransition = autoplayer.dismissTransition;
 
-	const createPending = useMutation(api.songs.createPending);
-	const createMetadataReady = useMutation(api.songs.createMetadataReady);
-	const updatePersonaExtract = useMutation(api.songs.updatePersonaExtract);
-	const reorderSong = useMutation(api.songs.reorderSong);
-	const reindexPlaylist = useMutation(api.songs.reindexPlaylist);
-	const settings = useQuery(api.settings.getAll);
+	const createPending = useCreatePending();
+	const createMetadataReady = useCreateMetadataReady();
+	const updatePersonaExtract = useUpdatePersonaExtract();
+	const reorderSong = useReorderSong();
+	const reindexPlaylist = useReindexPlaylist();
+	const settings = useSettings();
 	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
-	/** Shared playlist creation: generates key, calls Convex mutation, returns the key. */
+	/** Shared playlist creation: generates key, calls API mutation, returns the key. */
 	const doCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
@@ -527,13 +531,13 @@ function AutoplayerPage() {
 	const handleReorder = useCallback(
 		async (songId: string, newOrderIndex: number) => {
 			if (!playlistId) return;
-			await reorderSong({ id: songId as never, newOrderIndex });
+			await reorderSong({ id: songId, newOrderIndex });
 			reindexPlaylist({ playlistId });
 		},
 		[playlistId, reorderSong, reindexPlaylist],
 	);
 
-	// Loading state while Convex query resolves
+	// Loading state while query resolves
 	if (pl && playlistByKey === undefined) {
 		return (
 			<div
@@ -785,7 +789,7 @@ function AutoplayerPage() {
 					<QuickRequest
 						onRequest={requestSong}
 						disabled={!playlist || playlist.status !== "active"}
-						provider={playlist?.llmProvider}
+						provider={playlist?.llmProvider as LlmProvider | undefined}
 						model={playlist?.llmModel}
 					/>
 					{/* Action buttons */}

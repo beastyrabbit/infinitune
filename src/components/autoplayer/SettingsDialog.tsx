@@ -1,4 +1,3 @@
-import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +14,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { api } from "../../../convex/_generated/api";
+import { useSetSetting, useSettings } from "@/integrations/api/hooks";
 
 interface SettingsDialogProps {
 	open: boolean;
@@ -36,8 +35,8 @@ type TestStatus =
 	| { state: "error"; message: string };
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-	const settings = useQuery(api.settings.getAll);
-	const setSetting = useMutation(api.settings.set);
+	const settings = useSettings();
+	const setSetting = useSetSetting();
 
 	const [textProvider, setTextProvider] = useState("ollama");
 	const [textModel, setTextModel] = useState("");

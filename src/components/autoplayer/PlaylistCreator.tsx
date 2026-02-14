@@ -1,4 +1,3 @@
-import { useQuery } from "convex/react";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,8 +13,8 @@ import {
 import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
 import VinylIcon from "@/components/ui/vinyl-icon";
-import { api } from "../../../convex/_generated/api";
-import type { LlmProvider } from "../../../convex/types";
+import { useSettings } from "@/integrations/api/hooks";
+import type { LlmProvider } from "../../../api-server/types";
 
 interface ModelOption {
 	name: string;
@@ -82,7 +81,7 @@ export function PlaylistCreator({
 	const [roomNameEdited, setRoomNameEdited] = useState(false);
 	const modelSetByUserOrSettings = useRef(false);
 
-	const settings = useQuery(api.settings.getAll);
+	const settings = useSettings();
 
 	// Auto-generate room name from prompt (unless user has manually edited it)
 	useEffect(() => {

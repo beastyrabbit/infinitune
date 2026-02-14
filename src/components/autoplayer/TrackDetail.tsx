@@ -1,4 +1,3 @@
-import { useMutation } from "convex/react";
 import { Loader2, Palette, ThumbsDown } from "lucide-react";
 import { useState } from "react";
 import ClockIcon from "@/components/ui/clock-icon";
@@ -8,10 +7,10 @@ import RefreshIcon from "@/components/ui/refresh-icon";
 import TrashIcon from "@/components/ui/trash-icon";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import XIcon from "@/components/ui/x-icon";
+import { useDeleteSong, useRevertSong } from "@/integrations/api/hooks";
 import { formatElapsed, formatTime, isGenerating } from "@/lib/format-time";
 import { STATUS_LABELS } from "@/lib/song-status";
 import type { Song } from "@/types/convex";
-import { api } from "../../../convex/_generated/api";
 import { CoverArt } from "./CoverArt";
 import { LiveTimer } from "./LiveTimer";
 
@@ -22,8 +21,8 @@ interface TrackDetailProps {
 }
 
 export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
-	const deleteSong = useMutation(api.songs.deleteSong);
-	const revertStatuses = useMutation(api.songs.revertSingleSong);
+	const deleteSong = useDeleteSong();
+	const revertStatuses = useRevertSong();
 	const [confirmDelete, setConfirmDelete] = useState(false);
 
 	const generating = isGenerating(song.status);

@@ -1,11 +1,10 @@
-import { useMutation } from "convex/react";
 import { Compass } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useUpdatePlaylistPrompt } from "@/integrations/api/hooks";
 import { formatTimeAgo } from "@/lib/format-time";
 import type { Playlist } from "@/types/convex";
-import { api } from "../../../convex/_generated/api";
 
 interface DirectionSteeringProps {
 	playlist: Pick<
@@ -26,7 +25,7 @@ export function DirectionSteering({
 }: DirectionSteeringProps) {
 	const [value, setValue] = useState("");
 	const [loading, setLoading] = useState(false);
-	const updatePrompt = useMutation(api.playlists.updatePrompt);
+	const updatePrompt = useUpdatePlaylistPrompt();
 
 	const handleSubmit = async () => {
 		const trimmed = value.trim();

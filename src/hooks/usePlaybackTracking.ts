@@ -1,7 +1,5 @@
-import { useMutation } from "convex/react";
 import { useEffect, useRef } from "react";
-import { asSongId } from "@/lib/convex-helpers";
-import { api } from "../../convex/_generated/api";
+import { useAddListen, useAddPlayDuration } from "@/integrations/api/hooks";
 
 /**
  * Tracks play duration and listen counts for songs.
@@ -13,8 +11,8 @@ export function usePlaybackTracking(
 	isPlaying: boolean,
 	currentTime: number,
 ) {
-	const addPlayDurationMut = useMutation(api.songs.addPlayDuration);
-	const addListenMut = useMutation(api.songs.addListen);
+	const addPlayDurationMut = useAddPlayDuration();
+	const addListenMut = useAddListen();
 
 	const playStartRef = useRef<{ songId: string; startedAt: number } | null>(
 		null,
@@ -27,7 +25,7 @@ export function usePlaybackTracking(
 		if (prev) {
 			const elapsed = Date.now() - prev.startedAt;
 			if (elapsed > 1000) {
-				addPlayDurationMut({ id: asSongId(prev.songId), durationMs: elapsed });
+				addPlayDurationMut({ id: prev.songId, durationMs: elapsed });
 			}
 			playStartRef.current = null;
 		}
@@ -46,7 +44,7 @@ export function usePlaybackTracking(
 			if (cur) {
 				const elapsed = Date.now() - cur.startedAt;
 				if (elapsed > 1000) {
-					addPlayDurationMut({ id: asSongId(cur.songId), durationMs: elapsed });
+					addPlayDurationMut({ id: cur.songId, durationMs: elapsed });
 				}
 				playStartRef.current = null;
 			}
@@ -58,7 +56,7 @@ export function usePlaybackTracking(
 		if (!currentSongId || !isPlaying) return;
 		if (currentTime >= 60 && listenRecordedRef.current !== currentSongId) {
 			listenRecordedRef.current = currentSongId;
-			addListenMut({ id: asSongId(currentSongId) });
+			addListenMut({ id: currentSongId });
 		}
 	}, [currentTime, currentSongId, isPlaying, addListenMut]);
 }

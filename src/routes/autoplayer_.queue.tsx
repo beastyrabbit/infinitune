@@ -1,5 +1,4 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useMemo } from "react";
 import { LiveTimer } from "@/components/autoplayer/LiveTimer";
@@ -10,6 +9,7 @@ import {
 	useWorkerStatus,
 	type WorkerStatus,
 } from "@/hooks/useWorkerStatus";
+import { usePlaylistByKey, useSongsBatch } from "@/integrations/api/hooks";
 import {
 	getCoverColors,
 	getCoverPattern,
@@ -18,8 +18,7 @@ import {
 } from "@/lib/cover-utils";
 import { formatMs } from "@/lib/format-time";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
-import { api } from "../../convex/_generated/api";
-import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { Song } from "@/types/convex";
 
 export const Route = createFileRoute("/autoplayer_/queue")({
 	component: QueuePage,
@@ -27,8 +26,6 @@ export const Route = createFileRoute("/autoplayer_/queue")({
 });
 
 // ─── Song data types ────────────────────────────────────────────────
-
-type SongDoc = Doc<"songs"> & { coverUrl?: string };
 
 interface SongInfo {
 	title: string;
@@ -495,10 +492,7 @@ function WorkerOverview({ status }: { status: WorkerStatus }) {
 function QueuePage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
-	const playlistByKey = useQuery(
-		api.playlists.getByPlaylistKey,
-		pl ? { playlistKey: pl } : "skip",
-	);
+	const playlistByKey = usePlaylistByKey(pl ?? null);
 	usePlaylistHeartbeat(playlistByKey?._id ?? null);
 	const { status, error } = useWorkerStatus();
 
@@ -513,22 +507,19 @@ function QueuePage() {
 		return [...ids];
 	}, [status]);
 
-	// Fetch song data from Convex
-	const songsData = useQuery(
-		api.songs.getBatch,
-		songIds.length > 0 ? { ids: songIds as Id<"songs">[] } : "skip",
-	);
+	// Fetch song data from API
+	const songsData = useSongsBatch(songIds);
 
 	// Build a lookup map
 	const songMap = useMemo(() => {
 		const map = new Map<string, SongInfo>();
 		if (!songsData) return map;
-		for (const song of songsData as SongDoc[]) {
-			map.set(song._id as string, {
+		for (const song of songsData as Song[]) {
+			map.set(song._id, {
 				title: song.title || "Generating...",
 				artistName: song.artistName || "...",
 				genre: song.genre || "",
-				coverUrl: song.coverUrl,
+				coverUrl: song.coverUrl ?? undefined,
 				status: song.status,
 				orderIndex: song.orderIndex,
 				promptEpoch: song.promptEpoch ?? 0,

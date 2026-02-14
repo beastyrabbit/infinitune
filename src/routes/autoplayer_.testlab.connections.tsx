@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { api } from "../../convex/_generated/api";
+import { useSettings } from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/testlab/connections")({
 	component: ConnectionsTestPage,
@@ -35,7 +34,7 @@ const SERVICE_META: Record<ServiceName, { label: string; urlKey: string }> = {
 };
 
 function ConnectionsTestPage() {
-	const settings = useQuery(api.settings.getAll);
+	const settings = useSettings();
 
 	const [states, setStates] = useState<Record<ServiceName, ServiceState>>({
 		ollama: { ...INITIAL_STATE },

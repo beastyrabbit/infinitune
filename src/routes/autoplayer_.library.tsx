@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
-import { useQuery } from "convex/react";
 import { Pause, Play, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
@@ -10,6 +9,7 @@ import VinylIcon from "@/components/ui/vinyl-icon";
 import Volume2Icon from "@/components/ui/volume-2-icon";
 import VolumeXIcon from "@/components/ui/volume-x-icon";
 import XIcon from "@/components/ui/x-icon";
+import { usePlaylistsAll, useSongsAll } from "@/integrations/api/hooks";
 import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
@@ -20,7 +20,7 @@ import {
 	setVolume,
 	toggleMute,
 } from "@/lib/player-store";
-import { api } from "../../convex/_generated/api";
+import type { Song } from "@/types/convex";
 
 export const Route = createFileRoute("/autoplayer_/library")({
 	component: LibraryPage,
@@ -56,7 +56,7 @@ function unique(arr: (string | undefined | null)[]): string[] {
 	return [...new Set(arr.filter((v): v is string => !!v))].sort();
 }
 
-function matchesSearch(song: Record<string, unknown>, term: string): boolean {
+function matchesSearch(song: Song, term: string): boolean {
 	if (!term) return true;
 	const lower = term.toLowerCase();
 	const fields = [
@@ -71,7 +71,7 @@ function matchesSearch(song: Record<string, unknown>, term: string): boolean {
 }
 
 function matchesFilters(
-	song: Record<string, unknown>,
+	song: Song,
 	filters: Filters,
 	playlistMap: Map<string, string>,
 ): boolean {
@@ -121,7 +121,11 @@ function matchesFilters(
 function MiniPlayer({
 	currentSong,
 }: {
-	currentSong: { _id: string; title?: string; artistName?: string } | null;
+	currentSong: {
+		_id: string;
+		title?: string | null;
+		artistName?: string | null;
+	} | null;
 }) {
 	const { isPlaying, currentTime, duration, volume, isMuted } =
 		useStore(playerStore);
@@ -308,8 +312,8 @@ function FilterSection({
 
 function LibraryPage() {
 	const navigate = useNavigate();
-	const songs = useQuery(api.songs.listAll);
-	const playlists = useQuery(api.playlists.listAll);
+	const songs = useSongsAll();
+	const playlists = usePlaylistsAll();
 
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -391,7 +395,7 @@ function LibraryPage() {
 
 		function countFor(
 			key: keyof Filters,
-			valueExtractor: (s: Record<string, unknown>) => string | undefined | null,
+			valueExtractor: (s: Song) => string | undefined | null,
 		) {
 			const otherFilters = { ...filters, [key]: [] };
 			const base = (songs ?? []).filter(
@@ -453,11 +457,11 @@ function LibraryPage() {
 		return songs.find((s) => s._id === currentSongId) ?? null;
 	}, [currentSongId, songs]);
 
-	const handlePlaySong = useCallback((song: Record<string, unknown>) => {
+	const handlePlaySong = useCallback((song: Song) => {
 		if (!song.audioUrl) return;
 		const audio = getGlobalAudio();
-		setCurrentSong(song._id as string);
-		audio.src = song.audioUrl as string;
+		setCurrentSong(song._id);
+		audio.src = song.audioUrl;
 		audio.load();
 		audio
 			.play()

@@ -1,6 +1,6 @@
-import { ConvexHttpClient } from "convex/browser";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { InfinituneApiClient } from "../api-server/client";
 
 function loadEnv() {
 	const envPath = path.join(process.cwd(), ".env.local");
@@ -14,7 +14,10 @@ function loadEnv() {
 			const key = trimmed.slice(0, eqIdx).trim();
 			let value = trimmed.slice(eqIdx + 1).trim();
 			// Remove surrounding quotes if present
-			if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+			if (
+				(value.startsWith('"') && value.endsWith('"')) ||
+				(value.startsWith("'") && value.endsWith("'"))
+			) {
 				value = value.slice(1, -1);
 			}
 			if (!process.env[key]) {
@@ -22,22 +25,18 @@ function loadEnv() {
 			}
 		}
 	} catch (err: unknown) {
-		const code = err instanceof Error && "code" in err ? (err as NodeJS.ErrnoException).code : null;
+		const code =
+			err instanceof Error && "code" in err
+				? (err as NodeJS.ErrnoException).code
+				: null;
 		if (code !== "ENOENT") {
-			console.error("[convex-client] Error reading .env.local:", err);
+			console.error("[api-client] Error reading .env.local:", err);
 		}
 	}
 }
 
 loadEnv();
 
-let client: ConvexHttpClient | null = null;
-
-export function getConvexClient(): ConvexHttpClient {
-	if (!client) {
-		const url = process.env.VITE_CONVEX_URL;
-		if (!url) throw new Error("VITE_CONVEX_URL not set — check .env.local");
-		client = new ConvexHttpClient(url);
-	}
-	return client;
-}
+export const apiClient = new InfinituneApiClient(
+	process.env.API_URL ?? "http://localhost:5175",
+);

@@ -1,16 +1,7 @@
-import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../convex/_generated/api";
+import { InfinituneApiClient } from "../../api-server/client";
 
-let cachedClient: ConvexHttpClient | null = null;
-
-function getClient(): ConvexHttpClient {
-	if (!cachedClient) {
-		const url = process.env.VITE_CONVEX_URL;
-		if (!url) throw new Error("VITE_CONVEX_URL not set");
-		cachedClient = new ConvexHttpClient(url);
-	}
-	return cachedClient;
-}
+const apiUrl = process.env.VITE_API_URL ?? "http://localhost:5175";
+const client = new InfinituneApiClient(apiUrl);
 
 export interface ServiceUrls {
 	ollamaUrl: string;
@@ -26,8 +17,7 @@ const defaults: ServiceUrls = {
 
 export async function getServiceUrls(): Promise<ServiceUrls> {
 	try {
-		const client = getClient();
-		const settings = await client.query(api.settings.getAll);
+		const settings = await client.getSettings();
 		return {
 			ollamaUrl: settings.ollamaUrl || defaults.ollamaUrl,
 			aceStepUrl: settings.aceStepUrl || defaults.aceStepUrl,
@@ -40,8 +30,7 @@ export async function getServiceUrls(): Promise<ServiceUrls> {
 
 export async function getSetting(key: string): Promise<string | null> {
 	try {
-		const client = getClient();
-		return await client.query(api.settings.get, { key });
+		return await client.getSetting(key);
 	} catch {
 		return null;
 	}

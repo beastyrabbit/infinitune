@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
-import { useMutation, useQuery } from "convex/react";
 import {
 	AlertTriangle,
 	ArrowLeft,
@@ -32,6 +31,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
+import {
+	useCreatePlaylist,
+	usePlaylistByKey,
+	useSettings,
+} from "@/integrations/api/hooks";
 import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
@@ -47,9 +51,7 @@ import {
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
 import { STATUS_PROGRESS_TEXT } from "@/lib/song-status";
-import type { Id } from "@/types/convex";
-import { api } from "../../convex/_generated/api";
-import type { LlmProvider } from "../../convex/types";
+import type { LlmProvider } from "../../api-server/types";
 
 export const Route = createFileRoute("/autoplayer_/oneshot")({
 	component: OneshotPage,
@@ -85,14 +87,11 @@ const LANGUAGES = [
 function OneshotPage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
-	const createPlaylist = useMutation(api.playlists.create);
-	const settings = useQuery(api.settings.getAll);
+	const createPlaylist = useCreatePlaylist();
+	const settings = useSettings();
 
 	// Look up playlist by key from URL
-	const playlistByKey = useQuery(
-		api.playlists.getByPlaylistKey,
-		pl ? { playlistKey: pl } : "skip",
-	);
+	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const playlistIdFromUrl = playlistByKey?._id ?? null;
 
 	// ── Local state ──
@@ -104,8 +103,7 @@ function OneshotPage() {
 	const [generating, setGenerating] = useState(false);
 	const [advancedOpen, setAdvancedOpen] = useState(false);
 	const [lyricsOpen, setLyricsOpen] = useState(false);
-	const [localPlaylistId, setLocalPlaylistId] =
-		useState<Id<"playlists"> | null>(null);
+	const [localPlaylistId, setLocalPlaylistId] = useState<string | null>(null);
 
 	// Use URL-based playlist ID if available, otherwise local state
 	const playlistId = playlistIdFromUrl ?? localPlaylistId;
@@ -229,7 +227,7 @@ function OneshotPage() {
 			// Merge user overrides with AI params
 			const name = `[ONESHOT] ${prompt.trim().slice(0, 40)}`;
 			const playlistKey = generatePlaylistKey();
-			const id = await createPlaylist({
+			const result = await createPlaylist({
 				name,
 				prompt: prompt.trim(),
 				llmProvider: provider,
@@ -256,7 +254,7 @@ function OneshotPage() {
 				lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 				inferMethod: inferMeth,
 			});
-			setLocalPlaylistId(id);
+			setLocalPlaylistId(result._id);
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
 		} catch {
 			// Fallback
