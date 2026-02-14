@@ -1,9 +1,8 @@
 /**
  * Shared wire types used by API server, worker, room server, and frontend.
- * These include _id and _creationTime for Convex wire compatibility.
+ * Wire format includes _id and _creationTime fields (mapped from id/createdAt)
+ * for backward compatibility with existing frontend code.
  */
-
-// Re-export status types from Convex types (these are framework-independent)
 export const SONG_STATUSES = [
 	"pending",
 	"generating_metadata",

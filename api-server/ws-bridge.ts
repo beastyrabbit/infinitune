@@ -26,7 +26,11 @@ function broadcast(message: string) {
 	for (const client of clients) {
 		try {
 			client.send(message)
-		} catch {
+		} catch (err) {
+			console.warn(
+				"[ws-bridge] Failed to send to client, removing:",
+				err instanceof Error ? err.message : err,
+			)
 			clients.delete(client)
 		}
 	}
@@ -35,6 +39,8 @@ function broadcast(message: string) {
 /**
  * Start consuming from the events exchange and forwarding to browser WebSocket clients.
  * Creates a temporary exclusive queue that auto-deletes when the server disconnects.
+ * Binds to all routing keys (#) — every event reaches every connected browser.
+ * The browser-side provider filters by routingKey to invalidate only relevant queries.
  */
 export async function startBridge() {
 	try {
@@ -54,11 +60,15 @@ export async function startBridge() {
 			queue,
 			(msg) => {
 				if (!msg) return
-				const routingKey = msg.fields.routingKey
-				const payload = msg.content.toString()
-				broadcast(
-					JSON.stringify({ routingKey, data: JSON.parse(payload) }),
-				)
+				try {
+					const routingKey = msg.fields.routingKey
+					const payload = msg.content.toString()
+					broadcast(
+						JSON.stringify({ routingKey, data: JSON.parse(payload) }),
+					)
+				} catch (err) {
+					console.error("[ws-bridge] Failed to process message:", err)
+				}
 				channel.ack(msg)
 			},
 			{ noAck: false },

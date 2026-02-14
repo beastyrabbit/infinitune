@@ -1,30 +1,11 @@
 import { Hono } from "hono"
-import { eq, inArray, isNotNull } from "drizzle-orm"
+import { eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, sqlite } from "../db/index"
 import { songs, playlists } from "../db/schema"
 import { songToWire } from "../wire"
 import { publishEvent, publishWork } from "../rabbit"
 import { saveCover } from "../covers"
-
-const ACTIVE_STATUSES = [
-	"pending",
-	"generating_metadata",
-	"metadata_ready",
-	"submitting_to_ace",
-	"generating_audio",
-	"saving",
-	"ready",
-]
-
-const TRANSIENT_STATUSES = [
-	"pending",
-	"generating_metadata",
-	"metadata_ready",
-	"submitting_to_ace",
-	"generating_audio",
-	"saving",
-	"retry_pending",
-]
+import { ACTIVE_STATUSES, TRANSIENT_STATUSES } from "../types"
 
 const ACTIVE_PROCESSING_STATUSES = [
 	"generating_metadata",
@@ -35,6 +16,30 @@ const ACTIVE_PROCESSING_STATUSES = [
 
 const app = new Hono()
 
+// Metadata fields that are stored as plain text columns
+const METADATA_SCALAR_FIELDS = [
+	"title",
+	"artistName",
+	"genre",
+	"subGenre",
+	"lyrics",
+	"caption",
+	"coverPrompt",
+	"bpm",
+	"keyScale",
+	"timeSignature",
+	"audioDuration",
+	"vocalStyle",
+	"mood",
+	"energy",
+	"era",
+	"language",
+	"description",
+] as const
+
+// Metadata fields stored as JSON text columns
+const METADATA_JSON_FIELDS = ["instruments", "tags", "themes"] as const
+
 // Helper: publish song event
 async function emitSongEvent(
 	playlistId: string,
@@ -42,6 +47,33 @@ async function emitSongEvent(
 	songId?: string,
 ) {
 	await publishEvent(`songs.${playlistId}`, { type, songId })
+}
+
+/** Build a patch object from request body, extracting allowed scalar and JSON fields */
+function buildMetadataPatch(
+	body: Record<string, unknown>,
+	extraScalarFields: readonly string[] = [],
+): Record<string, unknown> {
+	const patch: Record<string, unknown> = {}
+	for (const key of [...METADATA_SCALAR_FIELDS, ...extraScalarFields]) {
+		if (body[key] !== undefined) patch[key] = body[key]
+	}
+	for (const key of METADATA_JSON_FIELDS) {
+		if (body[key] !== undefined)
+			patch[key] = body[key] ? JSON.stringify(body[key]) : null
+	}
+	return patch
+}
+
+/** Update a song, re-fetch it, emit event, and return the row. */
+async function updateAndEmit(
+	id: string,
+	patch: Record<string, unknown>,
+	eventType = "updated",
+): Promise<void> {
+	await db.update(songs).set(patch).where(eq(songs.id, id))
+	const [row] = await db.select().from(songs).where(eq(songs.id, id))
+	if (row) await emitSongEvent(row.playlistId, eventType, id)
 }
 
 // ─── Queries ────────────────────────────────────────────────────────
@@ -54,26 +86,23 @@ app.get("/", async (c) => {
 	return c.json(sorted.map(songToWire))
 })
 
+// Shared handler for fetching songs by playlist, ordered by orderIndex
+async function songsByPlaylist(playlistId: string) {
+	const rows = await db
+		.select()
+		.from(songs)
+		.where(eq(songs.playlistId, playlistId))
+	return rows.sort((a, b) => a.orderIndex - b.orderIndex).map(songToWire)
+}
+
 // GET /api/songs/by-playlist/:playlistId — list songs by playlist (ordered)
 app.get("/by-playlist/:playlistId", async (c) => {
-	const playlistId = c.req.param("playlistId")
-	const rows = await db
-		.select()
-		.from(songs)
-		.where(eq(songs.playlistId, playlistId))
-	const sorted = rows.sort((a, b) => a.orderIndex - b.orderIndex)
-	return c.json(sorted.map(songToWire))
+	return c.json(await songsByPlaylist(c.req.param("playlistId")))
 })
 
-// GET /api/songs/queue/:playlistId — get song queue (same as by-playlist, no storage URL resolution needed)
+// GET /api/songs/queue/:playlistId — alias for by-playlist (same data, kept for client compatibility)
 app.get("/queue/:playlistId", async (c) => {
-	const playlistId = c.req.param("playlistId")
-	const rows = await db
-		.select()
-		.from(songs)
-		.where(eq(songs.playlistId, playlistId))
-	const sorted = rows.sort((a, b) => a.orderIndex - b.orderIndex)
-	return c.json(sorted.map(songToWire))
+	return c.json(await songsByPlaylist(c.req.param("playlistId")))
 })
 
 // GET /api/songs/next-order-index/:playlistId
@@ -175,7 +204,7 @@ app.get("/work-queue/:playlistId", async (c) => {
 	const songsAhead = allSongs.filter(
 		(s) =>
 			s.orderIndex > currentOrderIndex &&
-			ACTIVE_STATUSES.includes(s.status) &&
+			(ACTIVE_STATUSES as string[]).includes(s.status) &&
 			(s.promptEpoch ?? 0) === currentEpoch,
 	).length
 	const bufferDeficit = Math.max(0, 5 - songsAhead)
@@ -185,7 +214,7 @@ app.get("/work-queue/:playlistId", async (c) => {
 			? Math.max(...allSongs.map((s) => s.orderIndex))
 			: 0
 	const transientCount = allSongs.filter((s) =>
-		TRANSIENT_STATUSES.includes(s.status),
+		(TRANSIENT_STATUSES as string[]).includes(s.status),
 	).length
 
 	// Recent completed songs for diversity
@@ -247,7 +276,7 @@ app.get("/work-queue/:playlistId", async (c) => {
 	})
 })
 
-// GET /api/songs/batch — get songs by IDs (POST with { ids: [...] })
+// POST /api/songs/batch — get songs by IDs (body: { ids: [...] })
 app.post("/batch", async (c) => {
 	const { ids } = await c.req.json<{ ids: string[] }>()
 	if (!ids?.length) return c.json([])
@@ -382,40 +411,7 @@ app.post("/create-metadata-ready", async (c) => {
 app.patch("/:id/metadata", async (c) => {
 	const id = c.req.param("id")
 	const body = await c.req.json()
-
-	const patch: Record<string, unknown> = {}
-	for (const key of [
-		"title",
-		"artistName",
-		"genre",
-		"subGenre",
-		"lyrics",
-		"caption",
-		"coverPrompt",
-		"bpm",
-		"keyScale",
-		"timeSignature",
-		"audioDuration",
-		"vocalStyle",
-		"mood",
-		"energy",
-		"era",
-		"language",
-		"description",
-	]) {
-		if (body[key] !== undefined) patch[key] = body[key]
-	}
-	// JSON array fields
-	for (const key of ["instruments", "tags", "themes"]) {
-		if (body[key] !== undefined)
-			patch[key] = body[key] ? JSON.stringify(body[key]) : null
-	}
-
-	await db.update(songs).set(patch).where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, buildMetadataPatch(body))
 	return c.json({ ok: true })
 })
 
@@ -426,14 +422,9 @@ app.patch("/:id/status", async (c) => {
 		status: string
 		errorMessage?: string
 	}>()
-
 	const patch: Record<string, unknown> = { status }
 	if (errorMessage) patch.errorMessage = errorMessage
-	await db.update(songs).set(patch).where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, patch)
 	return c.json({ ok: true })
 })
 
@@ -442,48 +433,46 @@ app.post("/:id/claim-metadata", async (c) => {
 	const id = c.req.param("id")
 
 	// Atomic: check-and-set in a single synchronous SQLite transaction
-	const claimed = sqlite.transaction(() => {
+	const result = sqlite.transaction(() => {
 		const row = sqlite
 			.prepare("SELECT status, playlist_id FROM songs WHERE id = ?")
 			.get(id) as { status: string; playlist_id: string } | undefined
-		if (!row || row.status !== "pending") return false
+		if (!row || row.status !== "pending") return null
 		sqlite
 			.prepare("UPDATE songs SET status = 'generating_metadata' WHERE id = ?")
 			.run(id)
-		return true
+		return row.playlist_id
 	})()
 
-	if (claimed) {
-		const [row] = await db.select().from(songs).where(eq(songs.id, id))
-		if (row) await emitSongEvent(row.playlistId, "updated", id)
+	if (result) {
+		await emitSongEvent(result, "updated", id)
 	}
 
-	return c.json(claimed)
+	return c.json(result !== null)
 })
 
 // POST /api/songs/:id/claim-audio — atomic claim for audio generation
 app.post("/:id/claim-audio", async (c) => {
 	const id = c.req.param("id")
 
-	const claimed = sqlite.transaction(() => {
+	const result = sqlite.transaction(() => {
 		const row = sqlite
 			.prepare("SELECT status, playlist_id FROM songs WHERE id = ?")
 			.get(id) as { status: string; playlist_id: string } | undefined
-		if (!row || row.status !== "metadata_ready") return false
+		if (!row || row.status !== "metadata_ready") return null
 		sqlite
 			.prepare(
 				"UPDATE songs SET status = 'submitting_to_ace' WHERE id = ?",
 			)
 			.run(id)
-		return true
+		return row.playlist_id
 	})()
 
-	if (claimed) {
-		const [row] = await db.select().from(songs).where(eq(songs.id, id))
-		if (row) await emitSongEvent(row.playlistId, "updated", id)
+	if (result) {
+		await emitSongEvent(result, "updated", id)
 	}
 
-	return c.json(claimed)
+	return c.json(result !== null)
 })
 
 // POST /api/songs/:id/complete-metadata — set metadata + status=metadata_ready
@@ -491,41 +480,17 @@ app.post("/:id/complete-metadata", async (c) => {
 	const id = c.req.param("id")
 	const body = await c.req.json()
 
-	const patch: Record<string, unknown> = { status: "metadata_ready" }
-	for (const key of [
-		"title",
-		"artistName",
-		"genre",
-		"subGenre",
-		"lyrics",
-		"caption",
-		"coverPrompt",
-		"bpm",
-		"keyScale",
-		"timeSignature",
-		"audioDuration",
-		"vocalStyle",
-		"mood",
-		"energy",
-		"era",
-		"language",
-		"description",
+	const patch = buildMetadataPatch(body, [
 		"llmProvider",
 		"llmModel",
 		"metadataProcessingMs",
-	]) {
-		if (body[key] !== undefined) patch[key] = body[key]
-	}
-	for (const key of ["instruments", "tags", "themes"]) {
-		if (body[key] !== undefined)
-			patch[key] = body[key] ? JSON.stringify(body[key]) : null
-	}
+	])
+	patch.status = "metadata_ready"
 
 	await db.update(songs).set(patch).where(eq(songs.id, id))
 
 	const [row] = await db.select().from(songs).where(eq(songs.id, id))
 	if (row) {
-		// Dispatch audio work
 		await publishWork("audio", { songId: id, playlistId: row.playlistId })
 		await emitSongEvent(row.playlistId, "updated", id)
 	}
@@ -537,19 +502,11 @@ app.post("/:id/complete-metadata", async (c) => {
 app.patch("/:id/ace-task", async (c) => {
 	const id = c.req.param("id")
 	const { aceTaskId } = await c.req.json<{ aceTaskId: string }>()
-
-	await db
-		.update(songs)
-		.set({
-			aceTaskId,
-			aceSubmittedAt: Date.now(),
-			status: "generating_audio",
-		})
-		.where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, {
+		aceTaskId,
+		aceSubmittedAt: Date.now(),
+		status: "generating_audio",
+	})
 	return c.json({ ok: true })
 })
 
@@ -560,7 +517,6 @@ app.post("/:id/mark-ready", async (c) => {
 		audioUrl: string
 		audioProcessingMs?: number
 	}>()
-
 	const patch: Record<string, unknown> = {
 		audioUrl,
 		status: "ready",
@@ -569,12 +525,7 @@ app.post("/:id/mark-ready", async (c) => {
 	if (audioProcessingMs !== undefined) {
 		patch.audioProcessingMs = audioProcessingMs
 	}
-
-	await db.update(songs).set(patch).where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, patch)
 	return c.json({ ok: true })
 })
 
@@ -614,12 +565,7 @@ app.post("/:id/mark-error", async (c) => {
 app.patch("/:id/cover", async (c) => {
 	const id = c.req.param("id")
 	const { coverUrl } = await c.req.json<{ coverUrl: string }>()
-
-	await db.update(songs).set({ coverUrl }).where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, { coverUrl })
 	return c.json({ ok: true })
 })
 
@@ -630,14 +576,10 @@ app.post("/:id/upload-cover", async (c) => {
 
 	const buffer = Buffer.from(imageBase64, "base64")
 	const { urlPath } = saveCover(buffer, "png")
-
 	const apiUrl = process.env.API_URL ?? "http://localhost:5175"
 	const coverUrl = `${apiUrl}${urlPath}`
-	await db.update(songs).set({ coverUrl }).where(eq(songs.id, id))
 
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, { coverUrl })
 	return c.json({ ok: true, coverUrl })
 })
 
@@ -670,11 +612,9 @@ app.patch("/:id/storage-path", async (c) => {
 		storagePath: string
 		aceAudioPath?: string
 	}>()
-
 	const patch: Record<string, unknown> = { storagePath }
 	if (aceAudioPath) patch.aceAudioPath = aceAudioPath
 	await db.update(songs).set(patch).where(eq(songs.id, id))
-
 	return c.json({ ok: true })
 })
 
@@ -707,15 +647,10 @@ app.patch("/:id/persona-extract", async (c) => {
 // POST /api/songs/:id/listen — increment listen count
 app.post("/:id/listen", async (c) => {
 	const id = c.req.param("id")
-
-	const [song] = await db.select().from(songs).where(eq(songs.id, id))
-	if (!song) return c.json({ ok: true })
-
 	await db
 		.update(songs)
-		.set({ listenCount: (song.listenCount || 0) + 1 })
+		.set({ listenCount: sql`coalesce(${songs.listenCount}, 0) + 1` })
 		.where(eq(songs.id, id))
-
 	return c.json({ ok: true })
 })
 
@@ -723,15 +658,12 @@ app.post("/:id/listen", async (c) => {
 app.post("/:id/play-duration", async (c) => {
 	const id = c.req.param("id")
 	const { durationMs } = await c.req.json<{ durationMs: number }>()
-
-	const [song] = await db.select().from(songs).where(eq(songs.id, id))
-	if (!song) return c.json({ ok: true })
-
 	await db
 		.update(songs)
-		.set({ playDurationMs: (song.playDurationMs || 0) + durationMs })
+		.set({
+			playDurationMs: sql`coalesce(${songs.playDurationMs}, 0) + ${durationMs}`,
+		})
 		.where(eq(songs.id, id))
-
 	return c.json({ ok: true })
 })
 
@@ -853,6 +785,12 @@ app.post("/revert-transient/:playlistId", async (c) => {
 app.post("/recover/:playlistId", async (c) => {
 	const playlistId = c.req.param("playlistId")
 
+	const recoveryMap: Record<string, string> = {
+		generating_metadata: "pending",
+		submitting_to_ace: "metadata_ready",
+		saving: "generating_audio",
+	}
+
 	const rows = await db
 		.select()
 		.from(songs)
@@ -860,22 +798,11 @@ app.post("/recover/:playlistId", async (c) => {
 
 	let recovered = 0
 	for (const song of rows) {
-		if (song.status === "generating_metadata") {
+		const revertTo = recoveryMap[song.status]
+		if (revertTo) {
 			await db
 				.update(songs)
-				.set({ status: "pending" })
-				.where(eq(songs.id, song.id))
-			recovered++
-		} else if (song.status === "submitting_to_ace") {
-			await db
-				.update(songs)
-				.set({ status: "metadata_ready" })
-				.where(eq(songs.id, song.id))
-			recovered++
-		} else if (song.status === "saving") {
-			await db
-				.update(songs)
-				.set({ status: "generating_audio" })
+				.set({ status: revertTo })
 				.where(eq(songs.id, song.id))
 			recovered++
 		}
@@ -891,20 +818,12 @@ app.post("/recover/:playlistId", async (c) => {
 // POST /api/songs/:id/revert-to-metadata-ready
 app.post("/:id/revert-to-metadata-ready", async (c) => {
 	const id = c.req.param("id")
-
-	await db
-		.update(songs)
-		.set({
-			status: "metadata_ready",
-			aceTaskId: null,
-			aceSubmittedAt: null,
-			aceAudioPath: null,
-		})
-		.where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "updated", id)
-
+	await updateAndEmit(id, {
+		status: "metadata_ready",
+		aceTaskId: null,
+		aceSubmittedAt: null,
+		aceAudioPath: null,
+	})
 	return c.json({ ok: true })
 })
 
@@ -912,12 +831,7 @@ app.post("/:id/revert-to-metadata-ready", async (c) => {
 app.patch("/:id/order", async (c) => {
 	const id = c.req.param("id")
 	const { newOrderIndex } = await c.req.json<{ newOrderIndex: number }>()
-
-	await db.update(songs).set({ orderIndex: newOrderIndex }).where(eq(songs.id, id))
-
-	const [row] = await db.select().from(songs).where(eq(songs.id, id))
-	if (row) await emitSongEvent(row.playlistId, "reordered", id)
-
+	await updateAndEmit(id, { orderIndex: newOrderIndex }, "reordered")
 	return c.json({ ok: true })
 })
 

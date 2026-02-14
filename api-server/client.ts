@@ -16,46 +16,38 @@ export class InfinituneApiClient {
 		this.baseUrl = baseUrl ?? process.env.API_URL ?? "http://localhost:5175"
 	}
 
-	private async get<T>(path: string): Promise<T> {
-		const res = await fetch(`${this.baseUrl}${path}`)
-		if (!res.ok)
-			throw new Error(`GET ${path} failed: ${res.status} ${res.statusText}`)
-		return res.json() as Promise<T>
-	}
-
-	private async post<T>(path: string, body?: unknown): Promise<T> {
-		const res = await fetch(`${this.baseUrl}${path}`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: body !== undefined ? JSON.stringify(body) : undefined,
-		})
+	private async request<T>(
+		method: string,
+		path: string,
+		body?: unknown,
+	): Promise<T> {
+		const init: RequestInit = { method }
+		if (body !== undefined) {
+			init.headers = { "Content-Type": "application/json" }
+			init.body = JSON.stringify(body)
+		}
+		const res = await fetch(`${this.baseUrl}${path}`, init)
 		if (!res.ok)
 			throw new Error(
-				`POST ${path} failed: ${res.status} ${res.statusText}`,
+				`${method} ${path} failed: ${res.status} ${res.statusText}`,
 			)
 		return res.json() as Promise<T>
 	}
 
-	private async patch<T>(path: string, body: unknown): Promise<T> {
-		const res = await fetch(`${this.baseUrl}${path}`, {
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(body),
-		})
-		if (!res.ok)
-			throw new Error(
-				`PATCH ${path} failed: ${res.status} ${res.statusText}`,
-			)
-		return res.json() as Promise<T>
+	private get<T>(path: string): Promise<T> {
+		return this.request("GET", path)
 	}
 
-	private async delete<T>(path: string): Promise<T> {
-		const res = await fetch(`${this.baseUrl}${path}`, { method: "DELETE" })
-		if (!res.ok)
-			throw new Error(
-				`DELETE ${path} failed: ${res.status} ${res.statusText}`,
-			)
-		return res.json() as Promise<T>
+	private post<T>(path: string, body?: unknown): Promise<T> {
+		return this.request("POST", path, body)
+	}
+
+	private patch<T>(path: string, body: unknown): Promise<T> {
+		return this.request("PATCH", path, body)
+	}
+
+	private delete<T>(path: string): Promise<T> {
+		return this.request("DELETE", path)
 	}
 
 	// ─── Settings ─────────────────────────────────────────────────────

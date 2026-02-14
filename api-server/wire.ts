@@ -1,8 +1,8 @@
 import type { Playlist, Song, Setting } from "./db/schema"
 
 /**
- * Wire format includes `_id` and `_creationTime` fields for Convex compatibility.
- * This minimizes frontend changes — 69 `._id` and 4 `._creationTime` usages stay untouched.
+ * Wire format includes `_id` and `_creationTime` fields mapped from id/createdAt
+ * to avoid mass-refactoring the frontend, which accesses these fields extensively.
  */
 
 type WithWireFields<T> = T & { _id: string; _creationTime: number }
@@ -11,7 +11,8 @@ function parseJsonField<T>(value: string | null): T | undefined {
 	if (!value) return undefined
 	try {
 		return JSON.parse(value) as T
-	} catch {
+	} catch (err) {
+		console.warn("[wire] Failed to parse JSON field:", value.slice(0, 100), err)
 		return undefined
 	}
 }

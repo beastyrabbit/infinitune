@@ -55,12 +55,16 @@ export class EventSync {
 		await this.connectRabbit();
 	}
 
-	stop(): void {
+	async stop(): Promise<void> {
 		try {
-			this.channel?.close();
-			this.connection?.close();
-		} catch {
-			// Ignore close errors
+			await this.channel?.close();
+		} catch (err) {
+			console.error("[event-sync] Error closing channel:", err);
+		}
+		try {
+			await this.connection?.close();
+		} catch (err) {
+			console.error("[event-sync] Error closing connection:", err);
 		}
 		this.channel = null;
 		this.connection = null;

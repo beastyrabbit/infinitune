@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { eq, and, or, sql } from "drizzle-orm"
+import { eq, and, or, ne, sql, desc } from "drizzle-orm"
 import { db } from "../db/index"
 import { playlists } from "../db/schema"
 import { playlistToWire } from "../wire"
@@ -13,22 +13,23 @@ app.get("/", async (c) => {
 	return c.json(rows.map(playlistToWire))
 })
 
-// GET /api/playlists/current — get current active/closing playlist (excludes oneshot)
+// GET /api/playlists/current — get most recent active/closing playlist (excludes oneshot)
 app.get("/current", async (c) => {
-	const rows = await db
+	const [row] = await db
 		.select()
 		.from(playlists)
 		.where(
 			and(
 				or(eq(playlists.status, "active"), eq(playlists.status, "closing")),
-				sql`${playlists.mode} != 'oneshot'`,
+				ne(playlists.mode, "oneshot"),
 			),
 		)
-	const last = rows[rows.length - 1] ?? null
-	return c.json(last ? playlistToWire(last) : null)
+		.orderBy(desc(playlists.createdAt))
+		.limit(1)
+	return c.json(row ? playlistToWire(row) : null)
 })
 
-// GET /api/playlists/closed — list closed/closing playlists (excludes oneshot)
+// GET /api/playlists/closed — list closed/closing playlists (excludes oneshot), newest first
 app.get("/closed", async (c) => {
 	const rows = await db
 		.select()
@@ -36,10 +37,11 @@ app.get("/closed", async (c) => {
 		.where(
 			and(
 				or(eq(playlists.status, "closed"), eq(playlists.status, "closing")),
-				sql`${playlists.mode} != 'oneshot'`,
+				ne(playlists.mode, "oneshot"),
 			),
 		)
-	return c.json(rows.reverse().map(playlistToWire))
+		.orderBy(desc(playlists.createdAt))
+	return c.json(rows.map(playlistToWire))
 })
 
 // GET /api/playlists/worker — list active + closing playlists (for worker)
@@ -162,15 +164,11 @@ app.patch("/:id/position", async (c) => {
 // POST /api/playlists/:id/increment-generated — increment songsGenerated
 app.post("/:id/increment-generated", async (c) => {
 	const id = c.req.param("id")
-	const [row] = await db.select().from(playlists).where(eq(playlists.id, id))
-	if (!row) return c.json({ error: "Playlist not found" }, 404)
-
 	await db
 		.update(playlists)
-		.set({ songsGenerated: row.songsGenerated + 1 })
+		.set({ songsGenerated: sql`${playlists.songsGenerated} + 1` })
 		.where(eq(playlists.id, id))
 	await publishEvent("playlists", { playlistId: id, type: "updated" })
-
 	return c.json({ ok: true })
 })
 
@@ -240,21 +238,16 @@ app.post("/:id/heartbeat", async (c) => {
 	const [row] = await db.select().from(playlists).where(eq(playlists.id, id))
 	if (!row) return c.json({ ok: true })
 
-	const now = Date.now()
-	const patch: Record<string, unknown> = {}
-
-	if (!row.lastSeenAt || now > row.lastSeenAt) {
-		patch.lastSeenAt = now
-	}
-	if (row.status === "closing" || row.status === "closed") {
+	const patch: Record<string, unknown> = { lastSeenAt: Date.now() }
+	const shouldReactivate =
+		row.status === "closing" || row.status === "closed"
+	if (shouldReactivate) {
 		patch.status = "active"
 	}
 
-	if (Object.keys(patch).length > 0) {
-		await db.update(playlists).set(patch).where(eq(playlists.id, id))
-		if (patch.status) {
-			await publishEvent("playlists", { playlistId: id, type: "updated" })
-		}
+	await db.update(playlists).set(patch).where(eq(playlists.id, id))
+	if (shouldReactivate) {
+		await publishEvent("playlists", { playlistId: id, type: "updated" })
 	}
 
 	return c.json({ ok: true })

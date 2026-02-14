@@ -4,7 +4,7 @@ type AmqpConnection = Awaited<ReturnType<typeof amqplib.connect>>
 type AmqpChannel = Awaited<ReturnType<AmqpConnection["createChannel"]>>
 
 const RABBITMQ_URL =
-	process.env.RABBITMQ_URL ?? "amqp://guest:guest@localhost:5672/infinitune"
+	process.env.RABBITMQ_URL ?? "amqp://localhost:5672/infinitune"
 
 const WORK_EXCHANGE = "infinitune.work"
 const EVENTS_EXCHANGE = "infinitune.events"
@@ -18,8 +18,13 @@ let connecting = false
 async function connect(): Promise<AmqpChannel> {
 	if (channel) return channel
 	if (connecting) {
-		// Wait for ongoing connection attempt
+		// Wait for ongoing connection attempt (with timeout)
+		const maxWait = 30_000
+		const start = Date.now()
 		while (connecting) {
+			if (Date.now() - start > maxWait) {
+				throw new Error("[rabbit] Timed out waiting for connection")
+			}
 			await new Promise((r) => setTimeout(r, 100))
 		}
 		if (channel) return channel
@@ -40,7 +45,7 @@ async function connect(): Promise<AmqpChannel> {
 		// Assert work queues and bind them
 		for (const queue of WORK_QUEUES) {
 			await ch.assertQueue(queue, { durable: true })
-			// Routing key is the part after "work." (e.g., "metadata", "audio", "retry")
+			// Routing key strips the "work." prefix (e.g., queue "work.metadata" binds to key "metadata")
 			const routingKey = queue.replace("work.", "")
 			await ch.bindQueue(queue, WORK_EXCHANGE, routingKey)
 		}
@@ -69,27 +74,25 @@ async function connect(): Promise<AmqpChannel> {
 /**
  * Publish a message to the work exchange (direct routing).
  * Used to dispatch work items to the worker.
+ * Throws on failure so callers can handle (e.g., retry or report error).
  */
 export async function publishWork(
 	routingKey: "metadata" | "audio" | "retry",
-	payload: Record<string, unknown>,
+	payload: { songId: string; playlistId: string },
 ) {
-	try {
-		const ch = await connect()
-		ch.publish(
-			WORK_EXCHANGE,
-			routingKey,
-			Buffer.from(JSON.stringify(payload)),
-			{ persistent: true },
-		)
-	} catch (err) {
-		console.error(`[rabbit] Failed to publish work.${routingKey}:`, err)
-	}
+	const ch = await connect()
+	ch.publish(
+		WORK_EXCHANGE,
+		routingKey,
+		Buffer.from(JSON.stringify(payload)),
+		{ persistent: true },
+	)
 }
 
 /**
  * Publish an event to the events exchange (topic routing).
  * Used to notify browser and room server of data changes.
+ * Best-effort — browser falls back to staleTime-based refetching on failure.
  */
 export async function publishEvent(
 	routingKey: string,
@@ -104,12 +107,12 @@ export async function publishEvent(
 			{ persistent: false },
 		)
 	} catch (err) {
-		console.error(`[rabbit] Failed to publish event ${routingKey}:`, err)
+		console.warn(`[rabbit] Failed to publish event ${routingKey}:`, err)
 	}
 }
 
 /**
- * Get a channel for consuming (used by worker and room server).
+ * Get a channel for consuming (used by the WebSocket bridge).
  */
 export async function getChannel(): Promise<AmqpChannel> {
 	return connect()
@@ -121,9 +124,13 @@ export async function getChannel(): Promise<AmqpChannel> {
 export async function closeRabbit() {
 	try {
 		if (channel) await channel.close()
+	} catch (err) {
+		console.error("[rabbit] Error closing channel:", err)
+	}
+	try {
 		if (connection) await connection.close()
-	} catch {
-		// Ignore close errors
+	} catch (err) {
+		console.error("[rabbit] Error closing connection:", err)
 	}
 	channel = null
 	connection = null

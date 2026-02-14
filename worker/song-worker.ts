@@ -68,6 +68,19 @@ export class SongWorker {
 		return this.ctx.getCurrentEpoch?.() ?? this.ctx.playlist.promptEpoch ?? 0
 	}
 
+	/** Calculate queue priority for this song based on current playlist state */
+	private getPriority(): number {
+		return calculatePriority({
+			isOneshot: this.ctx.playlist.mode === "oneshot",
+			isInterrupt: !!this.song.interruptPrompt,
+			orderIndex: this.song.orderIndex,
+			currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
+			isClosing: this.ctx.playlist.status === "closing",
+			currentEpoch: this.getCurrentEpoch(),
+			songEpoch: this.song.promptEpoch ?? 0,
+		})
+	}
+
 	/** Fire-and-forget entry point. Returns when song is ready/errored/cancelled. */
 	async run(): Promise<void> {
 		try {
@@ -139,7 +152,15 @@ export class SongWorker {
 				return
 			}
 			this._status = "errored"
-			console.error(`[song-worker] Song ${this.songId} failed:`, error instanceof Error ? error.message : error)
+			const msg = error instanceof Error ? error.message : String(error)
+			console.error(`[song-worker] Song ${this.songId} failed:`, msg)
+			try {
+				await this.ctx.apiClient.markError(this.songId, {
+					errorMessage: msg || "Unexpected song worker failure",
+				})
+			} catch (markErr) {
+				console.error(`[song-worker] Also failed to mark error for ${this.songId}:`, markErr)
+			}
 		}
 	}
 
@@ -171,20 +192,10 @@ export class SongWorker {
 			promptDistance = Math.random() < 0.6 ? "close" : "general"
 		}
 
-		const priority = calculatePriority({
-			isOneshot,
-			isInterrupt,
-			orderIndex: this.song.orderIndex,
-			currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
-			isClosing: this.ctx.playlist.status === "closing",
-			currentEpoch: this.getCurrentEpoch(),
-			songEpoch: this.song.promptEpoch ?? 0,
-		})
-
 		try {
 			const { result, processingMs } = await this.ctx.queues.llm.enqueue({
 				songId: this.songId,
-				priority,
+				priority: this.getPriority(),
 				endpoint: effectiveProvider,
 				execute: async (signal) => {
 					const genOptions = {
@@ -273,18 +284,7 @@ export class SongWorker {
 
 		const songId = this.songId
 		const coverPrompt = this.song.coverPrompt
-
-		const isOneshot = this.ctx.playlist.mode === "oneshot"
-		const isInterrupt = !!this.song.interruptPrompt
-		const priority = calculatePriority({
-			isOneshot,
-			isInterrupt,
-			orderIndex: this.song.orderIndex,
-			currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
-			isClosing: this.ctx.playlist.status === "closing",
-			currentEpoch: this.getCurrentEpoch(),
-			songEpoch: this.song.promptEpoch ?? 0,
-		})
+		const priority = this.getPriority()
 
 		// Fire-and-forget — we don't await this
 		this.ctx.getSettings().then((settings) => {
@@ -313,8 +313,11 @@ export class SongWorker {
 				console.log(`  [song-worker] Cover uploaded for ${songId} (${processingMs}ms)`)
 				await this.ctx.apiClient.updateCoverProcessingMs(songId, processingMs)
 				return
-			} catch {
-				// Fall back to data URL
+			} catch (uploadErr) {
+				console.warn(
+					`  [song-worker] Cover upload failed for ${songId}, falling back to data URL:`,
+					uploadErr instanceof Error ? uploadErr.message : uploadErr,
+				)
 			}
 
 			await this.ctx.apiClient.updateCover(
@@ -343,22 +346,10 @@ export class SongWorker {
 
 		console.log(`  [song-worker] Submitting "${this.song.title}" to ACE-Step`)
 
-		const isOneshot = this.ctx.playlist.mode === "oneshot"
-		const isInterrupt = !!this.song.interruptPrompt
-		const priority = calculatePriority({
-			isOneshot,
-			isInterrupt,
-			orderIndex: this.song.orderIndex,
-			currentOrderIndex: this.ctx.playlist.currentOrderIndex ?? 0,
-			isClosing: this.ctx.playlist.status === "closing",
-			currentEpoch: this.getCurrentEpoch(),
-			songEpoch: this.song.promptEpoch ?? 0,
-		})
-
 		try {
 			const { result: audioResult, processingMs } = await this.ctx.queues.audio.enqueue({
 				songId: this.songId,
-				priority,
+				priority: this.getPriority(),
 				endpoint: "ace-step",
 				execute: async (signal) => {
 					const result = await submitToAce({
@@ -425,6 +416,11 @@ export class SongWorker {
 			const msg = error instanceof Error ? error.message : String(error)
 			if (msg === "Cancelled") return
 			console.error(`  [song-worker] Audio poll error for ${this.songId}:`, msg)
+			await this.ctx.apiClient.markError(this.songId, {
+				errorMessage: msg || "Audio poll failed after resume",
+				erroredAtStatus: "generating_audio",
+			})
+			throw error
 		}
 	}
 

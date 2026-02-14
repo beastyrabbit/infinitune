@@ -31,33 +31,35 @@ function useWsInvalidation() {
 			wsRef.current = ws;
 
 			ws.onmessage = (event) => {
+				let routingKey: string;
 				try {
-					const { routingKey } = JSON.parse(event.data) as {
+					({ routingKey } = JSON.parse(event.data) as {
 						routingKey: string;
 						data: unknown;
-					};
-					if (routingKey.startsWith("songs.")) {
-						const playlistId = routingKey.replace("songs.", "");
-						queryClient.invalidateQueries({
-							queryKey: ["songs", "queue", playlistId],
-						});
-						queryClient.invalidateQueries({
-							queryKey: ["songs", "by-playlist", playlistId],
-						});
-						queryClient.invalidateQueries({
-							queryKey: ["songs", "all"],
-						});
-					} else if (routingKey === "playlists") {
-						queryClient.invalidateQueries({
-							queryKey: ["playlists"],
-						});
-					} else if (routingKey === "settings") {
-						queryClient.invalidateQueries({
-							queryKey: ["settings"],
-						});
-					}
+					});
 				} catch {
 					// Ignore malformed messages
+					return;
+				}
+				if (routingKey.startsWith("songs.")) {
+					const playlistId = routingKey.replace("songs.", "");
+					queryClient.invalidateQueries({
+						queryKey: ["songs", "queue", playlistId],
+					});
+					queryClient.invalidateQueries({
+						queryKey: ["songs", "by-playlist", playlistId],
+					});
+					queryClient.invalidateQueries({
+						queryKey: ["songs", "all"],
+					});
+				} else if (routingKey === "playlists") {
+					queryClient.invalidateQueries({
+						queryKey: ["playlists"],
+					});
+				} else if (routingKey === "settings") {
+					queryClient.invalidateQueries({
+						queryKey: ["settings"],
+					});
 				}
 			};
 

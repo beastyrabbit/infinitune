@@ -1,8 +1,8 @@
 /**
- * React Query hooks that mirror the Convex useQuery/useMutation patterns.
+ * React Query hooks for the Infinitune API.
  *
- * Each hook returns data | undefined (matching Convex's loading pattern).
- * Mutations return callable async functions (matching useMutation return).
+ * Query hooks return data | undefined while loading.
+ * Mutation hooks return async callback functions.
  * WebSocket events from the API server auto-invalidate relevant query keys.
  */
 
@@ -386,7 +386,7 @@ export function useAddListen() {
 	}, []);
 }
 
-// ─── Additional Hooks (needed by frontend migration) ─────────────────
+// ─── Playlist & Song Batch Hooks ─────────────────────────────────────
 
 export function usePlaylistByKey(
 	key: string | null,

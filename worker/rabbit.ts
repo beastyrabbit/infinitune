@@ -21,6 +21,24 @@ let connection: AmqpConnection | null = null
 let channel: AmqpChannel | null = null
 let reconnecting = false
 
+/** Parse a RabbitMQ message as WorkMessage, returning null on failure. */
+function parseWorkMessage(
+	msg: amqplib.ConsumeMessage,
+	ch: AmqpChannel,
+	label: string,
+): WorkMessage | null {
+	try {
+		return JSON.parse(msg.content.toString()) as WorkMessage
+	} catch (err) {
+		console.error(
+			`[worker-rabbit] Malformed ${label} message, discarding:`,
+			err,
+		)
+		ch.nack(msg, false, false) // Don't requeue parse errors
+		return null
+	}
+}
+
 export async function connectWorkerRabbit(
 	handlers: WorkerRabbitHandlers,
 ): Promise<void> {
@@ -57,8 +75,9 @@ export async function connectWorkerRabbit(
 			// Consume work.metadata
 			await ch.consume("work.metadata", async (msg) => {
 				if (!msg) return
+				const data = parseWorkMessage(msg, ch, "metadata")
+				if (!data) return
 				try {
-					const data = JSON.parse(msg.content.toString()) as WorkMessage
 					await handlers.onMetadata(data)
 					ch.ack(msg)
 				} catch (err) {
@@ -66,7 +85,6 @@ export async function connectWorkerRabbit(
 						"[worker-rabbit] Error processing metadata message:",
 						err instanceof Error ? err.message : err,
 					)
-					// Requeue on failure
 					ch.nack(msg, false, true)
 				}
 			})
@@ -74,8 +92,9 @@ export async function connectWorkerRabbit(
 			// Consume work.audio
 			await ch.consume("work.audio", async (msg) => {
 				if (!msg) return
+				const data = parseWorkMessage(msg, ch, "audio")
+				if (!data) return
 				try {
-					const data = JSON.parse(msg.content.toString()) as WorkMessage
 					await handlers.onAudio(data)
 					ch.ack(msg)
 				} catch (err) {
@@ -90,8 +109,9 @@ export async function connectWorkerRabbit(
 			// Consume work.retry
 			await ch.consume("work.retry", async (msg) => {
 				if (!msg) return
+				const data = parseWorkMessage(msg, ch, "retry")
+				if (!data) return
 				try {
-					const data = JSON.parse(msg.content.toString()) as WorkMessage
 					await handlers.onRetry(data)
 					ch.ack(msg)
 				} catch (err) {
@@ -128,9 +148,13 @@ export async function connectWorkerRabbit(
 export async function closeWorkerRabbit(): Promise<void> {
 	try {
 		await channel?.close()
+	} catch (err) {
+		console.error("[worker-rabbit] Error closing channel:", err)
+	}
+	try {
 		await connection?.close()
-	} catch {
-		// Ignore close errors
+	} catch (err) {
+		console.error("[worker-rabbit] Error closing connection:", err)
 	}
 	channel = null
 	connection = null

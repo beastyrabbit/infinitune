@@ -502,14 +502,14 @@ function AutoplayerPage() {
 	const handleClosePlaylist = useCallback(async () => {
 		if (!playlistId) return;
 		stopPlayback();
-		updateStatus({ id: playlistId, status: "closing" });
+		await updateStatus({ id: playlistId, status: "closing" });
 	}, [playlistId, updateStatus]);
 
 	// Force close: close immediately — worker will cancel in-flight work
 	const handleForceClose = useCallback(async () => {
 		if (!playlistId) return;
 		stopPlayback();
-		updateStatus({ id: playlistId, status: "closed" });
+		await updateStatus({ id: playlistId, status: "closed" });
 	}, [playlistId, updateStatus]);
 
 	const handleSelectSong = useCallback(

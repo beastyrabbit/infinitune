@@ -15,6 +15,8 @@ import {
 	startBridge,
 	getClientCount,
 } from "./ws-bridge"
+import { closeRabbit } from "./rabbit"
+import { sqlite } from "./db/index"
 
 const PORT = Number(process.env.API_PORT ?? 5175)
 
@@ -22,6 +24,19 @@ const PORT = Number(process.env.API_PORT ?? 5175)
 ensureSchema()
 
 const app = new Hono()
+
+// Global error handler — log and return structured error
+app.onError((err, c) => {
+	console.error(
+		`[api-server] Unhandled error in ${c.req.method} ${c.req.path}:`,
+		err,
+	)
+	return c.json(
+		{ error: "Internal server error", message: err.message },
+		500,
+	)
+})
+
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
 
 // CORS for browser access
@@ -92,11 +107,11 @@ startBridge().catch((err: Error) => {
 })
 
 // Graceful shutdown
-process.on("SIGINT", () => {
+async function shutdown() {
 	console.log("[api-server] Shutting down...")
+	await closeRabbit()
+	sqlite.close()
 	process.exit(0)
-})
-process.on("SIGTERM", () => {
-	console.log("[api-server] Shutting down...")
-	process.exit(0)
-})
+}
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)
