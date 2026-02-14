@@ -470,7 +470,7 @@ function PipelineTestPage() {
 					const encodedAudioPath = encodeURIComponent(cd.audioPath ?? "");
 					const finalAudioUrl = `/api/autoplayer/audio/${cd.songId}?aceAudioPath=${encodedAudioPath}`;
 					await markReady({ id: cd.songId ?? "", audioUrl: finalAudioUrl });
-					await incrementSongs({ id: playlistId });
+					if (playlistId) await incrementSongs({ id: playlistId });
 
 					setAudioUrl(finalAudioUrl);
 					updateStep("ready", {
