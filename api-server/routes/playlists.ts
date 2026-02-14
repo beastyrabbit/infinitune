@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { eq, and, or, ne, sql, desc } from "drizzle-orm"
 import { db } from "../db/index"
 import { playlists } from "../db/schema"
-import { playlistToWire } from "../wire"
+import { playlistToWire, parseJsonField } from "../wire"
 import { publishEvent } from "../rabbit"
 
 const app = new Hono()
@@ -210,7 +210,7 @@ app.patch("/:id/prompt", async (c) => {
 
 	const newEpoch = (row.promptEpoch ?? 0) + 1
 	const history: Array<{ epoch: number; direction: string; at: number }> =
-		row.steerHistory ? JSON.parse(row.steerHistory) : []
+		parseJsonField<Array<{ epoch: number; direction: string; at: number }>>(row.steerHistory) ?? []
 	history.push({ epoch: newEpoch, direction: prompt, at: Date.now() })
 
 	await db
