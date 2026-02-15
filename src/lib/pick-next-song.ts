@@ -1,13 +1,24 @@
-import type { Song } from "@/types";
+/**
+ * Minimal interface for song queue selection.
+ * Both the full `Song` wire type and the room `SongData` satisfy this.
+ */
+export interface PickableSong {
+	_id: string;
+	_creationTime: number;
+	orderIndex: number;
+	status: string;
+	isInterrupt?: boolean | null;
+	promptEpoch?: number | null;
+}
 
 /**
  * Pick the candidate ahead of `idx` first, wrapping to the lowest orderIndex
  * only when nothing ahead exists.
  */
-function pickAheadFirst(
-	candidates: Song[],
+function pickAheadFirst<T extends PickableSong>(
+	candidates: T[],
 	idx: number | undefined,
-): Song | null {
+): T | null {
 	if (idx === undefined)
 		return candidates.sort((a, b) => a.orderIndex - b.orderIndex)[0] ?? null;
 	const ahead = candidates
@@ -29,13 +40,13 @@ function pickAheadFirst(
  * is skipped and already-played songs are included as candidates so skip
  * navigates sequentially through the full queue.
  */
-export function pickNextSong(
-	songs: Song[],
+export function pickNextSong<T extends PickableSong>(
+	songs: T[],
 	currentSongId: string | null,
 	playlistEpoch: number,
 	currentOrderIndex?: number,
 	manualMode?: boolean,
-): Song | null {
+): T | null {
 	const PLAYABLE = manualMode ? ["ready", "played"] : ["ready"];
 	const candidates = songs.filter(
 		(s) => PLAYABLE.includes(s.status) && s._id !== currentSongId,
@@ -66,7 +77,9 @@ export function pickNextSong(
  * Find the next generating interrupt (for UP NEXT banner).
  * Returns the earliest interrupt that is still being generated.
  */
-export function findGeneratingInterrupt(songs: Song[]): Song | null {
+export function findGeneratingInterrupt<T extends PickableSong>(
+	songs: T[],
+): T | null {
 	const GENERATING_STATUSES = [
 		"pending",
 		"generating_metadata",
