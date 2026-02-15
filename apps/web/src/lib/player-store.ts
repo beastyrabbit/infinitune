@@ -1,5 +1,40 @@
 import { Store } from "@tanstack/store";
 
+// ─── Local Storage Persistence ──────────────────────────────────────
+const STORAGE_KEY = "infinitune-player";
+
+interface PersistedState {
+	volume: number;
+	isMuted: boolean;
+}
+
+function loadPersistedState(): PersistedState {
+	try {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (raw) {
+			const parsed = JSON.parse(raw) as Partial<PersistedState>;
+			return {
+				volume: typeof parsed.volume === "number" ? parsed.volume : 0.8,
+				isMuted: typeof parsed.isMuted === "boolean" ? parsed.isMuted : false,
+			};
+		}
+	} catch {
+		// Ignore corrupt localStorage
+	}
+	return { volume: 0.8, isMuted: false };
+}
+
+function persistState(state: PersistedState): void {
+	try {
+		localStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ volume: state.volume, isMuted: state.isMuted }),
+		);
+	} catch {
+		// localStorage full or unavailable
+	}
+}
+
 // ─── Global Audio Singleton ──────────────────────────────────────────
 // Lives outside React lifecycle so it survives route changes
 let globalAudio: HTMLAudioElement | null = null;
@@ -35,14 +70,16 @@ export interface PlayerState {
 	isMuted: boolean;
 }
 
+const persisted = loadPersistedState();
+
 export const playerStore = new Store<PlayerState>({
 	isPlaying: false,
-	volume: 0.8,
+	volume: persisted.volume,
 	currentTime: 0,
 	duration: 0,
 	currentSongId: null,
 	playlistId: null,
-	isMuted: false,
+	isMuted: persisted.isMuted,
 });
 
 export function setPlaying(isPlaying: boolean) {
@@ -50,11 +87,9 @@ export function setPlaying(isPlaying: boolean) {
 }
 
 export function setVolume(volume: number) {
-	playerStore.setState((state) => ({
-		...state,
-		volume,
-		isMuted: volume === 0,
-	}));
+	const next = { volume, isMuted: volume === 0 };
+	playerStore.setState((state) => ({ ...state, ...next }));
+	persistState(next);
 }
 
 export function setCurrentTime(currentTime: number) {
@@ -78,7 +113,11 @@ export function setPlaylist(playlistId: string | null) {
 }
 
 export function toggleMute() {
-	playerStore.setState((state) => ({ ...state, isMuted: !state.isMuted }));
+	playerStore.setState((state) => {
+		const next = { ...state, isMuted: !state.isMuted };
+		persistState(next);
+		return next;
+	});
 }
 
 export function stopPlayback() {

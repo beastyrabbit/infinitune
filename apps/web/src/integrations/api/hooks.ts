@@ -9,10 +9,52 @@
 import type { Playlist, Song } from "@infinitune/shared/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { toast } from "sonner";
 import { api } from "./client";
 
 // Re-export types for convenience
-export type { Song, Playlist };
+export type { Playlist, Song };
+
+// ─── Mutation Factory ────────────────────────────────────────────────
+
+/**
+ * Creates a mutation hook that returns an async callback function.
+ * Automatically invalidates query keys on success and shows
+ * a toast on error (unless `silent` is set).
+ */
+function createMutation<TInput, TOutput = void>(
+	mutationFn: (input: TInput) => Promise<TOutput>,
+	invalidateKeys?: string[][],
+	options?: { silent?: boolean },
+): () => (args: TInput) => Promise<TOutput> {
+	const silent = options?.silent ?? false;
+	return function useHook() {
+		const qc = useQueryClient();
+		return useCallback(
+			async (args: TInput): Promise<TOutput> => {
+				try {
+					const result = await mutationFn(args);
+					if (invalidateKeys) {
+						for (const key of invalidateKeys) {
+							qc.invalidateQueries({ queryKey: key });
+						}
+					}
+					return result;
+				} catch (err) {
+					if (!silent) {
+						toast.error(
+							err instanceof Error
+								? err.message
+								: "An unexpected error occurred",
+						);
+					}
+					throw err;
+				}
+			},
+			[qc, mutationFn, invalidateKeys],
+		);
+	};
+}
 
 // ─── Settings ────────────────────────────────────────────────────────
 
@@ -33,16 +75,10 @@ export function useSetting(key: string): string | null | undefined {
 	return data;
 }
 
-export function useSetSetting() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { key: string; value: string }) => {
-			await api.post("/api/settings", args);
-			qc.invalidateQueries({ queryKey: ["settings"] });
-		},
-		[qc],
-	);
-}
+export const useSetSetting = createMutation<{ key: string; value: string }>(
+	(args) => api.post("/api/settings", args),
+	[["settings"]],
+);
 
 // ─── Playlists ───────────────────────────────────────────────────────
 
@@ -79,105 +115,102 @@ export function useClosedPlaylists(): Playlist[] | undefined {
 	return data;
 }
 
-export function useCreatePlaylist() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: {
-			name: string;
-			prompt: string;
-			llmProvider: string;
-			llmModel: string;
-			mode?: string;
-			playlistKey?: string;
-			lyricsLanguage?: string;
-			targetBpm?: number;
-			targetKey?: string;
-			timeSignature?: string;
-			audioDuration?: number;
-			inferenceSteps?: number;
-			lmTemperature?: number;
-			lmCfgScale?: number;
-			inferMethod?: string;
-		}): Promise<Playlist> => {
-			const result = await api.post<Playlist>("/api/playlists", args);
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-			return result;
-		},
-		[qc],
-	);
+export function usePlaylistByKey(
+	key: string | null,
+): Playlist | null | undefined {
+	const { data } = useQuery({
+		queryKey: ["playlists", "by-key", key],
+		queryFn: () =>
+			api.get<Playlist | null>(
+				`/api/playlists/by-key/${encodeURIComponent(key ?? "")}`,
+			),
+		enabled: !!key,
+	});
+	return key ? data : null;
 }
 
-export function useUpdatePlaylistStatus() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; status: string }) => {
-			await api.patch(`/api/playlists/${args.id}/status`, {
-				status: args.status,
-			});
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useCreatePlaylist = createMutation<
+	{
+		name: string;
+		prompt: string;
+		llmProvider: string;
+		llmModel: string;
+		mode?: string;
+		playlistKey?: string;
+		lyricsLanguage?: string;
+		targetBpm?: number;
+		targetKey?: string;
+		timeSignature?: string;
+		audioDuration?: number;
+		inferenceSteps?: number;
+		lmTemperature?: number;
+		lmCfgScale?: number;
+		inferMethod?: string;
+	},
+	Playlist
+>((args) => api.post<Playlist>("/api/playlists", args), [["playlists"]]);
 
-export function useUpdatePlaylistParams() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string } & Record<string, unknown>) => {
-			const { id, ...params } = args;
-			await api.patch(`/api/playlists/${id}/params`, params);
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useUpdatePlaylistStatus = createMutation<{
+	id: string;
+	status: string;
+}>(
+	(args) =>
+		api.patch(`/api/playlists/${args.id}/status`, { status: args.status }),
+	[["playlists"]],
+);
 
-export function useUpdatePlaylistPrompt() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; prompt: string }) => {
-			await api.patch(`/api/playlists/${args.id}/prompt`, {
-				prompt: args.prompt,
-			});
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useUpdatePlaylistParams = createMutation<
+	{ id: string } & Record<string, unknown>
+>(
+	(args) => {
+		const { id, ...params } = args;
+		return api.patch(`/api/playlists/${id}/params`, params);
+	},
+	[["playlists"]],
+);
 
-export function useDeletePlaylist() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string }) => {
-			await api.del(`/api/playlists/${args.id}`);
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useUpdatePlaylistPrompt = createMutation<{
+	id: string;
+	prompt: string;
+}>(
+	(args) =>
+		api.patch(`/api/playlists/${args.id}/prompt`, { prompt: args.prompt }),
+	[["playlists"]],
+);
 
-export function usePlaylistHeartbeatMutation() {
-	return useCallback(async (args: { id: string }) => {
-		await api.post(`/api/playlists/${args.id}/heartbeat`);
-	}, []);
-}
+export const useDeletePlaylist = createMutation<{ id: string }>(
+	(args) => api.del(`/api/playlists/${args.id}`),
+	[["playlists"]],
+);
 
-export function useIncrementSongsGenerated() {
-	return useCallback(async (args: { id: string }) => {
-		await api.post(`/api/playlists/${args.id}/increment-generated`);
-	}, []);
-}
+export const usePlaylistHeartbeatMutation = createMutation<{ id: string }>(
+	(args) => api.post(`/api/playlists/${args.id}/heartbeat`),
+	undefined,
+	{ silent: true },
+);
 
-export function useResetPlaylistDefaults() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string }) => {
-			await api.post(`/api/playlists/${args.id}/reset-defaults`);
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useIncrementSongsGenerated = createMutation<{ id: string }>(
+	(args) => api.post(`/api/playlists/${args.id}/increment-generated`),
+	undefined,
+	{ silent: true },
+);
+
+export const useResetPlaylistDefaults = createMutation<{ id: string }>(
+	(args) => api.post(`/api/playlists/${args.id}/reset-defaults`),
+	[["playlists"]],
+);
+
+export const useUpdatePlaylistPosition = createMutation<{
+	id: string;
+	currentOrderIndex: number;
+}>(
+	(args) =>
+		api.patch(`/api/playlists/${args.id}/position`, {
+			currentOrderIndex: args.currentOrderIndex,
+		}),
+	[["playlists"]],
+	{ silent: true },
+);
 
 // ─── Songs ───────────────────────────────────────────────────────────
 
@@ -198,210 +231,6 @@ export function useSongsAll(): Song[] | undefined {
 	return data;
 }
 
-export function useUpdateSongStatus() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; status: string; errorMessage?: string }) => {
-			await api.patch(`/api/songs/${args.id}/status`, {
-				status: args.status,
-				errorMessage: args.errorMessage,
-			});
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useCreatePending() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: {
-			playlistId: string;
-			orderIndex: number;
-			isInterrupt?: boolean;
-			interruptPrompt?: string;
-			promptEpoch?: number;
-		}): Promise<Song> => {
-			const result = await api.post<Song>("/api/songs/create-pending", args);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-			return result;
-		},
-		[qc],
-	);
-}
-
-export function useCreateMetadataReady() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: Record<string, unknown>): Promise<Song> => {
-			const result = await api.post<Song>(
-				"/api/songs/create-metadata-ready",
-				args,
-			);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-			return result;
-		},
-		[qc],
-	);
-}
-
-export function useCreateSong() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: Record<string, unknown>): Promise<Song> => {
-			const result = await api.post<Song>("/api/songs", args);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-			return result;
-		},
-		[qc],
-	);
-}
-
-export function useSetRating() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; rating: "up" | "down" }) => {
-			await api.post(`/api/songs/${args.id}/rating`, {
-				rating: args.rating,
-			});
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useUpdatePersonaExtract() {
-	return useCallback(async (args: { id: string; personaExtract: string }) => {
-		await api.patch(`/api/songs/${args.id}/persona-extract`, {
-			personaExtract: args.personaExtract,
-		});
-	}, []);
-}
-
-export function useReorderSong() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; newOrderIndex: number }) => {
-			await api.patch(`/api/songs/${args.id}/order`, {
-				newOrderIndex: args.newOrderIndex,
-			});
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useReindexPlaylist() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { playlistId: string }) => {
-			await api.post(`/api/songs/reindex/${args.playlistId}`);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useDeleteSong() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string }) => {
-			await api.del(`/api/songs/${args.id}`);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useRevertSong() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string }) => {
-			await api.post(`/api/songs/${args.id}/revert`);
-			qc.invalidateQueries({ queryKey: ["songs"] });
-		},
-		[qc],
-	);
-}
-
-export function useUpdateAceTask() {
-	return useCallback(async (args: { id: string; aceTaskId: string }) => {
-		await api.patch(`/api/songs/${args.id}/ace-task`, {
-			aceTaskId: args.aceTaskId,
-		});
-	}, []);
-}
-
-export function useUpdateCover() {
-	return useCallback(async (args: { id: string; coverUrl: string }) => {
-		await api.patch(`/api/songs/${args.id}/cover`, {
-			coverUrl: args.coverUrl,
-		});
-	}, []);
-}
-
-export function useUpdateStoragePath() {
-	return useCallback(
-		async (args: {
-			id: string;
-			storagePath: string;
-			aceAudioPath?: string;
-		}) => {
-			await api.patch(`/api/songs/${args.id}/storage-path`, {
-				storagePath: args.storagePath,
-				aceAudioPath: args.aceAudioPath,
-			});
-		},
-		[],
-	);
-}
-
-export function useMarkReady() {
-	return useCallback(
-		async (args: {
-			id: string;
-			audioUrl: string;
-			audioProcessingMs?: number;
-		}) => {
-			await api.post(`/api/songs/${args.id}/mark-ready`, {
-				audioUrl: args.audioUrl,
-				audioProcessingMs: args.audioProcessingMs,
-			});
-		},
-		[],
-	);
-}
-
-export function useAddPlayDuration() {
-	return useCallback(async (args: { id: string; durationMs: number }) => {
-		await api.post(`/api/songs/${args.id}/play-duration`, {
-			durationMs: args.durationMs,
-		});
-	}, []);
-}
-
-export function useAddListen() {
-	return useCallback(async (args: { id: string }) => {
-		await api.post(`/api/songs/${args.id}/listen`);
-	}, []);
-}
-
-// ─── Playlist & Song Batch Hooks ─────────────────────────────────────
-
-export function usePlaylistByKey(
-	key: string | null,
-): Playlist | null | undefined {
-	const { data } = useQuery({
-		queryKey: ["playlists", "by-key", key],
-		queryFn: () =>
-			api.get<Playlist | null>(
-				`/api/playlists/by-key/${encodeURIComponent(key ?? "")}`,
-			),
-		enabled: !!key,
-	});
-	return key ? data : null;
-}
-
 export function useSongsBatch(ids: string[]): Song[] | undefined {
 	const key = ids.slice().sort().join(",");
 	const { data } = useQuery({
@@ -412,15 +241,156 @@ export function useSongsBatch(ids: string[]): Song[] | undefined {
 	return ids.length > 0 ? data : [];
 }
 
-export function useUpdatePlaylistPosition() {
-	const qc = useQueryClient();
-	return useCallback(
-		async (args: { id: string; currentOrderIndex: number }) => {
-			await api.patch(`/api/playlists/${args.id}/position`, {
-				currentOrderIndex: args.currentOrderIndex,
-			});
-			qc.invalidateQueries({ queryKey: ["playlists"] });
-		},
-		[qc],
-	);
-}
+export const useUpdateSongStatus = createMutation<{
+	id: string;
+	status: string;
+	errorMessage?: string;
+}>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/status`, {
+			status: args.status,
+			errorMessage: args.errorMessage,
+		}),
+	[["songs"]],
+	{ silent: true },
+);
+
+export const useCreatePending = createMutation<
+	{
+		playlistId: string;
+		orderIndex: number;
+		isInterrupt?: boolean;
+		interruptPrompt?: string;
+		promptEpoch?: number;
+	},
+	Song
+>((args) => api.post<Song>("/api/songs/create-pending", args), [["songs"]], {
+	silent: true,
+});
+
+export const useCreateMetadataReady = createMutation<
+	Record<string, unknown>,
+	Song
+>(
+	(args) => api.post<Song>("/api/songs/create-metadata-ready", args),
+	[["songs"]],
+	{ silent: true },
+);
+
+export const useCreateSong = createMutation<Record<string, unknown>, Song>(
+	(args) => api.post<Song>("/api/songs", args),
+	[["songs"]],
+	{ silent: true },
+);
+
+export const useSetRating = createMutation<{
+	id: string;
+	rating: "up" | "down";
+}>(
+	(args) => api.post(`/api/songs/${args.id}/rating`, { rating: args.rating }),
+	[["songs"]],
+);
+
+export const useUpdatePersonaExtract = createMutation<{
+	id: string;
+	personaExtract: string;
+}>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/persona-extract`, {
+			personaExtract: args.personaExtract,
+		}),
+	undefined,
+	{ silent: true },
+);
+
+export const useReorderSong = createMutation<{
+	id: string;
+	newOrderIndex: number;
+}>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/order`, {
+			newOrderIndex: args.newOrderIndex,
+		}),
+	[["songs"]],
+);
+
+export const useReindexPlaylist = createMutation<{ playlistId: string }>(
+	(args) => api.post(`/api/songs/reindex/${args.playlistId}`),
+	[["songs"]],
+	{ silent: true },
+);
+
+export const useDeleteSong = createMutation<{ id: string }>(
+	(args) => api.del(`/api/songs/${args.id}`),
+	[["songs"]],
+);
+
+export const useRevertSong = createMutation<{ id: string }>(
+	(args) => api.post(`/api/songs/${args.id}/revert`),
+	[["songs"]],
+);
+
+export const useUpdateAceTask = createMutation<{
+	id: string;
+	aceTaskId: string;
+}>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/ace-task`, {
+			aceTaskId: args.aceTaskId,
+		}),
+	undefined,
+	{ silent: true },
+);
+
+export const useUpdateCover = createMutation<{ id: string; coverUrl: string }>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/cover`, { coverUrl: args.coverUrl }),
+	undefined,
+	{ silent: true },
+);
+
+export const useUpdateStoragePath = createMutation<{
+	id: string;
+	storagePath: string;
+	aceAudioPath?: string;
+}>(
+	(args) =>
+		api.patch(`/api/songs/${args.id}/storage-path`, {
+			storagePath: args.storagePath,
+			aceAudioPath: args.aceAudioPath,
+		}),
+	undefined,
+	{ silent: true },
+);
+
+export const useMarkReady = createMutation<{
+	id: string;
+	audioUrl: string;
+	audioProcessingMs?: number;
+}>(
+	(args) =>
+		api.post(`/api/songs/${args.id}/mark-ready`, {
+			audioUrl: args.audioUrl,
+			audioProcessingMs: args.audioProcessingMs,
+		}),
+	undefined,
+	{ silent: true },
+);
+
+export const useAddPlayDuration = createMutation<{
+	id: string;
+	durationMs: number;
+}>(
+	(args) =>
+		api.post(`/api/songs/${args.id}/play-duration`, {
+			durationMs: args.durationMs,
+		}),
+	undefined,
+	{ silent: true },
+);
+
+export const useAddListen = createMutation<{ id: string }>(
+	(args) => api.post(`/api/songs/${args.id}/listen`),
+	undefined,
+	{ silent: true },
+);

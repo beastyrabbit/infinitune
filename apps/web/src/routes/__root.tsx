@@ -5,6 +5,7 @@ import {
 	Scripts,
 } from "@tanstack/react-router";
 
+import { Toaster } from "sonner";
 import ApiProvider from "../integrations/api/provider";
 
 import appCss from "../styles.css?url";
@@ -73,6 +74,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body>
 				<ApiProvider>{children}</ApiProvider>
+				<Toaster theme="dark" position="bottom-right" richColors />
 				<Scripts />
 			</body>
 		</html>

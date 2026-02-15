@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5175";
 const WS_URL = `${API_URL.replace(/^http/, "ws")}/ws`;
@@ -15,20 +15,39 @@ const queryClient = new QueryClient({
 
 export { queryClient };
 
+const BACKOFF_BASE = 1000;
+const BACKOFF_CAP = 30_000;
+const JITTER_MS = 500;
+
+function getBackoffDelay(attempt: number): number {
+	const exponential = Math.min(BACKOFF_BASE * 2 ** attempt, BACKOFF_CAP);
+	const jitter = (Math.random() - 0.5) * 2 * JITTER_MS;
+	return Math.max(0, exponential + jitter);
+}
+
 /**
  * Connects to the API server's WebSocket bridge and invalidates
  * relevant React Query keys when events arrive.
  */
 function useWsInvalidation() {
 	const wsRef = useRef<WebSocket | null>(null);
+	const [connected, setConnected] = useState(false);
+	const attemptRef = useRef(0);
 
 	useEffect(() => {
 		let ws: WebSocket;
 		let reconnectTimer: ReturnType<typeof setTimeout>;
+		let disposed = false;
 
 		function connect() {
+			if (disposed) return;
 			ws = new WebSocket(WS_URL);
 			wsRef.current = ws;
+
+			ws.onopen = () => {
+				attemptRef.current = 0;
+				setConnected(true);
+			};
 
 			ws.onmessage = (event) => {
 				let routingKey: string;
@@ -38,7 +57,6 @@ function useWsInvalidation() {
 						data: unknown;
 					});
 				} catch {
-					// Ignore malformed messages
 					return;
 				}
 				if (routingKey.startsWith("songs.")) {
@@ -65,7 +83,12 @@ function useWsInvalidation() {
 
 			ws.onclose = () => {
 				wsRef.current = null;
-				reconnectTimer = setTimeout(connect, 3000);
+				setConnected(false);
+				if (!disposed) {
+					const delay = getBackoffDelay(attemptRef.current);
+					attemptRef.current++;
+					reconnectTimer = setTimeout(connect, delay);
+				}
 			};
 
 			ws.onerror = () => {
@@ -76,21 +99,29 @@ function useWsInvalidation() {
 		connect();
 
 		return () => {
+			disposed = true;
 			clearTimeout(reconnectTimer);
 			ws?.close();
 		};
 	}, []);
+
+	return connected;
 }
 
-// useWsInvalidation runs before QueryClientProvider renders, but works because
-// queryClient is a module-level singleton imported directly (not via React context).
 export default function ApiProvider({
 	children,
 }: {
 	children: React.ReactNode;
 }) {
-	useWsInvalidation();
+	const connected = useWsInvalidation();
 	return (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<QueryClientProvider client={queryClient}>
+			{!connected && (
+				<div className="fixed top-0 inset-x-0 z-50 bg-yellow-600/90 text-black text-center text-xs font-medium py-1">
+					Reconnecting to server...
+				</div>
+			)}
+			{children}
+		</QueryClientProvider>
 	);
 }
