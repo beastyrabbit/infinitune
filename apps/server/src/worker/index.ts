@@ -781,3 +781,33 @@ export function getWorkerStats() {
 		trackedPlaylists: [...playlistEpochs.keys()],
 	};
 }
+
+/** @internal — exported for unit tests only */
+export const _test = {
+	handleSongCreated,
+	handleSongStatusChanged,
+	handlePlaylistCreated,
+	handlePlaylistSteered,
+	handlePlaylistHeartbeat,
+	handlePlaylistDeleted,
+	handlePlaylistStatusChanged,
+	handleSettingsChanged,
+	checkBufferDeficit,
+	setQueues(q: EndpointQueues) {
+		queues = q;
+	},
+	setPlaylistEpoch(playlistId: string, epoch: number) {
+		playlistEpochs.set(playlistId, epoch);
+	},
+	reset() {
+		songWorkers.clear();
+		playlistSongs.clear();
+		playlistEpochs.clear();
+		for (const t of heartbeatTimers.values()) clearTimeout(t);
+		heartbeatTimers.clear();
+		bufferLocks.clear();
+		personaPending.clear();
+		lastPersonaScanAt = 0;
+		forcePersonaScan = false;
+	},
+};
