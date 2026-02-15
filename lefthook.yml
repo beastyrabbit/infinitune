@@ -7,4 +7,4 @@ pre-commit:
       run: npx @biomejs/biome check --no-errors-on-unmatched {staged_files}
     typecheck:
       glob: "*.{ts,tsx}"
-      run: npx tsc --noEmit
+      run: pnpm -r typecheck

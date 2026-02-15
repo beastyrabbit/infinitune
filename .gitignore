@@ -22,3 +22,4 @@ temp-nas/*
 data/
 convex-export*
 controller-snapshot.md
+*.tsbuildinfo

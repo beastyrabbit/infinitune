@@ -199,9 +199,13 @@ function main() {
 	console.log("═══════════════════════════════════════════════════════\n")
 }
 
-try {
-	main()
-} catch (err) {
-	console.error("[tag] Fatal error:", err)
-	process.exit(1)
+// Only run when executed directly (not when imported by worker)
+const isDirectRun = process.argv[1]?.includes("tag-mp3s")
+if (isDirectRun) {
+	try {
+		main()
+	} catch (err) {
+		console.error("[tag] Fatal error:", err)
+		process.exit(1)
+	}
 }

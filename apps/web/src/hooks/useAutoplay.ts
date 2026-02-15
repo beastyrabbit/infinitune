@@ -1,0 +1,73 @@
+import { type MutableRefObject, useEffect, useRef } from "react";
+import { pickNextSong } from "@/lib/pick-next-song";
+import { playerStore, setCurrentSong } from "@/lib/player-store";
+import type { Id, Playlist, Song } from "@/types";
+
+/**
+ * Auto-plays songs when they become ready, gated on prior user interaction.
+ * - Uses pickNextSong for priority-based selection (interrupts > current-epoch > filler).
+ * - Loads audio when the current song changes.
+ * - Re-evaluates when a played song's successor becomes ready (gap recovery).
+ */
+export function useAutoplay(
+	songs: Song[] | undefined,
+	playlistId: Id<"playlists"> | null,
+	currentSongId: string | null,
+	loadAndPlay: (url: string) => void,
+	userHasInteractedRef: MutableRefObject<boolean>,
+	userPausedRef: MutableRefObject<boolean>,
+	playlist: Playlist | null | undefined,
+	transitionDismissedRef: MutableRefObject<boolean>,
+) {
+	const loadedSongIdRef = useRef<string | null>(null);
+
+	// Auto-play when a song becomes ready and nothing is playing,
+	// or when the current song has been played and a new one is available
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ref.current values are stable refs, not reactive deps
+	useEffect(() => {
+		if (!userHasInteractedRef.current) return;
+		if (!songs || !playlistId) return;
+		if (playerStore.state.isPlaying) return;
+		if (userPausedRef.current) return;
+
+		const currentSong = currentSongId
+			? songs.find((s) => s.id === currentSongId)
+			: null;
+
+		const shouldPick = !currentSong || currentSong.status === "played";
+		if (shouldPick) {
+			const next = pickNextSong(
+				songs,
+				currentSongId,
+				playlist?.promptEpoch ?? 0,
+				currentSong?.orderIndex,
+				transitionDismissedRef.current,
+			);
+			if (next?.audioUrl) {
+				setCurrentSong(next.id);
+				loadAndPlay(next.audioUrl);
+			}
+		}
+	}, [
+		songs,
+		currentSongId,
+		playlistId,
+		loadAndPlay,
+		userHasInteractedRef,
+		playlist?.promptEpoch,
+	]);
+
+	// Auto-play when current song changes and has audio
+	// biome-ignore lint/correctness/useExhaustiveDependencies: ref.current values are stable refs, not reactive deps
+	useEffect(() => {
+		if (!userHasInteractedRef.current) return;
+		if (userPausedRef.current) return;
+		if (!currentSongId || !songs) return;
+		if (currentSongId === loadedSongIdRef.current) return;
+		const song = songs.find((s) => s.id === currentSongId);
+		if (song?.status === "ready" && song.audioUrl) {
+			loadedSongIdRef.current = currentSongId;
+			loadAndPlay(song.audioUrl);
+		}
+	}, [currentSongId, songs, loadAndPlay, userHasInteractedRef]);
+}

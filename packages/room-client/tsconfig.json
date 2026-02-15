@@ -1,0 +1,15 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"compilerOptions": {
+		"composite": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"noEmit": false,
+		"declaration": true,
+		"declarationMap": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"]
+	},
+	"references": [{ "path": "../../packages/shared" }]
+}

@@ -1,0 +1,16 @@
+{
+	"name": "@infinitune/room-client",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./useRoomConnection": "./src/useRoomConnection.ts",
+		"./useRoomPlayer": "./src/useRoomPlayer.ts",
+		"./useRoomController": "./src/useRoomController.ts"
+	},
+	"dependencies": {
+		"@infinitune/shared": "workspace:*"
+	},
+	"peerDependencies": {
+		"react": "^19.0.0"
+	}
+}

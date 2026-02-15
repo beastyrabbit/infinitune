@@ -1,0 +1,17 @@
+{
+	"name": "@infinitune/shared",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./types": "./src/types.ts",
+		"./protocol": "./src/protocol.ts",
+		"./pick-next-song": "./src/pick-next-song.ts",
+		"./format-time": "./src/format-time.ts",
+		"./validation/song-status": "./src/validation/song-status.ts",
+		"./validation/song-schemas": "./src/validation/song-schemas.ts",
+		"./validation/playlist-schemas": "./src/validation/playlist-schemas.ts"
+	},
+	"dependencies": {
+		"zod": "4.2.1"
+	}
+}
