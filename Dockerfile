@@ -64,6 +64,9 @@ RUN chmod +x docker-entrypoint.sh
 # Data directory for SQLite + covers (server resolves to /app/data via relative path)
 RUN mkdir -p /app/data
 
+# Verify tsx binary exists (fail build early rather than at runtime)
+RUN test -x node_modules/.bin/tsx
+
 EXPOSE 3000 5175
 
 ENTRYPOINT ["tini", "--"]
