@@ -1,3 +1,5 @@
+import type { SongStatus } from "@infinitune/shared/types";
+import { validateSongTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, sqlite } from "../db/index";
 import type { Song } from "../db/schema";
@@ -263,13 +265,17 @@ export async function completeMetadata(
 
 export async function updateStatus(
 	id: string,
-	status: string,
+	status: SongStatus,
 	opts?: { errorMessage?: string },
 ) {
 	const [current] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!current) return;
 
-	const from = current.status;
+	const from = current.status as SongStatus;
+	if (!validateSongTransition(from, status)) {
+		throw new Error(`Invalid song transition: ${from} → ${status}`);
+	}
+
 	const patch: Record<string, unknown> = { status };
 	if (opts?.errorMessage) patch.errorMessage = opts.errorMessage;
 

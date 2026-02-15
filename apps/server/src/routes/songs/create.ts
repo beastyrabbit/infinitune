@@ -1,24 +1,28 @@
-import { CreatePendingSongSchema } from "@infinitune/shared/validation/song-schemas";
+import {
+	CompleteSongMetadataSchema,
+	CreatePendingSongSchema,
+} from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import * as songService from "../../services/song-service";
 
 const app = new Hono();
 
+const CreateWithMetadataSchema = CompleteSongMetadataSchema.extend({
+	playlistId: CreatePendingSongSchema.shape.playlistId,
+	orderIndex: CreatePendingSongSchema.shape.orderIndex,
+	promptEpoch: CreatePendingSongSchema.shape.promptEpoch,
+});
+
 // POST /api/songs — create a song with full metadata (status=generating_metadata)
 app.post("/", async (c) => {
 	const body = await c.req.json();
-	if (!body.playlistId || typeof body.playlistId !== "string") {
-		return c.json({ error: "playlistId is required" }, 400);
+	const result = CreateWithMetadataSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
 	}
-	if (body.orderIndex == null || typeof body.orderIndex !== "number") {
-		return c.json({ error: "orderIndex is required (number)" }, 400);
-	}
+	const { playlistId, orderIndex, ...metadata } = result.data;
 	return c.json(
-		await songService.createWithMetadata(
-			body.playlistId,
-			body.orderIndex,
-			body,
-		),
+		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);
 });
 
@@ -36,18 +40,13 @@ app.post("/create-pending", async (c) => {
 // POST /api/songs/create-metadata-ready — create with metadata already done
 app.post("/create-metadata-ready", async (c) => {
 	const body = await c.req.json();
-	if (!body.playlistId || typeof body.playlistId !== "string") {
-		return c.json({ error: "playlistId is required" }, 400);
+	const result = CreateWithMetadataSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
 	}
-	if (body.orderIndex == null || typeof body.orderIndex !== "number") {
-		return c.json({ error: "orderIndex is required (number)" }, 400);
-	}
+	const { playlistId, orderIndex, ...metadata } = result.data;
 	return c.json(
-		await songService.createWithMetadata(
-			body.playlistId,
-			body.orderIndex,
-			body,
-		),
+		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);
 });
 

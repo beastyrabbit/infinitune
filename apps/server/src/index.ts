@@ -34,6 +34,13 @@ const app = new Hono();
 
 // Global error handler
 app.onError((err, c) => {
+	// Transition validation errors → 422
+	if (
+		err.message?.startsWith("Invalid song transition:") ||
+		err.message?.startsWith("Invalid playlist transition:")
+	) {
+		return c.json({ error: err.message }, 422);
+	}
 	console.error(
 		`[server] Unhandled error in ${c.req.method} ${c.req.path}:`,
 		err,

@@ -1,3 +1,5 @@
+import type { PlaylistStatus } from "@infinitune/shared/types";
+import { validatePlaylistTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, ne, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import type { Playlist } from "../db/schema";
@@ -138,14 +140,18 @@ export async function updateParams(
 	emit("playlist.updated", { playlistId: id });
 }
 
-export async function updateStatus(id: string, status: string) {
+export async function updateStatus(id: string, status: PlaylistStatus) {
 	const [current] = await db
 		.select()
 		.from(playlists)
 		.where(eq(playlists.id, id));
 	if (!current) return;
 
-	const from = current.status;
+	const from = current.status as PlaylistStatus;
+	if (!validatePlaylistTransition(from, status)) {
+		throw new Error(`Invalid playlist transition: ${from} → ${status}`);
+	}
+
 	await db.update(playlists).set({ status }).where(eq(playlists.id, id));
 
 	emit("playlist.status_changed", { playlistId: id, from, to: status });

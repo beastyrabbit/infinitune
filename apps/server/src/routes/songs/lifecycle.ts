@@ -1,4 +1,5 @@
 import {
+	CompleteSongMetadataSchema,
 	MarkSongErrorSchema,
 	MarkSongReadySchema,
 	UpdateAceTaskSchema,
@@ -35,7 +36,11 @@ app.post("/:id/claim-audio", async (c) => {
 // POST /api/songs/:id/complete-metadata
 app.post("/:id/complete-metadata", async (c) => {
 	const body = await c.req.json();
-	await songService.completeMetadata(c.req.param("id"), body);
+	const result = CompleteSongMetadataSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	await songService.completeMetadata(c.req.param("id"), result.data);
 	return c.json({ ok: true });
 });
 

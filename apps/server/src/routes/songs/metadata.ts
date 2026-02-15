@@ -1,4 +1,5 @@
 import {
+	ReorderSongSchema,
 	UpdateAudioDurationSchema,
 	UpdateCoverProcessingMsSchema,
 	UpdateCoverSchema,
@@ -105,8 +106,12 @@ app.patch("/:id/persona-extract", async (c) => {
 
 // PATCH /api/songs/:id/order — reorder a song
 app.patch("/:id/order", async (c) => {
-	const { newOrderIndex } = await c.req.json<{ newOrderIndex: number }>();
-	await songService.reorderSong(c.req.param("id"), newOrderIndex);
+	const body = await c.req.json();
+	const result = ReorderSongSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	await songService.reorderSong(c.req.param("id"), result.data.newOrderIndex);
 	return c.json({ ok: true });
 });
 
