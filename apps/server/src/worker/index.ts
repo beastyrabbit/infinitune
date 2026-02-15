@@ -509,6 +509,11 @@ async function handlePlaylistHeartbeat(data: { playlistId: string }) {
 	resetHeartbeatTimer(data.playlistId);
 }
 
+async function handlePlaylistUpdated(data: { playlistId: string }) {
+	// Position changed (user skipped/jumped) → check if buffer needs more songs
+	await checkBufferDeficit(data.playlistId);
+}
+
 async function handlePlaylistDeleted(data: { playlistId: string }) {
 	cancelPlaylistWorkers(data.playlistId);
 	clearHeartbeatTimer(data.playlistId);
@@ -744,6 +749,7 @@ export async function startWorker(): Promise<void> {
 	on("playlist.created", handlePlaylistCreated);
 	on("playlist.steered", handlePlaylistSteered);
 	on("playlist.heartbeat", handlePlaylistHeartbeat);
+	on("playlist.updated", handlePlaylistUpdated);
 	on("playlist.deleted", handlePlaylistDeleted);
 	on("playlist.status_changed", handlePlaylistStatusChanged);
 	on("settings.changed", handleSettingsChanged);
@@ -786,6 +792,7 @@ export const _test = {
 	handlePlaylistCreated,
 	handlePlaylistSteered,
 	handlePlaylistHeartbeat,
+	handlePlaylistUpdated,
 	handlePlaylistDeleted,
 	handlePlaylistStatusChanged,
 	handleSettingsChanged,
