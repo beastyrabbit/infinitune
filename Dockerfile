@@ -61,9 +61,8 @@ COPY apps/server/package.json ./apps/server/package.json
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-# Data directory for SQLite + covers
+# Data directory for SQLite + covers (server resolves to /app/data via relative path)
 RUN mkdir -p /app/data
-ENV DATA_DIR=/app/data
 
 EXPOSE 3000 5175
 
