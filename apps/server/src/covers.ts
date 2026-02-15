@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createId } from "@paralleldrive/cuid2";
 
-const COVERS_DIR = path.resolve(import.meta.dirname, "../../data/covers");
+const COVERS_DIR = path.resolve(import.meta.dirname, "../../../data/covers");
 
 fs.mkdirSync(COVERS_DIR, { recursive: true });
 

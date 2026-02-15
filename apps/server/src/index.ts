@@ -1,3 +1,4 @@
+import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
@@ -97,11 +98,12 @@ app.route("/api/songs", songsRoutes);
 app.route("/api/v1", createRoomRoutes(roomManager));
 
 // ─── Static file serving for covers ──────────────────────────────────
+const DATA_ROOT = path.resolve(import.meta.dirname, "../../../data");
 app.use(
 	"/covers/*",
 	serveStatic({
-		root: "./data",
-		rewriteRequestPath: (path: string) => path,
+		root: DATA_ROOT,
+		rewriteRequestPath: (p: string) => p,
 	}),
 );
 
