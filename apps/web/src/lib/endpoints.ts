@@ -4,19 +4,26 @@
  * Resolution order:
  *   1. VITE_API_URL (baked at build time by Vite, available via import.meta.env in browser)
  *   2. process.env.VITE_API_URL (available during SSR / Nitro)
- *   3. Fallback to localhost:5175 (local dev)
+ *   3. window.location.origin (browser same-origin — works behind reverse proxy)
+ *   4. Fallback to localhost:5175 (local dev without env, SSR without env)
  */
 
 function resolveApiUrl(): string {
-	// Browser / Vite client bundle
-	if (typeof import.meta.env?.VITE_API_URL === "string") {
-		return import.meta.env.VITE_API_URL;
+	// Explicit override via env var (local dev, split deployments)
+	const envUrl = import.meta.env?.VITE_API_URL;
+	if (typeof envUrl === "string" && envUrl.length > 0) {
+		return envUrl;
 	}
 	// SSR (Nitro) — process.env is available
 	// biome-ignore lint/complexity/useOptionalChain: typeof guard needed for undeclared global
 	if (typeof process !== "undefined" && process.env?.VITE_API_URL) {
 		return process.env.VITE_API_URL;
 	}
+	// Browser: same-origin (API served from same host via reverse proxy)
+	if (typeof window !== "undefined") {
+		return window.location.origin;
+	}
+	// Final fallback (local dev without env, SSR without env)
 	return "http://localhost:5175";
 }
 
