@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @infinitune/web dev",
-    "server": "pnpm --filter @infinitune/server dev",
-    "dev:all": "npx concurrently -n web,server -c blue,magenta \"pnpm dev\" \"pnpm server\"",
+    "dev": "pnpm -C apps/web dev",
+    "server": "pnpm -C apps/server dev",
+    "dev:all": "npx concurrently -n web,server -c blue,magenta \"pnpm dev\" \"pnpm -C apps/server dev\"",
     "build": "pnpm --filter @infinitune/web build",
     "check": "biome check",
     "typecheck": "pnpm -r typecheck",
