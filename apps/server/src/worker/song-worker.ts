@@ -11,6 +11,7 @@ import {
 } from "../external/llm";
 import { saveSongToNfs } from "../external/storage";
 import { tagMp3 } from "../external/tag-mp3";
+import { songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
 import type { PlaylistWire, SongWire } from "../wire";
@@ -183,16 +184,16 @@ export class SongWorker {
 			}
 			this._status = "errored";
 			const msg = error instanceof Error ? error.message : String(error);
-			console.error(`[song-worker] Song ${this.songId} failed:`, msg);
+			songLogger(this.songId).error({ error: msg }, "Song worker failed");
 			try {
 				await songService.markError(
 					this.songId,
 					msg || "Unexpected song worker failure",
 				);
 			} catch (markErr) {
-				console.error(
-					`[song-worker] Also failed to mark error for ${this.songId}:`,
-					markErr,
+				songLogger(this.songId).error(
+					{ err: markErr },
+					"Also failed to mark error status",
 				);
 			}
 		}
@@ -211,7 +212,7 @@ export class SongWorker {
 		const claimed = songService.claimMetadata(this.songId);
 		if (!claimed) return;
 
-		console.log(`  [song-worker] Generating metadata for ${this.songId}`);
+		songLogger(this.songId).info("Generating metadata");
 
 		const settings = await this.ctx.getSettings();
 		const effectiveProvider =
@@ -254,13 +255,15 @@ export class SongWorker {
 
 					// Hard dedup: if title or artist matches a recent song, retry once
 					if (isDuplicate(result, this.ctx.recentSongs)) {
-						console.log(
-							`  [song-worker] Duplicate detected: "${result.title}" — retrying`,
+						songLogger(this.songId).info(
+							{ title: result.title },
+							"Duplicate detected, retrying",
 						);
 						result = await generateSongMetadata(genOptions);
 						if (isDuplicate(result, this.ctx.recentSongs)) {
-							console.log(
-								`  [song-worker] Still duplicate after retry: "${result.title}" — accepting anyway`,
+							songLogger(this.songId).warn(
+								{ title: result.title },
+								"Still duplicate after retry, accepting",
 							);
 						}
 					}
@@ -302,14 +305,18 @@ export class SongWorker {
 			// Update local song state
 			this.song = { ...this.song, ...metadata, status: "metadata_ready" };
 
-			console.log(
-				`  [song-worker] Metadata complete: "${metadata.title}" by ${metadata.artistName} (${processingMs}ms)`,
+			songLogger(this.songId).info(
+				{ title: metadata.title, artist: metadata.artistName, processingMs },
+				"Metadata complete",
 			);
 		} catch (error: unknown) {
 			if (this.aborted) return;
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
-			console.error(`  [song-worker] Metadata error for ${this.songId}:`, msg);
+			songLogger(this.songId).error(
+				{ error: msg },
+				"Metadata generation failed",
+			);
 			await songService.markError(
 				this.songId,
 				msg || "Metadata generation failed",
@@ -367,15 +374,13 @@ export class SongWorker {
 					);
 					await songService.updateCover(songId, urlPath);
 					this.song = { ...this.song, coverUrl: urlPath };
-					console.log(
-						`  [song-worker] Cover saved for ${songId} (${processingMs}ms)`,
-					);
+					songLogger(songId).info({ processingMs }, "Cover saved");
 					await songService.updateCoverProcessingMs(songId, processingMs);
 					return;
 				} catch (saveErr) {
-					console.warn(
-						`  [song-worker] Cover save failed for ${songId}, falling back to data URL:`,
-						saveErr instanceof Error ? saveErr.message : saveErr,
+					songLogger(songId).warn(
+						{ err: saveErr },
+						"Cover save failed, falling back to data URL",
 					);
 				}
 
@@ -389,8 +394,10 @@ export class SongWorker {
 				if (this.aborted) return;
 				const msg = error instanceof Error ? error.message : String(error);
 				if (msg === "Cancelled") return;
-				console.error(`  [song-worker] Cover error for ${songId}:`, msg);
-				// Cover is best-effort, don't fail the song
+				songLogger(songId).error(
+					{ error: msg },
+					"Cover generation failed (best-effort)",
+				);
 			});
 	}
 
@@ -404,7 +411,10 @@ export class SongWorker {
 		const claimed = songService.claimAudio(this.songId);
 		if (!claimed) return;
 
-		console.log(`  [song-worker] Submitting "${this.song.title}" to ACE-Step`);
+		songLogger(this.songId).info(
+			{ title: this.song.title },
+			"Submitting to ACE-Step",
+		);
 
 		try {
 			const { result: audioResult, processingMs } =
@@ -441,8 +451,9 @@ export class SongWorker {
 						// Update DB with taskId
 						await songService.updateAceTask(this.songId, result.taskId);
 
-						console.log(
-							`  [song-worker] ACE task ${result.taskId} for "${this.song.title}"`,
+						songLogger(this.songId).info(
+							{ aceTaskId: result.taskId, title: this.song.title },
+							"ACE task submitted",
 						);
 
 						return {
@@ -465,7 +476,7 @@ export class SongWorker {
 			if (this.aborted) return;
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
-			console.error(`  [song-worker] Audio error for ${this.songId}:`, msg);
+			songLogger(this.songId).error({ error: msg }, "Audio submission failed");
 			await songService.markError(
 				this.songId,
 				msg || "Audio generation failed",
@@ -478,8 +489,9 @@ export class SongWorker {
 	private async resumeAudioPoll(): Promise<void> {
 		if (this.aborted || !this.song.aceTaskId) return;
 
-		console.log(
-			`  [song-worker] Resuming audio poll for "${this.song.title}" (task ${this.song.aceTaskId})`,
+		songLogger(this.songId).info(
+			{ aceTaskId: this.song.aceTaskId, title: this.song.title },
+			"Resuming audio poll",
 		);
 
 		try {
@@ -502,9 +514,9 @@ export class SongWorker {
 			if (this.aborted) return;
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
-			console.error(
-				`  [song-worker] Audio poll error for ${this.songId}:`,
-				msg,
+			songLogger(this.songId).error(
+				{ error: msg },
+				"Audio poll failed after resume",
 			);
 			await songService.markError(
 				this.songId,
@@ -524,8 +536,9 @@ export class SongWorker {
 		if (status === "succeeded" && audioResult.audioPath) {
 			await this.saveAndFinalize(audioResult.audioPath, processingMs);
 		} else if (status === "failed") {
-			console.error(
-				`  [song-worker] ACE failed for ${this.songId}: ${audioResult.error}`,
+			songLogger(this.songId).error(
+				{ error: audioResult.error },
+				"ACE generation failed",
 			);
 			await songService.markError(
 				this.songId,
@@ -534,8 +547,9 @@ export class SongWorker {
 			);
 			throw new Error(audioResult.error || "Audio generation failed");
 		} else if (status === "not_found") {
-			console.log(
-				`  [song-worker] ACE task ${taskId} lost for "${this.song.title}", reverting`,
+			songLogger(this.songId).warn(
+				{ aceTaskId: taskId, title: this.song.title },
+				"ACE task lost, reverting",
 			);
 			await songService.revertTransient(this.songId);
 			throw new Error("ACE task not found");
@@ -546,8 +560,9 @@ export class SongWorker {
 		audioPath: string,
 		audioProcessingMs: number,
 	): Promise<void> {
-		console.log(
-			`  [song-worker] ACE completed for "${this.song.title}", saving...`,
+		songLogger(this.songId).info(
+			{ title: this.song.title },
+			"ACE completed, saving",
 		);
 
 		await songService.updateStatus(this.songId, "saving");
@@ -576,10 +591,7 @@ export class SongWorker {
 						coverBase64ForNfs = fs.readFileSync(coverFile).toString("base64");
 					}
 				} catch (err) {
-					console.warn(
-						`  [song-worker] Failed to read cover for NFS (${this.songId}):`,
-						err instanceof Error ? err.message : err,
-					);
+					songLogger(this.songId).warn({ err }, "Failed to read cover for NFS");
 				}
 			}
 
@@ -640,16 +652,10 @@ export class SongWorker {
 					coverPath: fs.existsSync(coverPath) ? coverPath : null,
 				});
 			} catch (err) {
-				console.warn(
-					`  [song-worker] ID3 tagging failed for ${this.songId}:`,
-					err instanceof Error ? err.message : err,
-				);
+				songLogger(this.songId).warn({ err }, "ID3 tagging failed");
 			}
 		} catch (e: unknown) {
-			console.error(
-				`  [song-worker] NFS save failed for ${this.songId}, continuing:`,
-				e instanceof Error ? e.message : e,
-			);
+			songLogger(this.songId).error({ err: e }, "NFS save failed, continuing");
 		}
 
 		if (this.aborted) return;
@@ -659,8 +665,9 @@ export class SongWorker {
 		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
 		await playlistService.incrementGenerated(this.ctx.playlist._id);
 
-		console.log(
-			`  [song-worker] Song "${this.song.title}" is READY (audio: ${audioProcessingMs}ms)`,
+		songLogger(this.songId).info(
+			{ title: this.song.title, audioProcessingMs },
+			"Song is READY",
 		);
 	}
 }

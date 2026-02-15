@@ -9,6 +9,7 @@ import type {
 	SongData,
 } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
+import { logger } from "../logger";
 
 interface ConnectedDevice extends Device {
 	ws: WebSocket;
@@ -345,7 +346,7 @@ export class Room {
 		if (this.playback.currentSongId && this.markPlayedCallback) {
 			const songId = this.playback.currentSongId;
 			this.markPlayedCallback(songId).catch((err) => {
-				console.error(`[room] Failed to mark song ${songId} as played:`, err);
+				logger.error({ err, songId }, "Failed to mark song as played");
 			});
 		}
 	}

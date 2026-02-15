@@ -1,4 +1,5 @@
 import type { Playlist, Setting, Song } from "./db/schema";
+import { logger } from "./logger";
 
 type WithWireFields<T> = T & { _id: string; _creationTime: number };
 
@@ -7,10 +8,9 @@ export function parseJsonField<T>(value: string | null): T | undefined {
 	try {
 		return JSON.parse(value) as T;
 	} catch (err) {
-		console.warn(
-			"[wire] Failed to parse JSON field:",
-			value.slice(0, 100),
-			err,
+		logger.warn(
+			{ err, snippet: value.slice(0, 100) },
+			"Failed to parse JSON field",
 		);
 		return undefined;
 	}

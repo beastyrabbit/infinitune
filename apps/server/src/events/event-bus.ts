@@ -1,3 +1,5 @@
+import { logger } from "../logger";
+
 /** All events the system can emit, with typed payloads. */
 export type EventMap = {
 	"song.created": { songId: string; playlistId: string; status: string };
@@ -60,7 +62,7 @@ export function emit<K extends keyof EventMap>(
 			try {
 				await handler(data);
 			} catch (err) {
-				console.error(`[event-bus] Handler error for ${event}:`, err);
+				logger.error({ err, event }, "Event handler error");
 			}
 		});
 	}

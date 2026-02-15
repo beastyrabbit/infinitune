@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { promisify } from "node:util";
+import { logger } from "../logger";
 
 const execFileAsync = promisify(execFile);
 
@@ -102,8 +103,13 @@ export async function trimTrailingSilence(
 		// Atomic rename over original
 		fs.renameSync(tmpFile, audioFilePath);
 
-		console.log(
-			`  [audio-processing] Trimmed ${audioFilePath}: ${originalDuration.toFixed(1)}s → ${trimPoint.toFixed(1)}s`,
+		logger.info(
+			{
+				file: audioFilePath,
+				originalDuration: +originalDuration.toFixed(1),
+				trimmedDuration: +trimPoint.toFixed(1),
+			},
+			"Trimmed trailing silence",
 		);
 
 		return {
@@ -115,13 +121,9 @@ export async function trimTrailingSilence(
 		const msg = error instanceof Error ? error.message : String(error);
 		// Check if ffmpeg is simply not installed
 		if (msg.includes("ENOENT")) {
-			console.warn(
-				"  [audio-processing] ffmpeg not found, skipping silence trim",
-			);
+			logger.warn("ffmpeg not found, skipping silence trim");
 		} else {
-			console.warn(
-				`  [audio-processing] Silence trim failed (keeping original): ${msg}`,
-			);
+			logger.warn({ error: msg }, "Silence trim failed (keeping original)");
 		}
 		return noTrim;
 	}

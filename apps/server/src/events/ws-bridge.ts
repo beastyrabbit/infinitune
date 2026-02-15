@@ -1,4 +1,5 @@
 import type { WSContext } from "hono/ws";
+import { logger } from "../logger";
 import { type EventMap, on } from "./event-bus";
 
 type WSClient = WSContext;
@@ -27,10 +28,7 @@ function broadcast(routingKey: string, data: unknown) {
 		try {
 			client.send(message);
 		} catch (err) {
-			console.warn(
-				"[ws-bridge] Failed to send to client, removing:",
-				err instanceof Error ? err.message : err,
-			);
+			logger.warn({ err }, "Failed to send to WS client, removing");
 			clients.delete(client);
 		}
 	}
@@ -94,5 +92,5 @@ export function startWsBridge(): void {
 	}
 
 	// Don't forward playlist.heartbeat — internal only, high frequency
-	console.log("[ws-bridge] Event bus bridge started");
+	logger.info("Event bus → WebSocket bridge started");
 }

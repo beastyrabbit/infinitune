@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { sqlite } from "./index";
 
 /**
@@ -105,5 +106,5 @@ export function ensureSchema() {
 		CREATE INDEX IF NOT EXISTS settings_by_key ON settings(key);
 	`);
 
-	console.log("[db] Schema ensured");
+	logger.info("Database schema ensured");
 }

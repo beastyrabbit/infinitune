@@ -12,6 +12,7 @@ import {
 	removeClient,
 	startWsBridge,
 } from "./events/ws-bridge";
+import { logger } from "./logger";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
@@ -41,9 +42,9 @@ app.onError((err, c) => {
 	) {
 		return c.json({ error: err.message }, 422);
 	}
-	console.error(
-		`[server] Unhandled error in ${c.req.method} ${c.req.path}:`,
-		err,
+	logger.error(
+		{ err, method: c.req.method, path: c.req.path },
+		"Unhandled request error",
 	);
 	return c.json({ error: "Internal server error", message: err.message }, 500);
 });
@@ -94,12 +95,13 @@ app.get(
 	upgradeWebSocket(() => ({
 		onOpen(_event, ws) {
 			addClient(ws);
-			console.log(`[ws:events] Client connected (total: ${getClientCount()})`);
+			logger.debug({ clients: getClientCount() }, "WS event client connected");
 		},
 		onClose(_event, ws) {
 			removeClient(ws);
-			console.log(
-				`[ws:events] Client disconnected (total: ${getClientCount()})`,
+			logger.debug(
+				{ clients: getClientCount() },
+				"WS event client disconnected",
 			);
 		},
 		onMessage(_event, _ws) {
@@ -112,11 +114,9 @@ app.get(
 const server = serve(
 	{ fetch: app.fetch, port: PORT },
 	(info: { port: number }) => {
-		console.log(`[server] Listening on http://localhost:${info.port}`);
-		console.log(`[server] REST:  http://localhost:${info.port}/api/`);
-		console.log(`[server] WS:    ws://localhost:${info.port}/ws`);
-		console.log(
-			`[server] Room:  ws://localhost:${info.port} (upgrade on /ws/room)`,
+		logger.info(
+			{ port: info.port, rest: `/api/`, ws: `/ws`, room: `/ws/room` },
+			`Server listening on http://localhost:${info.port}`,
 		);
 	},
 );
@@ -161,27 +161,21 @@ startRoomEventSync(roomManager);
 
 // ─── Start worker ────────────────────────────────────────────────────
 startWorker().catch((err) => {
-	console.error("[server] Worker failed to start:", err);
+	logger.error({ err }, "Worker failed to start");
 });
 
 // ─── Graceful shutdown ───────────────────────────────────────────────
 async function shutdown() {
-	console.log("[server] Shutting down...");
+	logger.info("Shutting down...");
 	try {
 		roomWss.close();
 	} catch (err) {
-		console.error(
-			"[server] Error closing room WSS:",
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err }, "Error closing room WSS");
 	}
 	try {
 		sqlite.close();
 	} catch (err) {
-		console.error(
-			"[server] Error closing SQLite:",
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err }, "Error closing SQLite");
 	}
 	process.exit(0);
 }

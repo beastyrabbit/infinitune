@@ -1,5 +1,6 @@
 import type { SongData } from "@infinitune/shared/protocol";
 import { on } from "../events/event-bus";
+import { logger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
 import type { SongWire } from "../wire";
@@ -64,10 +65,7 @@ export async function syncRoom(room: Room): Promise<void> {
 		}
 		await refreshRooms(room.playlistId, [room]);
 	} catch (err) {
-		console.error(
-			`[room-event] Failed to sync room "${room.id}":`,
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err, roomId: room.id }, "Failed to sync room");
 	}
 }
 
@@ -76,10 +74,7 @@ async function markSongPlayed(songId: string): Promise<void> {
 	try {
 		await songService.updateStatus(songId, "played");
 	} catch (err) {
-		console.error(
-			`[room-event] Failed to mark song ${songId} as played:`,
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err, songId }, "Failed to mark song as played");
 	}
 }
 
@@ -123,5 +118,5 @@ export function startRoomEventSync(roomManager: RoomManager): void {
 		}
 	});
 
-	console.log("[room-event] Room event sync registered");
+	logger.info("Room event sync registered");
 }

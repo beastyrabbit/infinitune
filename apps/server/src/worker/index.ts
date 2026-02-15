@@ -1,6 +1,7 @@
 import { on } from "../events/event-bus";
 import { batchPollAce, pollAce } from "../external/ace";
 import { generatePersonaExtract, type RecentSong } from "../external/llm";
+import { logger, playlistLogger, songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
@@ -159,16 +160,14 @@ function resetHeartbeatTimer(playlistId: string): void {
 		try {
 			const pl = await playlistService.getById(playlistId);
 			if (pl?.status === "active") {
-				console.log(
-					`[worker] Playlist ${playlistId} stale (no heartbeat for ${Math.round(HEARTBEAT_STALE_MS / 1000)}s), setting to closing`,
+				playlistLogger(playlistId).info(
+					{ staleSec: Math.round(HEARTBEAT_STALE_MS / 1000) },
+					"Playlist stale (no heartbeat), setting to closing",
 				);
 				await playlistService.updateStatus(playlistId, "closing");
 			}
 		} catch (err) {
-			console.error(
-				`[worker] Heartbeat timeout error for ${playlistId}:`,
-				err instanceof Error ? err.message : err,
-			);
+			playlistLogger(playlistId).error({ err }, "Heartbeat timeout error");
 		}
 	}, HEARTBEAT_STALE_MS);
 
@@ -206,8 +205,13 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 				await songService.createPending(playlistId, orderIndex, {
 					promptEpoch: playlist.promptEpoch ?? 0,
 				});
-				console.log(
-					`  [buffer] Created pending song at order ${orderIndex} (deficit: ${workQueue.bufferDeficit}, epoch: ${playlist.promptEpoch ?? 0})`,
+				playlistLogger(playlistId).debug(
+					{
+						orderIndex,
+						deficit: workQueue.bufferDeficit,
+						epoch: playlist.promptEpoch ?? 0,
+					},
+					"Created pending song",
 				);
 			}
 		}
@@ -219,8 +223,8 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 			workQueue.transientCount === 0 &&
 			workQueue.totalSongs > 0
 		) {
-			console.log(
-				`[worker] Oneshot playlist ${playlistId} complete, setting to closing`,
+			playlistLogger(playlistId).info(
+				"Oneshot playlist complete, setting to closing",
 			);
 			await playlistService.updateStatus(playlistId, "closing");
 		}
@@ -257,8 +261,12 @@ async function runPersonaScan(
 		pProvider = (settings.textProvider || "ollama") as "ollama" | "openrouter";
 		pModel = settings.textModel;
 	} else {
-		console.log(
-			`[persona] Skipping scan: personaProvider is "${explicitPersonaProvider}" but no personaModel set (textProvider is "${settings.textProvider}")`,
+		logger.info(
+			{
+				personaProvider: explicitPersonaProvider,
+				textProvider: settings.textProvider,
+			},
+			"Skipping persona scan: no personaModel set",
 		);
 		return;
 	}
@@ -267,7 +275,10 @@ async function runPersonaScan(
 	for (const song of needsPersona) {
 		if (personaPending.has(song._id)) continue;
 		personaPending.add(song._id);
-		console.log(`[persona] Queuing "${song.title}" (${song._id})`);
+		songLogger(song._id).debug(
+			{ title: song.title },
+			"Queuing persona extract",
+		);
 
 		queues.llm
 			.enqueue({
@@ -298,12 +309,15 @@ async function runPersonaScan(
 			})
 			.then(async ({ result, processingMs }) => {
 				await songService.updatePersonaExtract(song._id, result as string);
-				console.log(`[persona] Done "${song.title}" (${processingMs}ms)`);
+				songLogger(song._id).info(
+					{ title: song.title, processingMs },
+					"Persona extract complete",
+				);
 			})
 			.catch((err) => {
-				console.error(
-					`[persona] Failed "${song.title}":`,
-					err instanceof Error ? err.message : err,
+				songLogger(song._id).error(
+					{ err, title: song.title },
+					"Persona extract failed",
 				);
 			})
 			.finally(() => {
@@ -319,12 +333,7 @@ export function triggerPersonaScan() {
 	// Schedule a persona scan immediately
 	getSettings()
 		.then((settings) => runPersonaScan(settings))
-		.catch((err) =>
-			console.error(
-				"[persona] Triggered scan error:",
-				err instanceof Error ? err.message : err,
-			),
-		);
+		.catch((err) => logger.error({ err }, "Triggered persona scan error"));
 }
 
 // ─── Event handlers ─────────────────────────────────────────────────
@@ -349,8 +358,9 @@ async function handleSongCreated(data: {
 	);
 	if (!playlistWire) return;
 
-	console.log(
-		`[event] Spawning SongWorker for ${data.songId} (${data.status})`,
+	songLogger(data.songId, data.playlistId).info(
+		{ status: data.status },
+		"Spawning SongWorker",
 	);
 	await spawnSongWorker(song, playlistWire, workQueue);
 }
@@ -373,12 +383,7 @@ async function handleSongStatusChanged(data: {
 			forcePersonaScan = false;
 			getSettings()
 				.then((settings) => runPersonaScan(settings))
-				.catch((err) =>
-					console.error(
-						"[persona] Scan error:",
-						err instanceof Error ? err.message : err,
-					),
-				);
+				.catch((err) => logger.error({ err }, "Persona scan error"));
 		}
 	}
 
@@ -386,12 +391,9 @@ async function handleSongStatusChanged(data: {
 	if (to === "retry_pending") {
 		try {
 			await songService.retryErrored(songId);
-			console.log(`[event] Auto-retried song ${songId}`);
+			songLogger(songId, playlistId).info("Auto-retried song");
 		} catch (err) {
-			console.error(
-				`[event] Failed to retry song ${songId}:`,
-				err instanceof Error ? err.message : err,
-			);
+			songLogger(songId, playlistId).error({ err }, "Failed to retry song");
 		}
 	}
 
@@ -418,8 +420,8 @@ async function handleSongStatusChanged(data: {
 		if (playlist?.status === "closing") {
 			const workQueue = await songService.getWorkQueue(playlistId);
 			if (workQueue.transientCount === 0) {
-				console.log(
-					`[worker] Playlist ${playlistId} closing complete, setting to closed`,
+				playlistLogger(playlistId).info(
+					"Playlist closing complete, setting to closed",
 				);
 				await playlistService.updateStatus(playlistId, "closed");
 				cancelPlaylistWorkers(playlistId);
@@ -453,8 +455,9 @@ async function handlePlaylistSteered(data: {
 
 	if (newEpoch <= lastSeenEpoch) return;
 
-	console.log(
-		`[epoch] Epoch changed ${lastSeenEpoch} → ${newEpoch} for playlist ${playlistId}`,
+	playlistLogger(playlistId).info(
+		{ from: lastSeenEpoch, to: newEpoch },
+		"Epoch changed",
 	);
 
 	const playlist = await playlistService.getById(playlistId);
@@ -472,8 +475,9 @@ async function handlePlaylistSteered(data: {
 		const w = songWorkers.get(song._id);
 		if (w) w.cancel();
 		await songService.deleteSong(song._id);
-		console.log(
-			`  [epoch-cleanup] Deleted old-epoch pending song ${song._id} (epoch ${song.promptEpoch ?? 0} < ${newEpoch})`,
+		songLogger(song._id, playlistId).debug(
+			{ songEpoch: song.promptEpoch ?? 0, newEpoch },
+			"Deleted old-epoch pending song",
 		);
 	}
 
@@ -526,8 +530,8 @@ async function handlePlaylistStatusChanged(data: {
 		// Check if we can close immediately (no transient work)
 		const workQueue = await songService.getWorkQueue(playlistId);
 		if (workQueue.transientCount === 0) {
-			console.log(
-				`[worker] Playlist ${playlistId} closing immediately (no transient work)`,
+			playlistLogger(playlistId).info(
+				"Playlist closing immediately (no transient work)",
 			);
 			await playlistService.updateStatus(playlistId, "closed");
 			cancelPlaylistWorkers(playlistId);
@@ -555,10 +559,7 @@ async function handleSettingsChanged(_data: { key: string }) {
 		const settings = await getSettings();
 		queues.refreshAll(settings);
 	} catch (err) {
-		console.error(
-			"[worker] Failed to refresh settings:",
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err }, "Failed to refresh settings");
 	}
 }
 
@@ -571,8 +572,9 @@ async function staleSongCleanup(): Promise<void> {
 			const workQueue = await songService.getWorkQueue(playlist._id);
 			if (workQueue.staleSongs.length > 0) {
 				for (const stale of workQueue.staleSongs) {
-					console.log(
-						`  [stale] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`,
+					songLogger(stale._id, playlist._id).info(
+						{ title: stale.title, status: stale.status },
+						"Removing stuck song",
 					);
 					const w = songWorkers.get(stale._id);
 					if (w) w.cancel();
@@ -581,10 +583,7 @@ async function staleSongCleanup(): Promise<void> {
 			}
 		}
 	} catch (err) {
-		console.error(
-			"[worker] Stale cleanup error:",
-			err instanceof Error ? err.message : err,
-		);
+		logger.error({ err }, "Stale cleanup error");
 	}
 }
 
@@ -594,9 +593,7 @@ async function reconcileAceState() {
 	const songs = await songService.getInAudioPipeline();
 	if (songs.length === 0) return;
 
-	console.log(
-		`[startup] Reconciling ${songs.length} song(s) in audio pipeline...`,
-	);
+	logger.info({ count: songs.length }, "Reconciling songs in audio pipeline");
 
 	const taskIds = songs.filter((s) => s.aceTaskId).map((s) => s.aceTaskId!);
 
@@ -605,8 +602,9 @@ async function reconcileAceState() {
 		try {
 			aceStatus = await batchPollAce(taskIds);
 		} catch (_error: unknown) {
-			console.log(
-				`[startup] ACE unreachable, reverting all ${songs.length} songs to metadata_ready`,
+			logger.warn(
+				{ count: songs.length },
+				"ACE unreachable, reverting all songs to metadata_ready",
 			);
 			for (const song of songs) {
 				await songService.revertTransient(song._id);
@@ -617,7 +615,7 @@ async function reconcileAceState() {
 		for (const song of songs) {
 			if (!song.aceTaskId) {
 				await songService.revertTransient(song._id);
-				console.log(`[startup] Reverted ${song._id} — no ACE task ID`);
+				songLogger(song._id).info("Reverted — no ACE task ID");
 				continue;
 			}
 			const status = aceStatus.get(song.aceTaskId);
@@ -627,23 +625,26 @@ async function reconcileAceState() {
 				status.status === "failed"
 			) {
 				await songService.revertTransient(song._id);
-				console.log(
-					`[startup] Reverted ${song._id} — ACE task ${song.aceTaskId} is gone`,
+				songLogger(song._id).info(
+					{ aceTaskId: song.aceTaskId },
+					"Reverted — ACE task is gone",
 				);
 			} else if (status.status === "succeeded" && status.audioPath) {
-				console.log(
-					`[startup] ACE task ${song.aceTaskId} already done — SongWorker will save`,
+				songLogger(song._id).info(
+					{ aceTaskId: song.aceTaskId },
+					"ACE task already done — SongWorker will save",
 				);
 			} else {
-				console.log(
-					`[startup] ACE task ${song.aceTaskId} still running — will resume`,
+				songLogger(song._id).info(
+					{ aceTaskId: song.aceTaskId },
+					"ACE task still running — will resume",
 				);
 			}
 		}
 	} else {
 		for (const song of songs) {
 			await songService.revertTransient(song._id);
-			console.log(`[startup] Reverted ${song._id} — no ACE task ID`);
+			songLogger(song._id).info("Reverted — no ACE task ID");
 		}
 	}
 }
@@ -651,7 +652,10 @@ async function reconcileAceState() {
 /** Startup sweep: spawn workers for all actionable songs across active playlists */
 async function startupSweep() {
 	const activePlaylists = await playlistService.listActive();
-	console.log(`[startup] ${activePlaylists.length} active/closing playlist(s)`);
+	logger.info(
+		{ count: activePlaylists.length },
+		"Active/closing playlists at startup",
+	);
 
 	for (const playlist of activePlaylists) {
 		playlistEpochs.set(playlist._id, playlist.promptEpoch ?? 0);
@@ -684,8 +688,9 @@ async function startupSweep() {
 		// Handle stale songs
 		if (workQueue.staleSongs.length > 0) {
 			for (const stale of workQueue.staleSongs) {
-				console.log(
-					`  [startup] Removing stuck song "${stale.title || stale._id}" (status: ${stale.status})`,
+				songLogger(stale._id, playlist._id).info(
+					{ title: stale.title, status: stale.status },
+					"[startup] Removing stuck song",
 				);
 				const w = songWorkers.get(stale._id);
 				if (w) w.cancel();
@@ -695,8 +700,9 @@ async function startupSweep() {
 
 		// Process retries
 		for (const song of workQueue.retryPending) {
-			console.log(
-				`  [startup] Retrying song ${song._id} (retry ${(song.retryCount || 0) + 1}/3)`,
+			songLogger(song._id, playlist._id).info(
+				{ retryCount: (song.retryCount || 0) + 1 },
+				"[startup] Retrying song",
 			);
 			await songService.retryErrored(song._id);
 		}
@@ -708,8 +714,8 @@ async function startupSweep() {
 
 		// Closing check
 		if (playlist.status === "closing" && workQueue.transientCount === 0) {
-			console.log(
-				`[startup] Playlist ${playlist._id} closing complete, setting to closed`,
+			playlistLogger(playlist._id).info(
+				"[startup] Playlist closing complete, setting to closed",
 			);
 			await playlistService.updateStatus(playlist._id, "closed");
 		}
@@ -719,7 +725,7 @@ async function startupSweep() {
 // ─── Startup ─────────────────────────────────────────────────────────
 
 export async function startWorker(): Promise<void> {
-	console.log("[worker] Starting event-driven song generation worker...");
+	logger.info("Starting event-driven song generation worker...");
 
 	// Initialize endpoint queues
 	queues = new EndpointQueues((taskId, signal) => pollAce(taskId, signal));
@@ -729,10 +735,7 @@ export async function startWorker(): Promise<void> {
 		const settings = await getSettings();
 		queues.refreshAll(settings);
 	} catch (err) {
-		console.warn(
-			"[worker] Could not load initial settings, using defaults:",
-			err instanceof Error ? err.message : err,
-		);
+		logger.warn({ err }, "Could not load initial settings, using defaults");
 	}
 
 	// Reconcile any songs stuck in audio pipeline against ACE's actual state
@@ -753,10 +756,7 @@ export async function startWorker(): Promise<void> {
 		try {
 			await queues.audio.tickPolls();
 		} catch (err) {
-			console.error(
-				"[worker] Audio poll error:",
-				err instanceof Error ? err.message : err,
-			);
+			logger.error({ err }, "Audio poll error");
 		}
 	}, AUDIO_POLL_INTERVAL);
 
@@ -766,7 +766,7 @@ export async function startWorker(): Promise<void> {
 	// Run startup sweep to catch up on any pending work
 	await startupSweep();
 
-	console.log("[worker] Worker started, listening on event bus");
+	logger.info("Worker started, listening on event bus");
 }
 
 /** Expose queues for status API */

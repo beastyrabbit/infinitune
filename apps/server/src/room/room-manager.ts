@@ -1,5 +1,6 @@
 import type { DeviceRole, RoomInfo } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
+import { logger } from "../logger";
 import { Room } from "./room";
 
 export class RoomManager {
@@ -21,9 +22,7 @@ export class RoomManager {
 			this.markPlayedCallback ?? undefined,
 		);
 		this.rooms.set(id, room);
-		console.log(
-			`[room-manager] Created room "${id}" (${name}) → playlist ${playlistKey}`,
-		);
+		logger.info({ roomId: id, name, playlistKey }, "Room created");
 		return room;
 	}
 
@@ -35,7 +34,7 @@ export class RoomManager {
 		const room = this.rooms.get(id);
 		if (room) room.dispose();
 		this.rooms.delete(id);
-		console.log(`[room-manager] Removed room "${id}"`);
+		logger.info({ roomId: id }, "Room removed");
 	}
 
 	listRooms(): RoomInfo[] {
@@ -60,9 +59,7 @@ export class RoomManager {
 		const room = this.rooms.get(roomId);
 		if (!room) return null;
 		room.addDevice({ id: deviceId, name: deviceName, role }, ws);
-		console.log(
-			`[room-manager] Device "${deviceName}" (${deviceId}) joined room "${roomId}" as ${role}`,
-		);
+		logger.info({ roomId, deviceId, deviceName, role }, "Device joined room");
 		return room;
 	}
 
@@ -70,7 +67,7 @@ export class RoomManager {
 		const room = this.rooms.get(roomId);
 		if (!room) return;
 		room.removeDevice(deviceId);
-		console.log(`[room-manager] Device ${deviceId} left room "${roomId}"`);
+		logger.info({ roomId, deviceId }, "Device left room");
 	}
 
 	/** Get all rooms grouped by playlist key. */

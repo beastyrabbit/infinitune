@@ -3,6 +3,7 @@ import {
 	ClientMessageSchema,
 } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
+import { logger } from "../logger";
 import type { Room } from "./room";
 import { syncRoom } from "./room-event-handler";
 import type { RoomManager } from "./room-manager";
@@ -153,6 +154,6 @@ export function handleRoomConnection(
 	});
 
 	ws.on("error", (err) => {
-		console.error("[ws:room] Connection error:", err);
+		logger.error({ err }, "Room WebSocket connection error");
 	});
 }

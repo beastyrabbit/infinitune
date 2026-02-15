@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type {
 	IEndpointQueue,
 	QueueRequest,
@@ -187,10 +188,7 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			// 'running' → do nothing, poll again next tick
 		} catch (error: unknown) {
 			if (slot.abortController.signal.aborted) return;
-			console.error(
-				`  [audio-poll] Poll error for task ${slot.taskId}:`,
-				error instanceof Error ? error.message : error,
-			);
+			logger.error({ err: error, taskId: slot.taskId }, "Audio poll error");
 		}
 	}
 
