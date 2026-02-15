@@ -1,3 +1,4 @@
+import { BatchSongIdsSchema } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import * as songService from "../../services/song-service";
 import { songToWire } from "../../wire";
@@ -41,9 +42,12 @@ app.get("/work-queue/:playlistId", async (c) => {
 
 // POST /api/songs/batch — get songs by IDs
 app.post("/batch", async (c) => {
-	const { ids } = await c.req.json<{ ids: string[] }>();
-	if (!ids?.length) return c.json([]);
-	return c.json(await songService.getByIds(ids));
+	const body = await c.req.json();
+	const result = BatchSongIdsSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	return c.json(await songService.getByIds(result.data.ids));
 });
 
 // GET /api/songs/:id

@@ -3,6 +3,7 @@ import {
 	UpdateAudioDurationSchema,
 	UpdateCoverProcessingMsSchema,
 	UpdateCoverSchema,
+	UpdateMetadataSchema,
 	UpdatePersonaExtractSchema,
 	UpdateStoragePathSchema,
 	UploadCoverSchema,
@@ -16,7 +17,11 @@ const app = new Hono();
 // PATCH /api/songs/:id/metadata — update metadata fields
 app.patch("/:id/metadata", async (c) => {
 	const body = await c.req.json();
-	await songService.updateMetadata(c.req.param("id"), body);
+	const result = UpdateMetadataSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	await songService.updateMetadata(c.req.param("id"), result.data);
 	return c.json({ ok: true });
 });
 

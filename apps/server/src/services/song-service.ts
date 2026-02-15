@@ -243,6 +243,9 @@ export async function completeMetadata(
 	id: string,
 	metadata: Record<string, unknown>,
 ) {
+	const [current] = await db.select().from(songs).where(eq(songs.id, id));
+	if (!current) return;
+
 	const patch = buildMetadataPatch(metadata, [
 		"llmProvider",
 		"llmModel",
@@ -251,16 +254,13 @@ export async function completeMetadata(
 	patch.status = "metadata_ready";
 
 	await db.update(songs).set(patch).where(eq(songs.id, id));
-	const [row] = await db.select().from(songs).where(eq(songs.id, id));
 
-	if (row) {
-		emit("song.status_changed", {
-			songId: id,
-			playlistId: row.playlistId,
-			from: "generating_metadata",
-			to: "metadata_ready",
-		});
-	}
+	emit("song.status_changed", {
+		songId: id,
+		playlistId: current.playlistId,
+		from: current.status,
+		to: "metadata_ready",
+	});
 }
 
 export async function updateStatus(

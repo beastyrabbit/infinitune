@@ -80,6 +80,13 @@ export async function submitToAce(options: {
 		signal,
 	});
 
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`ACE-Step submit failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
+		);
+	}
+
 	const data = (await response.json()) as {
 		data?: { task_id?: string };
 		error?: string;
@@ -105,6 +112,13 @@ export async function batchPollAce(
 		body: JSON.stringify({ task_id_list: taskIds }),
 		signal,
 	});
+
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`ACE-Step batch poll failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
+		);
+	}
 
 	const data = (await response.json()) as {
 		data?: { task_id: string; status: number; result?: string }[];
@@ -180,6 +194,13 @@ export async function pollAce(
 		body: JSON.stringify({ task_id_list: [taskId] }),
 		signal,
 	});
+
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`ACE-Step poll failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
+		);
+	}
 
 	const data = (await response.json()) as {
 		data?: { task_id: string; status: number; result?: string }[];

@@ -446,7 +446,7 @@ export class Room {
 		for (const device of this.devices.values()) {
 			if (device.role !== "player" || device.ws.readyState !== 1) continue;
 			if (respectMode && device.mode === "individual") continue;
-			device.ws.send(data);
+			this.safeSend(device, data);
 		}
 	}
 
@@ -454,7 +454,7 @@ export class Room {
 		const data = JSON.stringify(msg);
 		for (const device of this.devices.values()) {
 			if (device.role === "player" && device.ws.readyState === 1) {
-				device.ws.send(data);
+				this.safeSend(device, data);
 			}
 		}
 	}
@@ -463,7 +463,7 @@ export class Room {
 		const data = JSON.stringify(msg);
 		for (const device of this.devices.values()) {
 			if (device.ws.readyState === 1) {
-				device.ws.send(data);
+				this.safeSend(device, data);
 			}
 		}
 	}
@@ -471,7 +471,22 @@ export class Room {
 	private sendTo(deviceId: string, msg: ServerMessage): void {
 		const device = this.devices.get(deviceId);
 		if (device && device.ws.readyState === 1) {
-			device.ws.send(JSON.stringify(msg));
+			this.safeSend(device, JSON.stringify(msg));
+		}
+	}
+
+	private safeSend(
+		device: { id: string; ws: { send(data: string): void } },
+		data: string,
+	): void {
+		try {
+			device.ws.send(data);
+		} catch (err) {
+			logger.warn(
+				{ err, deviceId: device.id, roomId: this.id },
+				"Failed to send to device, removing",
+			);
+			this.devices.delete(device.id);
 		}
 	}
 }

@@ -205,5 +205,7 @@ export async function generateCover(options: {
 		return { imageBase64: result.base64, format: "png" };
 	}
 
-	return null;
+	throw new Error(
+		`Unsupported image provider "${provider}". Supported: comfyui, openrouter`,
+	);
 }

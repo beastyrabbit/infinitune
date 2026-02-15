@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import * as settingsService from "../services/settings-service";
 
 export interface ServiceUrls {
@@ -20,7 +21,8 @@ export async function getServiceUrls(): Promise<ServiceUrls> {
 			aceStepUrl: settings.aceStepUrl || defaults.aceStepUrl,
 			comfyuiUrl: settings.comfyuiUrl || defaults.comfyuiUrl,
 		};
-	} catch {
+	} catch (err) {
+		logger.warn({ err }, "Failed to load service URLs from DB, using defaults");
 		return defaults;
 	}
 }
@@ -28,7 +30,8 @@ export async function getServiceUrls(): Promise<ServiceUrls> {
 export async function getSetting(key: string): Promise<string | null> {
 	try {
 		return await settingsService.get(key);
-	} catch {
+	} catch (err) {
+		logger.warn({ err, key }, "Failed to load setting from DB");
 		return null;
 	}
 }
