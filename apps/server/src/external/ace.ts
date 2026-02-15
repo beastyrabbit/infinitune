@@ -1,5 +1,14 @@
 import { getServiceUrls } from "./service-urls";
 
+async function assertOk(response: Response, label: string): Promise<void> {
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`${label} failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
+		);
+	}
+}
+
 export interface AceSubmitResult {
 	taskId: string;
 }
@@ -9,6 +18,13 @@ export interface AcePollResult {
 	audioPath?: string;
 	error?: string;
 	result?: unknown;
+}
+
+/** Raw task shape returned by the ACE-Step /query_result endpoint */
+interface AceRawTask {
+	task_id: string;
+	status: number;
+	result?: string;
 }
 
 export async function submitToAce(options: {
@@ -80,12 +96,7 @@ export async function submitToAce(options: {
 		signal,
 	});
 
-	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		throw new Error(
-			`ACE-Step submit failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
-		);
-	}
+	await assertOk(response, "ACE-Step submit");
 
 	const data = (await response.json()) as {
 		data?: { task_id?: string };
@@ -113,16 +124,9 @@ export async function batchPollAce(
 		signal,
 	});
 
-	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		throw new Error(
-			`ACE-Step batch poll failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
-		);
-	}
+	await assertOk(response, "ACE-Step batch poll");
 
-	const data = (await response.json()) as {
-		data?: { task_id: string; status: number; result?: string }[];
-	};
+	const data = (await response.json()) as { data?: AceRawTask[] };
 	const results = data.data;
 	const resultMap = new Map<string, AcePollResult>();
 
@@ -134,7 +138,7 @@ export async function batchPollAce(
 	}
 
 	// Index ACE results by task_id
-	const aceById = new Map<string, { status: number; result?: string }>();
+	const aceById = new Map<string, AceRawTask>();
 	for (const task of results) {
 		if (task.task_id) {
 			aceById.set(task.task_id, task);
@@ -195,16 +199,9 @@ export async function pollAce(
 		signal,
 	});
 
-	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		throw new Error(
-			`ACE-Step poll failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
-		);
-	}
+	await assertOk(response, "ACE-Step poll");
 
-	const data = (await response.json()) as {
-		data?: { task_id: string; status: number; result?: string }[];
-	};
+	const data = (await response.json()) as { data?: AceRawTask[] };
 	const results = data.data;
 	if (!results || !Array.isArray(results) || results.length === 0) {
 		return { status: "not_found" };

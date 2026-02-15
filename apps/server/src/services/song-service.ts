@@ -1,4 +1,4 @@
-import type { SongStatus } from "@infinitune/shared/types";
+import { ACTIVE_STATUSES, type SongStatus } from "@infinitune/shared/types";
 import { validateSongTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, sqlite } from "../db/index";
@@ -607,22 +607,7 @@ export async function reindexPlaylist(playlistId: string) {
 }
 
 export async function getWorkQueue(playlistId: string) {
-	const ACTIVE_STATUSES = [
-		"pending",
-		"generating_metadata",
-		"metadata_ready",
-		"submitting_to_ace",
-		"generating_audio",
-		"saving",
-		"ready",
-	];
-	const TRANSIENT_STATUSES = [
-		"generating_metadata",
-		"submitting_to_ace",
-		"generating_audio",
-		"saving",
-	];
-	const ACTIVE_PROCESSING_STATUSES = [
+	const IN_FLIGHT_STATUSES: SongStatus[] = [
 		"generating_metadata",
 		"submitting_to_ace",
 		"generating_audio",
@@ -669,7 +654,7 @@ export async function getWorkQueue(playlistId: string) {
 	const songsAhead = allSongs.filter(
 		(s) =>
 			s.orderIndex > currentOrderIndex &&
-			ACTIVE_STATUSES.includes(s.status) &&
+			ACTIVE_STATUSES.includes(s.status as SongStatus) &&
 			(s.promptEpoch ?? 0) === currentEpoch,
 	).length;
 	const bufferDeficit = Math.max(0, 5 - songsAhead);
@@ -677,7 +662,7 @@ export async function getWorkQueue(playlistId: string) {
 	const maxOrderIndex =
 		allSongs.length > 0 ? Math.max(...allSongs.map((s) => s.orderIndex)) : 0;
 	const transientCount = allSongs.filter((s) =>
-		TRANSIENT_STATUSES.includes(s.status),
+		IN_FLIGHT_STATUSES.includes(s.status as SongStatus),
 	).length;
 
 	const completedSongs = allSongs
@@ -706,7 +691,7 @@ export async function getWorkQueue(playlistId: string) {
 	const now = Date.now();
 	const staleSongs = allSongs
 		.filter((s) => {
-			if (!ACTIVE_PROCESSING_STATUSES.includes(s.status)) return false;
+			if (!IN_FLIGHT_STATUSES.includes(s.status as SongStatus)) return false;
 			if (s.status === "generating_audio") {
 				const audioStart =
 					s.aceSubmittedAt || s.generationStartedAt || s.createdAt;

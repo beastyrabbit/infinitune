@@ -107,30 +107,11 @@ export const UpdatePersonaExtractSchema = z.object({
 });
 
 /** Schema for partial metadata update (all fields optional) */
-export const UpdateMetadataSchema = z
-	.object({
-		title: z.string().min(1),
-		artistName: z.string().min(1),
-		genre: z.string().min(1),
-		subGenre: z.string().min(1),
-		lyrics: z.string(),
-		caption: z.string(),
-		coverPrompt: z.string(),
-		bpm: z.number().min(30).max(300),
-		keyScale: z.string().min(1),
-		timeSignature: z.string().min(1),
-		audioDuration: z.number().min(10).max(600),
-		vocalStyle: z.string(),
-		mood: z.string(),
-		energy: z.string(),
-		era: z.string(),
-		language: z.string(),
-		description: z.string(),
-		instruments: z.array(z.string()),
-		tags: z.array(z.string()),
-		themes: z.array(z.string()),
-	})
-	.partial();
+export const UpdateMetadataSchema = CompleteSongMetadataSchema.omit({
+	llmProvider: true,
+	llmModel: true,
+	metadataProcessingMs: true,
+}).partial();
 
 /** Schema for batch song ID lookup */
 export const BatchSongIdsSchema = z.object({
