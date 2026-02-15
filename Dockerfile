@@ -26,8 +26,6 @@ RUN pnpm --filter @infinitune/web build
 # ── Stage 3: prod-deps ─────────────────────────────────────────
 FROM base AS prod-deps
 RUN pnpm install --frozen-lockfile --prod
-# tsx is a devDep but needed at runtime to run the server (TypeScript)
-RUN pnpm add -w --save-prod tsx
 
 # ── Stage 4: runtime ───────────────────────────────────────────
 FROM node:22-slim AS runtime
