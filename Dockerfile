@@ -29,6 +29,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 # ── Stage 4: runtime ───────────────────────────────────────────
 FROM node:22-slim AS runtime
+ENV NODE_ENV=production
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg tini && \
