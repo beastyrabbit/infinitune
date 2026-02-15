@@ -117,7 +117,19 @@ Gateway using Vercel AI SDK (`ai` package) with per-provider semaphores (ollama:
 - **songs**: playlistId (FK with cascade delete), orderIndex, status, all metadata fields, audioUrl, coverUrl, aceTaskId, isInterrupt, userRating, personaExtract, timing metrics
 - **settings**: key/value store for service URLs and model config
 
-Schema in `apps/server/src/db/schema.ts` (Drizzle ORM). Auto-created on startup via `ensureSchema()`. IDs are cuid2 strings. Wire format includes `_id` and `_creationTime` mapped from `id`/`createdAt` for backward compatibility.
+Schema in `apps/server/src/db/schema.ts` (Drizzle ORM). Auto-created on startup via `ensureSchema()`. IDs are cuid2 strings. Wire format uses `id`/`createdAt` directly — no mapping layer.
+
+### Structured Logging (apps/server/src/logger.ts)
+
+pino logger with child loggers for song/playlist context. Use `logger.info()`, `logger.warn()`, `logger.error()` — never `console.*` in server code. `pino-pretty` for dev.
+
+### Validation (packages/shared/src/validation/)
+
+Zod schemas for all mutation endpoints in `song-schemas.ts` and `playlist-schemas.ts`. Status transition machine in `song-status.ts` — `validateSongTransition(from, to)` called by `songService.updateStatus()`. Routes validate with `.safeParse()` before calling services.
+
+### Mutation Hook Factory (apps/web/src/integrations/api/hooks.ts)
+
+`createMutation<TInput, TOutput>(mutationFn, invalidateKeys, options)` wraps mutations with toast error handling + query invalidation. Use `{ silent: true }` for background operations (heartbeat, tracking).
 
 ### Drizzle Patterns
 
@@ -172,7 +184,9 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - Mini player: `components/mini-player/MiniPlayer.tsx`
 - LLM prompts: `services/llm.ts`
 
-### Legacy (still present, to be removed)
-- `api-server/` — old standalone API server
-- `worker/` — old standalone worker
-- `room-server/` — old standalone room server
+### Tests (apps/server/src/__tests__/)
+- `song-service.test.ts` — 28 tests: CRUD, status transitions, claims, work queue
+- `playlist-service.test.ts` — 14 tests: lifecycle, heartbeat, steering, params
+- `event-handlers.test.ts` — 23 tests: worker event handlers, buffer deficit
+- `room.test.ts` — 28 tests: room protocol, commands, sync, device management
+- `test-db.ts` — in-memory SQLite test helper (schema + cleanup)
