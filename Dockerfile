@@ -15,7 +15,7 @@ COPY packages/room-client/package.json packages/room-client/package.json
 FROM base AS build
 
 # VITE_API_URL is baked into the client JS bundle at build time
-ARG VITE_API_URL=http://localhost:5175
+ARG VITE_API_URL=
 ENV VITE_API_URL=${VITE_API_URL}
 
 RUN pnpm install --frozen-lockfile
