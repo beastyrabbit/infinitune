@@ -107,6 +107,10 @@ const valueRef = useRef(false);
 
 Used for `transitionDismissed`, `userPaused`, `userHasInteracted`.
 
+### URL Resolution (apps/web/src/lib/endpoints.ts)
+
+Production Docker builds intentionally leave `VITE_API_URL` empty. The browser auto-detects `window.location.origin` so HTTPS pages get `https://` API and `wss://` WebSocket URLs. Production URL: `https://infinitune.heerlab.com`. Do NOT re-add `VITE_API_URL` to the CI build args or Dockerfile default — this breaks HTTPS deployments with mixed content errors. Local dev uses `VITE_API_URL=http://localhost:5175` from `.env.local`.
+
 ### LLM Client (apps/server/src/external/llm-client.ts)
 
 Gateway using Vercel AI SDK (`ai` package) with per-provider semaphores (ollama:1, openrouter:5). Three exports: `callLlmText()` for plain text, `callLlmObject<T>()` for Zod-validated structured output, `callImageGen()` for images. Provider factory handles Ollama (`ollama-ai-provider-v2`) and OpenRouter (`@openrouter/ai-sdk-provider`).
