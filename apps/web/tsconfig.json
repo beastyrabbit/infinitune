@@ -1,0 +1,18 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"include": ["src/**/*.ts", "src/**/*.tsx"],
+	"compilerOptions": {
+		"composite": true,
+		"rootDir": "src",
+		"outDir": "dist",
+		"jsx": "react-jsx",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"paths": {
+			"@/*": ["./src/*"]
+		}
+	},
+	"references": [
+		{ "path": "../../packages/shared" },
+		{ "path": "../../packages/room-client" }
+	]
+}
