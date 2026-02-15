@@ -74,6 +74,22 @@ app.get("/health", (c) => {
 	});
 });
 
+// ─── Worker status (used by frontend queue dashboard) ────────────────
+app.get("/api/worker/status", (c) => {
+	const queues = getQueues().getFullStatus();
+	const worker = getWorkerStats();
+	return c.json({
+		queues,
+		songWorkers: worker.songWorkerCount,
+		playlists: worker.trackedPlaylists.map((id) => ({
+			id,
+			name: id,
+			activeSongWorkers: 0,
+		})),
+		uptime: process.uptime(),
+	});
+});
+
 // ─── API routes ──────────────────────────────────────────────────────
 app.route("/api/settings", settingsRoutes);
 app.route("/api/playlists", playlistsRoutes);

@@ -229,8 +229,8 @@ function AutoplayerPage() {
 				.slice(0, 30);
 			const roomServerUrl =
 				typeof window !== "undefined"
-					? `http://${window.location.hostname}:5174`
-					: "http://localhost:5174";
+					? `http://${window.location.hostname}:5175`
+					: "http://localhost:5175";
 			try {
 				await fetch(`${roomServerUrl}/api/v1/rooms`, {
 					method: "POST",

@@ -46,7 +46,7 @@ export function useWorkerStatus(): {
 
 	useEffect(() => {
 		const workerApiUrl =
-			import.meta.env.VITE_WORKER_API_URL || "http://localhost:3099";
+			import.meta.env.VITE_API_URL || "http://localhost:5175";
 
 		const fetchStatus = async () => {
 			try {

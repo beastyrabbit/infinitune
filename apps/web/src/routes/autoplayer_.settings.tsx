@@ -386,8 +386,7 @@ function SettingsPage() {
 									disabled={personaScanTriggered}
 									onClick={async () => {
 										const workerUrl =
-											import.meta.env.VITE_WORKER_API_URL ||
-											"http://localhost:3099";
+											import.meta.env.VITE_API_URL || "http://localhost:5175";
 										try {
 											await fetch(`${workerUrl}/api/worker/persona/trigger`, {
 												method: "POST",
