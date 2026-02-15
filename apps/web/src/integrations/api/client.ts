@@ -2,7 +2,7 @@
  * Browser-side API client. Thin wrapper around fetch for the Hono API server.
  */
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5175";
+import { API_URL } from "@/lib/endpoints";
 
 async function extractErrorMessage(
 	res: Response,

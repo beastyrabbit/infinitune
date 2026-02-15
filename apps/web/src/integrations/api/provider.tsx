@@ -1,8 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:5175";
-const WS_URL = `${API_URL.replace(/^http/, "ws")}/ws`;
+import { EVENT_WS_URL } from "@/lib/endpoints";
 
 const queryClient = new QueryClient({
 	defaultOptions: {
@@ -41,7 +39,7 @@ function useWsInvalidation() {
 
 		function connect() {
 			if (disposed) return;
-			ws = new WebSocket(WS_URL);
+			ws = new WebSocket(EVENT_WS_URL);
 			wsRef.current = ws;
 
 			ws.onopen = () => {

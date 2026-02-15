@@ -8,11 +8,7 @@ import type {
 	SongData,
 } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const ROOM_SERVER_URL =
-	typeof window !== "undefined"
-		? `ws://${window.location.hostname}:5175/ws/room`
-		: "ws://localhost:5175/ws/room";
+import { ROOM_WS_URL } from "@/lib/endpoints";
 
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30_000;
@@ -144,7 +140,7 @@ export function useRoomConnection(
 			deviceIdRef.current = generateDeviceId();
 		}
 
-		const ws = new WebSocket(ROOM_SERVER_URL);
+		const ws = new WebSocket(ROOM_WS_URL);
 		wsRef.current = ws;
 
 		ws.addEventListener("open", () => {

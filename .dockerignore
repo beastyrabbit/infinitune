@@ -1,0 +1,14 @@
+node_modules
+.git
+*.md
+*.png
+.env*
+.vscode
+.idea
+apps/web/.output
+apps/web/node_modules
+apps/server/node_modules
+packages/*/node_modules
+dist
+tmp
+*.log

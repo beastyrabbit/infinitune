@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { API_URL } from "@/lib/endpoints";
 
 export interface EndpointStatus {
 	type: string;
@@ -45,12 +46,9 @@ export function useWorkerStatus(): {
 	const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
 	useEffect(() => {
-		const workerApiUrl =
-			import.meta.env.VITE_API_URL || "http://localhost:5175";
-
 		const fetchStatus = async () => {
 			try {
-				const res = await fetch(`${workerApiUrl}/api/worker/status`);
+				const res = await fetch(`${API_URL}/api/worker/status`);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				const data = await res.json();
 				setStatus(data);
