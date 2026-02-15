@@ -23,10 +23,7 @@ import {
 } from "@/components/ui/select";
 import { usePlaylistsAll } from "@/integrations/api/hooks";
 
-const ROOM_SERVER_URL =
-	typeof window !== "undefined"
-		? `http://${window.location.hostname}:5175`
-		: "http://localhost:5175";
+import { API_URL as ROOM_SERVER_URL } from "@/lib/endpoints";
 
 export const Route = createFileRoute("/rooms")({
 	component: RoomsPage,

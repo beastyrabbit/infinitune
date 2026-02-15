@@ -17,6 +17,7 @@ import {
 	useSettings,
 	useUpdatePlaylistParams,
 } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 
 export const Route = createFileRoute("/autoplayer_/settings")({
@@ -385,8 +386,7 @@ function SettingsPage() {
 									}`}
 									disabled={personaScanTriggered}
 									onClick={async () => {
-										const workerUrl =
-											import.meta.env.VITE_API_URL || "http://localhost:5175";
+										const workerUrl = API_URL;
 										try {
 											await fetch(`${workerUrl}/api/worker/persona/trigger`, {
 												method: "POST",

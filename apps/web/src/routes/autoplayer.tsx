@@ -39,6 +39,7 @@ import {
 	useUpdatePersonaExtract,
 	useUpdatePlaylistStatus,
 } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -227,10 +228,7 @@ function AutoplayerPage() {
 				.replace(/[^a-z0-9]+/g, "-")
 				.replace(/^-|-$/g, "")
 				.slice(0, 30);
-			const roomServerUrl =
-				typeof window !== "undefined"
-					? `http://${window.location.hostname}:5175`
-					: "http://localhost:5175";
+			const roomServerUrl = API_URL;
 			try {
 				await fetch(`${roomServerUrl}/api/v1/rooms`, {
 					method: "POST",

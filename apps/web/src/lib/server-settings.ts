@@ -1,4 +1,4 @@
-const apiUrl = process.env.VITE_API_URL ?? "http://localhost:5175";
+import { API_URL as apiUrl } from "@/lib/endpoints";
 
 export interface ServiceUrls {
 	ollamaUrl: string;
