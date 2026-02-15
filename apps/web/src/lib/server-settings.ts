@@ -1,7 +1,4 @@
-import { InfinituneApiClient } from "../../api-server/client";
-
 const apiUrl = process.env.VITE_API_URL ?? "http://localhost:5175";
-const client = new InfinituneApiClient(apiUrl);
 
 export interface ServiceUrls {
 	ollamaUrl: string;
@@ -17,7 +14,9 @@ const defaults: ServiceUrls = {
 
 export async function getServiceUrls(): Promise<ServiceUrls> {
 	try {
-		const settings = await client.getSettings();
+		const res = await fetch(`${apiUrl}/api/settings`);
+		if (!res.ok) return defaults;
+		const settings: Record<string, string> = await res.json();
 		return {
 			ollamaUrl: settings.ollamaUrl || defaults.ollamaUrl,
 			aceStepUrl: settings.aceStepUrl || defaults.aceStepUrl,
@@ -30,7 +29,11 @@ export async function getServiceUrls(): Promise<ServiceUrls> {
 
 export async function getSetting(key: string): Promise<string | null> {
 	try {
-		return await client.getSetting(key);
+		const res = await fetch(
+			`${apiUrl}/api/settings/${encodeURIComponent(key)}`,
+		);
+		if (!res.ok) return null;
+		return await res.json();
 	} catch {
 		return null;
 	}

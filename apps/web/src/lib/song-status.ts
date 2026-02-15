@@ -1,4 +1,4 @@
-import type { SongStatus } from "../../api-server/types";
+import type { SongStatus } from "@infinitune/shared/types";
 
 /** Descriptive labels for the track detail panel */
 export const STATUS_LABELS: Record<string, string> = {

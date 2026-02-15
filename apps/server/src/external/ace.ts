@@ -80,7 +80,10 @@ export async function submitToAce(options: {
 		signal,
 	});
 
-	const data = await response.json();
+	const data = (await response.json()) as {
+		data?: { task_id?: string };
+		error?: string;
+	};
 	const taskId = data.data?.task_id;
 	if (!taskId) {
 		throw new Error(data.error || "No task_id returned from ACE-Step");
@@ -103,7 +106,9 @@ export async function batchPollAce(
 		signal,
 	});
 
-	const data = await response.json();
+	const data = (await response.json()) as {
+		data?: { task_id: string; status: number; result?: string }[];
+	};
 	const results = data.data;
 	const resultMap = new Map<string, AcePollResult>();
 
@@ -176,7 +181,9 @@ export async function pollAce(
 		signal,
 	});
 
-	const data = await response.json();
+	const data = (await response.json()) as {
+		data?: { task_id: string; status: number; result?: string }[];
+	};
 	const results = data.data;
 	if (!results || !Array.isArray(results) || results.length === 0) {
 		return { status: "not_found" };
@@ -195,7 +202,7 @@ export async function pollAce(
 	if (task.status === 1) {
 		let resultItems: { file: string }[] = [];
 		try {
-			resultItems = JSON.parse(task.result);
+			resultItems = JSON.parse(task.result ?? "[]");
 		} catch {
 			throw new Error("Failed to parse ACE-Step result JSON");
 		}

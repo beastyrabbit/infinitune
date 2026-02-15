@@ -1,3 +1,8 @@
+import type {
+	Device,
+	PlaybackState,
+	SongData,
+} from "@infinitune/shared/protocol";
 import { Pause, Play, SkipForward, ThumbsDown } from "lucide-react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
 import { Button } from "@/components/ui/button";
@@ -5,11 +10,6 @@ import LikeIcon from "@/components/ui/like-icon";
 import Volume2Icon from "@/components/ui/volume-2-icon";
 import VolumeXIcon from "@/components/ui/volume-x-icon";
 import { formatTime } from "@/lib/format-time";
-import type {
-	Device,
-	PlaybackState,
-	SongData,
-} from "../../../room-server/protocol";
 import { RoomBadge } from "./RoomBadge";
 
 interface MediumPlayerProps {

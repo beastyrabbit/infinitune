@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import type {
 	ClientMessage,
 	CommandAction,
@@ -7,12 +6,13 @@ import type {
 	PlaybackState,
 	ServerMessage,
 	SongData,
-} from "../../room-server/protocol";
+} from "@infinitune/shared/protocol";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const ROOM_SERVER_URL =
 	typeof window !== "undefined"
-		? `ws://${window.location.hostname}:5174`
-		: "ws://localhost:5174";
+		? `ws://${window.location.hostname}:5175/ws/room`
+		: "ws://localhost:5175/ws/room";
 
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30_000;

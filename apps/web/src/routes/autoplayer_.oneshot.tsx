@@ -1,3 +1,4 @@
+import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import {
@@ -51,7 +52,6 @@ import {
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
 import { STATUS_PROGRESS_TEXT } from "@/lib/song-status";
-import type { LlmProvider } from "../../api-server/types";
 
 export const Route = createFileRoute("/autoplayer_/oneshot")({
 	component: OneshotPage,

@@ -1,8 +1,8 @@
+import type { DeviceRole, SongData } from "@infinitune/shared/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useRoomConnection } from "@/hooks/useRoomConnection";
 import { useRoomController } from "@/hooks/useRoomController";
 import { useRoomPlayer } from "@/hooks/useRoomPlayer";
-import type { DeviceRole, SongData } from "../../../room-server/protocol";
 import { CompactBar } from "./CompactBar";
 import { MediumPlayer } from "./MediumPlayer";
 

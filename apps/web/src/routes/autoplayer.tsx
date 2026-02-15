@@ -1,3 +1,4 @@
+import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { Disc3, Minimize2, Plus, Radio, Zap } from "lucide-react";
@@ -44,7 +45,6 @@ import {
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
 import type { SongMetadata } from "@/services/llm";
-import type { LlmProvider } from "../../api-server/types";
 
 function EndpointDot({
 	label,

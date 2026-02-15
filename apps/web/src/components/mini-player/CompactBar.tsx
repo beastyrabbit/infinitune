@@ -1,7 +1,7 @@
+import type { PlaybackState, SongData } from "@infinitune/shared/protocol";
 import { Pause, Play, SkipForward } from "lucide-react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
 import { formatTime } from "@/lib/format-time";
-import type { PlaybackState, SongData } from "../../../room-server/protocol";
 
 interface CompactBarProps {
 	song: SongData | null;

@@ -6,9 +6,9 @@
  * WebSocket events from the API server auto-invalidate relevant query keys.
  */
 
+import type { Playlist, Song } from "@infinitune/shared/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import type { Playlist, Song } from "../../../api-server/types";
 import { api } from "./client";
 
 // Re-export types for convenience

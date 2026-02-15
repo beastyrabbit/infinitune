@@ -1,3 +1,8 @@
+import type {
+	Device,
+	PlaybackState,
+	SongData,
+} from "@infinitune/shared/protocol";
 import {
 	Download,
 	FileText,
@@ -14,11 +19,6 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type {
-	Device,
-	PlaybackState,
-	SongData,
-} from "../../../room-server/protocol";
 
 function formatTime(seconds: number): string {
 	if (!seconds || !Number.isFinite(seconds)) return "0:00";

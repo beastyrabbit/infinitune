@@ -5,6 +5,9 @@
 		"composite": true,
 		"rootDir": "src",
 		"outDir": "dist",
+		"noEmit": false,
+		"declaration": true,
+		"declarationMap": true,
 		"jsx": "react-jsx",
 		"lib": ["ES2022", "DOM", "DOM.Iterable"]
 	},

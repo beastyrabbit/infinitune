@@ -1,4 +1,4 @@
-import type { SongStatus } from "../../api-server/types";
+import type { SongStatus } from "@infinitune/shared/types";
 
 /** Format seconds as "M:SS" for audio player displays */
 export function formatTime(seconds: number): string {

@@ -1,6 +1,6 @@
+import { type SongStatus, TRANSIENT_STATUSES } from "@infinitune/shared/types";
 import { Loader2 } from "lucide-react";
 import type { Song } from "@/types";
-import { type SongStatus, TRANSIENT_STATUSES } from "../../../api-server/types";
 
 interface GenerationBannerProps {
 	songs: Song[];

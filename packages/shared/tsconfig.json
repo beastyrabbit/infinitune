@@ -4,6 +4,9 @@
 	"compilerOptions": {
 		"composite": true,
 		"rootDir": "src",
-		"outDir": "dist"
+		"outDir": "dist",
+		"noEmit": false,
+		"declaration": true,
+		"declarationMap": true
 	}
 }

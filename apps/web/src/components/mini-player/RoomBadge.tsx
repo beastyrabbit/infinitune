@@ -1,5 +1,5 @@
+import type { Device } from "@infinitune/shared/protocol";
 import { Monitor, Wifi } from "lucide-react";
-import type { Device } from "../../../room-server/protocol";
 
 interface RoomBadgeProps {
 	roomName: string;

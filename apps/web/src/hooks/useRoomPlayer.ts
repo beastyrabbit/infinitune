@@ -1,5 +1,5 @@
+import type { ServerMessage } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ServerMessage } from "../../room-server/protocol";
 import type { RoomConnection } from "./useRoomConnection";
 
 /**

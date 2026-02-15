@@ -1,3 +1,4 @@
+import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,6 @@ import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useSettings } from "@/integrations/api/hooks";
-import type { LlmProvider } from "../../../api-server/types";
 
 interface ModelOption {
 	name: string;

@@ -1,3 +1,4 @@
+import type { RoomInfo } from "@infinitune/shared/protocol";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeft,
@@ -21,12 +22,11 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { usePlaylistsAll } from "@/integrations/api/hooks";
-import type { RoomInfo } from "../../room-server/protocol";
 
 const ROOM_SERVER_URL =
 	typeof window !== "undefined"
-		? `http://${window.location.hostname}:5174`
-		: "http://localhost:5174";
+		? `http://${window.location.hostname}:5175`
+		: "http://localhost:5175";
 
 export const Route = createFileRoute("/rooms")({
 	component: RoomsPage,
