@@ -153,7 +153,7 @@ export function MediumPlayer({
 					<>
 						<Button
 							variant="outline"
-							onClick={() => onRate(song._id, "up")}
+							onClick={() => onRate(song.id, "up")}
 							className={`h-9 rounded-none border-2 font-mono text-xs font-black uppercase ${
 								song.userRating === "up"
 									? "border-green-500 bg-green-500/20 text-green-400"
@@ -164,7 +164,7 @@ export function MediumPlayer({
 						</Button>
 						<Button
 							variant="outline"
-							onClick={() => onRate(song._id, "down")}
+							onClick={() => onRate(song.id, "down")}
 							className={`h-9 rounded-none border-2 font-mono text-xs font-black uppercase ${
 								song.userRating === "down"
 									? "border-red-500 bg-red-500/20 text-red-400"

@@ -3,8 +3,8 @@
  * Both the full `Song` wire type and the room `SongData` satisfy this.
  */
 export interface PickableSong {
-	_id: string;
-	_creationTime: number;
+	id: string;
+	createdAt: number;
 	orderIndex: number;
 	status: string;
 	isInterrupt?: boolean | null;
@@ -32,7 +32,7 @@ function pickAheadFirst<T extends PickableSong>(
  * Priority-based song selection for the autoplayer queue.
  *
  * Priority order:
- *   P1: Interrupts (isInterrupt && ready) — oldest _creationTime first (FIFO)
+ *   P1: Interrupts (isInterrupt && ready) — oldest createdAt first (FIFO)
  *   P2: Current-epoch songs — next by orderIndex after currentOrderIndex
  *   P3: Any remaining ready/played song — next by orderIndex (fill silence)
  *
@@ -49,7 +49,7 @@ export function pickNextSong<T extends PickableSong>(
 ): T | null {
 	const PLAYABLE = manualMode ? ["ready", "played"] : ["ready"];
 	const candidates = songs.filter(
-		(s) => PLAYABLE.includes(s.status) && s._id !== currentSongId,
+		(s) => PLAYABLE.includes(s.status) && s.id !== currentSongId,
 	);
 
 	if (candidates.length === 0) return null;
@@ -57,7 +57,7 @@ export function pickNextSong<T extends PickableSong>(
 	// P1: Interrupts — oldest first
 	const interrupts = candidates
 		.filter((s) => s.isInterrupt)
-		.sort((a, b) => a._creationTime - b._creationTime);
+		.sort((a, b) => a.createdAt - b.createdAt);
 	if (interrupts.length > 0) return interrupts[0];
 
 	if (!manualMode) {
@@ -91,6 +91,6 @@ export function findGeneratingInterrupt<T extends PickableSong>(
 	return (
 		songs
 			.filter((s) => s.isInterrupt && GENERATING_STATUSES.includes(s.status))
-			.sort((a, b) => a._creationTime - b._creationTime)[0] ?? null
+			.sort((a, b) => a.createdAt - b.createdAt)[0] ?? null
 	);
 }

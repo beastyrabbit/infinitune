@@ -31,7 +31,7 @@ export function useAutoplay(
 		if (userPausedRef.current) return;
 
 		const currentSong = currentSongId
-			? songs.find((s) => s._id === currentSongId)
+			? songs.find((s) => s.id === currentSongId)
 			: null;
 
 		const shouldPick = !currentSong || currentSong.status === "played";
@@ -44,7 +44,7 @@ export function useAutoplay(
 				transitionDismissedRef.current,
 			);
 			if (next?.audioUrl) {
-				setCurrentSong(next._id);
+				setCurrentSong(next.id);
 				loadAndPlay(next.audioUrl);
 			}
 		}
@@ -64,7 +64,7 @@ export function useAutoplay(
 		if (userPausedRef.current) return;
 		if (!currentSongId || !songs) return;
 		if (currentSongId === loadedSongIdRef.current) return;
-		const song = songs.find((s) => s._id === currentSongId);
+		const song = songs.find((s) => s.id === currentSongId);
 		if (song?.status === "ready" && song.audioUrl) {
 			loadedSongIdRef.current = currentSongId;
 			loadAndPlay(song.audioUrl);

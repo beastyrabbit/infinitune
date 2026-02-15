@@ -12,7 +12,7 @@ import type { RoomManager } from "./room-manager";
 /** Convert a SongWire (DB wire format) to the lightweight SongData protocol type. */
 function toSongData(s: SongWire): SongData {
 	return {
-		_id: s._id,
+		id: s.id,
 		title: s.title ?? undefined,
 		artistName: s.artistName ?? undefined,
 		genre: s.genre ?? undefined,
@@ -23,7 +23,7 @@ function toSongData(s: SongWire): SongData {
 		orderIndex: s.orderIndex,
 		isInterrupt: s.isInterrupt ?? undefined,
 		promptEpoch: s.promptEpoch ?? undefined,
-		_creationTime: s._creationTime,
+		createdAt: s.createdAt,
 		audioDuration: s.audioDuration ?? undefined,
 		mood: s.mood ?? undefined,
 		energy: s.energy ?? undefined,
@@ -61,7 +61,7 @@ export async function syncRoom(room: Room): Promise<void> {
 		if (!room.playlistId) {
 			const playlist = await playlistService.getByKey(room.playlistKey);
 			if (!playlist) return;
-			room.playlistId = playlist._id;
+			room.playlistId = playlist.id;
 		}
 		await refreshRooms(room.playlistId, [room]);
 	} catch (err) {

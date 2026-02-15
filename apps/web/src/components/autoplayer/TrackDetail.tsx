@@ -40,13 +40,13 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 		Date.now() - song.generationStartedAt > 2 * 60 * 1000;
 
 	const handleDelete = async () => {
-		await deleteSong({ id: song._id });
+		await deleteSong({ id: song.id });
 		onDeleted?.();
 		onClose();
 	};
 
 	const handleReset = async () => {
-		await revertStatuses({ id: song._id });
+		await revertStatuses({ id: song.id });
 	};
 
 	const totalGenTime =
@@ -429,7 +429,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 									{(song.llmModel || "unknown").toUpperCase()}
 								</p>
 							)}
-							<p>SONG ID: {song._id}</p>
+							<p>SONG ID: {song.id}</p>
 							{song.aceTaskId && <p>ACE TASK: {song.aceTaskId}</p>}
 							{song.storagePath && <p>NFS PATH: {song.storagePath}</p>}
 							{song.audioUrl && <p>AUDIO URL: {song.audioUrl}</p>}

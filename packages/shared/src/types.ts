@@ -1,7 +1,5 @@
 /**
  * Shared wire types used by API server, worker, room server, and frontend.
- * Wire format includes _id and _creationTime fields (mapped from id/createdAt)
- * for backward compatibility with existing frontend code.
  */
 export const SONG_STATUSES = [
 	"pending",
@@ -56,8 +54,8 @@ export type Id<_T extends string> = string;
 // ─── Wire types (what the API returns) ──────────────────────────────
 
 export interface Song {
-	_id: string;
-	_creationTime: number;
+	id: string;
+	createdAt: number;
 	playlistId: string;
 	orderIndex: number;
 	title: string | null;
@@ -108,8 +106,8 @@ export interface Song {
 }
 
 export interface Playlist {
-	_id: string;
-	_creationTime: number;
+	id: string;
+	createdAt: number;
 	name: string;
 	prompt: string;
 	llmProvider: string;
@@ -155,11 +153,11 @@ export interface WorkQueue {
 		energy: string | null;
 	}>;
 	recentDescriptions: string[];
-	staleSongs: Array<{ _id: string; status: string; title: string | null }>;
+	staleSongs: Array<{ id: string; status: string; title: string | null }>;
 }
 
 export interface NeedsPersonaSong {
-	_id: string;
+	id: string;
 	title: string;
 	artistName: string | null;
 	genre: string | null;

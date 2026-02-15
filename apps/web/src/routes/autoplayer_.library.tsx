@@ -122,7 +122,7 @@ function MiniPlayer({
 	currentSong,
 }: {
 	currentSong: {
-		_id: string;
+		id: string;
 		title?: string | null;
 		artistName?: string | null;
 	} | null;
@@ -335,7 +335,7 @@ function LibraryPage() {
 		const map = new Map<string, string>();
 		if (playlists) {
 			for (const s of playlists) {
-				map.set(s._id, s.name || s._id);
+				map.set(s.id, s.name || s.id);
 			}
 		}
 		return map;
@@ -454,13 +454,13 @@ function LibraryPage() {
 
 	const currentSong = useMemo(() => {
 		if (!currentSongId || !songs) return null;
-		return songs.find((s) => s._id === currentSongId) ?? null;
+		return songs.find((s) => s.id === currentSongId) ?? null;
 	}, [currentSongId, songs]);
 
 	const handlePlaySong = useCallback((song: Song) => {
 		if (!song.audioUrl) return;
 		const audio = getGlobalAudio();
-		setCurrentSong(song._id);
+		setCurrentSong(song.id);
 		audio.src = song.audioUrl;
 		audio.load();
 		audio
@@ -667,11 +667,11 @@ function LibraryPage() {
 					) : (
 						<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
 							{filtered.map((song) => {
-								const isCurrent = song._id === currentSongId;
+								const isCurrent = song.id === currentSongId;
 								const isPlayable = !!song.audioUrl;
 								return (
 									<div
-										key={song._id}
+										key={song.id}
 										className={`border-r-2 border-b-2 border-white/10 transition-colors ${
 											isCurrent ? "bg-red-950/40" : "bg-gray-950"
 										}`}
@@ -708,11 +708,11 @@ function LibraryPage() {
 											role="button"
 											tabIndex={0}
 											className="p-2 cursor-pointer hover:bg-gray-900 transition-colors"
-											onClick={() => setDetailSongId(song._id)}
+											onClick={() => setDetailSongId(song.id)}
 											onKeyDown={(e) => {
 												if (e.key === "Enter" || e.key === " ") {
 													e.preventDefault();
-													setDetailSongId(song._id);
+													setDetailSongId(song.id);
 												}
 											}}
 										>
@@ -751,7 +751,7 @@ function LibraryPage() {
 			{detailSongId &&
 				songs &&
 				(() => {
-					const detailSong = songs.find((s) => s._id === detailSongId);
+					const detailSong = songs.find((s) => s.id === detailSongId);
 					if (!detailSong) return null;
 					return (
 						<TrackDetail

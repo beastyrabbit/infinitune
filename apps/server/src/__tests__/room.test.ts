@@ -21,10 +21,10 @@ function createMockWs() {
 
 function song(id: string, overrides: Partial<SongData> = {}): SongData {
 	return {
-		_id: id,
+		id: id,
 		status: "ready",
 		orderIndex: 0,
-		_creationTime: Date.now(),
+		createdAt: Date.now(),
 		...overrides,
 	};
 }

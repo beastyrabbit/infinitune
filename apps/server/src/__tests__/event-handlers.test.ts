@@ -481,13 +481,13 @@ describe("worker event handlers", () => {
 					maxOrderIndex: 5,
 					pending: [
 						{
-							_id: "old-1",
+							id: "old-1",
 							promptEpoch: 0,
 							isInterrupt: false,
 							orderIndex: 1,
 						},
 						{
-							_id: "old-2",
+							id: "old-2",
 							promptEpoch: 0,
 							isInterrupt: false,
 							orderIndex: 2,
@@ -509,7 +509,7 @@ describe("worker event handlers", () => {
 				mockWorkQueue({
 					pending: [
 						{
-							_id: "int-1",
+							id: "int-1",
 							promptEpoch: 0,
 							isInterrupt: true,
 							interruptPrompt: "play jazz",

@@ -16,9 +16,7 @@ export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 
 	const filtered = useMemo(() => {
 		if (!playlists) return [];
-		const sorted = [...playlists].sort(
-			(a, b) => b._creationTime - a._creationTime,
-		);
+		const sorted = [...playlists].sort((a, b) => b.createdAt - a.createdAt);
 		if (!search) return sorted;
 		const lower = search.toLowerCase();
 		return sorted.filter(
@@ -85,7 +83,7 @@ export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 					) : (
 						filtered.map((p) => (
 							<div
-								key={p._id}
+								key={p.id}
 								className="flex items-center hover:bg-white/5 transition-colors"
 							>
 								<button
@@ -136,13 +134,13 @@ export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 									</div>
 								</button>
 								{/* Delete button */}
-								{confirmDeleteId === p._id ? (
+								{confirmDeleteId === p.id ? (
 									<div className="flex items-center gap-1 pr-3 shrink-0">
 										<button
 											type="button"
 											className="px-2 py-1 text-[10px] font-black uppercase bg-red-500 text-white hover:bg-red-400 transition-colors"
 											onClick={() => {
-												removePlaylist({ id: p._id });
+												removePlaylist({ id: p.id });
 												setConfirmDeleteId(null);
 											}}
 										>
@@ -160,7 +158,7 @@ export function PlaylistPicker({ onSelect, onClose }: PlaylistPickerProps) {
 									<button
 										type="button"
 										className="pr-3 pl-1 py-3 text-white/15 hover:text-red-500 transition-colors shrink-0"
-										onClick={() => setConfirmDeleteId(p._id)}
+										onClick={() => setConfirmDeleteId(p.id)}
 										title="Remove playlist"
 									>
 										<Trash2 className="h-3.5 w-3.5" />

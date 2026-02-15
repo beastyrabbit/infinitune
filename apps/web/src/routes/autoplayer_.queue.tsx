@@ -493,7 +493,7 @@ function QueuePage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
 	const playlistByKey = usePlaylistByKey(pl ?? null);
-	usePlaylistHeartbeat(playlistByKey?._id ?? null);
+	usePlaylistHeartbeat(playlistByKey?.id ?? null);
 	const { status, error } = useWorkerStatus();
 
 	// Collect all unique song IDs from the worker status
@@ -515,7 +515,7 @@ function QueuePage() {
 		const map = new Map<string, SongInfo>();
 		if (!songsData) return map;
 		for (const song of songsData as Song[]) {
-			map.set(song._id, {
+			map.set(song.id, {
 				title: song.title || "Generating...",
 				artistName: song.artistName || "...",
 				genre: song.genre || "",

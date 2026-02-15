@@ -42,7 +42,7 @@ describe("playlist-service", () => {
 				llmModel: "llama3",
 			});
 
-			expect(result._id).toBeDefined();
+			expect(result.id).toBeDefined();
 			expect(result.name).toBe("Test Playlist");
 			expect(result.status).toBe("active");
 			expect(result.promptEpoch).toBe(0);
@@ -81,13 +81,13 @@ describe("playlist-service", () => {
 			});
 			emittedEvents.length = 0;
 
-			await playlistService.updateStatus(pl._id, "closing");
+			await playlistService.updateStatus(pl.id, "closing");
 
 			const db = getTestDb();
 			const [updated] = await db
 				.select()
 				.from(playlists)
-				.where(eq(playlists.id, pl._id));
+				.where(eq(playlists.id, pl.id));
 			expect(updated.status).toBe("closing");
 
 			expect(emittedEvents[0]).toMatchObject({
@@ -149,20 +149,20 @@ describe("playlist-service", () => {
 			});
 			emittedEvents.length = 0;
 
-			await playlistService.steer(pl._id, "new jazzy vibe");
+			await playlistService.steer(pl.id, "new jazzy vibe");
 
 			const db = getTestDb();
 			const [updated] = await db
 				.select()
 				.from(playlists)
-				.where(eq(playlists.id, pl._id));
+				.where(eq(playlists.id, pl.id));
 			expect(updated.prompt).toBe("new jazzy vibe");
 			expect(updated.promptEpoch).toBe(1);
 			expect(updated.steerHistory).toContain("new jazzy vibe");
 
 			expect(emittedEvents[0]).toMatchObject({
 				event: "playlist.steered",
-				data: { playlistId: pl._id, newEpoch: 1 },
+				data: { playlistId: pl.id, newEpoch: 1 },
 			});
 		});
 
@@ -174,14 +174,14 @@ describe("playlist-service", () => {
 				llmModel: "llama3",
 			});
 
-			await playlistService.steer(pl._id, "v2");
-			await playlistService.steer(pl._id, "v3");
+			await playlistService.steer(pl.id, "v2");
+			await playlistService.steer(pl.id, "v3");
 
 			const db = getTestDb();
 			const [updated] = await db
 				.select()
 				.from(playlists)
-				.where(eq(playlists.id, pl._id));
+				.where(eq(playlists.id, pl.id));
 			expect(updated.promptEpoch).toBe(2);
 		});
 	});
@@ -198,13 +198,13 @@ describe("playlist-service", () => {
 			});
 			emittedEvents.length = 0;
 
-			await playlistService.heartbeat(pl._id);
+			await playlistService.heartbeat(pl.id);
 
 			const db = getTestDb();
 			const [updated] = await db
 				.select()
 				.from(playlists)
-				.where(eq(playlists.id, pl._id));
+				.where(eq(playlists.id, pl.id));
 			expect(updated.lastSeenAt).toBeGreaterThan(0);
 
 			expect(emittedEvents[0].event).toBe("playlist.heartbeat");
@@ -281,18 +281,18 @@ describe("playlist-service", () => {
 			});
 			emittedEvents.length = 0;
 
-			await playlistService.deletePlaylist(pl._id);
+			await playlistService.deletePlaylist(pl.id);
 
 			const db = getTestDb();
 			const rows = await db
 				.select()
 				.from(playlists)
-				.where(eq(playlists.id, pl._id));
+				.where(eq(playlists.id, pl.id));
 			expect(rows).toHaveLength(0);
 
 			expect(emittedEvents[0]).toMatchObject({
 				event: "playlist.deleted",
-				data: { playlistId: pl._id },
+				data: { playlistId: pl.id },
 			});
 		});
 	});
@@ -309,7 +309,7 @@ describe("playlist-service", () => {
 			});
 
 			const current = await playlistService.getCurrent();
-			expect(current?._id).toBe(pl._id);
+			expect(current?.id).toBe(pl.id);
 			expect(current?.status).toBe("active");
 		});
 
@@ -330,7 +330,7 @@ describe("playlist-service", () => {
 			});
 
 			const current = await playlistService.getCurrent();
-			expect(current?._id).toBe(endless._id);
+			expect(current?.id).toBe(endless.id);
 		});
 
 		it("getByKey finds playlist by key", async () => {

@@ -37,7 +37,7 @@ export function SortableSongCard({
 		transform,
 		transition,
 		isDragging,
-	} = useSortable({ id: song._id });
+	} = useSortable({ id: song.id });
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -83,12 +83,12 @@ export function SortableSongCard({
 				tabIndex={0}
 				className={`relative ${isPlayable ? "cursor-pointer" : ""} ${!isReady ? "grayscale" : ""} ${isOldEpoch ? "grayscale opacity-40" : ""} transition-[filter] duration-500`}
 				onClick={() => {
-					if (isPlayable) onSelectSong(song._id);
+					if (isPlayable) onSelectSong(song.id);
 				}}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault();
-						if (isPlayable) onSelectSong(song._id);
+						if (isPlayable) onSelectSong(song.id);
 					}
 				}}
 			>
@@ -157,11 +157,11 @@ export function SortableSongCard({
 				role="button"
 				tabIndex={0}
 				className="p-2 cursor-pointer hover:bg-gray-900 transition-colors"
-				onClick={() => onOpenDetail(song._id)}
+				onClick={() => onOpenDetail(song.id)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" || e.key === " ") {
 						e.preventDefault();
-						onOpenDetail(song._id);
+						onOpenDetail(song.id);
 					}
 				}}
 			>
@@ -194,7 +194,7 @@ export function SortableSongCard({
 									type="button"
 									onClick={(e) => {
 										e.stopPropagation();
-										onRate(song._id, "up");
+										onRate(song.id, "up");
 									}}
 									className={`p-0.5 transition-colors ${
 										song.userRating === "up"
@@ -208,7 +208,7 @@ export function SortableSongCard({
 									type="button"
 									onClick={(e) => {
 										e.stopPropagation();
-										onRate(song._id, "down");
+										onRate(song.id, "down");
 									}}
 									className={`p-0.5 transition-colors ${
 										song.userRating === "down"

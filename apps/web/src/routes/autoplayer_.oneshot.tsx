@@ -92,7 +92,7 @@ function OneshotPage() {
 
 	// Look up playlist by key from URL
 	const playlistByKey = usePlaylistByKey(pl ?? null);
-	const playlistIdFromUrl = playlistByKey?._id ?? null;
+	const playlistIdFromUrl = playlistByKey?.id ?? null;
 
 	// ── Local state ──
 	const [prompt, setPrompt] = useState("");
@@ -140,7 +140,7 @@ function OneshotPage() {
 	useEffect(() => {
 		if (phase === "ready" && song?.audioUrl && !hasAutoPlayed.current) {
 			hasAutoPlayed.current = true;
-			setCurrentSong(song._id);
+			setCurrentSong(song.id);
 			loadAndPlay(song.audioUrl);
 		}
 	}, [phase, song, loadAndPlay]);
@@ -254,7 +254,7 @@ function OneshotPage() {
 				lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 				inferMethod: inferMeth,
 			});
-			setLocalPlaylistId(result._id);
+			setLocalPlaylistId(result.id);
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
 		} catch {
 			// Fallback
@@ -289,8 +289,8 @@ function OneshotPage() {
 	const handlePlayPause = useCallback(() => {
 		if (!song?.audioUrl) return;
 		const audio = getGlobalAudio();
-		if (!audio.src || playerStore.state.currentSongId !== song._id) {
-			setCurrentSong(song._id);
+		if (!audio.src || playerStore.state.currentSongId !== song.id) {
+			setCurrentSong(song.id);
 			audio.src = song.audioUrl;
 			audio.load();
 			audio
@@ -317,7 +317,7 @@ function OneshotPage() {
 		[audioDuration, seek],
 	);
 
-	const isCurrentSong = song && playerStore.state.currentSongId === song._id;
+	const isCurrentSong = song && playerStore.state.currentSongId === song.id;
 	const showOutput = phase !== "idle" || generating;
 	const progress =
 		audioDuration > 0 && isCurrentSong

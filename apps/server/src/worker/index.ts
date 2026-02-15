@@ -100,9 +100,9 @@ async function spawnSongWorker(
 		recentDescriptions: string[];
 	},
 ): Promise<void> {
-	if (songWorkers.has(song._id)) return; // Already tracked
+	if (songWorkers.has(song.id)) return; // Already tracked
 
-	const playlistId = playlist._id;
+	const playlistId = playlist.id;
 	const ctx: SongWorkerContext = {
 		queues,
 		playlist,
@@ -117,7 +117,7 @@ async function spawnSongWorker(
 	};
 
 	const worker = new SongWorker(song, ctx);
-	songWorkers.set(song._id, worker);
+	songWorkers.set(song.id, worker);
 
 	// Track song → playlist for reverse lookup
 	let songSet = playlistSongs.get(playlistId);
@@ -125,14 +125,14 @@ async function spawnSongWorker(
 		songSet = new Set();
 		playlistSongs.set(playlistId, songSet);
 	}
-	songSet.add(song._id);
+	songSet.add(song.id);
 
 	// Fire-and-forget
 	worker.run().finally(() => {
-		songWorkers.delete(song._id);
+		songWorkers.delete(song.id);
 		const set = playlistSongs.get(playlistId);
 		if (set) {
-			set.delete(song._id);
+			set.delete(song.id);
 			if (set.size === 0) playlistSongs.delete(playlistId);
 		}
 	});
@@ -273,16 +273,13 @@ async function runPersonaScan(
 	if (!pModel) return;
 
 	for (const song of needsPersona) {
-		if (personaPending.has(song._id)) continue;
-		personaPending.add(song._id);
-		songLogger(song._id).debug(
-			{ title: song.title },
-			"Queuing persona extract",
-		);
+		if (personaPending.has(song.id)) continue;
+		personaPending.add(song.id);
+		songLogger(song.id).debug({ title: song.title }, "Queuing persona extract");
 
 		queues.llm
 			.enqueue({
-				songId: song._id,
+				songId: song.id,
 				priority: PERSONA_PRIORITY,
 				endpoint: pProvider,
 				execute: async (signal) => {
@@ -308,20 +305,20 @@ async function runPersonaScan(
 				},
 			})
 			.then(async ({ result, processingMs }) => {
-				await songService.updatePersonaExtract(song._id, result as string);
-				songLogger(song._id).info(
+				await songService.updatePersonaExtract(song.id, result as string);
+				songLogger(song.id).info(
 					{ title: song.title, processingMs },
 					"Persona extract complete",
 				);
 			})
 			.catch((err) => {
-				songLogger(song._id).error(
+				songLogger(song.id).error(
 					{ err, title: song.title },
 					"Persona extract failed",
 				);
 			})
 			.finally(() => {
-				personaPending.delete(song._id);
+				personaPending.delete(song.id);
 			});
 	}
 
@@ -354,7 +351,7 @@ async function handleSongCreated(data: {
 	// Use getWorkQueue to get context for the worker
 	const workQueue = await songService.getWorkQueue(data.playlistId);
 	const playlistWire = (await playlistService.listActive()).find(
-		(p) => p._id === data.playlistId,
+		(p) => p.id === data.playlistId,
 	);
 	if (!playlistWire) return;
 
@@ -406,7 +403,7 @@ async function handleSongStatusChanged(data: {
 		if (!song) return;
 
 		const playlistWire = (await playlistService.listActive()).find(
-			(p) => p._id === playlistId,
+			(p) => p.id === playlistId,
 		);
 		if (!playlistWire) return;
 
@@ -472,10 +469,10 @@ async function handlePlaylistSteered(data: {
 		(s) => (s.promptEpoch ?? 0) < newEpoch && !s.isInterrupt,
 	);
 	for (const song of oldPending) {
-		const w = songWorkers.get(song._id);
+		const w = songWorkers.get(song.id);
 		if (w) w.cancel();
-		await songService.deleteSong(song._id);
-		songLogger(song._id, playlistId).debug(
+		await songService.deleteSong(song.id);
+		songLogger(song.id, playlistId).debug(
 			{ songEpoch: song.promptEpoch ?? 0, newEpoch },
 			"Deleted old-epoch pending song",
 		);
@@ -488,7 +485,7 @@ async function handlePlaylistSteered(data: {
 		...workQueue.generatingAudio,
 		...workQueue.needsRecovery,
 	];
-	const songMap = new Map(allSongs.map((s) => [s._id, s]));
+	const songMap = new Map(allSongs.map((s) => [s.id, s]));
 
 	queues.recalcPendingPriorities((songId) => {
 		const song = songMap.get(songId);
@@ -569,16 +566,16 @@ async function staleSongCleanup(): Promise<void> {
 	try {
 		const activePlaylists = await playlistService.listActive();
 		for (const playlist of activePlaylists) {
-			const workQueue = await songService.getWorkQueue(playlist._id);
+			const workQueue = await songService.getWorkQueue(playlist.id);
 			if (workQueue.staleSongs.length > 0) {
 				for (const stale of workQueue.staleSongs) {
-					songLogger(stale._id, playlist._id).info(
+					songLogger(stale.id, playlist.id).info(
 						{ title: stale.title, status: stale.status },
 						"Removing stuck song",
 					);
-					const w = songWorkers.get(stale._id);
+					const w = songWorkers.get(stale.id);
 					if (w) w.cancel();
-					await songService.deleteSong(stale._id);
+					await songService.deleteSong(stale.id);
 				}
 			}
 		}
@@ -607,15 +604,15 @@ async function reconcileAceState() {
 				"ACE unreachable, reverting all songs to metadata_ready",
 			);
 			for (const song of songs) {
-				await songService.revertTransient(song._id);
+				await songService.revertTransient(song.id);
 			}
 			return;
 		}
 
 		for (const song of songs) {
 			if (!song.aceTaskId) {
-				await songService.revertTransient(song._id);
-				songLogger(song._id).info("Reverted — no ACE task ID");
+				await songService.revertTransient(song.id);
+				songLogger(song.id).info("Reverted — no ACE task ID");
 				continue;
 			}
 			const status = aceStatus.get(song.aceTaskId);
@@ -624,18 +621,18 @@ async function reconcileAceState() {
 				status.status === "not_found" ||
 				status.status === "failed"
 			) {
-				await songService.revertTransient(song._id);
-				songLogger(song._id).info(
+				await songService.revertTransient(song.id);
+				songLogger(song.id).info(
 					{ aceTaskId: song.aceTaskId },
 					"Reverted — ACE task is gone",
 				);
 			} else if (status.status === "succeeded" && status.audioPath) {
-				songLogger(song._id).info(
+				songLogger(song.id).info(
 					{ aceTaskId: song.aceTaskId },
 					"ACE task already done — SongWorker will save",
 				);
 			} else {
-				songLogger(song._id).info(
+				songLogger(song.id).info(
 					{ aceTaskId: song.aceTaskId },
 					"ACE task still running — will resume",
 				);
@@ -643,8 +640,8 @@ async function reconcileAceState() {
 		}
 	} else {
 		for (const song of songs) {
-			await songService.revertTransient(song._id);
-			songLogger(song._id).info("Reverted — no ACE task ID");
+			await songService.revertTransient(song.id);
+			songLogger(song.id).info("Reverted — no ACE task ID");
 		}
 	}
 }
@@ -658,14 +655,14 @@ async function startupSweep() {
 	);
 
 	for (const playlist of activePlaylists) {
-		playlistEpochs.set(playlist._id, playlist.promptEpoch ?? 0);
+		playlistEpochs.set(playlist.id, playlist.promptEpoch ?? 0);
 
 		// Start heartbeat timer for active playlists
 		if (playlist.status === "active") {
-			resetHeartbeatTimer(playlist._id);
+			resetHeartbeatTimer(playlist.id);
 		}
 
-		const workQueue = await songService.getWorkQueue(playlist._id);
+		const workQueue = await songService.getWorkQueue(playlist.id);
 		const currentEpoch = playlist.promptEpoch ?? 0;
 
 		// Spawn workers for actionable songs
@@ -688,36 +685,36 @@ async function startupSweep() {
 		// Handle stale songs
 		if (workQueue.staleSongs.length > 0) {
 			for (const stale of workQueue.staleSongs) {
-				songLogger(stale._id, playlist._id).info(
+				songLogger(stale.id, playlist.id).info(
 					{ title: stale.title, status: stale.status },
 					"[startup] Removing stuck song",
 				);
-				const w = songWorkers.get(stale._id);
+				const w = songWorkers.get(stale.id);
 				if (w) w.cancel();
-				await songService.deleteSong(stale._id);
+				await songService.deleteSong(stale.id);
 			}
 		}
 
 		// Process retries
 		for (const song of workQueue.retryPending) {
-			songLogger(song._id, playlist._id).info(
+			songLogger(song.id, playlist.id).info(
 				{ retryCount: (song.retryCount || 0) + 1 },
 				"[startup] Retrying song",
 			);
-			await songService.retryErrored(song._id);
+			await songService.retryErrored(song.id);
 		}
 
 		// Check buffer deficit for active playlists
 		if (playlist.status === "active") {
-			await checkBufferDeficit(playlist._id);
+			await checkBufferDeficit(playlist.id);
 		}
 
 		// Closing check
 		if (playlist.status === "closing" && workQueue.transientCount === 0) {
-			playlistLogger(playlist._id).info(
+			playlistLogger(playlist.id).info(
 				"[startup] Playlist closing complete, setting to closed",
 			);
-			await playlistService.updateStatus(playlist._id, "closed");
+			await playlistService.updateStatus(playlist.id, "closed");
 		}
 	}
 }

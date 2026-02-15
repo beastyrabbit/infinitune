@@ -38,7 +38,7 @@ function SettingsPage() {
 	const settings = useSettings();
 	const setSetting = useSetSetting();
 	const activePlaylist = usePlaylistByKey(pl ?? null);
-	usePlaylistHeartbeat(activePlaylist?._id ?? null);
+	usePlaylistHeartbeat(activePlaylist?.id ?? null);
 	const updateParams = useUpdatePlaylistParams();
 
 	// Tab state
@@ -223,7 +223,7 @@ function SettingsPage() {
 		if (activePlaylist) {
 			promises.push(
 				updateParams({
-					id: activePlaylist._id,
+					id: activePlaylist.id,
 					inferenceSteps: inferSteps
 						? Number.parseInt(inferSteps, 10)
 						: undefined,

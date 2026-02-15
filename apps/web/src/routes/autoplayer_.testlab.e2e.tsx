@@ -54,7 +54,7 @@ function createInitialSteps(): Record<string, StepState> {
 function PipelineTestPage() {
 	const settings = useSettings();
 	const currentPlaylist = useCurrentPlaylist();
-	const playlistId = currentPlaylist?._id ?? null;
+	const playlistId = currentPlaylist?.id ?? null;
 
 	const createSong = useCreateSong();
 	const updateAceTask = useUpdateAceTask();
@@ -196,11 +196,11 @@ function PipelineTestPage() {
 					});
 
 					const song = await createSong(createInput);
-					cd.songId = song._id;
+					cd.songId = song.id;
 					updateStep("create", {
 						status: "done",
 						completedAt: Date.now(),
-						output: { songId: song._id },
+						output: { songId: song.id },
 					});
 				}
 

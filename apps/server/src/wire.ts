@@ -1,8 +1,6 @@
 import type { Playlist, Setting, Song } from "./db/schema";
 import { logger } from "./logger";
 
-type WithWireFields<T> = T & { _id: string; _creationTime: number };
-
 export function parseJsonField<T>(value: string | null): T | undefined {
 	if (!value) return undefined;
 	try {
@@ -16,35 +14,27 @@ export function parseJsonField<T>(value: string | null): T | undefined {
 	}
 }
 
-export type PlaylistWire = WithWireFields<
-	Omit<Playlist, "id" | "createdAt" | "steerHistory"> & {
-		steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
-	}
->;
+export type PlaylistWire = Omit<Playlist, "steerHistory"> & {
+	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
+};
 
 export function playlistToWire(p: Playlist): PlaylistWire {
-	const { id, createdAt, steerHistory, ...rest } = p;
+	const { steerHistory, ...rest } = p;
 	return {
-		_id: id,
-		_creationTime: createdAt,
 		...rest,
 		steerHistory: parseJsonField(steerHistory),
 	};
 }
 
-export type SongWire = WithWireFields<
-	Omit<Song, "id" | "createdAt" | "instruments" | "tags" | "themes"> & {
-		instruments?: string[];
-		tags?: string[];
-		themes?: string[];
-	}
->;
+export type SongWire = Omit<Song, "instruments" | "tags" | "themes"> & {
+	instruments?: string[];
+	tags?: string[];
+	themes?: string[];
+};
 
 export function songToWire(s: Song): SongWire {
-	const { id, createdAt, instruments, tags, themes, ...rest } = s;
+	const { instruments, tags, themes, ...rest } = s;
 	return {
-		_id: id,
-		_creationTime: createdAt,
 		...rest,
 		instruments: parseJsonField(instruments),
 		tags: parseJsonField(tags),
@@ -52,13 +42,8 @@ export function songToWire(s: Song): SongWire {
 	};
 }
 
-export type SettingWire = WithWireFields<Omit<Setting, "id" | "createdAt">>;
+export type SettingWire = Setting;
 
 export function settingToWire(s: Setting): SettingWire {
-	const { id, createdAt, ...rest } = s;
-	return {
-		_id: id,
-		_creationTime: createdAt,
-		...rest,
-	};
+	return s;
 }

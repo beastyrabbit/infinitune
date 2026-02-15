@@ -22,7 +22,7 @@ export function usePlaylistLifecycle(
 	// Update playlist's current position when song changes
 	useEffect(() => {
 		if (!currentSongId || !songs || !playlistId) return;
-		const song = songs.find((s) => s._id === currentSongId);
+		const song = songs.find((s) => s.id === currentSongId);
 		if (song) {
 			updateCurrentPosition({
 				id: playlistId,

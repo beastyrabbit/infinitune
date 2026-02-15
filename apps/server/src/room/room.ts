@@ -135,7 +135,7 @@ export class Room {
 	getCurrentSong(): SongData | null {
 		if (!this.playback.currentSongId) return null;
 		return (
-			this.songQueue.find((s) => s._id === this.playback.currentSongId) ?? null
+			this.songQueue.find((s) => s.id === this.playback.currentSongId) ?? null
 		);
 	}
 
@@ -249,7 +249,7 @@ export class Room {
 			case "selectSong": {
 				const songId = payload?.songId as string;
 				if (!songId) return;
-				const song = this.songQueue.find((s) => s._id === songId);
+				const song = this.songQueue.find((s) => s.id === songId);
 				if (!song?.audioUrl) return;
 				this.markCurrentSongPlayed();
 				this.advanceToSong(song);
@@ -357,14 +357,14 @@ export class Room {
 		if (currentSong?.audioUrl) {
 			this.sendTo(deviceId, {
 				type: "nextSong",
-				songId: currentSong._id,
+				songId: currentSong.id,
 				audioUrl: currentSong.audioUrl,
 			});
 		}
 	}
 
 	private advanceToSong(song: SongData): void {
-		this.playback.currentSongId = song._id;
+		this.playback.currentSongId = song.id;
 		this.playback.currentTime = 0;
 		this.playback.duration = song.audioDuration ?? 0;
 		this.playback.isPlaying = true;
@@ -375,7 +375,7 @@ export class Room {
 		// Tell all players to load and play
 		this.broadcastToPlayers({
 			type: "nextSong",
-			songId: song._id,
+			songId: song.id,
 			audioUrl: song.audioUrl!,
 			startAt,
 		});
@@ -395,7 +395,7 @@ export class Room {
 		if (next?.audioUrl) {
 			this.broadcastToPlayers({
 				type: "preload",
-				songId: next._id,
+				songId: next.id,
 				audioUrl: next.audioUrl,
 			});
 		}

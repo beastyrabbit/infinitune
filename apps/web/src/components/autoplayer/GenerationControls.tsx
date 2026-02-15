@@ -20,7 +20,7 @@ export function GenerationControls({ playlist }: GenerationControlsProps) {
 	const handleUpdatePrompt = () => {
 		const trimmed = prompt.trim();
 		if (!trimmed || trimmed === playlist.prompt) return;
-		updatePrompt({ id: playlist._id, prompt: trimmed });
+		updatePrompt({ id: playlist.id, prompt: trimmed });
 	};
 
 	return (

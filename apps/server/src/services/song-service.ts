@@ -106,7 +106,7 @@ export async function getNeedsPersona() {
 		.filter((s) => !s.personaExtract && s.title)
 		.slice(0, 20)
 		.map((s) => ({
-			_id: s.id,
+			id: s.id,
 			title: s.title!,
 			artistName: s.artistName,
 			genre: s.genre,
@@ -715,7 +715,7 @@ export async function getWorkQueue(playlistId: string) {
 			const startedAt = s.generationStartedAt || s.createdAt;
 			return now - startedAt > STALE_TIMEOUT_MS;
 		})
-		.map((s) => ({ _id: s.id, status: s.status, title: s.title }));
+		.map((s) => ({ id: s.id, status: s.status, title: s.title }));
 
 	return {
 		pending: pending.map(songToWire),

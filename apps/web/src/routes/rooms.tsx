@@ -59,9 +59,7 @@ function RoomsPage() {
 	}, [deviceNameInput]);
 
 	const rawPlaylists = usePlaylistsAll() ?? [];
-	const playlists = [...rawPlaylists].sort(
-		(a, b) => b._creationTime - a._creationTime,
-	);
+	const playlists = [...rawPlaylists].sort((a, b) => b.createdAt - a.createdAt);
 
 	const fetchRooms = useCallback(async () => {
 		try {
@@ -422,8 +420,8 @@ function RoomsPage() {
 									<SelectContent className="rounded-none border-2 border-white/20 bg-gray-950 font-mono max-h-60">
 										{playlists.map((p) => (
 											<SelectItem
-												key={p._id}
-												value={p.playlistKey ?? p._id}
+												key={p.id}
+												value={p.playlistKey ?? p.id}
 												className="font-mono text-xs font-bold uppercase text-white/80 focus:bg-white/10 focus:text-white rounded-none cursor-pointer"
 											>
 												<span

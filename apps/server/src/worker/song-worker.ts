@@ -89,7 +89,7 @@ export class SongWorker {
 	}
 
 	constructor(song: SongWire, ctx: SongWorkerContext) {
-		this.songId = song._id;
+		this.songId = song.id;
 		this.song = song;
 		this.ctx = ctx;
 	}
@@ -663,7 +663,7 @@ export class SongWorker {
 		const encodedAudioPath = encodeURIComponent(audioPath);
 		const audioUrl = `/api/autoplayer/audio/${this.songId}?aceAudioPath=${encodedAudioPath}`;
 		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
-		await playlistService.incrementGenerated(this.ctx.playlist._id);
+		await playlistService.incrementGenerated(this.ctx.playlist.id);
 
 		songLogger(this.songId).info(
 			{ title: this.song.title, audioProcessingMs },

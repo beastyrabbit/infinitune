@@ -120,10 +120,10 @@ export function MiniPlayer({
 									.sort((a, b) => a.orderIndex - b.orderIndex)
 									.map((song) => (
 										<QueueItem
-											key={song._id}
+											key={song.id}
 											song={song}
-											isPlaying={song._id === playback.currentSongId}
-											onClick={() => controller.selectSong(song._id)}
+											isPlaying={song.id === playback.currentSongId}
+											onClick={() => controller.selectSong(song.id)}
 										/>
 									))}
 							</div>

@@ -9,7 +9,7 @@ import type { Playlist } from "@/types";
 interface DirectionSteeringProps {
 	playlist: Pick<
 		Playlist,
-		| "_id"
+		| "id"
 		| "prompt"
 		| "llmProvider"
 		| "llmModel"
@@ -46,7 +46,7 @@ export function DirectionSteering({
 			const data = await res.json();
 			if (data.result) {
 				await updatePrompt({
-					id: playlist._id,
+					id: playlist.id,
 					prompt: data.result,
 				});
 				setValue("");

@@ -28,7 +28,7 @@ export type PlaybackState = z.infer<typeof PlaybackStateSchema>;
 
 /** Lightweight song data sent over the wire (subset of Convex song doc). */
 export const SongDataSchema = z.object({
-	_id: z.string(),
+	id: z.string(),
 	title: z.string().optional(),
 	artistName: z.string().optional(),
 	genre: z.string().optional(),
@@ -39,7 +39,7 @@ export const SongDataSchema = z.object({
 	orderIndex: z.number(),
 	isInterrupt: z.boolean().optional(),
 	promptEpoch: z.number().optional(),
-	_creationTime: z.number(),
+	createdAt: z.number(),
 	audioDuration: z.number().optional(),
 	mood: z.string().optional(),
 	energy: z.string().optional(),

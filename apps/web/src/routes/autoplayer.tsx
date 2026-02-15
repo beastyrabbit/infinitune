@@ -84,7 +84,7 @@ function AutoplayerPage() {
 
 	// Look up playlist by key from URL
 	const playlistByKey = usePlaylistByKey(pl ?? null);
-	const playlistId = playlistByKey?._id ?? null;
+	const playlistId = playlistByKey?.id ?? null;
 
 	const createPlaylist = useCreatePlaylist();
 	const updateStatus = useUpdatePlaylistStatus();
@@ -140,7 +140,7 @@ function AutoplayerPage() {
 
 	const { status: workerStatus } = useWorkerStatus();
 
-	const currentSong = songs?.find((s) => s._id === currentSongId) ?? null;
+	const currentSong = songs?.find((s) => s.id === currentSongId) ?? null;
 
 	// Transition is complete once the currently playing song is from the current epoch
 	const playlistEpoch = playlist?.promptEpoch ?? 0;
@@ -273,7 +273,7 @@ function AutoplayerPage() {
 	const handleAddAlbum = useCallback(async () => {
 		if (!playlistId || !songs || !playlist || !currentSongId || albumGenerating)
 			return;
-		const sourceSong = songs.find((s) => s._id === currentSongId);
+		const sourceSong = songs.find((s) => s.id === currentSongId);
 		if (!sourceSong?.title) return;
 
 		const TOTAL_TRACKS = 15;
@@ -346,7 +346,7 @@ function AutoplayerPage() {
 								const data = await res.json();
 								if (data.persona) {
 									await updatePersonaExtract({
-										id: s._id as Parameters<
+										id: s.id as Parameters<
 											typeof updatePersonaExtract
 										>[0]["id"],
 										personaExtract: data.persona,
@@ -525,7 +525,7 @@ function AutoplayerPage() {
 				roomController.selectSong(songId);
 				return;
 			}
-			const song = songs?.find((s) => s._id === songId);
+			const song = songs?.find((s) => s.id === songId);
 			if (song?.audioUrl) {
 				dismissTransition();
 				setCurrentSong(songId);
@@ -914,7 +914,7 @@ function AutoplayerPage() {
 			{detailSongId &&
 				songs &&
 				(() => {
-					const detailSong = songs.find((s) => s._id === detailSongId);
+					const detailSong = songs.find((s) => s.id === detailSongId);
 					if (!detailSong) return null;
 					return (
 						<TrackDetail

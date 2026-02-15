@@ -87,7 +87,7 @@ describe("song-service", () => {
 			const pl = await createTestPlaylist();
 			const result = await songService.createPending(pl.id, 1);
 
-			expect(result._id).toBeDefined();
+			expect(result.id).toBeDefined();
 			expect(result.status).toBe("pending");
 			expect(result.orderIndex).toBe(1);
 			expect(result.playlistId).toBe(pl.id);
@@ -95,7 +95,7 @@ describe("song-service", () => {
 			expect(emittedEvents).toHaveLength(1);
 			expect(emittedEvents[0].event).toBe("song.created");
 			expect(emittedEvents[0].data).toMatchObject({
-				songId: result._id,
+				songId: result.id,
 				playlistId: pl.id,
 				status: "pending",
 			});

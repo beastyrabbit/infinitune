@@ -16,7 +16,7 @@ export function UpNextBanner({
 }: UpNextBannerProps) {
 	const playlistEpoch = playlist.promptEpoch ?? 0;
 	const currentSong = currentSongId
-		? songs.find((s) => s._id === currentSongId)
+		? songs.find((s) => s.id === currentSongId)
 		: null;
 	const nextSong = pickNextSong(
 		songs,

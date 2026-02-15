@@ -62,11 +62,11 @@ export function useAutoplayer(playlistId: string | null) {
 		if (!songs) return;
 		// Read fresh from store — closure value may be stale after manual song selection
 		const liveSongId = playerStore.state.currentSongId;
-		const endedSong = songs.find((s) => s._id === liveSongId);
+		const endedSong = songs.find((s) => s.id === liveSongId);
 		if (!endedSong) return;
 
 		if (endedSong.status === "ready") {
-			updateSongStatus({ id: endedSong._id, status: "played" });
+			updateSongStatus({ id: endedSong.id, status: "played" });
 		}
 
 		const nextSong = pickNextSong(
@@ -77,7 +77,7 @@ export function useAutoplayer(playlistId: string | null) {
 			transitionDismissedRef.current,
 		);
 		if (nextSong) {
-			setCurrentSong(nextSong._id);
+			setCurrentSong(nextSong.id);
 			if (nextSong.audioUrl) loadAndPlayRef.current?.(nextSong.audioUrl);
 		} else {
 			setCurrentSong(null);
@@ -140,9 +140,9 @@ export function useAutoplayer(playlistId: string | null) {
 		// Read fresh from store — closure value may be stale after manual song selection
 		const liveSongId = playerStore.state.currentSongId;
 		if (!songs || !liveSongId) return;
-		const skippedSong = songs.find((s) => s._id === liveSongId);
+		const skippedSong = songs.find((s) => s.id === liveSongId);
 		if (skippedSong && skippedSong.status === "ready") {
-			updateSongStatus({ id: skippedSong._id, status: "played" });
+			updateSongStatus({ id: skippedSong.id, status: "played" });
 		}
 		const nextSong = pickNextSong(
 			songs,
@@ -152,7 +152,7 @@ export function useAutoplayer(playlistId: string | null) {
 			transitionDismissedRef.current,
 		);
 		if (nextSong) {
-			setCurrentSong(nextSong._id);
+			setCurrentSong(nextSong.id);
 			if (nextSong.audioUrl) loadAndPlay(nextSong.audioUrl);
 		}
 	}, [songs, playlist?.promptEpoch, updateSongStatus, loadAndPlay]);
@@ -160,7 +160,7 @@ export function useAutoplayer(playlistId: string | null) {
 	const requestSong = useCallback(
 		async (interruptPrompt: string) => {
 			if (!playlist || !playlistId || !songs) return;
-			const currentSong = songs.find((s) => s._id === currentSongId);
+			const currentSong = songs.find((s) => s.id === currentSongId);
 			const orderIndex = currentSong
 				? currentSong.orderIndex + 0.5
 				: songs.length + 1;

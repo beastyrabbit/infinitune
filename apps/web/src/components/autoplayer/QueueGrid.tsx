@@ -65,7 +65,7 @@ export function QueueGrid({
 
 	// Sort: current-epoch songs first, then older epochs; within same epoch by orderIndex
 	const sorted = useMemo(() => {
-		const getOrder = (s: Song) => optimisticOrder?.get(s._id) ?? s.orderIndex;
+		const getOrder = (s: Song) => optimisticOrder?.get(s.id) ?? s.orderIndex;
 		return [...songs].sort((a, b) => {
 			const aEpoch = a.promptEpoch ?? 0;
 			const bEpoch = b.promptEpoch ?? 0;
@@ -126,15 +126,15 @@ export function QueueGrid({
 
 		// Find which epoch group contains the active song
 		const group = epochGroups.find((g) =>
-			g.songs.some((s) => s._id === activeId),
+			g.songs.some((s) => s.id === activeId),
 		);
 		if (!group) return;
 
 		// Only allow reordering within the same epoch
-		if (!group.songs.some((s) => s._id === overId)) return;
+		if (!group.songs.some((s) => s.id === overId)) return;
 
-		const oldIndex = group.songs.findIndex((s) => s._id === activeId);
-		const newIndex = group.songs.findIndex((s) => s._id === overId);
+		const oldIndex = group.songs.findIndex((s) => s.id === activeId);
+		const newIndex = group.songs.findIndex((s) => s.id === overId);
 		if (oldIndex === -1 || newIndex === -1) return;
 
 		// Compute midpoint orderIndex between new neighbors
@@ -158,7 +158,7 @@ export function QueueGrid({
 		// Apply optimistic reorder immediately so there's no snap-back
 		const orderMap = new Map<string, number>();
 		for (let i = 0; i < reordered.length; i++) {
-			orderMap.set(reordered[i]._id, i);
+			orderMap.set(reordered[i].id, i);
 		}
 		setOptimisticOrder(orderMap);
 
@@ -208,13 +208,13 @@ export function QueueGrid({
 							</div>
 						)}
 						<SortableContext
-							items={group.songs.map((s) => s._id)}
+							items={group.songs.map((s) => s.id)}
 							strategy={rectSortingStrategy}
 						>
 							<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6">
 								{group.songs.map((song) => {
 									const songEpoch = song.promptEpoch ?? 0;
-									const isCurrent = song._id === currentSongId;
+									const isCurrent = song.id === currentSongId;
 									const isOldEpoch =
 										!transitionComplete &&
 										playlistEpoch > 0 &&
@@ -222,7 +222,7 @@ export function QueueGrid({
 										!isCurrent;
 									return (
 										<SortableSongCard
-											key={song._id}
+											key={song.id}
 											song={song}
 											isCurrent={isCurrent}
 											isOldEpoch={isOldEpoch}
