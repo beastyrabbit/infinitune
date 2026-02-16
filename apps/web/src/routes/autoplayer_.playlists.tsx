@@ -132,7 +132,7 @@ function PlaylistsPage() {
 							className="w-full bg-gray-900 border-2 border-white/20 pl-8 pr-3 py-2 text-xs font-bold uppercase text-white placeholder:text-white/20 focus:outline-none focus:border-white/40"
 							placeholder="SEARCH BY NAME OR PROMPT..."
 							value={search}
-							onChange={(e) => setSearch(e.target.value.toUpperCase())}
+							onChange={(e) => setSearch(e.target.value)}
 						/>
 					</div>
 
