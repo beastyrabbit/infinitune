@@ -31,6 +31,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
+import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import {
 	useCreatePlaylist,
@@ -139,6 +140,7 @@ function OneshotPage() {
 		isMuted,
 	} = useStore(playerStore);
 	useVolumeSync();
+	usePlaylistHeartbeat(playlistId);
 
 	// Auto-play when song becomes ready
 	const hasAutoPlayed = useRef(false);

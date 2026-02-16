@@ -45,7 +45,21 @@ export interface CodexModelInfo {
 }
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
-const TURN_TIMEOUT_MS = 240_000;
+const TURN_TIMEOUT_MS = (() => {
+	const raw = process.env.CODEX_TURN_TIMEOUT_MS;
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	return 360_000;
+})();
+
+function isNoisyRolloutWarning(message: string): boolean {
+	return (
+		message.includes("codex_core::rollout::list") &&
+		message.includes("state db missing rollout path for thread")
+	);
+}
 
 export class CodexAppServerClient {
 	private proc: ChildProcessWithoutNullStreams | null = null;
@@ -55,6 +69,8 @@ export class CodexAppServerClient {
 	private startPromise: Promise<void> | null = null;
 	private pendingRequests = new Map<number, PendingRequest>();
 	private pendingTurns = new Map<string, PendingTurn>();
+	private suppressedRolloutWarnings = 0;
+	private lastSuppressedRolloutLogAt = 0;
 
 	private async ensureStarted(): Promise<void> {
 		if (this.initialized && this.proc && !this.proc.killed) {
@@ -98,8 +114,27 @@ export class CodexAppServerClient {
 		});
 
 		this.proc.stderr.on("data", (chunk: Buffer | string) => {
-			const text = chunk.toString("utf8").trim();
-			if (text) {
+			for (const line of chunk.toString("utf8").split(/\r?\n/)) {
+				const text = line.trim();
+				if (!text) continue;
+
+				if (isNoisyRolloutWarning(text)) {
+					this.suppressedRolloutWarnings++;
+					const now = Date.now();
+					if (
+						now - this.lastSuppressedRolloutLogAt >= 60_000 ||
+						this.suppressedRolloutWarnings >= 100
+					) {
+						logger.debug(
+							{ suppressedCount: this.suppressedRolloutWarnings },
+							"Suppressed noisy Codex rollout warnings",
+						);
+						this.suppressedRolloutWarnings = 0;
+						this.lastSuppressedRolloutLogAt = now;
+					}
+					continue;
+				}
+
 				logger.debug({ message: text }, "Codex app-server stderr");
 			}
 		});
