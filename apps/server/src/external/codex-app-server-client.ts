@@ -495,6 +495,69 @@ export class CodexAppServerClient {
 		throw new Error("Codex did not return valid JSON");
 	}
 
+	private normalizeCodexOutputSchema(
+		schema: Record<string, unknown>,
+	): Record<string, unknown> {
+		const normalizeNode = (node: unknown): unknown => {
+			if (!node || typeof node !== "object" || Array.isArray(node)) {
+				return node;
+			}
+
+			const current: Record<string, unknown> = {
+				...(node as Record<string, unknown>),
+			};
+
+			if (
+				current.properties &&
+				typeof current.properties === "object" &&
+				!Array.isArray(current.properties)
+			) {
+				const normalizedProperties = Object.fromEntries(
+					Object.entries(current.properties as Record<string, unknown>).map(
+						([key, value]) => [key, normalizeNode(value)],
+					),
+				);
+
+				current.properties = normalizedProperties;
+				const propertyKeys = Object.keys(normalizedProperties);
+				if (propertyKeys.length > 0) {
+					current.required = propertyKeys;
+					if (current.additionalProperties === undefined) {
+						current.additionalProperties = false;
+					}
+				}
+			}
+
+			if (current.items !== undefined) {
+				current.items = normalizeNode(current.items);
+			}
+			if (Array.isArray(current.anyOf)) {
+				current.anyOf = current.anyOf.map(normalizeNode);
+			}
+			if (Array.isArray(current.oneOf)) {
+				current.oneOf = current.oneOf.map(normalizeNode);
+			}
+			if (Array.isArray(current.allOf)) {
+				current.allOf = current.allOf.map(normalizeNode);
+			}
+			if (
+				current.$defs &&
+				typeof current.$defs === "object" &&
+				!Array.isArray(current.$defs)
+			) {
+				current.$defs = Object.fromEntries(
+					Object.entries(current.$defs as Record<string, unknown>).map(
+						([key, value]) => [key, normalizeNode(value)],
+					),
+				);
+			}
+
+			return current;
+		};
+
+		return normalizeNode(schema) as Record<string, unknown>;
+	}
+
 	private async ensureChatgptAuth(): Promise<void> {
 		const account = await this.readAccount();
 		if (!account.account || account.account.type !== "chatgpt") {
@@ -584,6 +647,25 @@ export class CodexAppServerClient {
 		return text;
 	}
 
+	async generateJson(options: {
+		model: string;
+		system: string;
+		prompt: string;
+		outputSchema: Record<string, unknown>;
+		signal?: AbortSignal;
+	}): Promise<unknown> {
+		await this.ensureChatgptAuth();
+		const outputSchema = this.normalizeCodexOutputSchema(options.outputSchema);
+
+		const rawText = await this.runTurn({
+			model: options.model,
+			text: this.buildPrompt(options.system, options.prompt, true),
+			outputSchema,
+			signal: options.signal,
+		});
+		return this.parseJsonFromText(rawText);
+	}
+
 	async generateObject<T>(options: {
 		model: string;
 		system: string;
@@ -593,10 +675,9 @@ export class CodexAppServerClient {
 	}): Promise<T> {
 		await this.ensureChatgptAuth();
 
-		const outputSchema = z.toJSONSchema(options.schema) as Record<
-			string,
-			unknown
-		>;
+		const outputSchema = this.normalizeCodexOutputSchema(
+			z.toJSONSchema(options.schema) as Record<string, unknown>,
+		);
 		const rawText = await this.runTurn({
 			model: options.model,
 			text: this.buildPrompt(options.system, options.prompt, true),

@@ -28,9 +28,14 @@ function LlmTestPage() {
 	const settings = useSettings();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
-	const [provider, setProvider] = useState<"ollama" | "openrouter">("ollama");
+	const [provider, setProvider] = useState<
+		"ollama" | "openrouter" | "openai-codex"
+	>("ollama");
 	const [model, setModel] = useState("");
 	const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+	const [codexModels, setCodexModels] = useState<
+		Array<{ name: string; displayName?: string }>
+	>([]);
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<Generation[]>([]);
 	const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -39,29 +44,65 @@ function LlmTestPage() {
 	useEffect(() => {
 		if (settings) {
 			const p =
-				settings.textProvider === "openrouter" ? "openrouter" : "ollama";
+				settings.textProvider === "openrouter"
+					? "openrouter"
+					: settings.textProvider === "openai-codex"
+						? "openai-codex"
+						: "ollama";
 			setProvider(p);
 			if (settings.textModel) setModel(settings.textModel);
 		}
 	}, [settings]);
 
-	// Fetch Ollama models
+	// Fetch provider-specific models
 	useEffect(() => {
-		if (provider !== "ollama") return;
-		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((data) => {
-				const names = (data.models || [])
-					.filter((m: unknown) => (m as { type: string }).type === "text")
-					.map((m: unknown) => (m as { name: string }).name);
-				setOllamaModels(names);
-				if (names.length > 0 && !model) setModel(names[0]);
-			})
-			.catch(() => {});
-	}, [provider, model]);
+		if (provider === "ollama") {
+			fetch(`${API_URL}/api/autoplayer/ollama-models`)
+				.then((r) => {
+					if (!r.ok) throw new Error(`HTTP ${r.status}`);
+					return r.json();
+				})
+				.then((data) => {
+					const names = (data.models || [])
+						.filter((m: unknown) => (m as { type: string }).type === "text")
+						.map((m: unknown) => (m as { name: string }).name);
+					setOllamaModels(names);
+					setModel((current) => {
+						if (names.length === 0) return current;
+						if (current && names.includes(current)) return current;
+						return names[0];
+					});
+				})
+				.catch(() => setOllamaModels([]));
+			return;
+		}
+
+		if (provider === "openai-codex") {
+			fetch(`${API_URL}/api/autoplayer/codex-models`)
+				.then((r) => {
+					if (!r.ok) throw new Error(`HTTP ${r.status}`);
+					return r.json();
+				})
+				.then((data) => {
+					const models: Array<{ name: string; displayName?: string }> = (
+						data.models || []
+					)
+						.filter((m: unknown) => (m as { type?: string }).type === "text")
+						.map((m: unknown) => ({
+							name: (m as { name: string }).name,
+							displayName: (m as { displayName?: string }).displayName,
+						}));
+					setCodexModels(models);
+					setModel((current) => {
+						if (models.length === 0) return current;
+						if (current && models.some((m) => m.name === current))
+							return current;
+						return models[0].name;
+					});
+				})
+				.catch(() => setCodexModels([]));
+		}
+	}, [provider]);
 
 	const handleGenerate = useCallback(async () => {
 		setIsRunning(true);
@@ -71,13 +112,7 @@ function LlmTestPage() {
 			const input = {
 				provider,
 				model,
-				systemPrompt: SYSTEM_PROMPT,
-				userPrompt: prompt,
-				schema: SONG_SCHEMA,
-				structuredOutput:
-					provider === "ollama"
-						? "format (JSON schema)"
-						: "response_format (json_schema)",
+				prompt,
 			};
 
 			const res = await fetch("/api/autoplayer/generate-song", {
@@ -206,6 +241,18 @@ function LlmTestPage() {
 								>
 									OpenRouter
 								</button>
+								<button
+									type="button"
+									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+										provider === "openai-codex"
+											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+											: "border-white/10 text-white/40"
+									}`}
+									onClick={() => setProvider("openai-codex")}
+									disabled={isRunning}
+								>
+									OpenAI Codex
+								</button>
 							</div>
 						</div>
 
@@ -227,12 +274,29 @@ function LlmTestPage() {
 										</option>
 									))}
 								</select>
+							) : provider === "openai-codex" && codexModels.length > 0 ? (
+								<select
+									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
+									value={model}
+									onChange={(e) => setModel(e.target.value)}
+									disabled={isRunning}
+								>
+									{codexModels.map((m) => (
+										<option key={m.name} value={m.name}>
+											{m.displayName || m.name}
+										</option>
+									))}
+								</select>
 							) : (
 								<input
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
-									placeholder="e.g. meta-llama/llama-3.3-70b-instruct"
+									placeholder={
+										provider === "openai-codex"
+											? "e.g. gpt-5.3-codex"
+											: "e.g. meta-llama/llama-3.3-70b-instruct"
+									}
 									disabled={isRunning}
 								/>
 							)}
@@ -275,7 +339,9 @@ function LlmTestPage() {
 						Structured output:{" "}
 						{provider === "ollama"
 							? "Ollama format (JSON schema)"
-							: "OpenRouter response_format (json_schema)"}
+							: provider === "openai-codex"
+								? "Codex outputSchema (json_schema)"
+								: "OpenRouter response_format (json_schema)"}
 					</div>
 				</div>
 			</section>

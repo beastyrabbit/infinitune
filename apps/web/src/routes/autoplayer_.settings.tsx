@@ -33,6 +33,19 @@ const TABS: { id: Tab; label: string; icon: typeof Plug }[] = [
 	{ id: "audio", label: "AUDIO ENGINE", icon: Music },
 ];
 
+interface CodexAuthSession {
+	id: string;
+	state: string;
+	verificationUrl?: string;
+	userCode?: string;
+	message?: string;
+	error?: string;
+}
+
+function normalizeFallbackModel(value: string | undefined | null): string {
+	return value === "__fallback__" ? "" : (value ?? "");
+}
+
 function SettingsPage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
@@ -76,6 +89,10 @@ function SettingsPage() {
 		OpenRouterModelOption[]
 	>([]);
 	const [openRouterLoading, setOpenRouterLoading] = useState(false);
+	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
+	const [codexLoading, setCodexLoading] = useState(false);
+	const [codexAuthSession, setCodexAuthSession] =
+		useState<CodexAuthSession | null>(null);
 
 	// Test statuses
 	const [ollamaTest, setOllamaTest] = useState<TestStatus>({ state: "idle" });
@@ -84,6 +101,7 @@ function SettingsPage() {
 	});
 	const [comfyuiTest, setComfyuiTest] = useState<TestStatus>({ state: "idle" });
 	const [aceTest, setAceTest] = useState<TestStatus>({ state: "idle" });
+	const [codexTest, setCodexTest] = useState<TestStatus>({ state: "idle" });
 
 	const [saved, setSaved] = useState(false);
 	const [personaScanTriggered, setPersonaScanTriggered] = useState(false);
@@ -101,7 +119,7 @@ function SettingsPage() {
 		setImageModel(settings.imageModel || "");
 		setAceModel(settings.aceModel || "");
 		setPersonaProvider(settings.personaProvider || "ollama");
-		setPersonaModel(settings.personaModel || "");
+		setPersonaModel(normalizeFallbackModel(settings.personaModel));
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
 
 		if (activePlaylist) {
@@ -153,7 +171,9 @@ function SettingsPage() {
 	// Fetch OpenRouter models when provider is selected + key exists
 	useEffect(() => {
 		const needsOpenRouter =
-			textProvider === "openrouter" || imageProvider === "openrouter";
+			textProvider === "openrouter" ||
+			imageProvider === "openrouter" ||
+			personaProvider === "openrouter";
 		if (!needsOpenRouter || !openrouterApiKey) {
 			setOpenRouterTextModels([]);
 			setOpenRouterImageModels([]);
@@ -181,7 +201,118 @@ function SettingsPage() {
 			setOpenRouterImageModels(image);
 			setOpenRouterLoading(false);
 		});
-	}, [textProvider, imageProvider, openrouterApiKey]);
+	}, [textProvider, imageProvider, personaProvider, openrouterApiKey]);
+
+	const refreshCodexModels = useCallback(async () => {
+		setCodexLoading(true);
+		try {
+			const res = await fetch(`${API_URL}/api/autoplayer/codex-models`);
+			if (!res.ok) {
+				setCodexModels([]);
+				return;
+			}
+			const data = await res.json();
+			setCodexModels(data.models || []);
+		} catch {
+			setCodexModels([]);
+		} finally {
+			setCodexLoading(false);
+		}
+	}, []);
+
+	// Poll Codex auth status while network tab is visible.
+	const refreshCodexAuthStatus = useCallback(async () => {
+		try {
+			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/status`);
+			if (!res.ok) return;
+			const data = (await res.json()) as {
+				session?: CodexAuthSession | null;
+				loginStatus?: { mode?: string };
+			};
+			setCodexAuthSession(data.session ?? null);
+
+			if (data.session?.state === "authenticated") {
+				setCodexTest({ state: "ok", message: "Authenticated with ChatGPT" });
+				if (
+					textProvider === "openai-codex" ||
+					personaProvider === "openai-codex"
+				) {
+					void refreshCodexModels();
+				}
+			} else if (data.session?.state === "error") {
+				setCodexTest({
+					state: "error",
+					message: data.session.error || "Authentication failed",
+				});
+			} else if (data.loginStatus?.mode === "chatgpt") {
+				setCodexTest({ state: "ok", message: "Authenticated with ChatGPT" });
+			}
+		} catch {
+			// Ignore polling errors.
+		}
+	}, [personaProvider, refreshCodexModels, textProvider]);
+
+	useEffect(() => {
+		if (activeTab !== "network") return;
+		void refreshCodexAuthStatus();
+		const timer = setInterval(() => {
+			void refreshCodexAuthStatus();
+		}, 3000);
+		return () => clearInterval(timer);
+	}, [activeTab, refreshCodexAuthStatus]);
+
+	const startCodexAuth = useCallback(async () => {
+		setCodexTest({ state: "testing" });
+		try {
+			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/start`, {
+				method: "POST",
+			});
+			const data = (await res.json()) as {
+				session?: CodexAuthSession;
+				error?: string;
+			};
+			if (!res.ok || data.error) {
+				setCodexTest({
+					state: "error",
+					message: data.error || "Failed to start device auth",
+				});
+				return;
+			}
+
+			setCodexAuthSession(data.session ?? null);
+			if (data.session?.state === "authenticated") {
+				setCodexTest({ state: "ok", message: "Authenticated with ChatGPT" });
+			} else {
+				setCodexTest({ state: "idle" });
+			}
+		} catch {
+			setCodexTest({ state: "error", message: "Request failed" });
+		}
+	}, []);
+
+	const cancelCodexAuth = useCallback(async () => {
+		try {
+			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/cancel`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ sessionId: codexAuthSession?.id }),
+			});
+			const data = (await res.json()) as { session?: CodexAuthSession };
+			setCodexAuthSession(data.session ?? null);
+			setCodexTest({ state: "idle" });
+		} catch {
+			// Ignore cancel errors.
+		}
+	}, [codexAuthSession?.id]);
+
+	// Fetch Codex models when selected for text/persona generation.
+	useEffect(() => {
+		const needsCodex =
+			textProvider === "openai-codex" || personaProvider === "openai-codex";
+		if (!needsCodex) return;
+
+		void refreshCodexModels();
+	}, [textProvider, personaProvider, refreshCodexModels]);
 
 	const testConnection = useCallback(
 		async (provider: string) => {
@@ -190,9 +321,11 @@ function SettingsPage() {
 					? setOllamaTest
 					: provider === "openrouter"
 						? setOpenrouterTest
-						: provider === "comfyui"
-							? setComfyuiTest
-							: setAceTest;
+						: provider === "openai-codex"
+							? setCodexTest
+							: provider === "comfyui"
+								? setComfyuiTest
+								: setAceTest;
 
 			setStatus({ state: "testing" });
 			try {
@@ -225,7 +358,10 @@ function SettingsPage() {
 			setSetting({ key: "imageModel", value: imageModel }),
 			setSetting({ key: "aceModel", value: aceModel }),
 			setSetting({ key: "personaProvider", value: personaProvider }),
-			setSetting({ key: "personaModel", value: personaModel }),
+			setSetting({
+				key: "personaModel",
+				value: normalizeFallbackModel(personaModel),
+			}),
 			setSetting({ key: "openrouterApiKey", value: openrouterApiKey }),
 			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
@@ -345,6 +481,10 @@ function SettingsPage() {
 								aceTest={aceTest}
 								comfyuiTest={comfyuiTest}
 								openrouterTest={openrouterTest}
+								codexTest={codexTest}
+								codexAuthSession={codexAuthSession}
+								onStartCodexAuth={startCodexAuth}
+								onCancelCodexAuth={cancelCodexAuth}
 								onTest={testConnection}
 							/>
 						)}
@@ -370,6 +510,8 @@ function SettingsPage() {
 								openRouterTextModels={openRouterTextModels}
 								openRouterImageModels={openRouterImageModels}
 								openRouterLoading={openRouterLoading}
+								codexModels={codexModels}
+								codexLoading={codexLoading}
 							/>
 						)}
 

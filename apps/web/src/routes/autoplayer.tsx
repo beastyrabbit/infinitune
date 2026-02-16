@@ -292,15 +292,19 @@ function AutoplayerPage() {
 			// 3. Provider set but model empty + different from text → skip precheck
 			const explicitPP = settings?.personaProvider || "";
 			const explicitPM = settings?.personaModel || "";
-			let pProvider: "ollama" | "openrouter";
+			let pProvider: "ollama" | "openrouter" | "openai-codex";
 			let pModel: string;
 			if (explicitPM) {
-				pProvider = (explicitPP || "ollama") as "ollama" | "openrouter";
+				pProvider = (explicitPP || "ollama") as
+					| "ollama"
+					| "openrouter"
+					| "openai-codex";
 				pModel = explicitPM;
 			} else if (!explicitPP || explicitPP === settings?.textProvider) {
 				pProvider = (settings?.textProvider || "ollama") as
 					| "ollama"
-					| "openrouter";
+					| "openrouter"
+					| "openai-codex";
 				pModel = settings?.textModel || "";
 			} else {
 				pProvider = "ollama";

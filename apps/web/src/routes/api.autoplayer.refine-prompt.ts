@@ -53,7 +53,7 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 					const userMessage = `Current session prompt:\n"${trimmedPrompt}"\n\nUser direction:\n"${trimmedDirection}"\n\nReturn the updated prompt:`;
 
 					const result = await callLlmText({
-						provider: provider as "ollama" | "openrouter",
+						provider: provider as "ollama" | "openrouter" | "openai-codex",
 						model,
 						system: SYSTEM_PROMPT,
 						prompt: userMessage,

@@ -4,7 +4,7 @@ import { generatePersonaExtract } from "@/services/llm";
 
 interface ExtractPersonaRequest {
 	song: PersonaInput;
-	provider: "ollama" | "openrouter";
+	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 }
 
