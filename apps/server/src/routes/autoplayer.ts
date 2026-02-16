@@ -196,6 +196,12 @@ app.post("/test-connection", async (c) => {
 	try {
 		const body = await c.req.json<{ provider: string; apiKey?: string }>();
 		const { provider, apiKey } = body;
+		if (!provider || typeof provider !== "string") {
+			return c.json(
+				{ ok: false, error: "Missing required field: provider" },
+				400,
+			);
+		}
 		const urls = await getServiceUrls();
 
 		if (provider === "ollama") {
