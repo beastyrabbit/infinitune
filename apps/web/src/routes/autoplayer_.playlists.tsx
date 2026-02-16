@@ -58,8 +58,8 @@ function PlaylistsPage() {
 	}, [playlists, search, modeFilter]);
 
 	const starredCount = useMemo(
-		() => playlists?.filter((p) => p.isStarred).length ?? 0,
-		[playlists],
+		() => filtered.filter((p) => p.isStarred).length,
+		[filtered],
 	);
 
 	const counts = useMemo(() => {
