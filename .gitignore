@@ -23,3 +23,8 @@ data/
 convex-export*
 controller-snapshot.md
 *.tsbuildinfo
+
+# Loose screenshots / images at repo root
+/*.png
+/*.jpg
+/*.jpeg

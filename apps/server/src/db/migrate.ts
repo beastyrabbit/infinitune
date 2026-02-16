@@ -106,5 +106,18 @@ export function ensureSchema() {
 		CREATE INDEX IF NOT EXISTS settings_by_key ON settings(key);
 	`);
 
+	// Additive column migrations (idempotent — ignores "duplicate column" errors)
+	try {
+		sqlite.exec(
+			"ALTER TABLE playlists ADD COLUMN is_starred INTEGER DEFAULT 0",
+		);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add is_starred column to playlists");
+			throw err;
+		}
+	}
+
 	logger.info("Database schema ensured");
 }

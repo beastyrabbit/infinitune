@@ -37,7 +37,8 @@ const SCHEMA_SQL = `
 		current_order_index REAL,
 		last_seen_at INTEGER,
 		prompt_epoch INTEGER DEFAULT 0,
-		steer_history TEXT
+		steer_history TEXT,
+		is_starred INTEGER DEFAULT 0
 	);
 
 	CREATE TABLE songs (

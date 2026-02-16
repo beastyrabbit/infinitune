@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
 import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
+import { Route as AutoplayerPlaylistsRouteImport } from './routes/autoplayer_.playlists'
 import { Route as AutoplayerOneshotRouteImport } from './routes/autoplayer_.oneshot'
 import { Route as AutoplayerMiniRouteImport } from './routes/autoplayer_.mini'
 import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
@@ -75,6 +76,11 @@ const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
 const AutoplayerQueueRoute = AutoplayerQueueRouteImport.update({
   id: '/autoplayer_/queue',
   path: '/autoplayer/queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerPlaylistsRoute = AutoplayerPlaylistsRouteImport.update({
+  id: '/autoplayer_/playlists',
+  path: '/autoplayer/playlists',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerOneshotRoute = AutoplayerOneshotRouteImport.update({
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
+  '/autoplayer/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer/queue': typeof AutoplayerQueueRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/testlab': typeof AutoplayerTestlabRouteWithChildren
@@ -258,6 +265,7 @@ export interface FileRoutesByTo {
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
+  '/autoplayer/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer/queue': typeof AutoplayerQueueRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
@@ -292,6 +300,7 @@ export interface FileRoutesById {
   '/autoplayer_/library': typeof AutoplayerLibraryRoute
   '/autoplayer_/mini': typeof AutoplayerMiniRoute
   '/autoplayer_/oneshot': typeof AutoplayerOneshotRoute
+  '/autoplayer_/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer_/queue': typeof AutoplayerQueueRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
   '/autoplayer_/testlab': typeof AutoplayerTestlabRouteWithChildren
@@ -328,6 +337,7 @@ export interface FileRouteTypes {
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
+    | '/autoplayer/playlists'
     | '/autoplayer/queue'
     | '/autoplayer/settings'
     | '/autoplayer/testlab'
@@ -362,6 +372,7 @@ export interface FileRouteTypes {
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
+    | '/autoplayer/playlists'
     | '/autoplayer/queue'
     | '/autoplayer/settings'
     | '/api/autoplayer/ace-models'
@@ -395,6 +406,7 @@ export interface FileRouteTypes {
     | '/autoplayer_/library'
     | '/autoplayer_/mini'
     | '/autoplayer_/oneshot'
+    | '/autoplayer_/playlists'
     | '/autoplayer_/queue'
     | '/autoplayer_/settings'
     | '/autoplayer_/testlab'
@@ -430,6 +442,7 @@ export interface RootRouteChildren {
   AutoplayerLibraryRoute: typeof AutoplayerLibraryRoute
   AutoplayerMiniRoute: typeof AutoplayerMiniRoute
   AutoplayerOneshotRoute: typeof AutoplayerOneshotRoute
+  AutoplayerPlaylistsRoute: typeof AutoplayerPlaylistsRoute
   AutoplayerQueueRoute: typeof AutoplayerQueueRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
   AutoplayerTestlabRoute: typeof AutoplayerTestlabRouteWithChildren
@@ -500,6 +513,13 @@ declare module '@tanstack/react-router' {
       path: '/autoplayer/queue'
       fullPath: '/autoplayer/queue'
       preLoaderRoute: typeof AutoplayerQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/playlists': {
+      id: '/autoplayer_/playlists'
+      path: '/autoplayer/playlists'
+      fullPath: '/autoplayer/playlists'
+      preLoaderRoute: typeof AutoplayerPlaylistsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/oneshot': {
@@ -709,6 +729,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerLibraryRoute: AutoplayerLibraryRoute,
   AutoplayerMiniRoute: AutoplayerMiniRoute,
   AutoplayerOneshotRoute: AutoplayerOneshotRoute,
+  AutoplayerPlaylistsRoute: AutoplayerPlaylistsRoute,
   AutoplayerQueueRoute: AutoplayerQueueRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
   AutoplayerTestlabRoute: AutoplayerTestlabRouteWithChildren,
