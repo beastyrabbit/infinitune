@@ -297,6 +297,63 @@ describe("playlist-service", () => {
 		});
 	});
 
+	// ─── toggleStar ───────────────────────────────────────────────
+
+	describe("toggleStar", () => {
+		it("toggles false → true", async () => {
+			const pl = await playlistService.create({
+				name: "Test",
+				prompt: "test",
+				llmProvider: "ollama",
+				llmModel: "llama3",
+			});
+			emittedEvents.length = 0;
+
+			const result = await playlistService.toggleStar(pl.id);
+			expect(result).toMatchObject({ isStarred: true });
+
+			const db = getTestDb();
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+			expect(updated.isStarred).toBe(true);
+
+			expect(emittedEvents[0]).toMatchObject({
+				event: "playlist.updated",
+				data: { playlistId: pl.id },
+			});
+		});
+
+		it("toggles true → false", async () => {
+			const db = getTestDb();
+			const [pl] = await db
+				.insert(playlists)
+				.values({
+					name: "Test",
+					prompt: "test",
+					llmProvider: "ollama",
+					llmModel: "llama3",
+					isStarred: true,
+				})
+				.returning();
+
+			const result = await playlistService.toggleStar(pl.id);
+			expect(result).toMatchObject({ isStarred: false });
+
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+			expect(updated.isStarred).toBe(false);
+		});
+
+		it("returns undefined for non-existent playlist", async () => {
+			const result = await playlistService.toggleStar("nonexistent");
+			expect(result).toBeUndefined();
+		});
+	});
+
 	// ─── queries ───────────────────────────────────────────────────
 
 	describe("queries", () => {

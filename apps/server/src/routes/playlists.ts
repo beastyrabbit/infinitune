@@ -116,6 +116,13 @@ app.patch("/:id/prompt", async (c) => {
 	return c.json({ ok: true });
 });
 
+// PATCH /api/playlists/:id/star — toggle starred status
+app.patch("/:id/star", async (c) => {
+	const result = await playlistService.toggleStar(c.req.param("id"));
+	if (!result) return c.json({ error: "Playlist not found" }, 404);
+	return c.json(result);
+});
+
 // DELETE /api/playlists/:id
 app.delete("/:id", async (c) => {
 	await playlistService.deletePlaylist(c.req.param("id"));

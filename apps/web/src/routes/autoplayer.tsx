@@ -9,7 +9,7 @@ import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
 import { NowPlaying } from "@/components/autoplayer/NowPlaying";
 import { PlaylistCreator } from "@/components/autoplayer/PlaylistCreator";
-import { PlaylistPicker } from "@/components/autoplayer/PlaylistPicker";
+
 import { QueueGrid } from "@/components/autoplayer/QueueGrid";
 import { QuickRequest } from "@/components/autoplayer/QuickRequest";
 import { TrackDetail } from "@/components/autoplayer/TrackDetail";
@@ -78,7 +78,7 @@ function AutoplayerPage() {
 	const deviceName = dn || `autoplayer-${roomRole}`;
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
-	const [pickerOpen, setPickerOpen] = useState(false);
+
 	const [albumGenerating, setAlbumGenerating] = useState(false);
 	const [albumProgress, setAlbumProgress] = useState({ current: 0, total: 0 });
 	const albumAbortRef = useRef<AbortController | null>(null);
@@ -552,29 +552,18 @@ function AutoplayerPage() {
 		);
 	}
 
-	// No pl param or playlist not found — show creator + picker
+	// No pl param or playlist not found — show creator
 	if (!pl || !playlistId) {
 		return (
-			<>
-				<PlaylistCreator
-					onCreatePlaylist={handleCreatePlaylist}
-					onCreatePlaylistInRoom={handleCreatePlaylistInRoom}
-					onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
-					onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
-					onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
-					onOpenRooms={() => navigate({ to: "/rooms" })}
-					onOpenPlaylists={() => setPickerOpen(true)}
-				/>
-				{pickerOpen && (
-					<PlaylistPicker
-						onSelect={(key) => {
-							setPickerOpen(false);
-							navigate({ to: "/autoplayer", search: { pl: key } });
-						}}
-						onClose={() => setPickerOpen(false)}
-					/>
-				)}
-			</>
+			<PlaylistCreator
+				onCreatePlaylist={handleCreatePlaylist}
+				onCreatePlaylistInRoom={handleCreatePlaylistInRoom}
+				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
+				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
+				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
+				onOpenRooms={() => navigate({ to: "/rooms" })}
+				onOpenPlaylists={() => navigate({ to: "/autoplayer/playlists" })}
+			/>
 		);
 	}
 

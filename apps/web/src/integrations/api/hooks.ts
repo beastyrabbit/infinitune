@@ -178,6 +178,11 @@ export const useUpdatePlaylistPrompt = createMutation<{
 	[["playlists"]],
 );
 
+export const useTogglePlaylistStar = createMutation<{ id: string }>(
+	(args) => api.patch(`/api/playlists/${args.id}/star`, {}),
+	[["playlists"]],
+);
+
 export const useDeletePlaylist = createMutation<{ id: string }>(
 	(args) => api.del(`/api/playlists/${args.id}`),
 	[["playlists"]],

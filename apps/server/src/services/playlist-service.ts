@@ -217,6 +217,20 @@ export async function steer(id: string, prompt: string) {
 	emit("playlist.steered", { playlistId: id, newEpoch });
 }
 
+export async function toggleStar(id: string) {
+	const [row] = await db.select().from(playlists).where(eq(playlists.id, id));
+	if (!row) return undefined;
+
+	const newValue = !row.isStarred;
+	await db
+		.update(playlists)
+		.set({ isStarred: newValue })
+		.where(eq(playlists.id, id));
+
+	emit("playlist.updated", { playlistId: id });
+	return { isStarred: newValue };
+}
+
 export async function deletePlaylist(id: string) {
 	await db.delete(playlists).where(eq(playlists.id, id));
 	emit("playlist.deleted", { playlistId: id });
