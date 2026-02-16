@@ -32,6 +32,12 @@ app.get("/ollama-models", async (c) => {
 		const response = await fetch(`${urls.ollamaUrl}/api/tags`, {
 			signal: AbortSignal.timeout(10000),
 		});
+		if (!response.ok) {
+			return c.json(
+				{ error: `Ollama returned ${response.status}`, models: [] },
+				502,
+			);
+		}
 		const data = (await response.json()) as { models?: OllamaModel[] };
 
 		const models = (data.models || []).map((m: OllamaModel) => {
@@ -85,6 +91,12 @@ app.get("/ace-models", async (c) => {
 		const response = await fetch(`${urls.aceStepUrl}/v1/models`, {
 			signal: AbortSignal.timeout(10000),
 		});
+		if (!response.ok) {
+			return c.json(
+				{ error: `ACE-Step returned ${response.status}`, models: [] },
+				502,
+			);
+		}
 		const data = (await response.json()) as {
 			data?: { id?: string; name?: string }[];
 			models?: { id?: string; name?: string }[];
@@ -191,6 +203,10 @@ app.post("/test-connection", async (c) => {
 				signal: AbortSignal.timeout(5000),
 			});
 			if (!response.ok) {
+				logger.warn(
+					{ provider: "ollama", status: response.status },
+					"Connection test failed",
+				);
 				return c.json({
 					ok: false,
 					error: `Ollama returned ${response.status}`,
@@ -213,6 +229,10 @@ app.post("/test-connection", async (c) => {
 				signal: AbortSignal.timeout(5000),
 			});
 			if (!response.ok) {
+				logger.warn(
+					{ provider: "openrouter", status: response.status },
+					"Connection test failed",
+				);
 				return c.json({
 					ok: false,
 					error: `OpenRouter returned ${response.status}`,
@@ -226,6 +246,10 @@ app.post("/test-connection", async (c) => {
 				signal: AbortSignal.timeout(5000),
 			});
 			if (!response.ok) {
+				logger.warn(
+					{ provider: "comfyui", status: response.status },
+					"Connection test failed",
+				);
 				return c.json({
 					ok: false,
 					error: `ComfyUI returned ${response.status}`,
@@ -239,6 +263,10 @@ app.post("/test-connection", async (c) => {
 				signal: AbortSignal.timeout(5000),
 			});
 			if (!response.ok) {
+				logger.warn(
+					{ provider: "ace-step", status: response.status },
+					"Connection test failed",
+				);
 				return c.json({
 					ok: false,
 					error: `ACE-Step returned ${response.status}`,

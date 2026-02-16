@@ -108,8 +108,13 @@ app.route("/api/autoplayer", autoplayerRoutes);
 
 // ─── Persona trigger ────────────────────────────────────────────────
 app.post("/api/worker/persona/trigger", (c) => {
-	triggerPersonaScan();
-	return c.json({ ok: true });
+	try {
+		triggerPersonaScan();
+		return c.json({ ok: true });
+	} catch (err) {
+		logger.error({ err }, "Failed to trigger persona scan");
+		return c.json({ ok: false, error: "Failed to schedule persona scan" }, 500);
+	}
 });
 
 // ─── Static file serving for covers ──────────────────────────────────
