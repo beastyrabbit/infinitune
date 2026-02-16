@@ -16,7 +16,7 @@ import {
 	VolumeX,
 	Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -198,11 +198,17 @@ function OneshotPage() {
 			.catch(() => setCodexModels([]));
 	}, []);
 
-	const textModels = ollamaModels.filter(
-		(m) => m.type === "text" || (!m.type && !m.vision),
+	const textModels = useMemo(
+		() =>
+			ollamaModels.filter((m) => m.type === "text" || (!m.type && !m.vision)),
+		[ollamaModels],
 	);
-	const codexTextModels = codexModels.filter(
-		(m) => m.type === "text" || m.inputModalities?.includes("text"),
+	const codexTextModels = useMemo(
+		() =>
+			codexModels.filter(
+				(m) => m.type === "text" || m.inputModalities?.includes("text"),
+			),
+		[codexModels],
 	);
 
 	useEffect(() => {
