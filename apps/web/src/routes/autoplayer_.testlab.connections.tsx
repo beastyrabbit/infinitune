@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useSettings } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 
 export const Route = createFileRoute("/autoplayer_/testlab/connections")({
 	component: ConnectionsTestPage,
@@ -63,7 +64,7 @@ function ConnectionsTestPage() {
 					body.apiKey = settings.openrouterApiKey;
 				}
 
-				const res = await fetch("/api/autoplayer/test-connection", {
+				const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify(body),
@@ -77,7 +78,10 @@ function ConnectionsTestPage() {
 					let models: string[] | null = null;
 					if (service === "ollama") {
 						try {
-							const modelsRes = await fetch("/api/autoplayer/ollama-models");
+							const modelsRes = await fetch(
+								`${API_URL}/api/autoplayer/ollama-models`,
+							);
+							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
 							const modelsData = await modelsRes.json();
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,
@@ -87,7 +91,10 @@ function ConnectionsTestPage() {
 						}
 					} else if (service === "ace-step") {
 						try {
-							const modelsRes = await fetch("/api/autoplayer/ace-models");
+							const modelsRes = await fetch(
+								`${API_URL}/api/autoplayer/ace-models`,
+							);
+							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
 							const modelsData = await modelsRes.json();
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,

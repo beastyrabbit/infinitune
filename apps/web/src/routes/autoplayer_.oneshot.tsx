@@ -37,6 +37,7 @@ import {
 	usePlaylistByKey,
 	useSettings,
 } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
@@ -160,8 +161,11 @@ function OneshotPage() {
 
 	// ── Ollama models ──
 	useEffect(() => {
-		fetch("/api/autoplayer/ollama-models")
-			.then((r) => r.json())
+		fetch(`${API_URL}/api/autoplayer/ollama-models`)
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((d) => {
 				const allModels = d.models || [];
 				setOllamaModels(allModels);

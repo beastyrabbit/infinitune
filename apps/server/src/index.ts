@@ -17,11 +17,17 @@ import { logger } from "./logger";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
+import autoplayerRoutes from "./routes/autoplayer";
 import playlistsRoutes from "./routes/playlists";
 import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
 import songsRoutes from "./routes/songs/index";
-import { getQueues, getWorkerStats, startWorker } from "./worker/index";
+import {
+	getQueues,
+	getWorkerStats,
+	startWorker,
+	triggerPersonaScan,
+} from "./worker/index";
 
 const PORT = Number(process.env.API_PORT ?? 5175);
 
@@ -97,9 +103,18 @@ app.route("/api/playlists", playlistsRoutes);
 app.route("/api/songs", songsRoutes);
 app.route("/api/v1", createRoomRoutes(roomManager));
 
-// ─── Legacy audio URL redirect ──────────────────────────────────────
-app.get("/api/autoplayer/audio/:id", (c) => {
-	return c.redirect(`/api/songs/${c.req.param("id")}/audio`, 301);
+// ─── Autoplayer routes (models, test-connection, legacy audio redirect) ──
+app.route("/api/autoplayer", autoplayerRoutes);
+
+// ─── Persona trigger ────────────────────────────────────────────────
+app.post("/api/worker/persona/trigger", (c) => {
+	try {
+		triggerPersonaScan();
+		return c.json({ ok: true });
+	} catch (err) {
+		logger.error({ err }, "Failed to trigger persona scan");
+		return c.json({ ok: false, error: "Failed to schedule persona scan" }, 500);
+	}
 });
 
 // ─── Static file serving for covers ──────────────────────────────────

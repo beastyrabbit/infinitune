@@ -6,6 +6,7 @@ import {
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
 import { useSettings } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/llm")({
@@ -47,8 +48,11 @@ function LlmTestPage() {
 	// Fetch Ollama models
 	useEffect(() => {
 		if (provider !== "ollama") return;
-		fetch("/api/autoplayer/ollama-models")
-			.then((r) => r.json())
+		fetch(`${API_URL}/api/autoplayer/ollama-models`)
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((data) => {
 				const names = (data.models || [])
 					.filter((m: unknown) => (m as { type: string }).type === "text")
