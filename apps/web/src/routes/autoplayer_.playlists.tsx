@@ -14,7 +14,7 @@ export const Route = createFileRoute("/autoplayer_/playlists")({
 	component: PlaylistsPage,
 });
 
-type StatusFilter = "all" | "active" | "closed";
+type ModeFilter = "all" | "endless" | "oneshot";
 
 function PlaylistsPage() {
 	const navigate = useNavigate();
@@ -23,7 +23,7 @@ function PlaylistsPage() {
 	const toggleStar = useTogglePlaylistStar();
 
 	const [search, setSearch] = useState("");
-	const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+	const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
 	const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
 	const filtered = useMemo(() => {
@@ -31,13 +31,9 @@ function PlaylistsPage() {
 
 		let items = [...playlists];
 
-		// Status filter
-		if (statusFilter === "active") {
-			items = items.filter(
-				(p) => p.status === "active" || p.status === "closing",
-			);
-		} else if (statusFilter === "closed") {
-			items = items.filter((p) => p.status === "closed");
+		// Mode filter
+		if (modeFilter !== "all") {
+			items = items.filter((p) => p.mode === modeFilter);
 		}
 
 		// Search
@@ -59,7 +55,7 @@ function PlaylistsPage() {
 		});
 
 		return items;
-	}, [playlists, search, statusFilter]);
+	}, [playlists, search, modeFilter]);
 
 	const starredCount = useMemo(
 		() => playlists?.filter((p) => p.isStarred).length ?? 0,
@@ -67,13 +63,11 @@ function PlaylistsPage() {
 	);
 
 	const counts = useMemo(() => {
-		if (!playlists) return { all: 0, active: 0, closed: 0 };
+		if (!playlists) return { all: 0, endless: 0, oneshot: 0 };
 		return {
 			all: playlists.length,
-			active: playlists.filter(
-				(p) => p.status === "active" || p.status === "closing",
-			).length,
-			closed: playlists.filter((p) => p.status === "closed").length,
+			endless: playlists.filter((p) => p.mode === "endless").length,
+			oneshot: playlists.filter((p) => p.mode === "oneshot").length,
 		};
 	}, [playlists]);
 
@@ -147,8 +141,8 @@ function PlaylistsPage() {
 						{(
 							[
 								{ id: "all", label: "ALL", count: counts.all },
-								{ id: "active", label: "ACTIVE", count: counts.active },
-								{ id: "closed", label: "CLOSED", count: counts.closed },
+								{ id: "endless", label: "ENDLESS", count: counts.endless },
+								{ id: "oneshot", label: "ONESHOT", count: counts.oneshot },
 							] as const
 						).map((tab, i) => (
 							<button
@@ -157,11 +151,11 @@ function PlaylistsPage() {
 								className={`px-3 py-2 border-2 border-white/20 text-[10px] font-black uppercase tracking-wider transition-colors ${
 									i > 0 ? "border-l-0" : ""
 								} ${
-									statusFilter === tab.id
+									modeFilter === tab.id
 										? "bg-white text-black"
 										: "bg-transparent text-white/60 hover:bg-white/10 hover:text-white"
 								}`}
-								onClick={() => setStatusFilter(tab.id)}
+								onClick={() => setModeFilter(tab.id)}
 							>
 								{tab.label} ({tab.count})
 							</button>
