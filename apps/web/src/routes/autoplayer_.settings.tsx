@@ -133,12 +133,12 @@ function SettingsPage() {
 
 	// Fetch Ollama + ACE models on mount
 	useEffect(() => {
-		fetch("/api/autoplayer/ollama-models")
+		fetch(`${API_URL}/api/autoplayer/ollama-models`)
 			.then((r) => r.json())
 			.then((d) => setOllamaModels(d.models || []))
 			.catch(() => {});
 
-		fetch("/api/autoplayer/ace-models")
+		fetch(`${API_URL}/api/autoplayer/ace-models`)
 			.then((r) => r.json())
 			.then((d) => setAceModels(d.models || []))
 			.catch(() => {});
@@ -156,11 +156,11 @@ function SettingsPage() {
 
 		setOpenRouterLoading(true);
 		Promise.all([
-			fetch("/api/autoplayer/openrouter-models?type=text")
+			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=text`)
 				.then((r) => r.json())
 				.then((d) => d.models || [])
 				.catch(() => []),
-			fetch("/api/autoplayer/openrouter-models?type=image")
+			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=image`)
 				.then((r) => r.json())
 				.then((d) => d.models || [])
 				.catch(() => []),
@@ -184,7 +184,7 @@ function SettingsPage() {
 
 			setStatus({ state: "testing" });
 			try {
-				const res = await fetch("/api/autoplayer/test-connection", {
+				const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ provider, apiKey: openrouterApiKey }),

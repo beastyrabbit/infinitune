@@ -15,6 +15,7 @@ import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useSettings } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 
 interface ModelOption {
 	name: string;
@@ -105,7 +106,7 @@ export function PlaylistCreator({
 	}, [settings]);
 
 	useEffect(() => {
-		fetch("/api/autoplayer/ollama-models")
+		fetch(`${API_URL}/api/autoplayer/ollama-models`)
 			.then((r) => r.json())
 			.then((d) => {
 				const allModels = d.models || [];

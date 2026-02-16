@@ -15,6 +15,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useSetSetting, useSettings } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 
 interface SettingsDialogProps {
 	open: boolean;
@@ -70,12 +71,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 	useEffect(() => {
 		if (!open) return;
 
-		fetch("/api/autoplayer/ollama-models")
+		fetch(`${API_URL}/api/autoplayer/ollama-models`)
 			.then((r) => r.json())
 			.then((d) => setOllamaModels(d.models || []))
 			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
 
-		fetch("/api/autoplayer/ace-models")
+		fetch(`${API_URL}/api/autoplayer/ace-models`)
 			.then((r) => r.json())
 			.then((d) => setAceModels(d.models || []))
 			.catch((e) => console.warn("Failed to fetch ACE models:", e));
@@ -98,7 +99,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
 			setStatus({ state: "testing" });
 			try {
-				const res = await fetch("/api/autoplayer/test-connection", {
+				const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ provider, apiKey: openrouterApiKey }),

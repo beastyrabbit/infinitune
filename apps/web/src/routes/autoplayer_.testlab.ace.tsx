@@ -8,6 +8,7 @@ import {
 	StatusBadge,
 } from "@/components/autoplayer/test/shared";
 import { useSettings } from "@/integrations/api/hooks";
+import { API_URL } from "@/lib/endpoints";
 
 export const Route = createFileRoute("/autoplayer_/testlab/ace")({
 	component: AceTestPage,
@@ -48,7 +49,7 @@ function AceTestPage() {
 
 	// Fetch ACE models
 	useEffect(() => {
-		fetch("/api/autoplayer/ace-models")
+		fetch(`${API_URL}/api/autoplayer/ace-models`)
 			.then((r) => r.json())
 			.then((data) => {
 				const names = (data.models || []).map(
