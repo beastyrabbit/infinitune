@@ -162,7 +162,10 @@ function OneshotPage() {
 	// ── Ollama models ──
 	useEffect(() => {
 		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((d) => {
 				const allModels = d.models || [];
 				setOllamaModels(allModels);

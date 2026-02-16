@@ -50,7 +50,10 @@ function AceTestPage() {
 	// Fetch ACE models
 	useEffect(() => {
 		fetch(`${API_URL}/api/autoplayer/ace-models`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((data) => {
 				const names = (data.models || []).map(
 					(m: unknown) => (m as { name: string }).name,

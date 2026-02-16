@@ -49,7 +49,10 @@ function LlmTestPage() {
 	useEffect(() => {
 		if (provider !== "ollama") return;
 		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((data) => {
 				const names = (data.models || [])
 					.filter((m: unknown) => (m as { type: string }).type === "text")
