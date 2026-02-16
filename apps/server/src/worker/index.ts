@@ -392,7 +392,10 @@ async function handleSongStatusChanged(data: {
 	if (to === "retry_pending") {
 		try {
 			await songService.retryErrored(songId);
-			songLogger(songId, playlistId).info("Auto-retried song");
+			songLogger(songId, playlistId).info(
+				{ from: data.from, to: data.to },
+				"Auto-retried song",
+			);
 		} catch (err) {
 			songLogger(songId, playlistId).error({ err }, "Failed to retry song");
 		}

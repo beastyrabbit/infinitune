@@ -1,3 +1,5 @@
+import { logger } from "../logger";
+
 // ─── Endpoint Types ──────────────────────────────────────────────────
 export type EndpointType = "llm" | "image" | "audio";
 
@@ -179,6 +181,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 		const songId = item.request.songId;
 		const abortController = new AbortController();
 		const startedAt = Date.now();
+		const waitMs = startedAt - item.enqueuedAt;
 
 		const activeItem: ActiveItem = {
 			songId,
@@ -188,21 +191,82 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 			abortController,
 		};
 		this.active.set(songId, activeItem);
+		logger.debug(
+			{
+				queueType: this.type,
+				songId,
+				endpoint: item.request.endpoint,
+				priority: item.request.priority,
+				waitMs,
+				pendingAfterDequeue: this.pending.length,
+				activeCount: this.active.size,
+			},
+			"Queue item started",
+		);
 
 		item.request
 			.execute(abortController.signal)
 			.then((result) => {
 				const processingMs = Date.now() - startedAt;
+				logger.debug(
+					{
+						queueType: this.type,
+						songId,
+						endpoint: item.request.endpoint,
+						priority: item.request.priority,
+						waitMs,
+						processingMs,
+						activeCount: this.active.size,
+					},
+					"Queue item completed",
+				);
 				item.resolve({ result, processingMs });
 			})
 			.catch((error: unknown) => {
 				this.errorCount++;
 				this.lastErrorMessage =
 					error instanceof Error ? error.message : String(error);
+				const message =
+					error instanceof Error ? error.message : "Queue item failed";
+				if (message === "Cancelled") {
+					logger.debug(
+						{
+							queueType: this.type,
+							songId,
+							endpoint: item.request.endpoint,
+							priority: item.request.priority,
+							waitMs,
+							processingMs: Date.now() - startedAt,
+						},
+						"Queue item cancelled",
+					);
+				} else {
+					logger.warn(
+						{
+							queueType: this.type,
+							songId,
+							endpoint: item.request.endpoint,
+							priority: item.request.priority,
+							waitMs,
+							processingMs: Date.now() - startedAt,
+							err: error,
+						},
+						"Queue item failed",
+					);
+				}
 				item.reject(error instanceof Error ? error : new Error(String(error)));
 			})
 			.finally(() => {
 				this.active.delete(songId);
+				logger.debug(
+					{
+						queueType: this.type,
+						songId,
+						pendingCount: this.pending.length,
+						activeCount: this.active.size,
+					},
+					"Queue slot released",
+				);
 				this.drain();
 			});
 	}

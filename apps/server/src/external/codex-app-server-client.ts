@@ -20,6 +20,10 @@ type PendingTurn = {
 	reject: (reason: Error) => void;
 	cleanup?: () => void;
 	threadId: string;
+	startedAt: number;
+	model: string;
+	hasOutputSchema: boolean;
+	promptChars: number;
 };
 
 export interface CodexAccountInfo {
@@ -285,11 +289,36 @@ export class CodexAppServerClient {
 		const status = p.turn?.status;
 		if (status !== "completed") {
 			const failureMessage = this.extractTurnFailureMessage(p.turn?.error);
+			logger.warn(
+				{
+					threadId: pendingTurn.threadId,
+					turnId,
+					model: pendingTurn.model,
+					hasOutputSchema: pendingTurn.hasOutputSchema,
+					promptChars: pendingTurn.promptChars,
+					elapsedMs: Date.now() - pendingTurn.startedAt,
+					status,
+					failureMessage,
+				},
+				"Codex turn failed",
+			);
 			pendingTurn.reject(new Error(failureMessage));
 			return;
 		}
 
 		const text = pendingTurn.finalMessage ?? pendingTurn.chunks.join("");
+		logger.debug(
+			{
+				threadId: pendingTurn.threadId,
+				turnId,
+				model: pendingTurn.model,
+				hasOutputSchema: pendingTurn.hasOutputSchema,
+				promptChars: pendingTurn.promptChars,
+				elapsedMs: Date.now() - pendingTurn.startedAt,
+				responseChars: text.length,
+			},
+			"Codex turn completed",
+		);
 		pendingTurn.resolve(text.trim());
 	}
 
@@ -403,12 +432,39 @@ export class CodexAppServerClient {
 		if (!turnId) {
 			throw new Error("Codex turn/start returned no turn id");
 		}
+		const startedAt = Date.now();
+		logger.debug(
+			{
+				threadId,
+				turnId,
+				model: options.model,
+				hasOutputSchema: !!options.outputSchema,
+				promptChars: options.text.length,
+				timeoutMs: TURN_TIMEOUT_MS,
+			},
+			"Codex turn started",
+		);
 
 		return await new Promise<string>((resolve, reject) => {
 			const timeout = setTimeout(() => {
+				const elapsedMs = Date.now() - startedAt;
+				const pendingTurnsCount = this.pendingTurns.size;
 				this.pendingTurns.delete(turnId);
 				void this.request("turn/interrupt", { threadId, turnId }).catch(
 					() => {},
+				);
+				logger.warn(
+					{
+						threadId,
+						turnId,
+						model: options.model,
+						hasOutputSchema: !!options.outputSchema,
+						promptChars: options.text.length,
+						elapsedMs,
+						timeoutMs: TURN_TIMEOUT_MS,
+						pendingTurnsCount,
+					},
+					"Codex turn timed out, interrupt sent",
 				);
 				reject(new Error("Codex turn timed out"));
 			}, TURN_TIMEOUT_MS);
@@ -420,6 +476,10 @@ export class CodexAppServerClient {
 				timeout,
 				resolve,
 				reject,
+				startedAt,
+				model: options.model,
+				hasOutputSchema: !!options.outputSchema,
+				promptChars: options.text.length,
 			};
 
 			if (options.signal) {
@@ -427,6 +487,16 @@ export class CodexAppServerClient {
 					clearTimeout(timeout);
 					void this.request("turn/interrupt", { threadId, turnId }).catch(
 						() => {},
+					);
+					logger.warn(
+						{
+							threadId,
+							turnId,
+							model: options.model,
+							hasOutputSchema: !!options.outputSchema,
+							promptChars: options.text.length,
+						},
+						"Codex turn aborted before completion",
 					);
 					reject(
 						options.signal.reason instanceof Error
@@ -441,6 +511,17 @@ export class CodexAppServerClient {
 					this.pendingTurns.delete(turnId);
 					void this.request("turn/interrupt", { threadId, turnId }).catch(
 						() => {},
+					);
+					logger.warn(
+						{
+							threadId,
+							turnId,
+							model: options.model,
+							hasOutputSchema: !!options.outputSchema,
+							promptChars: options.text.length,
+							elapsedMs: Date.now() - startedAt,
+						},
+						"Codex turn aborted by signal",
 					);
 					reject(
 						options.signal?.reason instanceof Error
