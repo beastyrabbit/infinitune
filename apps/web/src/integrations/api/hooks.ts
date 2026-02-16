@@ -10,6 +10,7 @@ import type { Playlist, Song } from "@infinitune/shared/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
+import { resolveApiMediaUrl } from "@/lib/endpoints";
 import { api } from "./client";
 
 // Re-export types for convenience
@@ -54,6 +55,18 @@ function createMutation<TInput, TOutput = void>(
 			[qc, mutationFn, invalidateKeys],
 		);
 	};
+}
+
+function normalizeSongMedia(song: Song): Song {
+	return {
+		...song,
+		audioUrl: resolveApiMediaUrl(song.audioUrl),
+		coverUrl: resolveApiMediaUrl(song.coverUrl),
+	};
+}
+
+function normalizeSongList(songs: Song[] | undefined): Song[] | undefined {
+	return songs?.map(normalizeSongMedia);
 }
 
 // ─── Settings ────────────────────────────────────────────────────────
@@ -222,7 +235,10 @@ export const useUpdatePlaylistPosition = createMutation<{
 export function useSongQueue(playlistId: string | null): Song[] | undefined {
 	const { data } = useQuery({
 		queryKey: ["songs", "queue", playlistId],
-		queryFn: () => api.get<Song[]>(`/api/songs/queue/${playlistId}`),
+		queryFn: async () =>
+			normalizeSongList(
+				await api.get<Song[]>(`/api/songs/queue/${playlistId}`),
+			) ?? [],
 		enabled: !!playlistId,
 	});
 	return playlistId ? data : undefined;
@@ -231,7 +247,8 @@ export function useSongQueue(playlistId: string | null): Song[] | undefined {
 export function useSongsAll(): Song[] | undefined {
 	const { data } = useQuery({
 		queryKey: ["songs", "all"],
-		queryFn: () => api.get<Song[]>("/api/songs"),
+		queryFn: async () =>
+			normalizeSongList(await api.get<Song[]>("/api/songs")) ?? [],
 	});
 	return data;
 }
@@ -240,7 +257,9 @@ export function useSongsBatch(ids: string[]): Song[] | undefined {
 	const key = ids.slice().sort().join(",");
 	const { data } = useQuery({
 		queryKey: ["songs", "batch", key],
-		queryFn: () => api.post<Song[]>("/api/songs/batch", { ids }),
+		queryFn: async () =>
+			normalizeSongList(await api.post<Song[]>("/api/songs/batch", { ids })) ??
+			[],
 		enabled: ids.length > 0,
 	});
 	return ids.length > 0 ? data : [];
@@ -269,21 +288,29 @@ export const useCreatePending = createMutation<
 		promptEpoch?: number;
 	},
 	Song
->((args) => api.post<Song>("/api/songs/create-pending", args), [["songs"]], {
-	silent: true,
-});
+>(
+	(args) =>
+		api.post<Song>("/api/songs/create-pending", args).then(normalizeSongMedia),
+	[["songs"]],
+	{
+		silent: true,
+	},
+);
 
 export const useCreateMetadataReady = createMutation<
 	Record<string, unknown>,
 	Song
 >(
-	(args) => api.post<Song>("/api/songs/create-metadata-ready", args),
+	(args) =>
+		api
+			.post<Song>("/api/songs/create-metadata-ready", args)
+			.then(normalizeSongMedia),
 	[["songs"]],
 	{ silent: true },
 );
 
 export const useCreateSong = createMutation<Record<string, unknown>, Song>(
-	(args) => api.post<Song>("/api/songs", args),
+	(args) => api.post<Song>("/api/songs", args).then(normalizeSongMedia),
 	[["songs"]],
 	{ silent: true },
 );

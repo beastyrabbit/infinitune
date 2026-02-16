@@ -1,5 +1,6 @@
 import { useStore } from "@tanstack/react-store";
 import { useCallback, useEffect, useRef } from "react";
+import { resolveApiMediaUrl } from "@/lib/endpoints";
 import {
 	getGlobalAudio,
 	playerStore,
@@ -48,10 +49,11 @@ export function useAudioPlayer(onEnded?: () => void) {
 
 	const loadAndPlay = useCallback((url: string) => {
 		const audio = getGlobalAudio();
+		const resolvedUrl = resolveApiMediaUrl(url) ?? url;
 		// Skip if already loaded with this URL (prevents Convex reactivity from resetting playback)
-		if (url === currentUrlRef.current) return;
-		currentUrlRef.current = url;
-		audio.src = url;
+		if (resolvedUrl === currentUrlRef.current) return;
+		currentUrlRef.current = resolvedUrl;
+		audio.src = resolvedUrl;
 		audio.load();
 		audio.play().catch(console.error);
 		setPlaying(true);

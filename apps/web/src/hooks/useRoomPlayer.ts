@@ -1,5 +1,6 @@
 import type { ServerMessage } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { resolveApiMediaUrl } from "@/lib/endpoints";
 import type { RoomConnection } from "./useRoomConnection";
 
 /**
@@ -277,7 +278,7 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 						preloadSongIdRef.current = null;
 					} else {
 						// Load fresh
-						audio.src = msg.audioUrl;
+						audio.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
 						audio.load();
 					}
 
@@ -310,7 +311,7 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 					const preload = preloadAudioRef.current;
 					if (!preload) break;
 					preloadSongIdRef.current = msg.songId;
-					preload.src = msg.audioUrl;
+					preload.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
 					preload.load(); // Buffer but don't play
 					break;
 				}

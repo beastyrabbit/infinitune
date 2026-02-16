@@ -87,6 +87,14 @@ function AutoplayerPage() {
 	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const playlistId = playlistByKey?.id ?? null;
 
+	// Keep oneshot playlists on the dedicated oneshot route.
+	useEffect(() => {
+		if (isRoomMode) return;
+		if (!pl) return;
+		if (playlistByKey?.mode !== "oneshot") return;
+		navigate({ to: "/autoplayer/oneshot", search: { pl } });
+	}, [isRoomMode, pl, playlistByKey?.mode, navigate]);
+
 	const createPlaylist = useCreatePlaylist();
 	const updateStatus = useUpdatePlaylistStatus();
 	const setRatingMut = useSetRating();
