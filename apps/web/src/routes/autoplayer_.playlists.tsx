@@ -191,8 +191,7 @@ function PlaylistsPage() {
 
 						{filtered.map((p, idx) => {
 							// Insert divider between starred and non-starred
-							const prevStarred =
-								idx > 0 && filtered[idx - 1].isStarred === true;
+							const prevStarred = idx > 0 && filtered[idx - 1].isStarred;
 							const showDivider = prevStarred && !p.isStarred;
 
 							return (
@@ -281,7 +280,7 @@ function PlaylistRow({
 				>
 					<Star
 						className="h-4 w-4"
-						fill={p.isStarred === true ? "currentColor" : "none"}
+						fill={p.isStarred ? "currentColor" : "none"}
 					/>
 				</button>
 
@@ -320,11 +319,12 @@ function PlaylistRow({
 						</span>
 						<span
 							className={`border px-1.5 py-0.5 text-[10px] font-black uppercase ${
-								p.status === "active"
-									? "border-green-500/40 text-green-500/80"
-									: p.status === "closing"
-										? "border-yellow-500/40 text-yellow-500/80"
-										: "border-white/20 text-white/40"
+								(
+									{
+										active: "border-green-500/40 text-green-500/80",
+										closing: "border-yellow-500/40 text-yellow-500/80",
+									} as Record<string, string>
+								)[p.status] ?? "border-white/20 text-white/40"
 							}`}
 						>
 							{p.status.toUpperCase()}

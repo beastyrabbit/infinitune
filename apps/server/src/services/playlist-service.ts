@@ -218,17 +218,16 @@ export async function steer(id: string, prompt: string) {
 }
 
 export async function toggleStar(id: string) {
-	const [row] = await db.select().from(playlists).where(eq(playlists.id, id));
-	if (!row) return undefined;
-
-	const newValue = !row.isStarred;
-	await db
+	const [updated] = await db
 		.update(playlists)
-		.set({ isStarred: newValue })
-		.where(eq(playlists.id, id));
+		.set({ isStarred: sql`NOT is_starred` })
+		.where(eq(playlists.id, id))
+		.returning({ isStarred: playlists.isStarred });
+
+	if (!updated) return undefined;
 
 	emit("playlist.updated", { playlistId: id });
-	return { isStarred: newValue };
+	return { isStarred: updated.isStarred };
 }
 
 export async function deletePlaylist(id: string) {

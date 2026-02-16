@@ -129,7 +129,7 @@ export interface Playlist {
 	lastSeenAt: number | null;
 	promptEpoch: number | null;
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
-	isStarred: boolean | null;
+	isStarred: boolean;
 }
 
 export interface WorkQueue {

@@ -111,8 +111,12 @@ export function ensureSchema() {
 		sqlite.exec(
 			"ALTER TABLE playlists ADD COLUMN is_starred INTEGER DEFAULT 0",
 		);
-	} catch {
-		// Column already exists
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add is_starred column to playlists");
+			throw err;
+		}
 	}
 
 	logger.info("Database schema ensured");
