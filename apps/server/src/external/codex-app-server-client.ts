@@ -88,19 +88,29 @@ export class CodexAppServerClient {
 
 	private async startInternal(): Promise<void> {
 		this.spawnProcess();
-		await this.requestRaw(
-			"initialize",
-			{
-				clientInfo: {
-					name: "infinitune_server",
-					title: "Infinitune Server",
-					version: "1.0.0",
+		try {
+			await this.requestRaw(
+				"initialize",
+				{
+					clientInfo: {
+						name: "infinitune_server",
+						title: "Infinitune Server",
+						version: "1.0.0",
+					},
 				},
-			},
-			10_000,
-		);
-		this.send({ method: "initialized", params: {} });
-		this.initialized = true;
+				10_000,
+			);
+			this.send({ method: "initialized", params: {} });
+			this.initialized = true;
+		} catch (error) {
+			if (this.proc && !this.proc.killed) {
+				this.proc.kill("SIGTERM");
+			}
+			this.proc = null;
+			this.initialized = false;
+			this.stdoutBuffer = "";
+			throw error;
+		}
 	}
 
 	private spawnProcess(): void {
@@ -637,7 +647,9 @@ export class CodexAppServerClient {
 				current.properties = normalizedProperties;
 				const propertyKeys = Object.keys(normalizedProperties);
 				if (propertyKeys.length > 0) {
-					current.required = propertyKeys;
+					if (!Array.isArray(current.required)) {
+						current.required = propertyKeys;
+					}
 					if (current.additionalProperties === undefined) {
 						current.additionalProperties = false;
 					}

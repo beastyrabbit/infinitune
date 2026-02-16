@@ -1,6 +1,6 @@
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import GearIcon from "@/components/ui/gear-icon";
 import { Input } from "@/components/ui/input";
@@ -142,11 +142,17 @@ export function PlaylistCreator({
 			.catch(() => setCodexModels([]));
 	}, []);
 
-	const textModels = ollamaModels.filter(
-		(m) => m.type === "text" || (!m.type && !m.vision),
+	const textModels = useMemo(
+		() =>
+			ollamaModels.filter((m) => m.type === "text" || (!m.type && !m.vision)),
+		[ollamaModels],
 	);
-	const codexTextModels = codexModels.filter(
-		(m) => m.type === "text" || m.inputModalities?.includes("text"),
+	const codexTextModels = useMemo(
+		() =>
+			codexModels.filter(
+				(m) => m.type === "text" || m.inputModalities?.includes("text"),
+			),
+		[codexModels],
 	);
 
 	useEffect(() => {
