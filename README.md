@@ -10,11 +10,89 @@
 
 <br>
 
-[How It Works](#how-it-works) · [Multi-Device Playback](#multi-device-playback) · [Tech Stack](#tech-stack) · [Quick Start](#quick-start) · [Architecture](#architecture)
+[Features](#features) · [Screenshots](#screenshots) · [How It Works](#how-it-works) · [Tech Stack](#tech-stack) · [Quick Start](#quick-start) · [Architecture](#architecture)
 
 <br>
 
 </div>
+
+## Features
+
+- **Endless Generation** — describe a mood, genre, or artist and songs keep appearing in real-time
+- **Prompt Steering** — change direction mid-stream without losing history
+- **One-Off Requests** — drop in a specific song idea and it gets generated next
+- **Album Mode** — generate an entire album from a single track
+- **Oneshot Mode** — generate a single standalone song with full control
+- **Song Library** — browse all generated songs with genre, mood, energy, and era filters
+- **Playlist Management** — star favorites, search, filter by mode (endless/oneshot)
+- **Multi-Device Rooms** — synchronized playback across devices (Sonos-style)
+- **Gapless Playback** — next song preloads in background, zero gaps between tracks
+- **Rating & Feedback** — thumbs up/down to influence future generation
+- **Cover Art** — AI-generated vinyl-style album covers for every song
+- **Configurable AI** — switch between local (Ollama) and cloud (OpenRouter) LLMs on the fly
+
+## Screenshots
+
+### Player View
+The main player with now-playing display, generation controls, prompt steering, and the song queue.
+
+<div align="center">
+<img src="docs/screenshots/player-queue.png" alt="Player with queue and generation controls" width="100%">
+</div>
+
+### Song Library
+Browse all generated songs with cover art. Filter by genre, mood, energy level, and era.
+
+<div align="center">
+<img src="docs/screenshots/library-page.png" alt="Song library with cover art and filters" width="100%">
+</div>
+
+### Playlist Management
+Star your favorites, search by name or prompt, filter by endless or oneshot mode.
+
+<div align="center">
+<img src="docs/screenshots/playlists-page.png" alt="Playlist management with starring and filters" width="100%">
+</div>
+
+### Landing Page
+Describe your music, pick a provider and model, and start listening.
+
+<div align="center">
+<img src="docs/screenshots/landing-page.png" alt="Landing page — describe your music" width="100%">
+</div>
+
+### Oneshot Mode
+Generate a single standalone song with full prompt control and advanced settings.
+
+<div align="center">
+<img src="docs/screenshots/oneshot-page.png" alt="Oneshot single-song generator" width="100%">
+</div>
+
+### Worker Queue
+Live dashboard showing LLM, image, and audio pipeline status with active/waiting/error counts.
+
+<div align="center">
+<img src="docs/screenshots/queue-view.png" alt="Worker queue dashboard" width="100%">
+</div>
+
+<details>
+<summary><strong>More screenshots</strong></summary>
+
+#### Settings
+Configure service endpoints (Ollama, ACE-Step, ComfyUI), API keys, and model preferences.
+
+<div align="center">
+<img src="docs/screenshots/settings-page.png" alt="Settings page" width="100%">
+</div>
+
+#### Rooms
+Create rooms for synchronized multi-device playback. Name your devices, join as player or controller.
+
+<div align="center">
+<img src="docs/screenshots/rooms-page.png" alt="Rooms for multi-device sync" width="100%">
+</div>
+
+</details>
 
 ## How It Works
 
@@ -24,32 +102,21 @@
 >
 > **3.** Listen endlessly — songs appear in real-time. Rate them up/down to steer the direction. Request one-offs or generate entire albums from a single track.
 
-## Multi-Device Playback
+### Song Generation Pipeline
 
-Infinitune includes a **Room Server** for synchronized multi-device playback — think Sonos or Spotify Connect, but for AI-generated music.
+Each song flows through: `pending` → `generating_metadata` → `metadata_ready` → `submitting_to_ace` → `generating_audio` → `saving` → `ready` → `played`
 
-> **1.** Go to **[ROOMS]** and create a room linked to any active playlist
->
-> **2.** Open the room on multiple devices — each joins as a **player** (outputs audio) or **controller** (remote control only)
->
-> **3.** All players in a room stay in sync — same song, same position. Controllers see real-time playback state and can play/pause, skip, seek, or adjust volume across all devices at once.
+The worker spawns a per-song worker with concurrency queues managing throughput across three lanes: **LLM** (metadata/lyrics), **Image** (cover art), and **Audio** (ACE-Step synthesis).
 
-**Per-device control:** Adjust volume or pause individual players independently. Devices in "individual" mode ignore room-wide changes until explicitly synced back. Rename devices for easy identification (e.g. "Kitchen Speaker", "Office").
+### Multi-Device Playback
 
-**Gapless playback:** The next song is preloaded in the background while the current one plays — no gaps between tracks.
+Infinitune includes an integrated **Room Server** for synchronized playback — think Sonos or Spotify Connect, but for AI-generated music.
 
-**Clock sync:** Devices calibrate against the server clock on connect (NTP-style ping/pong), so synchronized play commands land within ~50ms across the LAN.
-
-## Hardware Setup
-
-Infinitune runs on a **Framework Desktop** (AMD Ryzen / dedicated GPU) hosting all AI services locally on the same network:
-
-| Service | Role | Details |
-|:--------|:-----|:--------|
-| **ACE-Step 1.5** | Audio | Text-to-music model — generates full songs from lyrics + captions |
-| **Ollama** | Local LLM | Llama 3.1, DeepSeek, etc. for song metadata, lyrics, persona extraction |
-| **OpenRouter** | Cloud LLM | Optional — access DeepSeek, Claude, GPT via API |
-| **ComfyUI** | Cover Art | Generates vinyl-style album covers from image prompts |
+- **Roles** — devices join as **player** (outputs audio) or **controller** (remote control only)
+- **Sync** — all players stay locked to the same song and position
+- **Per-device control** — adjust volume or pause individual players independently
+- **Clock sync** — NTP-style ping/pong calibration, synchronized within ~50ms across LAN
+- **Gapless** — next song preloads in background while current one plays
 
 ## Tech Stack
 
@@ -77,17 +144,33 @@ pnpm dev:all
 
 > The web dev server runs on `:5173`, the unified backend on `:5175`. Create an `apps/web/.env.local` with `VITE_API_URL=http://localhost:5175` for local dev.
 
-## Environment Variables
+### Prerequisites
+
+Infinitune requires external AI services running on your network:
+
+| Service | Role | Default Port |
+|:--------|:-----|:-------------|
+| **ACE-Step 1.5** | Text-to-music synthesis | `:8001` |
+| **Ollama** | Local LLM (metadata, lyrics) | `:11434` |
+| **ComfyUI** | Cover art generation | `:8188` |
+| **OpenRouter** *(optional)* | Cloud LLM access | — |
+
+### Environment Variables
 
 Configure in `apps/server/.env.local`:
 
-| Variable | Default | Description |
-|:---------|:--------|:------------|
-| `OLLAMA_URL` | `http://192.168.10.120:11434` | Ollama API endpoint |
-| `ACE_STEP_URL` | `http://192.168.10.120:8001` | ACE-Step audio generation endpoint |
-| `COMFYUI_URL` | `http://192.168.10.120:8188` | ComfyUI image generation endpoint |
-| `OPENROUTER_API_KEY` | — | OpenRouter API key *(if using cloud LLM)* |
-| `MUSIC_STORAGE_PATH` | `/mnt/truenas/MediaBiB/media/AI-Music` | Path for storing generated audio files |
+```env
+# AI service endpoints (replace with your server addresses)
+OLLAMA_URL=http://<your-server>:11434
+ACE_STEP_URL=http://<your-server>:8001
+COMFYUI_URL=http://<your-server>:8188
+
+# Optional — cloud LLM via OpenRouter
+OPENROUTER_API_KEY=sk-or-v1-...
+
+# Where to store generated audio files
+MUSIC_STORAGE_PATH=/path/to/your/music/storage
+```
 
 ## Architecture
 
@@ -108,11 +191,11 @@ Unified Server (Hono on :5175)
       └── ACE-Step 1.5 → audio synthesis
 ```
 
-**One server process** handles everything: API routes, worker pipeline, room management, event broadcasting. No message queues. No inter-process HTTP. Single port (5175).
+**One server process** handles everything: API routes, worker pipeline, room management, event broadcasting. No message queues. No inter-process HTTP. Single port.
 
 **Event-driven:** Service mutations emit events → worker handlers react instantly → no polling. Song completion triggers buffer deficit check → creates new pending songs → triggers metadata generation → self-sustaining loop.
 
-## Project Structure
+### Project Structure
 
 ```
 infinitune/
