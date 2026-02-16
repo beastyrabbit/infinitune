@@ -134,12 +134,18 @@ function SettingsPage() {
 	// Fetch Ollama + ACE models on mount
 	useEffect(() => {
 		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((d) => setOllamaModels(d.models || []))
 			.catch(() => {});
 
 		fetch(`${API_URL}/api/autoplayer/ace-models`)
-			.then((r) => r.json())
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
 			.then((d) => setAceModels(d.models || []))
 			.catch(() => {});
 	}, []);
@@ -157,11 +163,17 @@ function SettingsPage() {
 		setOpenRouterLoading(true);
 		Promise.all([
 			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=text`)
-				.then((r) => r.json())
+				.then((r) => {
+					if (!r.ok) throw new Error(`HTTP ${r.status}`);
+					return r.json();
+				})
 				.then((d) => d.models || [])
 				.catch(() => []),
 			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=image`)
-				.then((r) => r.json())
+				.then((r) => {
+					if (!r.ok) throw new Error(`HTTP ${r.status}`);
+					return r.json();
+				})
 				.then((d) => d.models || [])
 				.catch(() => []),
 		]).then(([text, image]) => {

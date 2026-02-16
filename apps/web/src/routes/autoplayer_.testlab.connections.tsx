@@ -81,6 +81,7 @@ function ConnectionsTestPage() {
 							const modelsRes = await fetch(
 								`${API_URL}/api/autoplayer/ollama-models`,
 							);
+							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
 							const modelsData = await modelsRes.json();
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,
@@ -93,6 +94,7 @@ function ConnectionsTestPage() {
 							const modelsRes = await fetch(
 								`${API_URL}/api/autoplayer/ace-models`,
 							);
+							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
 							const modelsData = await modelsRes.json();
 							models = (modelsData.models || []).map(
 								(m: unknown) => (m as { name: string }).name,

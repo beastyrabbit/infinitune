@@ -104,7 +104,7 @@ app.get("/ace-models", async (c) => {
 
 		const rawModels = data.data || data.models || [];
 		const models = rawModels.map((m: { id?: string; name?: string }) => ({
-			name: m.id || m.name,
+			name: m.id || m.name || "unknown",
 			is_default: rawModels.length === 1,
 		}));
 
