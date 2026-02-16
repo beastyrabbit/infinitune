@@ -365,7 +365,7 @@ export interface PersonaInput {
 
 export async function generatePersonaExtract(options: {
 	song: PersonaInput;
-	provider: "ollama" | "openrouter";
+	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	signal?: AbortSignal;
 }): Promise<string> {
@@ -409,7 +409,7 @@ export async function generatePersonaExtract(options: {
 
 export async function generateSongMetadata(options: {
 	prompt: string;
-	provider: "ollama" | "openrouter";
+	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	lyricsLanguage?: string;
 	targetBpm?: number;

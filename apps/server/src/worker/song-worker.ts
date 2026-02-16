@@ -216,8 +216,11 @@ export class SongWorker {
 
 		const settings = await this.ctx.getSettings();
 		const effectiveProvider =
-			(settings.textProvider as "ollama" | "openrouter") ||
-			this.ctx.playlist.llmProvider;
+			(settings.textProvider as "ollama" | "openrouter" | "openai-codex") ||
+			(this.ctx.playlist.llmProvider as
+				| "ollama"
+				| "openrouter"
+				| "openai-codex");
 		const effectiveModel = settings.textModel || this.ctx.playlist.llmModel;
 
 		const prompt = this.song.interruptPrompt || this.ctx.playlist.prompt;

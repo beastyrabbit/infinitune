@@ -1,4 +1,11 @@
 import { Hono } from "hono";
+import { codexAppServerClient } from "../external/codex-app-server-client";
+import {
+	cancelCodexDeviceAuth,
+	getCodexDeviceAuthStatus,
+	getCodexLoginStatus,
+	startCodexDeviceAuth,
+} from "../external/codex-auth";
 import { getServiceUrls, getSetting } from "../external/service-urls";
 import { logger } from "../logger";
 
@@ -16,6 +23,13 @@ interface OpenRouterModel {
 	context_length: number;
 	architecture?: { modality?: string };
 	output_modalities?: string[];
+}
+
+interface CodexModelResponse {
+	id: string;
+	displayName: string;
+	inputModalities: string[];
+	isDefault: boolean;
 }
 
 const app = new Hono();
@@ -191,6 +205,119 @@ app.get("/openrouter-models", async (c) => {
 	}
 });
 
+// ─── GET /codex-models ──────────────────────────────────────────────
+app.get("/codex-models", async (c) => {
+	try {
+		const account = await codexAppServerClient.readAccount();
+		if (!account.account || account.account.type !== "chatgpt") {
+			return c.json(
+				{
+					error:
+						"OpenAI Codex requires ChatGPT login. Start device auth in Settings.",
+					models: [],
+				},
+				401,
+			);
+		}
+
+		const modelList = await codexAppServerClient.listModels();
+		const models = modelList.map((m: CodexModelResponse) => ({
+			name: m.id,
+			displayName: m.displayName,
+			type: m.inputModalities.includes("text") ? "text" : "unknown",
+			inputModalities: m.inputModalities,
+			is_default: m.isDefault,
+		}));
+
+		return c.json({
+			models,
+			account: {
+				type: account.account.type,
+				email: account.account.email,
+				planType: account.account.planType,
+			},
+		});
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to fetch Codex models");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to fetch Codex models",
+				models: [],
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /codex-auth/start ─────────────────────────────────────────
+app.post("/codex-auth/start", async (c) => {
+	try {
+		const session = await startCodexDeviceAuth();
+		return c.json({ session });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to start Codex device auth");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to start Codex device auth",
+			},
+			500,
+		);
+	}
+});
+
+// ─── GET /codex-auth/status ────────────────────────────────────────
+app.get("/codex-auth/status", async (c) => {
+	try {
+		const session = getCodexDeviceAuthStatus();
+		const loginStatus = await getCodexLoginStatus();
+		return c.json({ session, loginStatus });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to read Codex auth status");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to read Codex auth status",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /codex-auth/cancel ───────────────────────────────────────
+app.post("/codex-auth/cancel", async (c) => {
+	try {
+		let sessionId: string | undefined;
+		try {
+			const body = await c.req.json<{ sessionId?: string }>();
+			sessionId = body.sessionId;
+		} catch {
+			// No body provided; cancel current session.
+		}
+
+		const session = cancelCodexDeviceAuth(sessionId);
+		return c.json({ session });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to cancel Codex device auth");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to cancel Codex device auth",
+			},
+			500,
+		);
+	}
+});
+
 // ─── POST /test-connection ──────────────────────────────────────────
 app.post("/test-connection", async (c) => {
 	try {
@@ -245,6 +372,22 @@ app.post("/test-connection", async (c) => {
 				});
 			}
 			return c.json({ ok: true, message: "Connected to OpenRouter" });
+		}
+
+		if (provider === "openai-codex") {
+			const account = await codexAppServerClient.readAccount();
+			if (!account.account || account.account.type !== "chatgpt") {
+				return c.json({
+					ok: false,
+					error:
+						"Not authenticated with ChatGPT. Start Codex device auth in Settings.",
+				});
+			}
+			const models = await codexAppServerClient.listModels();
+			return c.json({
+				ok: true,
+				message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
+			});
 		}
 
 		if (provider === "comfyui") {
