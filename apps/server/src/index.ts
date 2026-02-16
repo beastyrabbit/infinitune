@@ -97,6 +97,11 @@ app.route("/api/playlists", playlistsRoutes);
 app.route("/api/songs", songsRoutes);
 app.route("/api/v1", createRoomRoutes(roomManager));
 
+// ─── Legacy audio URL redirect ──────────────────────────────────────
+app.get("/api/autoplayer/audio/:id", (c) => {
+	return c.redirect(`/api/songs/${c.req.param("id")}/audio`, 301);
+});
+
 // ─── Static file serving for covers ──────────────────────────────────
 const DATA_ROOT = path.resolve(import.meta.dirname, "../../../data");
 app.use(

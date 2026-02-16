@@ -660,8 +660,7 @@ export class SongWorker {
 
 		if (this.aborted) return;
 
-		const encodedAudioPath = encodeURIComponent(audioPath);
-		const audioUrl = `/api/autoplayer/audio/${this.songId}?aceAudioPath=${encodedAudioPath}`;
+		const audioUrl = `/api/songs/${this.songId}/audio`;
 		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
 		await playlistService.incrementGenerated(this.ctx.playlist.id);
 
