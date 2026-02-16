@@ -555,7 +555,7 @@ async function handlePlaylistStatusChanged(data: {
 		playlistEpochs.delete(playlistId);
 	}
 
-	if (to === "active" && from === "closing") {
+	if (to === "active" && (from === "closing" || from === "closed")) {
 		// Re-activate heartbeat timer on reactivation
 		resetHeartbeatTimer(playlistId);
 		// Re-check buffer deficit

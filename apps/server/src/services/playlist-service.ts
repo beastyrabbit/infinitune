@@ -240,7 +240,10 @@ export async function heartbeat(id: string) {
 	if (!row) return;
 
 	const patch: Record<string, unknown> = { lastSeenAt: Date.now() };
-	const shouldReactivate = row.status === "closing";
+	const fromStatus = row.status;
+	const shouldReactivate =
+		row.mode !== "oneshot" &&
+		(fromStatus === "closing" || fromStatus === "closed");
 	if (shouldReactivate) {
 		patch.status = "active";
 	}
@@ -252,7 +255,7 @@ export async function heartbeat(id: string) {
 	if (shouldReactivate) {
 		emit("playlist.status_changed", {
 			playlistId: id,
-			from: "closing",
+			from: fromStatus,
 			to: "active",
 		});
 	}
