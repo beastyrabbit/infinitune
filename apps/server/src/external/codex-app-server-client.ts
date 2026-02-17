@@ -675,9 +675,9 @@ export class CodexAppServerClient {
 				current.properties = normalizedProperties;
 				const propertyKeys = Object.keys(normalizedProperties);
 				if (propertyKeys.length > 0) {
-					if (!Array.isArray(current.required)) {
-						current.required = propertyKeys;
-					}
+					// Codex structured output requires `required` to include every key in
+					// `properties`, even when the originating schema had optional fields.
+					current.required = propertyKeys;
 					if (current.additionalProperties === undefined) {
 						current.additionalProperties = false;
 					}
