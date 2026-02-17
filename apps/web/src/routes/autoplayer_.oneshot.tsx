@@ -16,7 +16,7 @@ import {
 	VolumeX,
 	Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
+import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import {
 	useCreatePlaylist,
@@ -63,6 +64,9 @@ export const Route = createFileRoute("/autoplayer_/oneshot")({
 
 interface ModelOption {
 	name: string;
+	displayName?: string;
+	is_default?: boolean;
+	inputModalities?: string[];
 	type?: string;
 	vision?: boolean;
 }
@@ -100,6 +104,7 @@ function OneshotPage() {
 	const [provider, setProvider] = useState<LlmProvider>("ollama");
 	const [model, setModel] = useState("");
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
+	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
 	const [enhancing, setEnhancing] = useState(false);
 	const [generating, setGenerating] = useState(false);
 	const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -135,6 +140,7 @@ function OneshotPage() {
 		isMuted,
 	} = useStore(playerStore);
 	useVolumeSync();
+	usePlaylistHeartbeat(playlistId);
 
 	// Auto-play when song becomes ready
 	const hasAutoPlayed = useRef(false);
@@ -182,11 +188,46 @@ function OneshotPage() {
 				}
 			})
 			.catch(() => {});
+
+		fetch(`${API_URL}/api/autoplayer/codex-models`)
+			.then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				return r.json();
+			})
+			.then((d) => setCodexModels(d.models || []))
+			.catch(() => setCodexModels([]));
 	}, []);
 
-	const textModels = ollamaModels.filter(
-		(m) => m.type === "text" || (!m.type && !m.vision),
+	const textModels = useMemo(
+		() =>
+			ollamaModels.filter((m) => m.type === "text" || (!m.type && !m.vision)),
+		[ollamaModels],
 	);
+	const codexTextModels = useMemo(
+		() =>
+			codexModels.filter(
+				(m) => m.type === "text" || m.inputModalities?.includes("text"),
+			),
+		[codexModels],
+	);
+
+	useEffect(() => {
+		if (provider === "ollama" && textModels.length > 0) {
+			if (!textModels.some((m) => m.name === model)) {
+				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
+				setModel(preferred ? preferred.name : textModels[0].name);
+			}
+			return;
+		}
+
+		if (provider === "openai-codex" && codexTextModels.length > 0) {
+			if (!codexTextModels.some((m) => m.name === model)) {
+				const preferred =
+					codexTextModels.find((m) => m.is_default) || codexTextModels[0];
+				setModel(preferred.name);
+			}
+		}
+	}, [provider, model, textModels, codexTextModels]);
 
 	// ── Handlers ──
 	const handleEnhancePrompt = useCallback(async () => {
@@ -449,6 +490,17 @@ function OneshotPage() {
 										>
 											OPENROUTER
 										</button>
+										<button
+											type="button"
+											className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+												provider === "openai-codex"
+													? "bg-yellow-500 text-black border-yellow-500"
+													: "bg-transparent text-white hover:bg-white/10"
+											}`}
+											onClick={() => setProvider("openai-codex")}
+										>
+											OPENAI CODEX
+										</button>
 									</div>
 								</div>
 
@@ -474,13 +526,34 @@ function OneshotPage() {
 												))}
 											</SelectContent>
 										</Select>
+									) : provider === "openai-codex" &&
+										codexTextModels.length > 0 ? (
+										<Select value={model} onValueChange={setModel}>
+											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+												<SelectValue placeholder="SELECT CODEX MODEL" />
+											</SelectTrigger>
+											<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+												{codexTextModels.map((m) => (
+													<SelectItem
+														key={m.name}
+														value={m.name}
+														className="font-mono text-sm font-bold uppercase text-white"
+													>
+														{(m.displayName || m.name).toUpperCase()}
+														{m.is_default ? " (DEFAULT)" : ""}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
 									) : (
 										<Input
 											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 											placeholder={
 												provider === "openrouter"
 													? "GOOGLE/GEMINI-2.5-FLASH"
-													: "LLAMA3.1:8B"
+													: provider === "openai-codex"
+														? "GPT-5.3-CODEX"
+														: "LLAMA3.1:8B"
 											}
 											value={model}
 											onChange={(e) => setModel(e.target.value)}

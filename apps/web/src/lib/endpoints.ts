@@ -45,3 +45,19 @@ export const EVENT_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws`;
 
 /** WebSocket URL for the room protocol (/ws/room). */
 export const ROOM_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws/room`;
+
+/**
+ * Resolves media URLs from API payloads.
+ * Relative paths (e.g. `/api/songs/:id/audio`) are resolved against API_URL.
+ */
+export function resolveApiMediaUrl(
+	url: string | null | undefined,
+): string | null {
+	if (!url) return null;
+	if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+	try {
+		return new URL(url, API_URL).toString();
+	} catch {
+		return url;
+	}
+}

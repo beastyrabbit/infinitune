@@ -466,6 +466,21 @@ describe("worker event handlers", () => {
 
 			expect(songService.createPending).toHaveBeenCalledTimes(2);
 		});
+
+		it("re-checks buffer on reactivation (closed → active)", async () => {
+			vi.mocked(playlistService.getById).mockResolvedValue(mockPlaylist());
+			vi.mocked(songService.getWorkQueue).mockResolvedValue(
+				mockWorkQueue({ bufferDeficit: 1, maxOrderIndex: 9 }),
+			);
+
+			await handlePlaylistStatusChanged({
+				playlistId: "pl-1",
+				from: "closed",
+				to: "active",
+			});
+
+			expect(songService.createPending).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	// ─── handlePlaylistSteered ──────────────────────────────────────

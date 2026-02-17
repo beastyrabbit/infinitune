@@ -216,8 +216,11 @@ export class SongWorker {
 
 		const settings = await this.ctx.getSettings();
 		const effectiveProvider =
-			(settings.textProvider as "ollama" | "openrouter") ||
-			this.ctx.playlist.llmProvider;
+			(settings.textProvider as "ollama" | "openrouter" | "openai-codex") ||
+			(this.ctx.playlist.llmProvider as
+				| "ollama"
+				| "openrouter"
+				| "openai-codex");
 		const effectiveModel = settings.textModel || this.ctx.playlist.llmModel;
 
 		const prompt = this.song.interruptPrompt || this.ctx.playlist.prompt;
@@ -316,11 +319,6 @@ export class SongWorker {
 			songLogger(this.songId).error(
 				{ error: msg },
 				"Metadata generation failed",
-			);
-			await songService.markError(
-				this.songId,
-				msg || "Metadata generation failed",
-				"generating_metadata",
 			);
 			throw error;
 		}
@@ -477,11 +475,6 @@ export class SongWorker {
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
 			songLogger(this.songId).error({ error: msg }, "Audio submission failed");
-			await songService.markError(
-				this.songId,
-				msg || "Audio generation failed",
-				"submitting_to_ace",
-			);
 			throw error;
 		}
 	}
@@ -518,11 +511,6 @@ export class SongWorker {
 				{ error: msg },
 				"Audio poll failed after resume",
 			);
-			await songService.markError(
-				this.songId,
-				msg || "Audio poll failed after resume",
-				"generating_audio",
-			);
 			throw error;
 		}
 	}
@@ -539,11 +527,6 @@ export class SongWorker {
 			songLogger(this.songId).error(
 				{ error: audioResult.error },
 				"ACE generation failed",
-			);
-			await songService.markError(
-				this.songId,
-				audioResult.error || "Audio generation failed",
-				"generating_audio",
 			);
 			throw new Error(audioResult.error || "Audio generation failed");
 		} else if (status === "not_found") {

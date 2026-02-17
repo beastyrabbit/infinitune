@@ -29,7 +29,7 @@ interface LikedSong {
 
 interface AlbumTrackRequest {
 	playlistPrompt: string;
-	provider: "ollama" | "openrouter";
+	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	sourceSong: SourceSong;
 	likedSongs?: LikedSong[];

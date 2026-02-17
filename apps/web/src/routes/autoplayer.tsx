@@ -87,6 +87,14 @@ function AutoplayerPage() {
 	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const playlistId = playlistByKey?.id ?? null;
 
+	// Keep oneshot playlists on the dedicated oneshot route.
+	useEffect(() => {
+		if (isRoomMode) return;
+		if (!pl) return;
+		if (playlistByKey?.mode !== "oneshot") return;
+		navigate({ to: "/autoplayer/oneshot", search: { pl } });
+	}, [isRoomMode, pl, playlistByKey?.mode, navigate]);
+
 	const createPlaylist = useCreatePlaylist();
 	const updateStatus = useUpdatePlaylistStatus();
 	const setRatingMut = useSetRating();
@@ -292,15 +300,19 @@ function AutoplayerPage() {
 			// 3. Provider set but model empty + different from text → skip precheck
 			const explicitPP = settings?.personaProvider || "";
 			const explicitPM = settings?.personaModel || "";
-			let pProvider: "ollama" | "openrouter";
+			let pProvider: "ollama" | "openrouter" | "openai-codex";
 			let pModel: string;
 			if (explicitPM) {
-				pProvider = (explicitPP || "ollama") as "ollama" | "openrouter";
+				pProvider = (explicitPP || "ollama") as
+					| "ollama"
+					| "openrouter"
+					| "openai-codex";
 				pModel = explicitPM;
 			} else if (!explicitPP || explicitPP === settings?.textProvider) {
 				pProvider = (settings?.textProvider || "ollama") as
 					| "ollama"
-					| "openrouter";
+					| "openrouter"
+					| "openai-codex";
 				pModel = settings?.textModel || "";
 			} else {
 				pProvider = "ollama";

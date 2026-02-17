@@ -247,18 +247,22 @@ async function runPersonaScan(
 		settings.personaModel && settings.personaModel !== "__fallback__"
 			? settings.personaModel
 			: "";
-	let pProvider: "ollama" | "openrouter";
+	let pProvider: "ollama" | "openrouter" | "openai-codex";
 	let pModel: string;
 	if (explicitPersonaModel) {
 		pProvider = (explicitPersonaProvider || "ollama") as
 			| "ollama"
-			| "openrouter";
+			| "openrouter"
+			| "openai-codex";
 		pModel = explicitPersonaModel;
 	} else if (
 		!explicitPersonaProvider ||
 		explicitPersonaProvider === settings.textProvider
 	) {
-		pProvider = (settings.textProvider || "ollama") as "ollama" | "openrouter";
+		pProvider = (settings.textProvider || "ollama") as
+			| "ollama"
+			| "openrouter"
+			| "openai-codex";
 		pModel = settings.textModel;
 	} else {
 		logger.info(
@@ -388,7 +392,10 @@ async function handleSongStatusChanged(data: {
 	if (to === "retry_pending") {
 		try {
 			await songService.retryErrored(songId);
-			songLogger(songId, playlistId).info("Auto-retried song");
+			songLogger(songId, playlistId).info(
+				{ from: data.from, to: data.to },
+				"Auto-retried song",
+			);
 		} catch (err) {
 			songLogger(songId, playlistId).error({ err }, "Failed to retry song");
 		}
@@ -548,7 +555,7 @@ async function handlePlaylistStatusChanged(data: {
 		playlistEpochs.delete(playlistId);
 	}
 
-	if (to === "active" && from === "closing") {
+	if (to === "active" && (from === "closing" || from === "closed")) {
 		// Re-activate heartbeat timer on reactivation
 		resetHeartbeatTimer(playlistId);
 		// Re-check buffer deficit
@@ -597,7 +604,7 @@ async function reconcileAceState() {
 
 	logger.info({ count: songs.length }, "Reconciling songs in audio pipeline");
 
-	const taskIds = songs.filter((s) => s.aceTaskId).map((s) => s.aceTaskId!);
+	const taskIds = songs.flatMap((s) => (s.aceTaskId ? [s.aceTaskId] : []));
 
 	if (taskIds.length > 0) {
 		let aceStatus: Map<string, { status: string; audioPath?: string }>;

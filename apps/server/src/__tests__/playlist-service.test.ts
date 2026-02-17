@@ -241,7 +241,7 @@ describe("playlist-service", () => {
 			});
 		});
 
-		it("does NOT reactivate closed playlist", async () => {
+		it("reactivates closed endless playlist", async () => {
 			const db = getTestDb();
 			const [pl] = await db
 				.insert(playlists)
@@ -250,6 +250,37 @@ describe("playlist-service", () => {
 					prompt: "test",
 					llmProvider: "ollama",
 					llmModel: "llama3",
+					status: "closed",
+				})
+				.returning();
+
+			await playlistService.heartbeat(pl.id);
+
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+			expect(updated.status).toBe("active");
+
+			const statusEvent = emittedEvents.find(
+				(e) => e.event === "playlist.status_changed",
+			);
+			expect(statusEvent?.data).toMatchObject({
+				from: "closed",
+				to: "active",
+			});
+		});
+
+		it("does NOT reactivate closed oneshot playlist", async () => {
+			const db = getTestDb();
+			const [pl] = await db
+				.insert(playlists)
+				.values({
+					name: "Test",
+					prompt: "test",
+					llmProvider: "ollama",
+					llmModel: "llama3",
+					mode: "oneshot",
 					status: "closed",
 				})
 				.returning();

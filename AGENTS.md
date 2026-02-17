@@ -115,6 +115,10 @@ Production Docker builds intentionally leave `VITE_API_URL` empty. The browser a
 
 Gateway using Vercel AI SDK (`ai` package) with per-provider semaphores (ollama:1, openrouter:5). Three exports: `callLlmText()` for plain text, `callLlmObject<T>()` for Zod-validated structured output, `callImageGen()` for images. Provider factory handles Ollama (`ollama-ai-provider-v2`) and OpenRouter (`@openrouter/ai-sdk-provider`).
 
+### Codex Structured Output Gotcha
+
+Codex `outputSchema` validation is strict: when a node has `properties`, its `required` array must include every property key. If optional Zod fields are left out of `required`, Codex can fail with `invalid_json_schema` (for example: `Missing 'coverPrompt'`). Keep `normalizeCodexOutputSchema` aligned with this requirement.
+
 ## Database Schema (SQLite)
 
 - **playlists**: prompt, llmProvider/Model, mode (endless/oneshot), status (active/closing/closed), promptEpoch, steerHistory (JSON text), generation params

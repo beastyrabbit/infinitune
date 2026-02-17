@@ -1,7 +1,9 @@
+import type { LlmProvider } from "@infinitune/shared/types";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateImage, generateObject, generateText } from "ai";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { ZodType } from "zod";
+import { codexAppServerClient } from "./codex-app-server-client";
 import { getServiceUrls, getSetting } from "./service-urls";
 
 // ---------------------------------------------------------------------------
@@ -9,11 +11,12 @@ import { getServiceUrls, getSetting } from "./service-urls";
 // concurrent OpenRouter requests from the web server process.
 // ---------------------------------------------------------------------------
 
-type Provider = "ollama" | "openrouter";
+type Provider = LlmProvider;
 
 const LIMITS: Record<Provider, number> = {
 	ollama: 1,
 	openrouter: 5,
+	"openai-codex": 2,
 };
 
 interface Waiter {
@@ -73,6 +76,7 @@ class ProviderSemaphore {
 const semaphores: Record<Provider, ProviderSemaphore> = {
 	ollama: new ProviderSemaphore(LIMITS.ollama),
 	openrouter: new ProviderSemaphore(LIMITS.openrouter),
+	"openai-codex": new ProviderSemaphore(LIMITS["openai-codex"]),
 };
 
 // ---------------------------------------------------------------------------
@@ -87,7 +91,10 @@ async function getOpenRouterApiKey(): Promise<string> {
 	);
 }
 
-async function getLanguageModel(provider: Provider, model: string) {
+async function getLanguageModel(
+	provider: Exclude<Provider, "openai-codex">,
+	model: string,
+) {
 	if (provider === "openrouter") {
 		const or = createOpenRouter({ apiKey: await getOpenRouterApiKey() });
 		return or(model, { plugins: [{ id: "response-healing" }] });
@@ -131,6 +138,15 @@ export async function callLlmText(options: {
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
+		if (provider === "openai-codex") {
+			return await codexAppServerClient.generateText({
+				model,
+				system,
+				prompt,
+				signal,
+			});
+		}
+
 		const languageModel = await getLanguageModel(provider, model);
 		const providerOptions =
 			provider === "ollama" ? { ollama: { think: false } } : undefined;
@@ -180,6 +196,16 @@ export async function callLlmObject<T>(options: {
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
+		if (provider === "openai-codex") {
+			return await codexAppServerClient.generateObject({
+				model,
+				system,
+				prompt,
+				schema,
+				signal,
+			});
+		}
+
 		const languageModel = await getLanguageModel(provider, model);
 		const providerOptions =
 			provider === "ollama"

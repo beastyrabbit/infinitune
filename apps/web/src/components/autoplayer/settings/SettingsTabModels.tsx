@@ -11,9 +11,11 @@ import { SettingsField, SettingsPanel } from "./SettingsPanel";
 
 export interface ModelOption {
 	name: string;
+	displayName?: string;
 	is_default?: boolean;
 	vision?: boolean;
 	type?: string;
+	inputModalities?: string[];
 }
 
 export interface OpenRouterModelOption {
@@ -44,6 +46,8 @@ export interface ModelsTabProps {
 	openRouterTextModels: OpenRouterModelOption[];
 	openRouterImageModels: OpenRouterModelOption[];
 	openRouterLoading: boolean;
+	codexModels: ModelOption[];
+	codexLoading: boolean;
 }
 
 const inputClass =
@@ -230,9 +234,14 @@ export function SettingsTabModels({
 	openRouterTextModels,
 	openRouterImageModels,
 	openRouterLoading,
+	codexModels,
+	codexLoading,
 }: ModelsTabProps) {
 	const textModels = ollamaModels.filter(
 		(m) => m.type === "text" || (!m.type && !m.vision),
+	);
+	const codexTextModels = codexModels.filter(
+		(m) => m.type === "text" || m.inputModalities?.includes("text"),
 	);
 
 	return (
@@ -244,6 +253,7 @@ export function SettingsTabModels({
 						options={[
 							{ value: "ollama", label: "OLLAMA" },
 							{ value: "openrouter", label: "OPENROUTER" },
+							{ value: "openai-codex", label: "OPENAI CODEX" },
 						]}
 						value={textProvider}
 						onChange={setTextProvider}
@@ -276,6 +286,44 @@ export function SettingsTabModels({
 							placeholder="GOOGLE/GEMINI-2.5-FLASH"
 							loading={openRouterLoading}
 						/>
+					) : textProvider === "openai-codex" ? (
+						codexLoading ? (
+							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+									LOADING CODEX MODELS...
+								</span>
+							</div>
+						) : codexTextModels.length > 0 ? (
+							<Select value={textModel} onValueChange={setTextModel}>
+								<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+									<SelectValue placeholder="SELECT CODEX MODEL" />
+								</SelectTrigger>
+								<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+									{codexTextModels.map((m) => (
+										<SelectItem
+											key={m.name}
+											value={m.name}
+											className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+										>
+											{(m.displayName || m.name).toUpperCase()}
+											{m.is_default ? " (DEFAULT)" : ""}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : (
+							<div>
+								<Input
+									className={inputClass}
+									placeholder="GPT-5.3-CODEX"
+									value={textModel}
+									onChange={(e) => setTextModel(e.target.value)}
+								/>
+								<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
+									SIGN IN ON NETWORK TAB TO LOAD CODEX MODEL LIST
+								</p>
+							</div>
+						)
 					) : (
 						<Input
 							className={inputClass}
@@ -363,6 +411,7 @@ export function SettingsTabModels({
 						options={[
 							{ value: "ollama", label: "OLLAMA" },
 							{ value: "openrouter", label: "OPENROUTER" },
+							{ value: "openai-codex", label: "OPENAI CODEX" },
 						]}
 						value={personaProvider}
 						onChange={setPersonaProvider}
@@ -371,7 +420,12 @@ export function SettingsTabModels({
 
 				<SettingsField label="Model">
 					{personaProvider === "ollama" && textModels.length > 0 ? (
-						<Select value={personaModel} onValueChange={setPersonaModel}>
+						<Select
+							value={personaModel || "__fallback__"}
+							onValueChange={(value) =>
+								setPersonaModel(value === "__fallback__" ? "" : value)
+							}
+						>
 							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
 								<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
 							</SelectTrigger>
@@ -401,6 +455,49 @@ export function SettingsTabModels({
 							placeholder="USES TEXT MODEL IF EMPTY"
 							loading={openRouterLoading}
 						/>
+					) : personaProvider === "openai-codex" ? (
+						codexLoading ? (
+							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+									LOADING CODEX MODELS...
+								</span>
+							</div>
+						) : codexTextModels.length > 0 ? (
+							<Select
+								value={personaModel || "__fallback__"}
+								onValueChange={(value) =>
+									setPersonaModel(value === "__fallback__" ? "" : value)
+								}
+							>
+								<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+									<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
+								</SelectTrigger>
+								<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+									<SelectItem
+										value="__fallback__"
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										USE TEXT MODEL
+									</SelectItem>
+									{codexTextModels.map((m) => (
+										<SelectItem
+											key={m.name}
+											value={m.name}
+											className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+										>
+											{(m.displayName || m.name).toUpperCase()}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : (
+							<Input
+								className={inputClass}
+								placeholder="USES TEXT MODEL IF EMPTY"
+								value={personaModel}
+								onChange={(e) => setPersonaModel(e.target.value)}
+							/>
+						)
 					) : (
 						<Input
 							className={inputClass}

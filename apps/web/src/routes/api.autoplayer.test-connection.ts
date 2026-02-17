@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { API_URL } from "@/lib/endpoints";
 import { getServiceUrls } from "@/lib/server-settings";
 
 export const Route = createFileRoute("/api/autoplayer/test-connection")({
@@ -65,6 +66,23 @@ export const Route = createFileRoute("/api/autoplayer/test-connection")({
 							JSON.stringify({ ok: true, message: "Connected to OpenRouter" }),
 							{ headers: { "Content-Type": "application/json" } },
 						);
+					}
+
+					if (provider === "openai-codex") {
+						const response = await fetch(
+							`${API_URL}/api/autoplayer/test-connection`,
+							{
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({ provider: "openai-codex" }),
+								signal: AbortSignal.timeout(5000),
+							},
+						);
+						const data = await response.json();
+						return new Response(JSON.stringify(data), {
+							status: response.status,
+							headers: { "Content-Type": "application/json" },
+						});
 					}
 
 					if (provider === "comfyui") {

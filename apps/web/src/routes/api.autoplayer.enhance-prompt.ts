@@ -52,7 +52,7 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 					}
 
 					const result = await callLlmText({
-						provider: provider as "ollama" | "openrouter",
+						provider: provider as "ollama" | "openrouter" | "openai-codex",
 						model,
 						system: SYSTEM_PROMPT,
 						prompt: trimmedPrompt,

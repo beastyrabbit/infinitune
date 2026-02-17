@@ -11,6 +11,7 @@ import { RequestResponseQueue } from "./request-response-queue";
 const LLM_CONCURRENCY: Record<string, number> = {
 	ollama: 1,
 	openrouter: 5,
+	"openai-codex": 2,
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {

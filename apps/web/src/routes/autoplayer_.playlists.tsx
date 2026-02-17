@@ -203,7 +203,10 @@ function PlaylistsPage() {
 									onOpen={() => {
 										if (p.playlistKey) {
 											navigate({
-												to: "/autoplayer",
+												to:
+													p.mode === "oneshot"
+														? "/autoplayer/oneshot"
+														: "/autoplayer",
 												search: { pl: p.playlistKey },
 											});
 										}

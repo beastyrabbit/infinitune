@@ -5,6 +5,7 @@ import { db, sqlite } from "../db/index";
 import type { Song } from "../db/schema";
 import { playlists, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
+import { songLogger } from "../logger";
 import { parseJsonField, songToWire } from "../wire";
 
 // ─── Metadata field definitions ──────────────────────────────────────
@@ -347,20 +348,33 @@ export async function markError(
 	const retryCount = song.retryCount || 0;
 	const canRetry = retryCount < 3;
 	const newStatus = canRetry ? "retry_pending" : "error";
+	const fromStatus = song.status;
+	const effectiveErroredAtStatus = erroredAtStatus || fromStatus;
 
 	await db
 		.update(songs)
 		.set({
 			status: newStatus,
 			errorMessage,
-			erroredAtStatus: erroredAtStatus || song.status,
+			erroredAtStatus: effectiveErroredAtStatus,
 		})
 		.where(eq(songs.id, id));
+	songLogger(id, song.playlistId).warn(
+		{
+			fromStatus,
+			toStatus: newStatus,
+			retryCount,
+			nextRetryCount: canRetry ? retryCount + 1 : retryCount,
+			erroredAtStatus: effectiveErroredAtStatus,
+			errorMessage,
+		},
+		"Song marked as errored",
+	);
 
 	emit("song.status_changed", {
 		songId: id,
 		playlistId: song.playlistId,
-		from: song.status,
+		from: fromStatus,
 		to: newStatus,
 	});
 }
@@ -384,6 +398,16 @@ export async function retryErrored(id: string) {
 			generationStartedAt: Date.now(),
 		})
 		.where(eq(songs.id, id));
+	songLogger(id, song.playlistId).info(
+		{
+			fromStatus: "retry_pending",
+			toStatus: revertTo,
+			retryCount: song.retryCount || 0,
+			nextRetryCount: (song.retryCount || 0) + 1,
+			previousErroredAtStatus: song.erroredAtStatus,
+		},
+		"Song retry scheduled",
+	);
 
 	emit("song.status_changed", {
 		songId: id,

@@ -30,6 +30,8 @@ interface ActiveSlot {
 	songId: string;
 	taskId: string;
 	submittedAt: number;
+	startedAt: number;
+	waitMs: number;
 	submitProcessingMs: number;
 	priority: number;
 	resolve: (result: QueueResult<AudioResult>) => void;
@@ -147,6 +149,20 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			if (slot.abortController.signal.aborted) return;
 
 			if (result.status === "succeeded") {
+				const processingMs = Date.now() - slot.submittedAt;
+				logger.debug(
+					{
+						queueType: "audio",
+						songId: slot.songId,
+						taskId: slot.taskId,
+						priority: slot.priority,
+						waitMs: slot.waitMs,
+						submitProcessingMs: slot.submitProcessingMs,
+						pollingMs: processingMs,
+						totalMs: Date.now() - slot.startedAt,
+					},
+					"Audio queue task completed",
+				);
 				slot.resolve({
 					result: {
 						taskId: slot.taskId,
@@ -154,12 +170,27 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 						audioPath: result.audioPath,
 						submitProcessingMs: slot.submitProcessingMs,
 					},
-					processingMs: Date.now() - slot.submittedAt,
+					processingMs,
 				});
 				onDone();
 			} else if (result.status === "failed") {
 				this.errorCount++;
 				this.lastErrorMessage = result.error || "Audio generation failed";
+				const processingMs = Date.now() - slot.submittedAt;
+				logger.warn(
+					{
+						queueType: "audio",
+						songId: slot.songId,
+						taskId: slot.taskId,
+						priority: slot.priority,
+						waitMs: slot.waitMs,
+						submitProcessingMs: slot.submitProcessingMs,
+						pollingMs: processingMs,
+						totalMs: Date.now() - slot.startedAt,
+						error: result.error,
+					},
+					"Audio queue task failed",
+				);
 				slot.resolve({
 					result: {
 						taskId: slot.taskId,
@@ -167,12 +198,25 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 						error: result.error,
 						submitProcessingMs: slot.submitProcessingMs,
 					},
-					processingMs: Date.now() - slot.submittedAt,
+					processingMs,
 				});
 				onDone();
 			} else if (result.status === "not_found") {
 				const elapsed = Date.now() - slot.submittedAt;
 				if (elapsed >= NOT_FOUND_GRACE_MS) {
+					logger.warn(
+						{
+							queueType: "audio",
+							songId: slot.songId,
+							taskId: slot.taskId,
+							priority: slot.priority,
+							waitMs: slot.waitMs,
+							submitProcessingMs: slot.submitProcessingMs,
+							pollingMs: elapsed,
+							totalMs: Date.now() - slot.startedAt,
+						},
+						"Audio queue task not found after grace period",
+					);
 					slot.resolve({
 						result: {
 							taskId: slot.taskId,
@@ -210,6 +254,8 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 
 		const item = this.pending.shift()!;
 		const abortController = new AbortController();
+		const startedAt = Date.now();
+		const waitMs = startedAt - item.enqueuedAt;
 
 		// Resumed poll — no submission needed, just set up for polling
 		if (item.resumeTaskId) {
@@ -217,12 +263,25 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 				songId: item.request.songId,
 				taskId: item.resumeTaskId,
 				submittedAt: item.resumeSubmittedAt ?? Date.now(),
+				startedAt,
+				waitMs,
 				submitProcessingMs: 0,
 				priority: item.request.priority,
 				resolve: item.resolve,
 				reject: item.reject,
 				abortController,
 			};
+			logger.debug(
+				{
+					queueType: "audio",
+					songId: item.request.songId,
+					taskId: item.resumeTaskId,
+					priority: item.request.priority,
+					waitMs,
+					pendingAfterDequeue: this.pending.length,
+				},
+				"Audio queue resumed task",
+			);
 			return;
 		}
 
@@ -232,6 +291,8 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			songId: item.request.songId,
 			taskId: "", // not yet known
 			submittedAt: submitStartedAt,
+			startedAt,
+			waitMs,
 			submitProcessingMs: 0,
 			priority: item.request.priority,
 			resolve: item.resolve,
@@ -239,6 +300,16 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			abortController,
 		};
 		this.active = placeholder;
+		logger.debug(
+			{
+				queueType: "audio",
+				songId: item.request.songId,
+				priority: item.request.priority,
+				waitMs,
+				pendingAfterDequeue: this.pending.length,
+			},
+			"Audio queue submission started",
+		);
 
 		item.request
 			.execute(abortController.signal)
@@ -248,11 +319,48 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 				placeholder.taskId = result.taskId;
 				placeholder.submittedAt = Date.now();
 				placeholder.submitProcessingMs = submitProcessingMs;
+				logger.debug(
+					{
+						queueType: "audio",
+						songId: item.request.songId,
+						taskId: result.taskId,
+						priority: item.request.priority,
+						waitMs,
+						submitProcessingMs,
+					},
+					"Audio queue submission complete, polling started",
+				);
 			})
 			.catch((error: unknown) => {
 				this.errorCount++;
 				this.lastErrorMessage =
 					error instanceof Error ? error.message : String(error);
+				const message =
+					error instanceof Error ? error.message : "Audio submission failed";
+				if (message === "Cancelled") {
+					logger.debug(
+						{
+							queueType: "audio",
+							songId: item.request.songId,
+							priority: item.request.priority,
+							waitMs,
+							submitProcessingMs: Date.now() - submitStartedAt,
+						},
+						"Audio queue submission cancelled",
+					);
+				} else {
+					logger.warn(
+						{
+							queueType: "audio",
+							songId: item.request.songId,
+							priority: item.request.priority,
+							waitMs,
+							submitProcessingMs: Date.now() - submitStartedAt,
+							err: error,
+						},
+						"Audio queue submission failed",
+					);
+				}
 				item.reject(error instanceof Error ? error : new Error(String(error)));
 				// Free the slot on submit failure
 				this.active = null;

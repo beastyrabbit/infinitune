@@ -29,7 +29,7 @@
 - **Gapless Playback** — next song preloads in background, zero gaps between tracks
 - **Rating & Feedback** — thumbs up/down to influence future generation
 - **Cover Art** — AI-generated vinyl-style album covers for every song
-- **Configurable AI** — switch between local (Ollama) and cloud (OpenRouter) LLMs on the fly
+- **Configurable AI** — switch between local (Ollama), cloud (OpenRouter), and OpenAI Codex (ChatGPT subscription) for LLM generation
 
 ## Screenshots
 
@@ -129,7 +129,7 @@ Infinitune includes an integrated **Room Server** for synchronized playback — 
 | **Worker** | Event-driven background pipeline · per-song workers · concurrency queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
 | **Cover Art** | ComfyUI (image generation) |
-| **LLM** | Vercel AI SDK · Ollama (local) or OpenRouter (cloud) |
+| **LLM** | Vercel AI SDK (Ollama/OpenRouter) + Codex App Server (`openai-codex`, ChatGPT subscription auth) |
 | **Build** | Vite 7 · TypeScript 5.7 · Biome (lint/format) · pnpm monorepo |
 
 ## Quick Start
@@ -154,6 +154,7 @@ Infinitune requires external AI services running on your network:
 | **Ollama** | Local LLM (metadata, lyrics) | `:11434` |
 | **ComfyUI** | Cover art generation | `:8188` |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
+| **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
 
 ### Environment Variables
 
@@ -168,9 +169,32 @@ COMFYUI_URL=http://<your-server>:8188
 # Optional — cloud LLM via OpenRouter
 OPENROUTER_API_KEY=sk-or-v1-...
 
+# Optional — override Codex turn timeout (default: 360000 / 6 minutes)
+CODEX_TURN_TIMEOUT_MS=360000
+
 # Where to store generated audio files
 MUSIC_STORAGE_PATH=/path/to/your/music/storage
 ```
+
+### OpenAI Codex (ChatGPT Subscription) Setup
+
+Use this when you want LLM generation to run through your ChatGPT subscription instead of API-key billing.
+
+1. Install the Codex CLI and verify it is on your `PATH` (`codex --version`).
+2. Open `Settings` → `Network` → `OPENAI CODEX (CHATGPT SUBSCRIPTION)`.
+3. Click `START DEVICE AUTH`, open the verification URL, and enter the one-time code.
+4. Wait for status `Authenticated with ChatGPT`.
+5. Pick `OPENAI CODEX` as provider in playlist creation or oneshot mode, then select a Codex model.
+
+Notes:
+- This project uses `codex app-server` for the `openai-codex` provider (not the Vercel AI SDK transport).
+- `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio still use ComfyUI + ACE-Step.
+
+### Playlist Lifecycle
+
+- Endless playlists move from `active` → `closing` after ~90s without heartbeat.
+- Opening an endless playlist page sends heartbeat and now reactivates both `closing` and `closed` playlists, then refills the song buffer.
+- Oneshot playlists remain closed after completion and are not auto-reactivated by heartbeat.
 
 ## Architecture
 
@@ -186,7 +210,7 @@ Unified Server (Hono on :5175)
   ├── Room manager (multi-device playback)
   ├── WebSocket bridge → Browser (event invalidation)
   └── External services:
-      ├── LLM (Ollama/OpenRouter via Vercel AI SDK)
+      ├── LLM (Ollama/OpenRouter via Vercel AI SDK + OpenAI Codex via Codex App Server)
       ├── ComfyUI → cover art
       └── ACE-Step 1.5 → audio synthesis
 ```
