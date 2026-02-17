@@ -3,20 +3,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { callLlmText } from "@/services/llm-client";
 
-const SYSTEM_PROMPT = `You are a music request enhancer. The user has typed a short song request. Expand it into a richer description for an AI music producer that uses an audio generation model.
+const SYSTEM_PROMPT = `You enhance short music requests for audio generation.
 
-CRITICAL RULES:
-- PRESERVE the user's original intent EXACTLY. If they say "german cover of bohemian rhapsody", the result MUST be about a german cover of bohemian rhapsody.
-- If they reference a specific song, artist, style, or concept — keep it front and center.
-- Do NOT redirect to a different genre or concept.
-
-ENRICH with these audio-generation-friendly dimensions:
-- Name 2-4 SPECIFIC instruments (e.g. "detuned Juno-106 pads", "fingerpicked nylon guitar", "tight 808 kick")
-- Add texture/production words (e.g. "warm tape saturation", "crisp digital production", "lo-fi vinyl crackle")
-- Describe the mood atmosphere (e.g. "hazy late-night", "euphoric festival energy", "intimate bedroom")
-- These details help the audio model produce more accurate results.
-
-Keep under 500 characters. Return ONLY the enhanced request text, nothing else.`;
+Requirements:
+- Output ONE compact paragraph under 500 characters. Return text only.
+- Start with the user's request verbatim, then append details.
+- Preserve the original intent and any named references exactly; do not introduce new themes/settings, eras, or genre pivots.
+- Add only actionable sonic detail that improves controllability.
+- Add exactly: 2-4 specific instruments, 1-3 production/texture cues, and one concise mood-atmosphere phrase.
+- Instruments must be genre-appropriate and must not add new genre tags (e.g., "jazz", "orchestral") unless the user mentioned them.
+- Mood phrase must reflect cues already present in the request (avoid invented vibes like "cinematic" unless implied).
+- Do not add explicit ambience/SFX layers unless the user asked for them.`;
 
 export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 	server: {

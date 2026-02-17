@@ -7,18 +7,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import z from "zod";
 import { callLlmObject } from "@/services/llm-client";
 
-const SYSTEM_PROMPT = `You are a music production expert. Given a music description, analyze it and determine optimal audio generation parameters.
+const SYSTEM_PROMPT = `You are a music production expert. Convert a session description into generation-ready parameters.
 
-Your response must conform to the provided JSON schema.
+Hard constraints:
+- lyricsLanguage MUST be "english" or "german" only. If ambiguous, choose "english".
+- Keep inferred parameters inside realistic genre ranges.
+- Do not add unrelated genres or concepts.
+- Prefer stable defaults over risky guesses.
 
-Field guidance:
-- lyricsLanguage: Must be one of: "english" or "german". Infer from the description (e.g. "German rock" -> "german"). If unclear, default to "english".
-- targetBpm: Beats per minute appropriate for the described genre (e.g. 70-90 for ballads, 120-130 for house, 140-170 for DnB)
-- targetKey: Musical key that fits the mood (e.g. "A minor" for dark/aggressive, "C major" for bright/happy, "F# minor" for melancholic)
-- timeSignature: Time signature (usually "4/4", "3/4" for waltzes, "6/8" for compound time)
-- audioDuration: Length in seconds between 180 and 300 (3-5 minutes). Shorter for energetic tracks, longer for atmospheric ones.
-
-Be specific and match parameters to the genre conventions described.`;
+Output requirements:
+- Return only content that matches the requested schema.
+- Do not wrap output in markdown code fences.`;
 
 const SessionParamsSchema = z.object({
 	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES),
