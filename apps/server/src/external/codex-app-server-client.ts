@@ -51,7 +51,7 @@ const TURN_TIMEOUT_MS = (() => {
 	if (Number.isFinite(parsed) && parsed > 0) {
 		return parsed;
 	}
-	return 360_000;
+	return 420_000;
 })();
 
 function isNoisyRolloutWarning(message: string): boolean {
