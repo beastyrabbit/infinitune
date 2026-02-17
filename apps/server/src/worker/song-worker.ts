@@ -18,7 +18,7 @@ import { tagMp3 } from "../external/tag-mp3";
 import { songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
-import type { PlaylistWire, SongWire } from "../wire";
+import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
 
@@ -71,6 +71,23 @@ function pickManagerSlot(
 	return managerPlan.slots[slotIndex];
 }
 
+const managerRefreshInFlight = new Map<string, Promise<void>>();
+
+function managerRefreshKey(playlistId: string, epoch: number): string {
+	return `${playlistId}:${epoch}`;
+}
+
+function needsManagerRefresh(
+	playlist: PlaylistWire,
+	currentEpoch: number,
+): boolean {
+	return (
+		!playlist.managerBrief?.trim() ||
+		!playlist.managerPlan?.slots?.length ||
+		playlist.managerEpoch !== currentEpoch
+	);
+}
+
 // ─── SongWorker ──────────────────────────────────────────────────────
 
 export class SongWorker {
@@ -96,6 +113,11 @@ export class SongWorker {
 	/** Get the live current epoch, falling back to the snapshot if callback not provided */
 	private getCurrentEpoch(): number {
 		return this.ctx.getCurrentEpoch?.() ?? this.ctx.playlist.promptEpoch ?? 0;
+	}
+
+	private async loadLatestPlaylist(): Promise<PlaylistWire | null> {
+		const latest = await playlistService.getById(this.ctx.playlist.id);
+		return latest ? playlistToWire(latest) : null;
 	}
 
 	/** Calculate queue priority for this song based on current playlist state */
@@ -259,67 +281,109 @@ export class SongWorker {
 					};
 
 					const currentEpoch = this.getCurrentEpoch();
-					const needsManagerRefresh =
-						!this.ctx.playlist.managerBrief?.trim() ||
-						!this.ctx.playlist.managerPlan?.slots?.length ||
-						this.ctx.playlist.managerEpoch !== currentEpoch;
+					if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+						const refreshKey = managerRefreshKey(
+							this.ctx.playlist.id,
+							currentEpoch,
+						);
+						const inFlightRefresh = managerRefreshInFlight.get(refreshKey);
 
-					if (needsManagerRefresh) {
-						try {
-							const ratingSignals: ManagerRatingSignal[] = (
-								await songService.listByPlaylist(this.ctx.playlist.id)
-							)
-								.filter(
-									(song) =>
-										song.userRating === "up" || song.userRating === "down",
-								)
-								.sort((a, b) => b.orderIndex - a.orderIndex)
-								.slice(0, 20)
-								.map((song) => ({
-									title: song.title || "Untitled",
-									genre: song.genre || undefined,
-									mood: song.mood || undefined,
-									personaExtract: song.personaExtract || undefined,
-									rating: song.userRating as "up" | "down",
-								}));
+						if (inFlightRefresh) {
+							try {
+								await inFlightRefresh;
+							} catch {
+								// Best effort refresh: metadata generation continues below.
+							}
+						} else {
+							const refreshPromise = (async () => {
+								const latestPlaylist = await this.loadLatestPlaylist();
+								if (latestPlaylist) {
+									this.ctx.playlist = latestPlaylist;
+								}
 
-							const { managerBrief, managerPlan } =
-								await generatePlaylistManagerPlan({
-									prompt: this.ctx.playlist.prompt,
-									provider: effectiveProvider,
-									model: effectiveModel,
-									lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
-									recentSongs: this.ctx.recentSongs,
-									recentDescriptions: this.ctx.recentDescriptions,
-									ratingSignals,
-									steerHistory: this.ctx.playlist.steerHistory,
-									previousBrief: this.ctx.playlist.managerBrief,
-									currentEpoch,
-									planWindow: 5,
-									signal,
-								});
-							await playlistService.updateManagerBrief(this.ctx.playlist.id, {
-								managerBrief,
-								managerPlan: JSON.stringify(managerPlan),
-								managerEpoch: currentEpoch,
-							});
-							this.ctx.playlist = {
-								...this.ctx.playlist,
-								managerBrief,
-								managerPlan,
-								managerEpoch: currentEpoch,
-								managerUpdatedAt: Date.now(),
-							};
-							genOptions.managerBrief = managerBrief;
-							genOptions.managerTransitionPolicy = managerPlan.transitionPolicy;
+								if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+									return;
+								}
+
+								try {
+									const ratingSignals: ManagerRatingSignal[] = (
+										await songService.listByPlaylist(this.ctx.playlist.id)
+									)
+										.filter(
+											(song) =>
+												song.userRating === "up" || song.userRating === "down",
+										)
+										.sort((a, b) => b.orderIndex - a.orderIndex)
+										.slice(0, 20)
+										.map((song) => ({
+											title: song.title || "Untitled",
+											genre: song.genre || undefined,
+											mood: song.mood || undefined,
+											personaExtract: song.personaExtract || undefined,
+											rating: song.userRating as "up" | "down",
+										}));
+
+									const { managerBrief, managerPlan } =
+										await generatePlaylistManagerPlan({
+											prompt: this.ctx.playlist.prompt,
+											provider: effectiveProvider,
+											model: effectiveModel,
+											lyricsLanguage:
+												this.ctx.playlist.lyricsLanguage ?? undefined,
+											recentSongs: this.ctx.recentSongs,
+											recentDescriptions: this.ctx.recentDescriptions,
+											ratingSignals,
+											steerHistory: this.ctx.playlist.steerHistory,
+											previousBrief: this.ctx.playlist.managerBrief,
+											currentEpoch,
+											planWindow: 5,
+											signal,
+										});
+									await playlistService.updateManagerBrief(
+										this.ctx.playlist.id,
+										{
+											managerBrief,
+											managerPlan: JSON.stringify(managerPlan),
+											managerEpoch: currentEpoch,
+										},
+									);
+									this.ctx.playlist = {
+										...this.ctx.playlist,
+										managerBrief,
+										managerPlan,
+										managerEpoch: currentEpoch,
+										managerUpdatedAt: Date.now(),
+									};
+								} catch (err) {
+									songLogger(this.songId).warn(
+										{
+											err,
+											playlistId: this.ctx.playlist.id,
+											currentEpoch,
+										},
+										"Playlist manager brief refresh failed; continuing with current context",
+									);
+								}
+							})();
+
+							managerRefreshInFlight.set(refreshKey, refreshPromise);
+							try {
+								await refreshPromise;
+							} finally {
+								managerRefreshInFlight.delete(refreshKey);
+							}
+						}
+
+						const latestPlaylist = await this.loadLatestPlaylist();
+						if (latestPlaylist) {
+							this.ctx.playlist = latestPlaylist;
+							genOptions.managerBrief =
+								latestPlaylist.managerBrief ?? undefined;
+							genOptions.managerTransitionPolicy =
+								latestPlaylist.managerPlan?.transitionPolicy;
 							genOptions.managerSlot = pickManagerSlot(
 								this.song.orderIndex,
-								managerPlan,
-							);
-						} catch (err) {
-							songLogger(this.songId).warn(
-								{ err, playlistId: this.ctx.playlist.id, currentEpoch },
-								"Playlist manager brief refresh failed; continuing with current context",
+								latestPlaylist.managerPlan,
 							);
 						}
 					}

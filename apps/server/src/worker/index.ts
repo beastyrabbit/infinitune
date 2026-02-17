@@ -54,17 +54,24 @@ async function getSettings(): Promise<{
 	personaModel: string;
 }> {
 	const all = await settingsService.getAll();
+	const textProvider = all.textProvider || DEFAULT_TEXT_PROVIDER;
+	const textModel = all.textModel || "";
+	const personaProvider = all.personaProvider || textProvider;
+	const hasExplicitPersonaModel =
+		Boolean(all.personaModel) && all.personaModel !== "__fallback__";
+	const personaModel = hasExplicitPersonaModel
+		? all.personaModel || ""
+		: personaProvider === textProvider
+			? textModel
+			: "";
+
 	return {
-		textProvider: all.textProvider || DEFAULT_TEXT_PROVIDER,
-		textModel: all.textModel || "",
+		textProvider,
+		textModel,
 		imageProvider: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
-		personaProvider:
-			all.personaProvider || all.textProvider || DEFAULT_TEXT_PROVIDER,
-		personaModel:
-			all.personaModel && all.personaModel !== "__fallback__"
-				? all.personaModel
-				: all.textModel || "",
+		personaProvider,
+		personaModel,
 	};
 }
 
@@ -250,8 +257,8 @@ async function runPersonaScan(
 	if (needsPersona.length === 0) return;
 
 	const { provider: pProvider, model: pModel } = resolveTextLlmProfile({
-		provider: settings.personaProvider || settings.textProvider,
-		model: settings.personaModel || settings.textModel,
+		provider: settings.personaProvider,
+		model: settings.personaModel,
 	});
 
 	for (const song of needsPersona) {

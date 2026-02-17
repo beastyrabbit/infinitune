@@ -1,7 +1,4 @@
-import {
-	DEFAULT_OLLAMA_TEXT_MODEL,
-	DEFAULT_TEXT_PROVIDER,
-} from "@infinitune/shared/text-llm-profile";
+import { DEFAULT_TEXT_PROVIDER } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -89,7 +86,7 @@ export function PlaylistCreator({
 }: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
-	const [model, setModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
+	const [model, setModel] = useState("");
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -98,7 +95,6 @@ export function PlaylistCreator({
 	const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("local");
 	const [roomName, setRoomName] = useState("");
 	const [roomNameEdited, setRoomNameEdited] = useState(false);
-	const modelSetByUserOrSettings = useRef(false);
 
 	const settings = useSettings();
 
@@ -118,14 +114,7 @@ export function PlaylistCreator({
 		const configuredProvider =
 			(settings.textProvider as LlmProvider) || DEFAULT_TEXT_PROVIDER;
 		setProvider(configuredProvider);
-		if (settings.textModel) {
-			setModel(settings.textModel);
-		} else if (configuredProvider === "ollama") {
-			setModel(DEFAULT_OLLAMA_TEXT_MODEL);
-		} else {
-			setModel("");
-		}
-		modelSetByUserOrSettings.current = true;
+		setModel(settings.textModel?.trim() || "");
 	}, [settings]);
 
 	useEffect(() => {
@@ -137,18 +126,6 @@ export function PlaylistCreator({
 			.then((d) => {
 				const allModels = d.models || [];
 				setOllamaModels(allModels);
-				// Only auto-pick a model if settings didn't already provide one
-				if (!modelSetByUserOrSettings.current) {
-					const textOnly = allModels.filter(
-						(m: ModelOption) => m.type === "text" || (!m.type && !m.vision),
-					);
-					if (textOnly.length > 0) {
-						const preferred = textOnly.find(
-							(m: ModelOption) => m.name === "gpt-oss:20b",
-						);
-						setModel(preferred ? preferred.name : textOnly[0].name);
-					}
-				}
 			})
 			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
 
