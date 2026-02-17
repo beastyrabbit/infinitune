@@ -1,6 +1,6 @@
 import {
-	GPT52_TEXT_MODEL,
-	GPT52_TEXT_PROVIDER,
+	DEFAULT_OLLAMA_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
 } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -100,8 +100,8 @@ function OneshotPage() {
 
 	// ── Local state ──
 	const [prompt, setPrompt] = useState("");
-	const [provider, setProvider] = useState<LlmProvider>(GPT52_TEXT_PROVIDER);
-	const [model, setModel] = useState(GPT52_TEXT_MODEL);
+	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
+	const [model, setModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
 	const [enhancing, setEnhancing] = useState(false);
@@ -156,12 +156,17 @@ function OneshotPage() {
 	useEffect(() => {
 		if (!settings || settingsApplied.current) return;
 		settingsApplied.current = true;
-		if (settings.textProvider)
-			setProvider(settings.textProvider as LlmProvider);
+		const configuredProvider =
+			(settings.textProvider as LlmProvider) || DEFAULT_TEXT_PROVIDER;
+		setProvider(configuredProvider);
 		if (settings.textModel) {
 			setModel(settings.textModel);
-			modelSetByUserOrSettings.current = true;
+		} else if (configuredProvider === "ollama") {
+			setModel(DEFAULT_OLLAMA_TEXT_MODEL);
+		} else {
+			setModel("");
 		}
+		modelSetByUserOrSettings.current = true;
 	}, [settings]);
 
 	// ── Ollama models ──
@@ -219,8 +224,12 @@ function OneshotPage() {
 			return;
 		}
 
-		if (provider === "openrouter" && !model.trim()) {
-			setModel(GPT52_TEXT_MODEL);
+		if (provider === "openrouter") {
+			const isKnownOllamaModel = textModels.some((m) => m.name === model);
+			const isKnownCodexModel = codexTextModels.some((m) => m.name === model);
+			if (isKnownOllamaModel || isKnownCodexModel) {
+				setModel("");
+			}
 			return;
 		}
 
@@ -554,7 +563,7 @@ function OneshotPage() {
 											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 											placeholder={
 												provider === "openrouter"
-													? "OPENAI/GPT-5.2"
+													? "OPENROUTER/MODEL-ID"
 													: provider === "openai-codex"
 														? "GPT-5.3-CODEX"
 														: "LLAMA3.1:8B"

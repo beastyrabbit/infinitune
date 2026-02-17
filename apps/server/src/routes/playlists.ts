@@ -1,4 +1,3 @@
-import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import {
 	CreatePlaylistSchema,
 	UpdatePlaylistParamsSchema,
@@ -55,17 +54,7 @@ app.post("/", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	const resolved = resolveTextLlmProfile({
-		provider: result.data.llmProvider,
-		model: result.data.llmModel,
-	});
-	return c.json(
-		await playlistService.create({
-			...result.data,
-			llmProvider: resolved.provider,
-			llmModel: resolved.model,
-		}),
-	);
+	return c.json(await playlistService.create(result.data));
 });
 
 // PATCH /api/playlists/:id/params

@@ -283,7 +283,7 @@ export function SettingsTabModels({
 							models={openRouterTextModels}
 							value={textModel}
 							onChange={setTextModel}
-							placeholder="OPENAI/GPT-5.2"
+							placeholder="OPENROUTER/MODEL-ID"
 							loading={openRouterLoading}
 						/>
 					) : textProvider === "openai-codex" ? (

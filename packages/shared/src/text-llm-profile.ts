@@ -1,14 +1,55 @@
 import type { LlmProvider } from "./types";
 
-export const GPT52_TEXT_PROVIDER: LlmProvider = "openrouter";
-export const GPT52_TEXT_MODEL = "openai/gpt-5.2";
+export const DEFAULT_TEXT_PROVIDER: LlmProvider = "ollama";
+export const DEFAULT_OLLAMA_TEXT_MODEL = "gpt-oss:20b";
+export const PROMPT_OPT_PROVIDER: LlmProvider = "openai-codex";
+export const PROMPT_OPT_MODEL = "gpt-5.2";
 
-export function resolveTextLlmProfile(_input?: {
+/**
+ * Backward-compatible aliases used in existing UI code.
+ * These names are historical and no longer indicate GPT-5.2 defaults.
+ */
+export const GPT52_TEXT_PROVIDER = DEFAULT_TEXT_PROVIDER;
+export const GPT52_TEXT_MODEL = DEFAULT_OLLAMA_TEXT_MODEL;
+
+export function normalizeLlmProvider(
+	value?: string | null,
+	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
+): LlmProvider {
+	if (!value) return fallback;
+	if (
+		value === "ollama" ||
+		value === "openrouter" ||
+		value === "openai-codex"
+	) {
+		return value;
+	}
+	return fallback;
+}
+
+export function resolveTextLlmProfile(input?: {
 	provider?: string | null;
 	model?: string | null;
 }): { provider: LlmProvider; model: string } {
+	const provider = normalizeLlmProvider(input?.provider);
+	const explicitModel = input?.model?.trim() || "";
+
+	if (explicitModel) {
+		return { provider, model: explicitModel };
+	}
+
+	// Keep existing OpenRouter behavior: no implicit model assignment.
+	if (provider === "openrouter") {
+		return { provider, model: "" };
+	}
+
+	// Codex model selection happens lazily in llm-client through model listing.
+	if (provider === "openai-codex") {
+		return { provider, model: "" };
+	}
+
 	return {
-		provider: GPT52_TEXT_PROVIDER,
-		model: GPT52_TEXT_MODEL,
+		provider,
+		model: DEFAULT_OLLAMA_TEXT_MODEL,
 	};
 }

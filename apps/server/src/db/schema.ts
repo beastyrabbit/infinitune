@@ -41,6 +41,7 @@ export const playlists = sqliteTable(
 		promptEpoch: integer("prompt_epoch").default(0),
 		steerHistory: text("steer_history"),
 		managerBrief: text("manager_brief"),
+		managerPlan: text("manager_plan"),
 		managerEpoch: integer("manager_epoch"),
 		managerUpdatedAt: integer("manager_updated_at", { mode: "number" }),
 		isStarred: integer("is_starred", { mode: "boolean" }).default(false),

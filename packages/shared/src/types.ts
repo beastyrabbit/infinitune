@@ -51,6 +51,26 @@ export type LlmProvider = (typeof LLM_PROVIDERS)[number];
  */
 export type Id<_T extends string> = string;
 
+export interface PlaylistManagerPlanSlot {
+	slot: number;
+	transitionIntent: string;
+	topicHint: string;
+	captionFocus: string;
+	lyricTheme: string;
+	energyTarget: "low" | "medium" | "high" | "extreme";
+}
+
+export interface PlaylistManagerPlan {
+	version: number;
+	epoch: number;
+	windowSize: number;
+	strategySummary: string;
+	transitionPolicy: string;
+	avoidPatterns: string[];
+	slots: PlaylistManagerPlanSlot[];
+	updatedAt: number;
+}
+
 // ─── Wire types (what the API returns) ──────────────────────────────
 
 export interface Song {
@@ -130,6 +150,7 @@ export interface Playlist {
 	promptEpoch: number | null;
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
 	managerBrief: string | null;
+	managerPlan: PlaylistManagerPlan | null;
 	managerEpoch: number | null;
 	managerUpdatedAt: number | null;
 	isStarred: boolean;

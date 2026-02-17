@@ -1,6 +1,6 @@
 import {
-	GPT52_TEXT_MODEL,
-	GPT52_TEXT_PROVIDER,
+	DEFAULT_OLLAMA_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
 } from "@infinitune/shared/text-llm-profile";
 import { LLM_PROVIDERS, type LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -51,9 +51,9 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
-function normalizeLlmProvider(
+function normalizeProviderSetting(
 	value: string | undefined | null,
-	fallback: LlmProvider = GPT52_TEXT_PROVIDER,
+	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
 ): LlmProvider {
 	const candidate = (value ?? "").trim();
 	return LLM_PROVIDERS.includes(candidate as LlmProvider)
@@ -85,14 +85,16 @@ function SettingsPage() {
 	const [comfyuiUrl, setComfyuiUrl] = useState("http://192.168.10.120:8188");
 
 	// Model settings
-	const [textProvider, setTextProvider] =
-		useState<LlmProvider>(GPT52_TEXT_PROVIDER);
-	const [textModel, setTextModel] = useState(GPT52_TEXT_MODEL);
+	const [textProvider, setTextProvider] = useState<LlmProvider>(
+		DEFAULT_TEXT_PROVIDER,
+	);
+	const [textModel, setTextModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
 	const [imageProvider, setImageProvider] = useState("comfyui");
 	const [imageModel, setImageModel] = useState("");
 	const [aceModel, setAceModel] = useState("");
-	const [personaProvider, setPersonaProvider] =
-		useState<LlmProvider>(GPT52_TEXT_PROVIDER);
+	const [personaProvider, setPersonaProvider] = useState<LlmProvider>(
+		DEFAULT_TEXT_PROVIDER,
+	);
 	const [personaModel, setPersonaModel] = useState("");
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
 
@@ -129,18 +131,25 @@ function SettingsPage() {
 		setOllamaUrl(settings.ollamaUrl || "http://192.168.10.120:11434");
 		setAceStepUrl(settings.aceStepUrl || "http://192.168.10.120:8001");
 		setComfyuiUrl(settings.comfyuiUrl || "http://192.168.10.120:8188");
-		const normalizedTextProvider = normalizeLlmProvider(
+		const normalizedTextProvider = normalizeProviderSetting(
 			settings.textProvider,
-			GPT52_TEXT_PROVIDER,
+			DEFAULT_TEXT_PROVIDER,
 		);
 		setTextProvider(normalizedTextProvider);
-		setTextModel(settings.textModel || GPT52_TEXT_MODEL);
+		const configuredTextModel = settings.textModel?.trim() || "";
+		setTextModel(
+			configuredTextModel ||
+				(normalizedTextProvider === "ollama" ? DEFAULT_OLLAMA_TEXT_MODEL : ""),
+		);
 		const imgProv = settings.imageProvider || "comfyui";
 		setImageProvider(imgProv === "ollama" ? "comfyui" : imgProv);
 		setImageModel(settings.imageModel || "");
 		setAceModel(settings.aceModel || "");
 		setPersonaProvider(
-			normalizeLlmProvider(settings.personaProvider, normalizedTextProvider),
+			normalizeProviderSetting(
+				settings.personaProvider,
+				normalizedTextProvider,
+			),
 		);
 		setPersonaModel(normalizeFallbackModel(settings.personaModel));
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
@@ -516,7 +525,9 @@ function SettingsPage() {
 							<SettingsTabModels
 								textProvider={textProvider}
 								setTextProvider={(v) =>
-									setTextProvider(normalizeLlmProvider(v, GPT52_TEXT_PROVIDER))
+									setTextProvider(
+										normalizeProviderSetting(v, DEFAULT_TEXT_PROVIDER),
+									)
 								}
 								textModel={textModel}
 								setTextModel={setTextModel}
@@ -528,7 +539,7 @@ function SettingsPage() {
 								setAceModel={setAceModel}
 								personaProvider={personaProvider}
 								setPersonaProvider={(v) =>
-									setPersonaProvider(normalizeLlmProvider(v, textProvider))
+									setPersonaProvider(normalizeProviderSetting(v, textProvider))
 								}
 								personaModel={personaModel}
 								setPersonaModel={setPersonaModel}

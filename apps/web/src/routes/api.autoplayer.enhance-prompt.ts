@@ -33,13 +33,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
 					const { prompt, provider, model } = body as {
 						prompt: string;
 						provider: string;
-						model: string;
+						model?: string;
 					};
 
-					if (!prompt || typeof prompt !== "string" || !provider || !model) {
+					if (!prompt || typeof prompt !== "string" || !provider) {
 						return new Response(
 							JSON.stringify({
-								error: "Missing required fields: prompt, provider, model",
+								error: "Missing required fields: prompt, provider",
 							}),
 							{ status: 400, headers: { "Content-Type": "application/json" } },
 						);

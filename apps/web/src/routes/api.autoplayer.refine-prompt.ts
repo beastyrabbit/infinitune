@@ -23,7 +23,7 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						currentPrompt: string;
 						direction: string;
 						provider: string;
-						model: string;
+						model?: string;
 					};
 
 					if (
@@ -31,13 +31,12 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						typeof currentPrompt !== "string" ||
 						!direction ||
 						typeof direction !== "string" ||
-						!provider ||
-						!model
+						!provider
 					) {
 						return new Response(
 							JSON.stringify({
 								error:
-									"Missing required fields: currentPrompt, direction, provider, model",
+									"Missing required fields: currentPrompt, direction, provider",
 							}),
 							{ status: 400, headers: { "Content-Type": "application/json" } },
 						);

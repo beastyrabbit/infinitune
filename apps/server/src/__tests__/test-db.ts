@@ -34,14 +34,15 @@ const SCHEMA_SQL = `
 		lm_temperature REAL,
 		lm_cfg_scale REAL,
 		infer_method TEXT,
-			current_order_index REAL,
-			last_seen_at INTEGER,
-			prompt_epoch INTEGER DEFAULT 0,
-			steer_history TEXT,
-			manager_brief TEXT,
-			manager_epoch INTEGER,
-			manager_updated_at INTEGER,
-			is_starred INTEGER DEFAULT 0
+		current_order_index REAL,
+		last_seen_at INTEGER,
+		prompt_epoch INTEGER DEFAULT 0,
+		steer_history TEXT,
+		manager_brief TEXT,
+		manager_plan TEXT,
+		manager_epoch INTEGER,
+		manager_updated_at INTEGER,
+		is_starred INTEGER DEFAULT 0
 		);
 
 	CREATE TABLE songs (

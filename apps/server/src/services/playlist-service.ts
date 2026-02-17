@@ -106,6 +106,7 @@ export async function create(data: {
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
 			managerBrief: null,
+			managerPlan: null,
 			managerEpoch: null,
 			managerUpdatedAt: null,
 		})
@@ -146,6 +147,7 @@ export async function updateParams(
 
 	if (patch.lyricsLanguage !== undefined) {
 		patch.managerBrief = null;
+		patch.managerPlan = null;
 		patch.managerEpoch = null;
 		patch.managerUpdatedAt = null;
 	}
@@ -206,6 +208,7 @@ export async function resetDefaults(id: string) {
 			lmCfgScale: null,
 			inferMethod: null,
 			managerBrief: null,
+			managerPlan: null,
 			managerEpoch: null,
 			managerUpdatedAt: null,
 		})
@@ -232,6 +235,7 @@ export async function steer(id: string, prompt: string) {
 			promptEpoch: newEpoch,
 			steerHistory: JSON.stringify(history),
 			managerBrief: null,
+			managerPlan: null,
 			managerEpoch: null,
 			managerUpdatedAt: null,
 		})
@@ -257,6 +261,7 @@ export async function updateManagerBrief(
 	id: string,
 	data: {
 		managerBrief: string;
+		managerPlan: string;
 		managerEpoch: number;
 	},
 ) {
@@ -264,6 +269,7 @@ export async function updateManagerBrief(
 		.update(playlists)
 		.set({
 			managerBrief: data.managerBrief,
+			managerPlan: data.managerPlan,
 			managerEpoch: data.managerEpoch,
 			managerUpdatedAt: Date.now(),
 		})

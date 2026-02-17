@@ -31,18 +31,13 @@ export const Route = createFileRoute("/api/autoplayer/enhance-request")({
 					} = body as {
 						request: string;
 						provider: string;
-						model: string;
+						model?: string;
 					};
 
-					if (
-						!songRequest ||
-						typeof songRequest !== "string" ||
-						!provider ||
-						!model
-					) {
+					if (!songRequest || typeof songRequest !== "string" || !provider) {
 						return new Response(
 							JSON.stringify({
-								error: "Missing required fields: request, provider, model",
+								error: "Missing required fields: request, provider",
 							}),
 							{ status: 400, headers: { "Content-Type": "application/json" } },
 						);

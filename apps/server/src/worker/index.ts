@@ -1,6 +1,5 @@
 import {
-	GPT52_TEXT_MODEL,
-	GPT52_TEXT_PROVIDER,
+	DEFAULT_TEXT_PROVIDER,
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
 import { on } from "../events/event-bus";
@@ -56,16 +55,16 @@ async function getSettings(): Promise<{
 }> {
 	const all = await settingsService.getAll();
 	return {
-		textProvider: all.textProvider || GPT52_TEXT_PROVIDER,
-		textModel: all.textModel || GPT52_TEXT_MODEL,
+		textProvider: all.textProvider || DEFAULT_TEXT_PROVIDER,
+		textModel: all.textModel || "",
 		imageProvider: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
 		personaProvider:
-			all.personaProvider || all.textProvider || GPT52_TEXT_PROVIDER,
+			all.personaProvider || all.textProvider || DEFAULT_TEXT_PROVIDER,
 		personaModel:
 			all.personaModel && all.personaModel !== "__fallback__"
 				? all.personaModel
-				: all.textModel || GPT52_TEXT_MODEL,
+				: all.textModel || "",
 	};
 }
 

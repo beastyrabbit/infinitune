@@ -1,7 +1,10 @@
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
-import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
+import type {
+	PlaylistManagerPlan,
+	PlaylistManagerPlanSlot,
+} from "@infinitune/shared/types";
 import z from "zod";
-import { callLlmObject } from "@/services/llm-client";
+import { callLlmObject } from "./llm-client";
 
 /** Shared field guidance used across all prompt modes */
 const FIELD_GUIDANCE = `Your response must conform to the provided JSON schema. Fill in every field.
@@ -297,29 +300,57 @@ export interface RecentSong {
 	energy?: string;
 }
 
+export interface ManagerRatingSignal {
+	title: string;
+	genre?: string;
+	mood?: string;
+	personaExtract?: string;
+	rating: "up" | "down";
+}
+
+const PlaylistManagerSlotSchema = z.object({
+	slot: z.number().int().min(1).max(12),
+	transitionIntent: z.string(),
+	topicHint: z.string(),
+	captionFocus: z.string(),
+	lyricTheme: z.string(),
+	energyTarget: z.enum(["low", "medium", "high", "extreme"]),
+});
+
 const PlaylistManagerSchema = z.object({
 	managerBrief: z
 		.string()
 		.describe(
 			"Compact playlist operating brief for downstream song generation. Include core sonic identity, exploration lanes, ACE caption/lyrics consistency guardrails, and anti-patterns.",
 		),
+	strategySummary: z.string(),
+	transitionPolicy: z.string(),
+	avoidPatterns: z.array(z.string()),
+	slots: z.array(PlaylistManagerSlotSchema).min(3).max(8),
 });
 
 const PLAYLIST_MANAGER_PROMPT = `You are a playlist-level music director optimizing prompts for ACE-Step text2music.
 
-Write a concise manager brief that will guide multiple per-song generations.
+Design a rolling next-song plan that controls transitions and topic evolution.
 
 Requirements:
 - Keep one coherent musical identity with room for controlled exploration.
+- Plan an arc for the next N songs using slot-by-slot guidance.
+- Decide transition smoothness from context (party/background can stay smooth, high-energy sessions can jump harder).
 - Encode guardrails for ACE-Step:
   - Caption is global style/instrument/texture/mood only.
   - Lyrics are the temporal script with concise section tags.
   - Caption and lyrics tags must stay consistent.
   - Avoid conflicting style instructions.
-- Include 3-6 "avoid patterns" that previously caused weak output.
-- Include a short persona target for what the listener should feel across songs.
+- Include 3-8 avoid patterns based on weak/down-rated outputs.
+- Use user feedback: ratings and steer history should shape the next arc.
 
-Output JSON with only "managerBrief".`;
+Output JSON with fields:
+- managerBrief
+- strategySummary
+- transitionPolicy
+- avoidPatterns (string[])
+- slots (array of slot objects with: slot, transitionIntent, topicHint, captionFocus, lyricTheme, energyTarget)`;
 
 function clampInt(
 	val: number,
@@ -403,7 +434,6 @@ export async function generatePersonaExtract(options: {
 	signal?: AbortSignal;
 }): Promise<string> {
 	const { song, provider, model, signal } = options;
-	const resolved = resolveTextLlmProfile({ provider, model });
 
 	const lines: string[] = [];
 	if (song.title) lines.push(`Title: "${song.title}"`);
@@ -425,8 +455,8 @@ export async function generatePersonaExtract(options: {
 	const userMessage = lines.join("\n");
 
 	const result = await callLlmObject({
-		provider: resolved.provider,
-		model: resolved.model,
+		provider,
+		model,
 		system: PERSONA_SYSTEM_PROMPT,
 		prompt: userMessage,
 		schema: PersonaSchema,
@@ -441,17 +471,23 @@ export async function generatePersonaExtract(options: {
 	return persona;
 }
 
-export async function generatePlaylistManagerBrief(options: {
+export async function generatePlaylistManagerPlan(options: {
 	prompt: string;
 	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	lyricsLanguage?: string;
 	recentSongs?: RecentSong[];
 	recentDescriptions?: string[];
+	ratingSignals?: ManagerRatingSignal[];
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
 	previousBrief?: string | null;
+	currentEpoch: number;
+	planWindow?: number;
 	signal?: AbortSignal;
-}): Promise<string> {
+}): Promise<{
+	managerBrief: string;
+	managerPlan: PlaylistManagerPlan;
+}> {
 	const {
 		prompt,
 		provider,
@@ -459,11 +495,13 @@ export async function generatePlaylistManagerBrief(options: {
 		lyricsLanguage,
 		recentSongs,
 		recentDescriptions,
+		ratingSignals,
 		steerHistory,
 		previousBrief,
+		currentEpoch,
+		planWindow = 5,
 		signal,
 	} = options;
-	const resolved = resolveTextLlmProfile({ provider, model });
 
 	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
 	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
@@ -471,6 +509,8 @@ export async function generatePlaylistManagerBrief(options: {
 	const messageParts: string[] = [];
 	messageParts.push(`Playlist prompt: ${prompt}`);
 	messageParts.push(`Lyrics language lock: ${languageLabel}`);
+	messageParts.push(`Current epoch: ${currentEpoch}`);
+	messageParts.push(`Plan window size: ${planWindow}`);
 
 	if (previousBrief?.trim()) {
 		messageParts.push(`Previous manager brief: ${previousBrief.trim()}`);
@@ -506,9 +546,25 @@ export async function generatePlaylistManagerBrief(options: {
 		messageParts.push(`Recent story angles:\n${recents}`);
 	}
 
+	if (ratingSignals?.length) {
+		const ratingLines = ratingSignals
+			.slice(0, 20)
+			.map((entry, index) => {
+				const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
+				const parts = [`${index + 1}. ${sentiment}: "${entry.title}"`];
+				if (entry.genre) parts.push(`genre=${entry.genre}`);
+				if (entry.mood) parts.push(`mood=${entry.mood}`);
+				if (entry.personaExtract)
+					parts.push(`persona=${entry.personaExtract.slice(0, 220)}`);
+				return parts.join(" | ");
+			})
+			.join("\n");
+		messageParts.push(`User feedback signals:\n${ratingLines}`);
+	}
+
 	const result = await callLlmObject({
-		provider: resolved.provider,
-		model: resolved.model,
+		provider,
+		model,
 		system: PLAYLIST_MANAGER_PROMPT,
 		prompt: messageParts.join("\n\n"),
 		schema: PlaylistManagerSchema,
@@ -520,7 +576,56 @@ export async function generatePlaylistManagerBrief(options: {
 	const brief =
 		typeof result.managerBrief === "string" ? result.managerBrief.trim() : "";
 	if (!brief) throw new Error("Empty playlist manager brief");
-	return brief.slice(0, 1800);
+
+	const slots: PlaylistManagerPlanSlot[] = result.slots
+		.slice(0, planWindow)
+		.map((slot, idx) => ({
+			slot: idx + 1,
+			transitionIntent: slot.transitionIntent.trim(),
+			topicHint: slot.topicHint.trim(),
+			captionFocus: slot.captionFocus.trim(),
+			lyricTheme: slot.lyricTheme.trim(),
+			energyTarget: slot.energyTarget,
+		}));
+
+	const managerPlan: PlaylistManagerPlan = {
+		version: 1,
+		epoch: currentEpoch,
+		windowSize: planWindow,
+		strategySummary:
+			typeof result.strategySummary === "string"
+				? result.strategySummary.trim().slice(0, 600)
+				: "Maintain coherent playlist identity while varying topic and arrangement.",
+		transitionPolicy:
+			typeof result.transitionPolicy === "string"
+				? result.transitionPolicy.trim().slice(0, 400)
+				: "Adapt transition smoothness to the playlist intent and listener feedback.",
+		avoidPatterns: Array.isArray(result.avoidPatterns)
+			? result.avoidPatterns
+					.map((pattern) => pattern.trim())
+					.filter(Boolean)
+					.slice(0, 8)
+			: [],
+		slots:
+			slots.length > 0
+				? slots
+				: [
+						{
+							slot: 1,
+							transitionIntent: "stay coherent with gentle variation",
+							topicHint: "extend current playlist theme",
+							captionFocus: "keep instrumentation family consistent",
+							lyricTheme: "advance narrative without repeating lines",
+							energyTarget: "medium",
+						},
+					],
+		updatedAt: Date.now(),
+	};
+
+	return {
+		managerBrief: brief.slice(0, 1800),
+		managerPlan,
+	};
 }
 
 export async function generateSongMetadata(options: {
@@ -529,6 +634,8 @@ export async function generateSongMetadata(options: {
 	model: string;
 	lyricsLanguage?: string;
 	managerBrief?: string;
+	managerSlot?: PlaylistManagerPlanSlot;
+	managerTransitionPolicy?: string;
 	targetBpm?: number;
 	targetKey?: string;
 	timeSignature?: string;
@@ -545,6 +652,8 @@ export async function generateSongMetadata(options: {
 		model,
 		lyricsLanguage,
 		managerBrief,
+		managerSlot,
+		managerTransitionPolicy,
 		targetBpm,
 		targetKey,
 		timeSignature,
@@ -555,7 +664,6 @@ export async function generateSongMetadata(options: {
 		promptDistance,
 		signal,
 	} = options;
-	const resolved = resolveTextLlmProfile({ provider, model });
 
 	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
 	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
@@ -595,6 +703,18 @@ export async function generateSongMetadata(options: {
 	if (managerBrief?.trim()) {
 		userMessage += `\n\n--- Playlist manager brief (high priority guidance) ---\n${managerBrief.trim()}`;
 	}
+	if (managerTransitionPolicy?.trim()) {
+		userMessage += `\n\nTransition policy: ${managerTransitionPolicy.trim()}`;
+	}
+	if (managerSlot) {
+		userMessage += `\n\n--- Current manager slot guidance ---`;
+		userMessage += `\nSlot: ${managerSlot.slot}`;
+		userMessage += `\nTransition intent: ${managerSlot.transitionIntent}`;
+		userMessage += `\nTopic hint: ${managerSlot.topicHint}`;
+		userMessage += `\nCaption focus: ${managerSlot.captionFocus}`;
+		userMessage += `\nLyric theme: ${managerSlot.lyricTheme}`;
+		userMessage += `\nEnergy target: ${managerSlot.energyTarget}`;
+	}
 	if (distance !== "faithful" && recentSongs && recentSongs.length > 0) {
 		const historyLines = recentSongs
 			.map(
@@ -617,15 +737,15 @@ export async function generateSongMetadata(options: {
 	}
 
 	const raw = await callLlmObject({
-		provider: resolved.provider,
-		model: resolved.model,
+		provider,
+		model,
 		system: systemPrompt,
 		prompt: userMessage,
 		schema: SongMetadataSchema,
 		schemaName: "song_specification",
 		temperature,
 		seed:
-			resolved.provider === "ollama"
+			provider === "ollama"
 				? Math.floor(Math.random() * 2147483647)
 				: undefined,
 		signal,

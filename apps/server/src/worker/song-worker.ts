@@ -6,8 +6,9 @@ import { saveCover } from "../covers";
 import { submitToAce } from "../external/ace";
 import { generateCover } from "../external/cover";
 import {
-	generatePlaylistManagerBrief,
+	generatePlaylistManagerPlan,
 	generateSongMetadata,
+	type ManagerRatingSignal,
 	type PromptDistance,
 	type RecentSong,
 	type SongMetadata,
@@ -57,6 +58,17 @@ function isDuplicate(
 		const existingArtist = s.artistName.toLowerCase().trim();
 		return existingTitle === newTitle || existingArtist === newArtist;
 	});
+}
+
+function pickManagerSlot(
+	orderIndex: number,
+	managerPlan?: PlaylistWire["managerPlan"] | null,
+) {
+	if (!managerPlan?.slots?.length) return undefined;
+	const baseOrder = Number.isFinite(orderIndex) ? Math.max(1, orderIndex) : 1;
+	const slotIndex =
+		(Math.floor(baseOrder) - 1) % Math.max(1, managerPlan.slots.length);
+	return managerPlan.slots[slotIndex];
 }
 
 // ─── SongWorker ──────────────────────────────────────────────────────
@@ -204,8 +216,8 @@ export class SongWorker {
 		const settings = await this.ctx.getSettings();
 		const { provider: effectiveProvider, model: effectiveModel } =
 			resolveTextLlmProfile({
-				provider: settings.textProvider || this.ctx.playlist.llmProvider,
-				model: settings.textModel || this.ctx.playlist.llmModel,
+				provider: this.ctx.playlist.llmProvider || settings.textProvider,
+				model: this.ctx.playlist.llmModel || settings.textModel,
 			});
 
 		const prompt = this.song.interruptPrompt || this.ctx.playlist.prompt;
@@ -229,6 +241,12 @@ export class SongWorker {
 						model: effectiveModel,
 						lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
 						managerBrief: this.ctx.playlist.managerBrief ?? undefined,
+						managerTransitionPolicy:
+							this.ctx.playlist.managerPlan?.transitionPolicy,
+						managerSlot: pickManagerSlot(
+							this.song.orderIndex,
+							this.ctx.playlist.managerPlan,
+						),
 						targetBpm: this.ctx.playlist.targetBpm ?? undefined,
 						targetKey: this.ctx.playlist.targetKey ?? undefined,
 						timeSignature: this.ctx.playlist.timeSignature ?? undefined,
@@ -243,32 +261,61 @@ export class SongWorker {
 					const currentEpoch = this.getCurrentEpoch();
 					const needsManagerRefresh =
 						!this.ctx.playlist.managerBrief?.trim() ||
+						!this.ctx.playlist.managerPlan?.slots?.length ||
 						this.ctx.playlist.managerEpoch !== currentEpoch;
 
 					if (needsManagerRefresh) {
 						try {
-							const managerBrief = await generatePlaylistManagerBrief({
-								prompt: this.ctx.playlist.prompt,
-								provider: effectiveProvider,
-								model: effectiveModel,
-								lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
-								recentSongs: this.ctx.recentSongs,
-								recentDescriptions: this.ctx.recentDescriptions,
-								steerHistory: this.ctx.playlist.steerHistory,
-								previousBrief: this.ctx.playlist.managerBrief,
-								signal,
-							});
+							const ratingSignals: ManagerRatingSignal[] = (
+								await songService.listByPlaylist(this.ctx.playlist.id)
+							)
+								.filter(
+									(song) =>
+										song.userRating === "up" || song.userRating === "down",
+								)
+								.sort((a, b) => b.orderIndex - a.orderIndex)
+								.slice(0, 20)
+								.map((song) => ({
+									title: song.title || "Untitled",
+									genre: song.genre || undefined,
+									mood: song.mood || undefined,
+									personaExtract: song.personaExtract || undefined,
+									rating: song.userRating as "up" | "down",
+								}));
+
+							const { managerBrief, managerPlan } =
+								await generatePlaylistManagerPlan({
+									prompt: this.ctx.playlist.prompt,
+									provider: effectiveProvider,
+									model: effectiveModel,
+									lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
+									recentSongs: this.ctx.recentSongs,
+									recentDescriptions: this.ctx.recentDescriptions,
+									ratingSignals,
+									steerHistory: this.ctx.playlist.steerHistory,
+									previousBrief: this.ctx.playlist.managerBrief,
+									currentEpoch,
+									planWindow: 5,
+									signal,
+								});
 							await playlistService.updateManagerBrief(this.ctx.playlist.id, {
 								managerBrief,
+								managerPlan: JSON.stringify(managerPlan),
 								managerEpoch: currentEpoch,
 							});
 							this.ctx.playlist = {
 								...this.ctx.playlist,
 								managerBrief,
+								managerPlan,
 								managerEpoch: currentEpoch,
 								managerUpdatedAt: Date.now(),
 							};
 							genOptions.managerBrief = managerBrief;
+							genOptions.managerTransitionPolicy = managerPlan.transitionPolicy;
+							genOptions.managerSlot = pickManagerSlot(
+								this.song.orderIndex,
+								managerPlan,
+							);
 						} catch (err) {
 							songLogger(this.songId).warn(
 								{ err, playlistId: this.ctx.playlist.id, currentEpoch },
