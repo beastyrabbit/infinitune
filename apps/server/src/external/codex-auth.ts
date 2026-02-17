@@ -44,7 +44,7 @@ const AUTH_URL_REGEX = /(https?:\/\/\S+)/i;
 const DEVICE_CODE_REGEX = /\b([A-Z0-9]{4,}-[A-Z0-9]{4,})\b/;
 
 function stripAnsi(text: string): string {
-	return text.replaceAll("\u001b", "").replace(/\[[0-9;]*m/g, "");
+	return text.replace(new RegExp("\\x1B\\[[0-9;]*m", "g"), "");
 }
 
 function setSessionPatch(
