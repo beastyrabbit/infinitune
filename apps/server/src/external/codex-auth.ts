@@ -37,6 +37,7 @@ export interface CodexDeviceAuthSession {
 
 let currentSession: CodexDeviceAuthSession | null = null;
 let activeProcess: ChildProcessWithoutNullStreams | null = null;
+let startAuthPromise: Promise<CodexDeviceAuthSession> | null = null;
 let stdoutBuffer = "";
 let stderrBuffer = "";
 
@@ -156,88 +157,104 @@ export async function getCodexLoginStatus(): Promise<CodexLoginStatus> {
 }
 
 export async function startCodexDeviceAuth(): Promise<CodexDeviceAuthSession> {
-	const existing = currentSession;
-	if (
-		existing &&
-		(existing.state === "pending" || existing.state === "awaiting_confirmation")
-	) {
-		return existing;
+	if (startAuthPromise) {
+		return await startAuthPromise;
 	}
 
-	const loginStatus = await getCodexLoginStatus();
-	if (loginStatus.mode === "chatgpt") {
+	const promise = (async () => {
+		const existing = currentSession;
+		if (
+			existing &&
+			(existing.state === "pending" ||
+				existing.state === "awaiting_confirmation")
+		) {
+			return existing;
+		}
+
+		const loginStatus = await getCodexLoginStatus();
+		if (loginStatus.mode === "chatgpt") {
+			currentSession = {
+				id: randomUUID(),
+				state: "authenticated",
+				startedAt: Date.now(),
+				updatedAt: Date.now(),
+				message: "Already authenticated with ChatGPT subscription.",
+			};
+			return currentSession;
+		}
+
+		stopActiveProcess();
+
 		currentSession = {
 			id: randomUUID(),
-			state: "authenticated",
+			state: "pending",
 			startedAt: Date.now(),
 			updatedAt: Date.now(),
-			message: "Already authenticated with ChatGPT subscription.",
+			message: "Starting device authentication flow...",
 		};
-		return currentSession;
-	}
 
-	stopActiveProcess();
-
-	currentSession = {
-		id: randomUUID(),
-		state: "pending",
-		startedAt: Date.now(),
-		updatedAt: Date.now(),
-		message: "Starting device authentication flow...",
-	};
-
-	const proc = spawn("codex", ["login", "--device-auth"], {
-		stdio: ["pipe", "pipe", "pipe"],
-	});
-	activeProcess = proc;
-
-	proc.stdout.on("data", (chunk: Buffer | string) => {
-		consumeOutputChunk(chunk.toString("utf8"), false);
-	});
-
-	proc.stderr.on("data", (chunk: Buffer | string) => {
-		consumeOutputChunk(chunk.toString("utf8"), true);
-	});
-
-	proc.on("error", (error) => {
-		logger.warn({ err: error }, "Failed to start codex device auth");
-		setSessionPatch({
-			state: "error",
-			error: `Failed to start codex login: ${error.message}`,
+		const proc = spawn("codex", ["login", "--device-auth"], {
+			stdio: ["pipe", "pipe", "pipe"],
 		});
-		stopActiveProcess();
-	});
+		activeProcess = proc;
 
-	proc.on("close", (code) => {
-		const session = currentSession;
-		const currentState = session?.state ?? "idle";
-		const stderrText = stripAnsi(stderrBuffer).trim();
-		const stdoutText = stripAnsi(stdoutBuffer).trim();
-		const fallbackError = stderrText || stdoutText || "Codex login failed";
+		proc.stdout.on("data", (chunk: Buffer | string) => {
+			consumeOutputChunk(chunk.toString("utf8"), false);
+		});
 
-		if (currentState === "cancelled") {
-			stopActiveProcess();
-			return;
-		}
+		proc.stderr.on("data", (chunk: Buffer | string) => {
+			consumeOutputChunk(chunk.toString("utf8"), true);
+		});
 
-		if (code === 0 && currentState !== "error") {
-			setSessionPatch({
-				state: "authenticated",
-				error: undefined,
-				message: "Authenticated with ChatGPT subscription.",
-			});
-		} else if (currentState !== "authenticated") {
+		proc.on("error", (error) => {
+			logger.warn({ err: error }, "Failed to start codex device auth");
 			setSessionPatch({
 				state: "error",
-				error: fallbackError,
-				message: "Authentication failed.",
+				error: `Failed to start codex login: ${error.message}`,
 			});
+			stopActiveProcess();
+		});
+
+		proc.on("close", (code) => {
+			const session = currentSession;
+			const currentState = session?.state ?? "idle";
+			const stderrText = stripAnsi(stderrBuffer).trim();
+			const stdoutText = stripAnsi(stdoutBuffer).trim();
+			const fallbackError = stderrText || stdoutText || "Codex login failed";
+
+			if (currentState === "cancelled") {
+				stopActiveProcess();
+				return;
+			}
+
+			if (code === 0 && currentState !== "error") {
+				setSessionPatch({
+					state: "authenticated",
+					error: undefined,
+					message: "Authenticated with ChatGPT subscription.",
+				});
+			} else if (currentState !== "authenticated") {
+				setSessionPatch({
+					state: "error",
+					error: fallbackError,
+					message: "Authentication failed.",
+				});
+			}
+
+			stopActiveProcess();
+		});
+
+		return currentSession;
+	})();
+
+	startAuthPromise = promise;
+	try {
+		return await promise;
+	} finally {
+		if (startAuthPromise === promise) {
+			startAuthPromise = null;
 		}
-
-		stopActiveProcess();
-	});
-
-	return currentSession;
+	}
 }
 
 export function getCodexDeviceAuthStatus(): CodexDeviceAuthSession | null {

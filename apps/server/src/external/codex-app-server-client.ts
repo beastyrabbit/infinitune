@@ -848,6 +848,7 @@ export class CodexAppServerClient {
 		if (this.proc && !this.proc.killed) {
 			this.proc.kill("SIGTERM");
 		}
+		this.handleProcessExit(new Error("CodexAppServerClient disposed"));
 	}
 }
 
