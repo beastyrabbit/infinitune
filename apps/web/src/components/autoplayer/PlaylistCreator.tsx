@@ -1,3 +1,7 @@
+import {
+	GPT52_TEXT_MODEL,
+	GPT52_TEXT_PROVIDER,
+} from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +38,11 @@ interface PlaylistCreatorProps {
 		prompt: string;
 		provider: LlmProvider;
 		model: string;
+		lyricsLanguage?: string;
+		targetBpm?: number;
+		targetKey?: string;
+		timeSignature?: string;
+		audioDuration?: number;
 		inferenceSteps?: number;
 		lmTemperature?: number;
 		lmCfgScale?: number;
@@ -49,6 +58,11 @@ interface PlaylistCreatorProps {
 		prompt: string;
 		provider: LlmProvider;
 		model: string;
+		lyricsLanguage?: string;
+		targetBpm?: number;
+		targetKey?: string;
+		timeSignature?: string;
+		audioDuration?: number;
 		inferenceSteps?: number;
 		lmTemperature?: number;
 		lmCfgScale?: number;
@@ -74,8 +88,8 @@ export function PlaylistCreator({
 	onCreatePlaylistInRoom,
 }: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
-	const [provider, setProvider] = useState<LlmProvider>("ollama");
-	const [model, setModel] = useState("");
+	const [provider, setProvider] = useState<LlmProvider>(GPT52_TEXT_PROVIDER);
+	const [model, setModel] = useState(GPT52_TEXT_MODEL);
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -101,8 +115,9 @@ export function PlaylistCreator({
 	useEffect(() => {
 		if (!settings || settingsApplied.current) return;
 		settingsApplied.current = true;
-		if (settings.textProvider)
+		if (settings.textProvider) {
 			setProvider(settings.textProvider as LlmProvider);
+		}
 		if (settings.textModel) {
 			setModel(settings.textModel);
 			modelSetByUserOrSettings.current = true;
@@ -161,6 +176,11 @@ export function PlaylistCreator({
 				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
 				setModel(preferred ? preferred.name : textModels[0].name);
 			}
+			return;
+		}
+
+		if (provider === "openrouter" && !model.trim()) {
+			setModel(GPT52_TEXT_MODEL);
 			return;
 		}
 
@@ -233,6 +253,12 @@ export function PlaylistCreator({
 				prompt: prompt.trim(),
 				provider,
 				model,
+				lyricsLanguage:
+					(enhancedParams.lyricsLanguage as string | undefined) || "english",
+				targetBpm: enhancedParams.targetBpm as number | undefined,
+				targetKey: enhancedParams.targetKey as string | undefined,
+				timeSignature: enhancedParams.timeSignature as string | undefined,
+				audioDuration: enhancedParams.audioDuration as number | undefined,
 				inferenceSteps:
 					(enhancedParams.inferenceSteps as number | undefined) ??
 					inferenceSteps,
@@ -246,6 +272,7 @@ export function PlaylistCreator({
 				prompt: prompt.trim(),
 				provider,
 				model,
+				lyricsLanguage: "english",
 				inferenceSteps,
 				lmTemperature,
 				lmCfgScale,
@@ -454,7 +481,7 @@ export function PlaylistCreator({
 										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 										placeholder={
 											provider === "openrouter"
-												? "GOOGLE/GEMINI-2.5-FLASH"
+												? "OPENAI/GPT-5.2"
 												: provider === "openai-codex"
 													? "GPT-5.3-CODEX"
 													: "LLAMA3.1:8B"

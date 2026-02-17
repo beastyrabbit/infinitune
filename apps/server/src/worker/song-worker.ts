@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import { saveCover } from "../covers";
 import { submitToAce } from "../external/ace";
 import { generateCover } from "../external/cover";
 import {
+	generatePlaylistManagerBrief,
 	generateSongMetadata,
 	type PromptDistance,
 	type RecentSong,
@@ -19,22 +22,6 @@ import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
 
 // ─── Types ───────────────────────────────────────────────────────────
-
-const LANGUAGE_MAP: Record<string, string> = {
-	english: "en",
-	german: "de",
-	spanish: "es",
-	french: "fr",
-	korean: "ko",
-	japanese: "ja",
-	russian: "ru",
-	chinese: "zh",
-};
-
-function mapLanguageToCode(language?: string): string | undefined {
-	if (!language || language === "auto") return undefined;
-	return LANGUAGE_MAP[language.toLowerCase()] || language;
-}
 
 export type SongWorkerStatus =
 	| "running"
@@ -215,13 +202,11 @@ export class SongWorker {
 		songLogger(this.songId).info("Generating metadata");
 
 		const settings = await this.ctx.getSettings();
-		const effectiveProvider =
-			(settings.textProvider as "ollama" | "openrouter" | "openai-codex") ||
-			(this.ctx.playlist.llmProvider as
-				| "ollama"
-				| "openrouter"
-				| "openai-codex");
-		const effectiveModel = settings.textModel || this.ctx.playlist.llmModel;
+		const { provider: effectiveProvider, model: effectiveModel } =
+			resolveTextLlmProfile({
+				provider: settings.textProvider || this.ctx.playlist.llmProvider,
+				model: settings.textModel || this.ctx.playlist.llmModel,
+			});
 
 		const prompt = this.song.interruptPrompt || this.ctx.playlist.prompt;
 		const isInterrupt = !!this.song.interruptPrompt;
@@ -243,6 +228,7 @@ export class SongWorker {
 						provider: effectiveProvider,
 						model: effectiveModel,
 						lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
+						managerBrief: this.ctx.playlist.managerBrief ?? undefined,
 						targetBpm: this.ctx.playlist.targetBpm ?? undefined,
 						targetKey: this.ctx.playlist.targetKey ?? undefined,
 						timeSignature: this.ctx.playlist.timeSignature ?? undefined,
@@ -253,6 +239,43 @@ export class SongWorker {
 						promptDistance,
 						signal,
 					};
+
+					const currentEpoch = this.getCurrentEpoch();
+					const needsManagerRefresh =
+						!this.ctx.playlist.managerBrief?.trim() ||
+						this.ctx.playlist.managerEpoch !== currentEpoch;
+
+					if (needsManagerRefresh) {
+						try {
+							const managerBrief = await generatePlaylistManagerBrief({
+								prompt: this.ctx.playlist.prompt,
+								provider: effectiveProvider,
+								model: effectiveModel,
+								lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
+								recentSongs: this.ctx.recentSongs,
+								recentDescriptions: this.ctx.recentDescriptions,
+								steerHistory: this.ctx.playlist.steerHistory,
+								previousBrief: this.ctx.playlist.managerBrief,
+								signal,
+							});
+							await playlistService.updateManagerBrief(this.ctx.playlist.id, {
+								managerBrief,
+								managerEpoch: currentEpoch,
+							});
+							this.ctx.playlist = {
+								...this.ctx.playlist,
+								managerBrief,
+								managerEpoch: currentEpoch,
+								managerUpdatedAt: Date.now(),
+							};
+							genOptions.managerBrief = managerBrief;
+						} catch (err) {
+							songLogger(this.songId).warn(
+								{ err, playlistId: this.ctx.playlist.id, currentEpoch },
+								"Playlist manager brief refresh failed; continuing with current context",
+							);
+						}
+					}
 
 					let result = await generateSongMetadata(genOptions);
 
@@ -435,8 +458,8 @@ export class SongWorker {
 								}
 							).aceModel,
 							inferenceSteps: this.ctx.playlist.inferenceSteps ?? undefined,
-							vocalLanguage: mapLanguageToCode(
-								this.ctx.playlist.lyricsLanguage ?? undefined,
+							vocalLanguage: toAceVocalLanguageCode(
+								this.ctx.playlist.lyricsLanguage,
 							),
 							lmTemperature: this.ctx.playlist.lmTemperature ?? undefined,
 							lmCfgScale: this.ctx.playlist.lmCfgScale ?? undefined,

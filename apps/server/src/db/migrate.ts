@@ -31,11 +31,14 @@ export function ensureSchema() {
 			lm_temperature REAL,
 			lm_cfg_scale REAL,
 			infer_method TEXT,
-			current_order_index REAL,
-			last_seen_at INTEGER,
-			prompt_epoch INTEGER DEFAULT 0,
-			steer_history TEXT
-		);
+				current_order_index REAL,
+				last_seen_at INTEGER,
+				prompt_epoch INTEGER DEFAULT 0,
+				steer_history TEXT,
+				manager_brief TEXT,
+				manager_epoch INTEGER,
+				manager_updated_at INTEGER
+			);
 
 		CREATE INDEX IF NOT EXISTS playlists_by_playlist_key ON playlists(playlist_key);
 
@@ -115,6 +118,39 @@ export function ensureSchema() {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (!msg.includes("duplicate column name")) {
 			logger.error({ err }, "Failed to add is_starred column to playlists");
+			throw err;
+		}
+	}
+
+	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_brief TEXT");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add manager_brief column to playlists");
+			throw err;
+		}
+	}
+
+	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_epoch INTEGER");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add manager_epoch column to playlists");
+			throw err;
+		}
+	}
+
+	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_updated_at INTEGER");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error(
+				{ err },
+				"Failed to add manager_updated_at column to playlists",
+			);
 			throw err;
 		}
 	}

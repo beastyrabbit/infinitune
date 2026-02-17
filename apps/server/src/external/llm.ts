@@ -1,3 +1,5 @@
+import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import z from "zod";
 import { callLlmObject } from "./llm-client";
 
@@ -28,9 +30,12 @@ Field guidance:
   Use UPPERCASE for emotional intensity: "I will NOT surrender"
   Include at least one instrumental section. Aim for 6-10 syllables per line for vocal clarity.
   IMPORTANT: Instruments mentioned in the caption MUST appear as instrumental tags in the lyrics.
+  Keep tags concise (max one style hint in each section tag).
+  If the track should be instrumental, use [Instrumental] instead of sung lyrics.
 - caption: Audio generation prompt. Structure: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. Do NOT include vocal info, BPM, key, or duration — those go in dedicated fields. Max 300 chars.
   Examples: "shoegaze, shimmering reverb guitars, droning Juno-60 pads, tight snare, warm tape saturation, hazy and melancholic"
   "lo-fi hip-hop, dusty SP-404 samples, muted Rhodes, vinyl crackle, boom-bap drums, late-night contemplative"
+  Caption and lyrics tags must never conflict on instruments, mood, or performance direction.
 - coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
   RULES:
   1. ART STYLE — Pick ONE at random. Vary art styles across songs: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, stained glass window, watercolor bleed on wet paper, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, spray paint stencil on brick wall, Dutch Golden Age still life, Chinese ink wash painting, cross-processed 35mm film, Aboriginal dot painting, 1950s pulp sci-fi cover, solarized darkroom print
@@ -292,6 +297,30 @@ export interface RecentSong {
 	energy?: string;
 }
 
+const PlaylistManagerSchema = z.object({
+	managerBrief: z
+		.string()
+		.describe(
+			"Compact playlist operating brief for downstream song generation. Include core sonic identity, exploration lanes, ACE caption/lyrics consistency guardrails, and anti-patterns.",
+		),
+});
+
+const PLAYLIST_MANAGER_PROMPT = `You are a playlist-level music director optimizing prompts for ACE-Step text2music.
+
+Write a concise manager brief that will guide multiple per-song generations.
+
+Requirements:
+- Keep one coherent musical identity with room for controlled exploration.
+- Encode guardrails for ACE-Step:
+  - Caption is global style/instrument/texture/mood only.
+  - Lyrics are the temporal script with concise section tags.
+  - Caption and lyrics tags must stay consistent.
+  - Avoid conflicting style instructions.
+- Include 3-6 "avoid patterns" that previously caused weak output.
+- Include a short persona target for what the listener should feel across songs.
+
+Output JSON with only "managerBrief".`;
+
 function clampInt(
 	val: number,
 	min: number,
@@ -304,6 +333,10 @@ function clampInt(
 
 /** Sanitize LLM-generated metadata: clamp numeric fields to safe ranges and normalize strings */
 function validateSongMetadata(raw: SongMetadata): SongMetadata {
+	const normalizedOutputLanguage = normalizeLyricsLanguage(raw.language);
+	const languageLabel =
+		normalizedOutputLanguage === "german" ? "German" : "English";
+
 	return {
 		...raw,
 		title: raw.title?.trim() || "Untitled",
@@ -333,7 +366,7 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 				: ["synthesizer", "drum machine", "bass"],
 		tags: raw.tags?.length > 0 ? raw.tags : ["electronic", "ambient"],
 		themes: raw.themes?.length > 0 ? raw.themes : ["atmosphere"],
-		language: raw.language?.trim() || "English",
+		language: languageLabel,
 		description: raw.description?.trim() || "An AI-generated track.",
 	};
 }
@@ -370,6 +403,7 @@ export async function generatePersonaExtract(options: {
 	signal?: AbortSignal;
 }): Promise<string> {
 	const { song, provider, model, signal } = options;
+	const resolved = resolveTextLlmProfile({ provider, model });
 
 	const lines: string[] = [];
 	if (song.title) lines.push(`Title: "${song.title}"`);
@@ -391,8 +425,8 @@ export async function generatePersonaExtract(options: {
 	const userMessage = lines.join("\n");
 
 	const result = await callLlmObject({
-		provider,
-		model,
+		provider: resolved.provider,
+		model: resolved.model,
 		system: PERSONA_SYSTEM_PROMPT,
 		prompt: userMessage,
 		schema: PersonaSchema,
@@ -407,11 +441,94 @@ export async function generatePersonaExtract(options: {
 	return persona;
 }
 
+export async function generatePlaylistManagerBrief(options: {
+	prompt: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	lyricsLanguage?: string;
+	recentSongs?: RecentSong[];
+	recentDescriptions?: string[];
+	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
+	previousBrief?: string | null;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const {
+		prompt,
+		provider,
+		model,
+		lyricsLanguage,
+		recentSongs,
+		recentDescriptions,
+		steerHistory,
+		previousBrief,
+		signal,
+	} = options;
+	const resolved = resolveTextLlmProfile({ provider, model });
+
+	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
+	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
+
+	const messageParts: string[] = [];
+	messageParts.push(`Playlist prompt: ${prompt}`);
+	messageParts.push(`Lyrics language lock: ${languageLabel}`);
+
+	if (previousBrief?.trim()) {
+		messageParts.push(`Previous manager brief: ${previousBrief.trim()}`);
+	}
+
+	if (steerHistory?.length) {
+		const steering = steerHistory
+			.slice(-10)
+			.map((entry) => {
+				const at = new Date(entry.at).toISOString();
+				return `- epoch ${entry.epoch} @ ${at}: ${entry.direction}`;
+			})
+			.join("\n");
+		messageParts.push(`Recent steering history:\n${steering}`);
+	}
+
+	if (recentSongs?.length) {
+		const recent = recentSongs
+			.slice(0, 12)
+			.map(
+				(s, i) =>
+					`${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre}/${s.subGenre}${s.vocalStyle ? `, ${s.vocalStyle}` : ""}${s.mood ? `, mood=${s.mood}` : ""}${s.energy ? `, energy=${s.energy}` : ""}`,
+			)
+			.join("\n");
+		messageParts.push(`Recent generated songs:\n${recent}`);
+	}
+
+	if (recentDescriptions?.length) {
+		const recents = recentDescriptions
+			.slice(0, 20)
+			.map((d, i) => `${i + 1}. ${d}`)
+			.join("\n");
+		messageParts.push(`Recent story angles:\n${recents}`);
+	}
+
+	const result = await callLlmObject({
+		provider: resolved.provider,
+		model: resolved.model,
+		system: PLAYLIST_MANAGER_PROMPT,
+		prompt: messageParts.join("\n\n"),
+		schema: PlaylistManagerSchema,
+		schemaName: "playlist_manager_brief",
+		temperature: 0.6,
+		signal,
+	});
+
+	const brief =
+		typeof result.managerBrief === "string" ? result.managerBrief.trim() : "";
+	if (!brief) throw new Error("Empty playlist manager brief");
+	return brief.slice(0, 1800);
+}
+
 export async function generateSongMetadata(options: {
 	prompt: string;
 	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	lyricsLanguage?: string;
+	managerBrief?: string;
 	targetBpm?: number;
 	targetKey?: string;
 	timeSignature?: string;
@@ -427,6 +544,7 @@ export async function generateSongMetadata(options: {
 		provider,
 		model,
 		lyricsLanguage,
+		managerBrief,
 		targetBpm,
 		targetKey,
 		timeSignature,
@@ -437,6 +555,10 @@ export async function generateSongMetadata(options: {
 		promptDistance,
 		signal,
 	} = options;
+	const resolved = resolveTextLlmProfile({ provider, model });
+
+	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
+	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
 
 	// Determine prompt distance: explicit > interrupt flag > default close
 	const distance: PromptDistance =
@@ -456,9 +578,8 @@ export async function generateSongMetadata(options: {
 
 	let systemPrompt = getSystemPrompt(distance);
 
-	if (lyricsLanguage && lyricsLanguage !== "auto") {
-		systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${lyricsLanguage.charAt(0).toUpperCase() + lyricsLanguage.slice(1)}.`;
-	}
+	systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${languageLabel}.`;
+	systemPrompt += `\nSet the "language" field exactly to "${languageLabel}".`;
 	if (targetKey) {
 		systemPrompt += `\n\nUse the musical key: ${targetKey}.`;
 	}
@@ -471,6 +592,9 @@ export async function generateSongMetadata(options: {
 
 	// Build user message with soft recent-song awareness (no bans, no forced switches)
 	let userMessage = prompt;
+	if (managerBrief?.trim()) {
+		userMessage += `\n\n--- Playlist manager brief (high priority guidance) ---\n${managerBrief.trim()}`;
+	}
 	if (distance !== "faithful" && recentSongs && recentSongs.length > 0) {
 		const historyLines = recentSongs
 			.map(
@@ -493,15 +617,15 @@ export async function generateSongMetadata(options: {
 	}
 
 	const raw = await callLlmObject({
-		provider,
-		model,
+		provider: resolved.provider,
+		model: resolved.model,
 		system: systemPrompt,
 		prompt: userMessage,
 		schema: SongMetadataSchema,
 		schemaName: "song_specification",
 		temperature,
 		seed:
-			provider === "ollama"
+			resolved.provider === "ollama"
 				? Math.floor(Math.random() * 2147483647)
 				: undefined,
 		signal,

@@ -1,4 +1,5 @@
 import z from "zod";
+import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
 import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
 
 /** Schema for creating a playlist */
@@ -9,7 +10,7 @@ export const CreatePlaylistSchema = z.object({
 	llmModel: z.string().min(1),
 	mode: z.enum(PLAYLIST_MODES).optional().default("endless"),
 	playlistKey: z.string().optional(),
-	lyricsLanguage: z.string().optional(),
+	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES).optional(),
 	targetBpm: z.number().min(30).max(300).optional(),
 	targetKey: z.string().optional(),
 	timeSignature: z.string().optional(),
@@ -37,7 +38,7 @@ export const UpdatePlaylistPositionSchema = z.object({
 
 /** Schema for updating generation params */
 export const UpdatePlaylistParamsSchema = z.object({
-	lyricsLanguage: z.string().nullable().optional(),
+	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES).nullable().optional(),
 	targetBpm: z.number().min(30).max(300).nullable().optional(),
 	targetKey: z.string().nullable().optional(),
 	timeSignature: z.string().nullable().optional(),

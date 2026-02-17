@@ -1,3 +1,4 @@
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import { createFileRoute } from "@tanstack/react-router";
 import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { callLlmText } from "@/services/llm-client";
@@ -52,9 +53,10 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 
 					const userMessage = `Current session prompt:\n"${trimmedPrompt}"\n\nUser direction:\n"${trimmedDirection}"\n\nReturn the updated prompt:`;
 
+					const resolved = resolveTextLlmProfile({ provider, model });
 					const result = await callLlmText({
-						provider: provider as "ollama" | "openrouter" | "openai-codex",
-						model,
+						provider: resolved.provider,
+						model: resolved.model,
 						system: SYSTEM_PROMPT,
 						prompt: userMessage,
 						temperature: 0.7,

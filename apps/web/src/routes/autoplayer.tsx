@@ -196,6 +196,11 @@ function AutoplayerPage() {
 			prompt: string;
 			provider: LlmProvider;
 			model: string;
+			lyricsLanguage?: string;
+			targetBpm?: number;
+			targetKey?: string;
+			timeSignature?: string;
+			audioDuration?: number;
 			inferenceSteps?: number;
 			lmTemperature?: number;
 			lmCfgScale?: number;
@@ -208,6 +213,11 @@ function AutoplayerPage() {
 				llmProvider: data.provider,
 				llmModel: data.model,
 				playlistKey: key,
+				lyricsLanguage: data.lyricsLanguage,
+				targetBpm: data.targetBpm,
+				targetKey: data.targetKey,
+				timeSignature: data.timeSignature,
+				audioDuration: data.audioDuration,
 				inferenceSteps: data.inferenceSteps,
 				lmTemperature: data.lmTemperature,
 				lmCfgScale: data.lmCfgScale,

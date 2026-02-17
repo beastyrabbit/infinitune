@@ -129,6 +129,9 @@ export interface Playlist {
 	lastSeenAt: number | null;
 	promptEpoch: number | null;
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
+	managerBrief: string | null;
+	managerEpoch: number | null;
+	managerUpdatedAt: number | null;
 	isStarred: boolean;
 }
 

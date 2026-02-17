@@ -1,3 +1,8 @@
+import {
+	inferLyricsLanguageFromPrompt,
+	SUPPORTED_LYRICS_LANGUAGES,
+} from "@infinitune/shared/lyrics-language";
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import { createFileRoute } from "@tanstack/react-router";
 import z from "zod";
 import { callLlmObject } from "@/services/llm-client";
@@ -7,7 +12,7 @@ const SYSTEM_PROMPT = `You are a music production expert. Given a music descript
 Your response must conform to the provided JSON schema.
 
 Field guidance:
-- lyricsLanguage: The language the lyrics should be written in. Infer from the description (e.g. if they mention "German rock" → "german"). Use "auto" if no language is implied.
+- lyricsLanguage: Must be one of: "english" or "german". Infer from the description (e.g. "German rock" -> "german"). If unclear, default to "english".
 - targetBpm: Beats per minute appropriate for the described genre (e.g. 70-90 for ballads, 120-130 for house, 140-170 for DnB)
 - targetKey: Musical key that fits the mood (e.g. "A minor" for dark/aggressive, "C major" for bright/happy, "F# minor" for melancholic)
 - timeSignature: Time signature (usually "4/4", "3/4" for waltzes, "6/8" for compound time)
@@ -16,9 +21,7 @@ Field guidance:
 Be specific and match parameters to the genre conventions described.`;
 
 const SessionParamsSchema = z.object({
-	lyricsLanguage: z
-		.string()
-		.describe('Language for lyrics, e.g. "english", "german", "auto"'),
+	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES),
 	targetBpm: z.number().describe("Beats per minute (60-220)"),
 	targetKey: z.string().describe('Musical key, e.g. "A minor", "C major"'),
 	timeSignature: z.string().describe('Time signature, e.g. "4/4", "3/4"'),
@@ -46,9 +49,10 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 						);
 					}
 
+					const resolved = resolveTextLlmProfile({ provider, model });
 					const params = await callLlmObject({
-						provider: provider as "ollama" | "openrouter" | "openai-codex",
-						model,
+						provider: resolved.provider,
+						model: resolved.model,
 						system: SYSTEM_PROMPT,
 						prompt,
 						schema: SessionParamsSchema,
@@ -56,9 +60,19 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 						temperature: 0.7,
 					});
 
-					return new Response(JSON.stringify(params), {
-						headers: { "Content-Type": "application/json" },
-					});
+					const hardLanguage = params.lyricsLanguage
+						? params.lyricsLanguage
+						: inferLyricsLanguageFromPrompt(prompt);
+
+					return new Response(
+						JSON.stringify({
+							...params,
+							lyricsLanguage: hardLanguage,
+						}),
+						{
+							headers: { "Content-Type": "application/json" },
+						},
+					);
 				} catch (error: unknown) {
 					console.error("[enhance-session] LLM call failed:", error);
 					return new Response(

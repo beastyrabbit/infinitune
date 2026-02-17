@@ -1,3 +1,7 @@
+import {
+	GPT52_TEXT_MODEL,
+	GPT52_TEXT_PROVIDER,
+} from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
@@ -80,11 +84,6 @@ const LANGUAGES = [
 	{ value: "auto", label: "AUTO" },
 	{ value: "english", label: "ENGLISH" },
 	{ value: "german", label: "GERMAN" },
-	{ value: "spanish", label: "SPANISH" },
-	{ value: "french", label: "FRENCH" },
-	{ value: "korean", label: "KOREAN" },
-	{ value: "japanese", label: "JAPANESE" },
-	{ value: "russian", label: "RUSSIAN" },
 ] as const;
 
 // ─── Main Component ─────────────────────────────────────────────────
@@ -101,8 +100,8 @@ function OneshotPage() {
 
 	// ── Local state ──
 	const [prompt, setPrompt] = useState("");
-	const [provider, setProvider] = useState<LlmProvider>("ollama");
-	const [model, setModel] = useState("");
+	const [provider, setProvider] = useState<LlmProvider>(GPT52_TEXT_PROVIDER);
+	const [model, setModel] = useState(GPT52_TEXT_MODEL);
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
 	const [enhancing, setEnhancing] = useState(false);
@@ -120,7 +119,7 @@ function OneshotPage() {
 	const [key, setKey] = useState("");
 	const [timeSig, setTimeSig] = useState("");
 	const [duration, setDuration_] = useState("");
-	const [steps, setSteps] = useState("12");
+	const [steps, setSteps] = useState("8");
 	const [lmTemp, setLmTemp] = useState("0.85");
 	const [lmCfg, setLmCfg] = useState("2.5");
 	const [inferMeth, setInferMeth] = useState("ode");
@@ -217,6 +216,11 @@ function OneshotPage() {
 				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
 				setModel(preferred ? preferred.name : textModels[0].name);
 			}
+			return;
+		}
+
+		if (provider === "openrouter" && !model.trim()) {
+			setModel(GPT52_TEXT_MODEL);
 			return;
 		}
 
@@ -550,7 +554,7 @@ function OneshotPage() {
 											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 											placeholder={
 												provider === "openrouter"
-													? "GOOGLE/GEMINI-2.5-FLASH"
+													? "OPENAI/GPT-5.2"
 													: provider === "openai-codex"
 														? "GPT-5.3-CODEX"
 														: "LLAMA3.1:8B"

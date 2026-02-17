@@ -4,6 +4,8 @@
 	"type": "module",
 	"exports": {
 		"./types": "./src/types.ts",
+		"./lyrics-language": "./src/lyrics-language.ts",
+		"./text-llm-profile": "./src/text-llm-profile.ts",
 		"./protocol": "./src/protocol.ts",
 		"./pick-next-song": "./src/pick-next-song.ts",
 		"./format-time": "./src/format-time.ts",

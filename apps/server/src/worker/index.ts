@@ -1,3 +1,8 @@
+import {
+	GPT52_TEXT_MODEL,
+	GPT52_TEXT_PROVIDER,
+	resolveTextLlmProfile,
+} from "@infinitune/shared/text-llm-profile";
 import { on } from "../events/event-bus";
 import { batchPollAce, pollAce } from "../external/ace";
 import { generatePersonaExtract, type RecentSong } from "../external/llm";
@@ -51,12 +56,16 @@ async function getSettings(): Promise<{
 }> {
 	const all = await settingsService.getAll();
 	return {
-		textProvider: all.textProvider || "ollama",
-		textModel: all.textModel || "",
+		textProvider: all.textProvider || GPT52_TEXT_PROVIDER,
+		textModel: all.textModel || GPT52_TEXT_MODEL,
 		imageProvider: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
-		personaProvider: all.personaProvider || "",
-		personaModel: all.personaModel || "",
+		personaProvider:
+			all.personaProvider || all.textProvider || GPT52_TEXT_PROVIDER,
+		personaModel:
+			all.personaModel && all.personaModel !== "__fallback__"
+				? all.personaModel
+				: all.textModel || GPT52_TEXT_MODEL,
 	};
 }
 
@@ -241,40 +250,10 @@ async function runPersonaScan(
 	const needsPersona = await songService.getNeedsPersona();
 	if (needsPersona.length === 0) return;
 
-	// Resolve persona provider + model
-	const explicitPersonaProvider = settings.personaProvider || "";
-	const explicitPersonaModel =
-		settings.personaModel && settings.personaModel !== "__fallback__"
-			? settings.personaModel
-			: "";
-	let pProvider: "ollama" | "openrouter" | "openai-codex";
-	let pModel: string;
-	if (explicitPersonaModel) {
-		pProvider = (explicitPersonaProvider || "ollama") as
-			| "ollama"
-			| "openrouter"
-			| "openai-codex";
-		pModel = explicitPersonaModel;
-	} else if (
-		!explicitPersonaProvider ||
-		explicitPersonaProvider === settings.textProvider
-	) {
-		pProvider = (settings.textProvider || "ollama") as
-			| "ollama"
-			| "openrouter"
-			| "openai-codex";
-		pModel = settings.textModel;
-	} else {
-		logger.info(
-			{
-				personaProvider: explicitPersonaProvider,
-				textProvider: settings.textProvider,
-			},
-			"Skipping persona scan: no personaModel set",
-		);
-		return;
-	}
-	if (!pModel) return;
+	const { provider: pProvider, model: pModel } = resolveTextLlmProfile({
+		provider: settings.personaProvider || settings.textProvider,
+		model: settings.personaModel || settings.textModel,
+	});
 
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;
