@@ -69,8 +69,6 @@ export class CodexAppServerClient {
 	private startPromise: Promise<void> | null = null;
 	private pendingRequests = new Map<number, PendingRequest>();
 	private pendingTurns = new Map<string, PendingTurn>();
-	private threadIdsByModel = new Map<string, string>();
-	private threadStartPromises = new Map<string, Promise<string>>();
 	private suppressedRolloutWarnings = 0;
 	private lastSuppressedRolloutLogAt = 0;
 
@@ -111,8 +109,6 @@ export class CodexAppServerClient {
 			this.proc = null;
 			this.initialized = false;
 			this.stdoutBuffer = "";
-			this.threadIdsByModel.clear();
-			this.threadStartPromises.clear();
 			throw error;
 		}
 	}
@@ -176,8 +172,6 @@ export class CodexAppServerClient {
 		this.proc = null;
 		this.initialized = false;
 		this.stdoutBuffer = "";
-		this.threadIdsByModel.clear();
-		this.threadStartPromises.clear();
 
 		for (const [id, pending] of this.pendingRequests) {
 			clearTimeout(pending.timeout);
@@ -441,45 +435,23 @@ export class CodexAppServerClient {
 		return await this.requestRaw(method, params, timeoutMs);
 	}
 
-	private async readThreadModel(model: string): Promise<string> {
-		const existing = this.threadIdsByModel.get(model);
-		if (existing) {
-			return existing;
+	private async startThread(model: string): Promise<string> {
+		const raw = await this.request(
+			"thread/start",
+			{
+				model,
+				cwd: process.cwd(),
+				approvalPolicy: "never",
+				sandbox: "read-only",
+			},
+			APP_SERVER_REQUEST_TIMEOUT_MS,
+		);
+		const result = raw as { thread?: { id?: string } };
+		const threadId = result.thread?.id;
+		if (!threadId) {
+			throw new Error("Codex thread/start returned no thread id");
 		}
-
-		const activeStart = this.threadStartPromises.get(model);
-		if (activeStart) {
-			return await activeStart;
-		}
-
-		const startPromise = (async () => {
-			const raw = await this.request(
-				"thread/start",
-				{
-					model,
-					cwd: process.cwd(),
-					approvalPolicy: "never",
-					sandbox: "read-only",
-				},
-				APP_SERVER_REQUEST_TIMEOUT_MS,
-			);
-			const result = raw as { thread?: { id?: string } };
-			const threadId = result.thread?.id;
-			if (!threadId) {
-				throw new Error("Codex thread/start returned no thread id");
-			}
-			this.threadIdsByModel.set(model, threadId);
-			return threadId;
-		})();
-
-		this.threadStartPromises.set(model, startPromise);
-		try {
-			return await startPromise;
-		} finally {
-			if (this.threadStartPromises.get(model) === startPromise) {
-				this.threadStartPromises.delete(model);
-			}
-		}
+		return threadId;
 	}
 
 	private async runTurn(options: {
@@ -488,7 +460,7 @@ export class CodexAppServerClient {
 		outputSchema?: Record<string, unknown>;
 		signal?: AbortSignal;
 	}): Promise<string> {
-		const threadId = await this.readThreadModel(options.model);
+		const threadId = await this.startThread(options.model);
 		const turnRaw = await this.request(
 			"turn/start",
 			{

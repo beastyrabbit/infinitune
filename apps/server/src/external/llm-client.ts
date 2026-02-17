@@ -17,10 +17,20 @@ import { getServiceUrls, getSetting } from "./service-urls";
 
 type Provider = LlmProvider;
 
+const CODEX_LLM_CONCURRENCY = (() => {
+	const raw = process.env.CODEX_LLM_CONCURRENCY;
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	// Default to effectively unthrottled Codex calls from this process.
+	return 100;
+})();
+
 const LIMITS: Record<Provider, number> = {
 	ollama: 1,
 	openrouter: 5,
-	"openai-codex": 2,
+	"openai-codex": CODEX_LLM_CONCURRENCY,
 };
 
 interface Waiter {
