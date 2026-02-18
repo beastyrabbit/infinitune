@@ -9,7 +9,11 @@ import {
 	useWorkerStatus,
 	type WorkerStatus,
 } from "@/hooks/useWorkerStatus";
-import { usePlaylistByKey, useSongsBatch } from "@/integrations/api/hooks";
+import {
+	usePlaylistByKey,
+	useSongQueue,
+	useSongsBatch,
+} from "@/integrations/api/hooks";
 import {
 	getCoverColors,
 	getCoverPattern,
@@ -17,6 +21,7 @@ import {
 	getPatternStyle,
 } from "@/lib/cover-utils";
 import { formatElapsed } from "@/lib/format-time";
+import { computePipelineTruth, type PipelineTruth } from "@/lib/pipeline-truth";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import type { Song } from "@/types";
 
@@ -487,6 +492,63 @@ function WorkerOverview({ status }: { status: WorkerStatus }) {
 	);
 }
 
+function PipelineTruthPanel({ truth }: { truth: PipelineTruth }) {
+	return (
+		<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 border-2 border-white/15 bg-black/40 divide-x-2 divide-y-2 md:divide-y-0 divide-white/10">
+			<div className="px-3 py-2.5 text-center">
+				<div className="text-xl font-black tabular-nums text-cyan-400">
+					{truth.lyricsInProgress}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					LYRICS TOTAL
+				</div>
+			</div>
+			<div className="px-3 py-2.5 text-center">
+				<div className="text-xl font-black tabular-nums text-green-400">
+					{truth.lyricsInQueue}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					LYRICS IN LLM
+				</div>
+			</div>
+			<div className="px-3 py-2.5 text-center">
+				<div
+					className={`text-xl font-black tabular-nums ${truth.lyricsPreQueue > 0 ? "text-yellow-400" : "text-white/30"}`}
+				>
+					{truth.lyricsPreQueue}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					LYRICS PRE-QUEUE
+				</div>
+			</div>
+			<div className="px-3 py-2.5 text-center">
+				<div className="text-xl font-black tabular-nums text-pink-400">
+					{truth.personaLlmJobs}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					PERSONA LLM JOBS
+				</div>
+			</div>
+			<div className="px-3 py-2.5 text-center">
+				<div className="text-xl font-black tabular-nums text-amber-400">
+					{truth.audioInProgress}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					AUDIO TOTAL
+				</div>
+			</div>
+			<div className="px-3 py-2.5 text-center">
+				<div className="text-xl font-black tabular-nums text-white/70">
+					{truth.readyCount}
+				</div>
+				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
+					READY BUFFER
+				</div>
+			</div>
+		</div>
+	);
+}
+
 // ─── Main page ──────────────────────────────────────────────────────
 
 function QueuePage() {
@@ -494,6 +556,7 @@ function QueuePage() {
 	const { pl } = Route.useSearch();
 	const playlistByKey = usePlaylistByKey(pl ?? null);
 	usePlaylistHeartbeat(playlistByKey?.id ?? null);
+	const playlistSongs = useSongQueue(playlistByKey?.id ?? null);
 	const { status, error } = useWorkerStatus();
 
 	// Collect all unique song IDs from the worker status
@@ -528,6 +591,11 @@ function QueuePage() {
 		}
 		return map;
 	}, [songsData]);
+
+	const pipelineTruth = useMemo(
+		() => computePipelineTruth(playlistSongs, status),
+		[playlistSongs, status],
+	);
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white">
@@ -595,6 +663,7 @@ function QueuePage() {
 					<>
 						{/* Overview strip */}
 						<WorkerOverview status={status} />
+						<PipelineTruthPanel truth={pipelineTruth} />
 
 						{/* Endpoint panels */}
 						<div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
