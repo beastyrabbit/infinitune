@@ -135,6 +135,16 @@ export function ensureSchema() {
 	}
 
 	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_plan TEXT");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add manager_plan column to playlists");
+			throw err;
+		}
+	}
+
+	try {
 		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_epoch INTEGER");
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
@@ -153,16 +163,6 @@ export function ensureSchema() {
 				{ err },
 				"Failed to add manager_updated_at column to playlists",
 			);
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_plan TEXT");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add manager_plan column to playlists");
 			throw err;
 		}
 	}

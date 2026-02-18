@@ -136,36 +136,38 @@ export async function updateParams(
 	];
 
 	const patch: Record<string, unknown> = {};
+	let touchedLyricsLanguage = false;
+	let touchedLlmProfile = false;
 	for (const key of allowedKeys) {
 		if (params[key] === undefined) continue;
 		if (key === "llmProvider") {
 			if (typeof params[key] !== "string") continue;
 			patch[key] = params[key].trim();
+			touchedLlmProfile = true;
 			continue;
 		}
 		if (key === "llmModel") {
 			if (params[key] === null) {
 				patch[key] = "";
+				touchedLlmProfile = true;
 				continue;
 			}
 			if (typeof params[key] !== "string") continue;
 			patch[key] = params[key].trim();
+			touchedLlmProfile = true;
 			continue;
 		}
 		if (key === "lyricsLanguage") {
 			patch[key] = normalizeLyricsLanguage(
 				typeof params[key] === "string" ? params[key] : undefined,
 			);
+			touchedLyricsLanguage = true;
 			continue;
 		}
 		patch[key] = params[key];
 	}
 
-	if (
-		patch.llmProvider !== undefined ||
-		patch.llmModel !== undefined ||
-		patch.lyricsLanguage !== undefined
-	) {
+	if (touchedLlmProfile || touchedLyricsLanguage) {
 		patch.managerBrief = null;
 		patch.managerPlan = null;
 		patch.managerEpoch = null;

@@ -59,7 +59,9 @@ const MAX_PENDING_TURNS = (() => {
 	if (Number.isFinite(parsed) && parsed > 0) {
 		return parsed;
 	}
-	return 200;
+	// Keep this comfortably above default CODEX_LLM_CONCURRENCY (100) so it
+	// serves as a leak guard rather than a normal throughput limiter.
+	return 1000;
 })();
 
 function isNoisyRolloutWarning(message: string): boolean {
