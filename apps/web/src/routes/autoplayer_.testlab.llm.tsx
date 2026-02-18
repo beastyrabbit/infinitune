@@ -7,7 +7,6 @@ import {
 } from "@/components/autoplayer/test/shared";
 import { useSettings } from "@/integrations/api/hooks";
 import { API_URL } from "@/lib/endpoints";
-import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/llm")({
 	component: LlmTestPage,
@@ -39,6 +38,10 @@ function LlmTestPage() {
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<Generation[]>([]);
 	const [expandedId, setExpandedId] = useState<number | null>(null);
+	const [promptContract, setPromptContract] = useState<{
+		systemPrompt: string;
+		schema: unknown;
+	} | null>(null);
 
 	// Sync provider/model from settings
 	useEffect(() => {
@@ -103,6 +106,22 @@ function LlmTestPage() {
 				.catch(() => setCodexModels([]));
 		}
 	}, [provider]);
+
+	useEffect(() => {
+		fetch(`${API_URL}/api/autoplayer/prompt-contract`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((data) => {
+				if (!data) return;
+				setPromptContract({
+					systemPrompt:
+						typeof data.systemPrompt === "string" ? data.systemPrompt : "",
+					schema: data.schema ?? null,
+				});
+			})
+			.catch(() => {
+				setPromptContract(null);
+			});
+	}, []);
 
 	const handleGenerate = useCallback(async () => {
 		setIsRunning(true);
@@ -333,8 +352,14 @@ function LlmTestPage() {
 					</span>
 				</div>
 				<div className="p-4 space-y-1">
-					<CollapsibleJson label="SYSTEM PROMPT" data={SYSTEM_PROMPT} />
-					<CollapsibleJson label="JSON SCHEMA" data={SONG_SCHEMA} />
+					<CollapsibleJson
+						label="SYSTEM PROMPT"
+						data={promptContract?.systemPrompt ?? "Loading from backend..."}
+					/>
+					<CollapsibleJson
+						label="JSON SCHEMA"
+						data={promptContract?.schema ?? "Loading from backend..."}
+					/>
 					<div className="mt-2 text-[10px] font-bold uppercase text-white/20">
 						Structured output:{" "}
 						{provider === "ollama"

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RotateCcw } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	CollapsibleJson,
 	formatElapsed,
@@ -18,7 +18,6 @@ import {
 	useUpdateCover,
 	useUpdateStoragePath,
 } from "@/integrations/api/hooks";
-import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/e2e")({
 	component: PipelineTestPage,
@@ -72,6 +71,10 @@ function PipelineTestPage() {
 	const [songMeta, setSongMeta] = useState<Record<string, unknown> | null>(
 		null,
 	);
+	const [promptContract, setPromptContract] = useState<{
+		systemPrompt: string;
+		schema: unknown;
+	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
 
 	const collectedData = useRef<{
@@ -87,6 +90,22 @@ function PipelineTestPage() {
 			...prev,
 			[key]: { ...prev[key], ...patch },
 		}));
+	}, []);
+
+	useEffect(() => {
+		fetch("/api/autoplayer/prompt-contract")
+			.then((r) => (r.ok ? r.json() : null))
+			.then((data) => {
+				if (!data) return;
+				setPromptContract({
+					systemPrompt:
+						typeof data.systemPrompt === "string" ? data.systemPrompt : "",
+					schema: data.schema ?? null,
+				});
+			})
+			.catch(() => {
+				setPromptContract(null);
+			});
 	}, []);
 
 	const runPipeline = useCallback(
@@ -131,9 +150,10 @@ function PipelineTestPage() {
 					const llmInput = {
 						provider,
 						model,
-						systemPrompt: SYSTEM_PROMPT,
+						systemPrompt:
+							promptContract?.systemPrompt || "Server-managed prompt contract",
 						userPrompt: prompt,
-						schema: SONG_SCHEMA,
+						schema: promptContract?.schema || "Server-managed JSON schema",
 						structuredOutput:
 							provider === "ollama"
 								? "format (JSON schema)"
@@ -531,6 +551,7 @@ function PipelineTestPage() {
 			markReady,
 			incrementSongs,
 			updateStep,
+			promptContract,
 		],
 	);
 

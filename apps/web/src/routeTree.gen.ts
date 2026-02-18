@@ -30,6 +30,7 @@ import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.au
 import { Route as ApiAutoplayerSubmitAceRouteImport } from './routes/api.autoplayer.submit-ace'
 import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplayer.save-song'
 import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
+import { Route as ApiAutoplayerPromptContractRouteImport } from './routes/api.autoplayer.prompt-contract'
 import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplayer.poll-ace'
 import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
@@ -151,6 +152,12 @@ const ApiAutoplayerRefinePromptRoute =
     path: '/api/autoplayer/refine-prompt',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAutoplayerPromptContractRoute =
+  ApiAutoplayerPromptContractRouteImport.update({
+    id: '/api/autoplayer/prompt-contract',
+    path: '/api/autoplayer/prompt-contract',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAutoplayerPollAceRoute = ApiAutoplayerPollAceRouteImport.update({
   id: '/api/autoplayer/poll-ace',
   path: '/api/autoplayer/poll-ace',
@@ -245,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
@@ -279,6 +287,7 @@ export interface FileRoutesByTo {
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
@@ -315,6 +324,7 @@ export interface FileRoutesById {
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
+  '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
   '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
   '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
@@ -352,6 +362,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
@@ -386,6 +397,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
@@ -421,6 +433,7 @@ export interface FileRouteTypes {
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
+    | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
     | '/api/autoplayer/save-song'
     | '/api/autoplayer/submit-ace'
@@ -457,6 +470,7 @@ export interface RootRouteChildren {
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
   ApiAutoplayerOpenrouterModelsRoute: typeof ApiAutoplayerOpenrouterModelsRoute
   ApiAutoplayerPollAceRoute: typeof ApiAutoplayerPollAceRoute
+  ApiAutoplayerPromptContractRoute: typeof ApiAutoplayerPromptContractRoute
   ApiAutoplayerRefinePromptRoute: typeof ApiAutoplayerRefinePromptRoute
   ApiAutoplayerSaveSongRoute: typeof ApiAutoplayerSaveSongRoute
   ApiAutoplayerSubmitAceRoute: typeof ApiAutoplayerSubmitAceRoute
@@ -613,6 +627,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerRefinePromptRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/autoplayer/prompt-contract': {
+      id: '/api/autoplayer/prompt-contract'
+      path: '/api/autoplayer/prompt-contract'
+      fullPath: '/api/autoplayer/prompt-contract'
+      preLoaderRoute: typeof ApiAutoplayerPromptContractRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/autoplayer/poll-ace': {
       id: '/api/autoplayer/poll-ace'
       path: '/api/autoplayer/poll-ace'
@@ -744,6 +765,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,
   ApiAutoplayerOpenrouterModelsRoute: ApiAutoplayerOpenrouterModelsRoute,
   ApiAutoplayerPollAceRoute: ApiAutoplayerPollAceRoute,
+  ApiAutoplayerPromptContractRoute: ApiAutoplayerPromptContractRoute,
   ApiAutoplayerRefinePromptRoute: ApiAutoplayerRefinePromptRoute,
   ApiAutoplayerSaveSongRoute: ApiAutoplayerSaveSongRoute,
   ApiAutoplayerSubmitAceRoute: ApiAutoplayerSubmitAceRoute,

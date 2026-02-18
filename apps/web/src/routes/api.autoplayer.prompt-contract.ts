@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { proxyAutoplayerRequest } from "@/lib/autoplayer-proxy";
 
-export const Route = createFileRoute("/api/autoplayer/enhance-prompt")({
+export const Route = createFileRoute("/api/autoplayer/prompt-contract")({
 	server: {
 		handlers: {
-			POST: ({ request }) => proxyAutoplayerRequest(request, "/enhance-prompt"),
+			GET: ({ request }) => proxyAutoplayerRequest(request, "/prompt-contract"),
 		},
 	},
 });

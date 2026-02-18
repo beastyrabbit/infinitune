@@ -45,7 +45,29 @@ import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
-import type { SongMetadata } from "@/services/llm";
+
+interface GeneratedSongMetadata {
+	title: string;
+	artistName: string;
+	genre: string;
+	subGenre: string;
+	vocalStyle: string;
+	lyrics: string;
+	caption: string;
+	coverPrompt?: string;
+	bpm: number;
+	keyScale: string;
+	timeSignature: string;
+	audioDuration: number;
+	mood: string;
+	energy: string;
+	era: string;
+	instruments: string[];
+	tags: string[];
+	themes: string[];
+	language: string;
+	description: string;
+}
 
 function EndpointDot({
 	label,
@@ -416,7 +438,7 @@ function AutoplayerPage() {
 			);
 			const epoch = playlist.promptEpoch ?? 0;
 
-			const previousAlbumTracks: SongMetadata[] = [];
+			const previousAlbumTracks: GeneratedSongMetadata[] = [];
 			let completed = 0;
 
 			for (
@@ -470,7 +492,7 @@ function AutoplayerPage() {
 						signal: abortController.signal,
 					}).then(async (res) => {
 						if (!res.ok) throw new Error(await res.text());
-						const metadata = (await res.json()) as SongMetadata;
+						const metadata = (await res.json()) as GeneratedSongMetadata;
 						await createMetadataReady({
 							playlistId,
 							orderIndex: maxOrder + batchStart + i + 1,
