@@ -260,6 +260,12 @@ async function runPersonaScan(
 		provider: settings.personaProvider,
 		model: settings.personaModel,
 	});
+	if (pProvider === "openrouter" && !pModel.trim()) {
+		logger.warn(
+			"Skipping persona scan: OpenRouter persona provider requires an explicit persona model",
+		);
+		return;
+	}
 
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;
