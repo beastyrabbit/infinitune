@@ -1,15 +1,83 @@
-import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
+import {
+	inferLyricsLanguageFromPrompt,
+	normalizeLyricsLanguage,
+	SUPPORTED_LYRICS_LANGUAGES,
+} from "@infinitune/shared/lyrics-language";
 import type {
 	PlaylistManagerPlan,
 	PlaylistManagerPlanSlot,
 } from "@infinitune/shared/types";
 import z from "zod";
-import { callLlmObject } from "./llm-client";
+import { logger } from "../logger";
+import { callLlmObject, callLlmText } from "./llm-client";
 
-/** Shared field guidance used across all prompt modes */
-const FIELD_GUIDANCE = `Your response must conform to the provided JSON schema. Fill in every field.
+interface PromptSection {
+	name: string;
+	content?: string | null;
+}
 
-Field guidance:
+interface PromptBuildResult {
+	text: string;
+	sectionChars: Record<string, number>;
+}
+
+function buildPromptSections(sections: PromptSection[]): PromptBuildResult {
+	const sectionChars: Record<string, number> = {};
+	const chunks: string[] = [];
+	for (const section of sections) {
+		const text = section.content?.trim();
+		if (!text) continue;
+		sectionChars[section.name] = text.length;
+		chunks.push(text);
+	}
+	return {
+		text: chunks.join("\n\n"),
+		sectionChars,
+	};
+}
+
+function logPromptBuild(
+	name: string,
+	parts: { kind: "system" | "user"; build: PromptBuildResult }[],
+	meta?: Record<string, unknown>,
+): void {
+	logger.debug(
+		{
+			...meta,
+			prompt: parts.map((part) => ({
+				kind: part.kind,
+				totalChars: part.build.text.length,
+				sectionChars: part.build.sectionChars,
+			})),
+		},
+		`Prompt build diagnostics: ${name}`,
+	);
+}
+
+/**
+ * OpenClaw-inspired prompt hardening:
+ * strip control/format characters that can break prompt structure.
+ */
+function sanitizePromptLiteral(value: string): string {
+	return value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
+}
+
+function sanitizePromptOptional(value?: string | null): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const sanitized = sanitizePromptLiteral(value).trim();
+	return sanitized || undefined;
+}
+
+function sanitizePromptList(values?: string[] | null): string[] {
+	if (!Array.isArray(values)) return [];
+	return values
+		.map((v) => sanitizePromptLiteral(String(v)).trim())
+		.filter(Boolean);
+}
+
+const FIELD_GUIDANCE_INTRO = `Your response must conform to the provided JSON schema. Fill in every field.`;
+
+const FIELD_GUIDANCE_CORE_FIELDS = `Field guidance:
 - title: A creative, evocative song title
 - artistName: A fictional artist/band name that fits the genre (never use real artist names)
 - genre: Broad category (e.g. Rock, Electronic, Hip-Hop, Jazz, Pop, Metal, R&B, Country, Classical)
@@ -18,8 +86,9 @@ Field guidance:
   Gender: male, female, duet (male+female), choir, androgynous
   Vocal quality: breathy, raspy, powerful, smooth, falsetto, gritty, husky, crystalline, airy, warm, nasal, operatic, whispered
   Performance style: soulful, energetic, intimate, passionate, anthemic, laid-back, aggressive, dreamy, playful, melancholic, defiant, tender
-  Examples: "female breathy intimate vocal", "male raspy energetic vocal", "duet smooth passionate vocals", "choir powerful anthemic vocals"
-- lyrics: Complete song lyrics. The WRITING QUALITY is critical — these must read like real songwriting, not AI filler.
+  Examples: "female breathy intimate vocal", "male raspy energetic vocal", "duet smooth passionate vocals", "choir powerful anthemic vocals"`;
+
+const FIELD_GUIDANCE_LYRICS = `- lyrics: Complete song lyrics. The WRITING QUALITY is critical — these must read like real songwriting, not AI filler.
   WRITING STYLE (adapt to genre):
   - Match the lyrical tradition of the genre. Prog rock = poetic, abstract. Hip-hop = wordplay, flow. Country = storytelling, concrete imagery. Pop = hooky, emotionally direct. Jazz = impressionistic. Punk = raw. Folk = narrative.
   - Use SPECIFIC imagery over vague abstractions. BAD: 'the pain inside my heart'. GOOD: 'fingerprints still on the glass where you leaned that morning'.
@@ -34,12 +103,14 @@ Field guidance:
   Include at least one instrumental section. Aim for 6-10 syllables per line for vocal clarity.
   IMPORTANT: Instruments mentioned in the caption MUST appear as instrumental tags in the lyrics.
   Keep tags concise (max one style hint in each section tag).
-  If the track should be instrumental, use [Instrumental] instead of sung lyrics.
-- caption: Audio generation prompt. Structure: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. Do NOT include vocal info, BPM, key, or duration — those go in dedicated fields. Max 300 chars.
+  If the track should be instrumental, use [Instrumental] instead of sung lyrics.`;
+
+const FIELD_GUIDANCE_CAPTION = `- caption: Audio generation prompt. Structure: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. Do NOT include vocal info, BPM, key, or duration — those go in dedicated fields. Max 300 chars.
   Examples: "shoegaze, shimmering reverb guitars, droning Juno-60 pads, tight snare, warm tape saturation, hazy and melancholic"
   "lo-fi hip-hop, dusty SP-404 samples, muted Rhodes, vinyl crackle, boom-bap drums, late-night contemplative"
-  Caption and lyrics tags must never conflict on instruments, mood, or performance direction.
-- coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
+  Caption and lyrics tags must never conflict on instruments, mood, or performance direction.`;
+
+const FIELD_GUIDANCE_COVER = `- coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
   RULES:
   1. ART STYLE — Pick ONE at random. Vary art styles across songs: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, stained glass window, watercolor bleed on wet paper, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, spray paint stencil on brick wall, Dutch Golden Age still life, Chinese ink wash painting, cross-processed 35mm film, Aboriginal dot painting, 1950s pulp sci-fi cover, solarized darkroom print
   2. SCENE — A SPECIFIC, vivid scene inspired by THIS song's lyrics. Describe exact objects, materials, textures, spatial relationships. BAD: "a woman standing in rain". GOOD: "a woman in a moth-eaten velvet coat standing ankle-deep in a flooded ballroom, chandelier reflections rippling across the black water surface".
@@ -48,8 +119,9 @@ Field guidance:
   5. SURREAL ELEMENT — ONE unexpected detail: a clock melting over a fire escape, butterflies made of sheet music.
   6. COLOR PALETTE — Name 3-5 SPECIFIC pigment colors: "raw umber, viridian green, cadmium red deep" — NOT "warm earth tones".
   7. COMPOSITION — Design for CIRCULAR framing: radial symmetry, centered subjects, spiral patterns.
-  8. NEVER include text, words, letters, typography, logos, or band/song names.
-- bpm: Beats per minute appropriate for the genre (e.g. 70-90 for ballads, 120-130 for house, 140-170 for drum & bass)
+  8. NEVER include text, words, letters, typography, logos, or band/song names.`;
+
+const FIELD_GUIDANCE_MUSIC_PARAMS = `- bpm: Beats per minute appropriate for the genre (e.g. 70-90 for ballads, 120-130 for house, 140-170 for drum & bass)
 - keyScale: Musical key (e.g. "C major", "A minor", "F# minor", "Bb major")
 - timeSignature: Time signature (usually "4/4", but "3/4" for waltzes, "6/8" for compound time, etc.)
 - audioDuration: Length in seconds, between 180 and 300 (3-5 minutes)
@@ -60,65 +132,99 @@ Field guidance:
 - tags: Array of 3-5 searchable tags mixing atmosphere, use case, and sonic quality.
 - themes: Array of 2-3 lyrical themes.
 - language: Language of the lyrics. e.g. "English", "German", "Mixed (English/Spanish)"
-- description: Short 1-2 sentence music journalist description. Max 200 chars.
+- description: Short 1-2 sentence music journalist description. Max 200 chars.`;
 
-JSON OUTPUT: All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
+const FIELD_GUIDANCE_JSON = `JSON OUTPUT: All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
 
-/** Close prompt — stays near the playlist theme, like a radio station that stays on-brand */
-const SYSTEM_PROMPT_CLOSE = `You are a music producer AI. Generate a song that fits naturally in this playlist.
-
-Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, different specific instruments, but the overall feel should be cohesive with the playlist theme.
-
-${FIELD_GUIDANCE}`;
-
-/** General prompt — explores further, like a DJ who plays something unexpected but it still works */
-const SYSTEM_PROMPT_GENERAL = `You are a music producer AI. Generate a song inspired by this playlist's theme but from a different angle.
-
-Pick an adjacent genre, shift the mood, change the energy level, try a different era. Like a DJ who plays something unexpected but it still works in the set. The playlist theme is your starting point — venture outward from it. Explore the full musical spectrum while keeping a thread of connection to the original vibe.
-
-${FIELD_GUIDANCE}`;
-
-/** Faithful prompt — for specific user requests (interrupts), follow exactly what was asked */
-const SYSTEM_PROMPT_FAITHFUL = `You are a music producer AI. This is a SPECIFIC user request — follow it exactly.
-
-Be creative within the bounds of what was asked. If they say "German cover of Bohemian Rhapsody", make exactly that. If they say "chill lo-fi beat", make exactly that. Do not explore adjacent genres or add unexpected twists — deliver what was requested with high quality and attention to detail.
-
-${FIELD_GUIDANCE}`;
-
-/** Album prompt — creates album tracks derived from a source song */
-const SYSTEM_PROMPT_ALBUM = `You are a music producer AI creating a track for a cohesive album.
-
-All tracks on this album share the same genre family, production aesthetic, and thematic world as the source song. But each track must be its OWN song — unique title, unique fictional artist name, unique lyrical angle, unique vocal style.
-
-ALBUM RULES:
-- Stay in the SAME genre family as the source song. Do NOT cross genre boundaries (no jazz track on a metal album).
-- Vary energy levels across tracks: some high, some low, some medium.
-- Vary mood: not every track should have the same emotional tone.
-- Vary tempo: shift BPM within the genre's natural range.
-- Vary vocal style: different gender, different vocal quality, different performance energy.
-- Each new track must differ from previously generated tracks in at least 3 dimensions (mood, energy, tempo, vocal style, lyrical theme, instruments).
-- Production aesthetic should feel cohesive — same "studio" / "producer" vibe across all tracks.
-
-${FIELD_GUIDANCE}`;
+/** Shared field guidance used across all prompt modes */
+const FIELD_GUIDANCE = buildPromptSections([
+	{ name: "contract_intro", content: FIELD_GUIDANCE_INTRO },
+	{ name: "core_fields", content: FIELD_GUIDANCE_CORE_FIELDS },
+	{ name: "lyrics_rules", content: FIELD_GUIDANCE_LYRICS },
+	{ name: "caption_rules", content: FIELD_GUIDANCE_CAPTION },
+	{ name: "cover_rules", content: FIELD_GUIDANCE_COVER },
+	{ name: "music_params", content: FIELD_GUIDANCE_MUSIC_PARAMS },
+	{ name: "json_output", content: FIELD_GUIDANCE_JSON },
+]).text;
 
 export type PromptDistance = "close" | "general" | "faithful" | "album";
 
-/** Pick which system prompt to use based on mode */
-function getSystemPrompt(distance: PromptDistance): string {
-	switch (distance) {
-		case "faithful":
-			return SYSTEM_PROMPT_FAITHFUL;
-		case "general":
-			return SYSTEM_PROMPT_GENERAL;
-		case "album":
-			return SYSTEM_PROMPT_ALBUM;
-		default:
-			return SYSTEM_PROMPT_CLOSE;
-	}
+const SYSTEM_ROLE_SECTION = `You are a music producer AI. Generate production-ready, high-quality song specs for downstream audio generation.`;
+
+const DISTANCE_BEHAVIOR: Record<PromptDistance, string> = {
+	close: `Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, and different specific instruments while keeping a cohesive overall feel.`,
+	general: `Generate a song inspired by the playlist theme from a different angle. Pick adjacent genres, shift mood/energy/era, and explore while preserving a thread of connection to the source vibe.`,
+	faithful: `This is a specific user request — follow it exactly. Be creative inside the requested bounds and avoid adjacent-genre detours or extra twists.`,
+	album: `Create a cohesive album track derived from the source song. Keep production identity aligned while making each track genuinely distinct.`,
+};
+
+const ALBUM_RULES = `ALBUM RULES:
+- Stay in the SAME genre family as the source song. Do NOT cross genre boundaries.
+- Vary energy levels, mood, and tempo across tracks.
+- Vary vocal style (gender, texture, performance energy).
+- Each new track must differ from previous tracks in at least 3 dimensions (mood, energy, tempo, vocal style, lyrical theme, instruments).
+- Preserve a cohesive production aesthetic across the full album.`;
+
+function buildSongSystemSections(distance: PromptDistance): PromptSection[] {
+	return [
+		{ name: "role", content: SYSTEM_ROLE_SECTION },
+		{ name: "distance_behavior", content: DISTANCE_BEHAVIOR[distance] },
+		{
+			name: "album_rules",
+			content: distance === "album" ? ALBUM_RULES : undefined,
+		},
+		{ name: "field_guidance", content: FIELD_GUIDANCE },
+	];
 }
 
-/** Default system prompt (close distance) — used by testlab debug views */
-const SYSTEM_PROMPT = SYSTEM_PROMPT_CLOSE;
+function buildSongSystemPrompt(options: {
+	distance: PromptDistance;
+	languageLabel: string;
+	targetKey?: string;
+	timeSignature?: string;
+	audioDuration?: number;
+}): PromptBuildResult {
+	const safeTargetKey = sanitizePromptOptional(options.targetKey);
+	const safeTimeSignature = sanitizePromptOptional(options.timeSignature);
+	const duration =
+		typeof options.audioDuration === "number" &&
+		Number.isFinite(options.audioDuration)
+			? Math.round(options.audioDuration)
+			: undefined;
+	return buildPromptSections([
+		...buildSongSystemSections(options.distance),
+		{
+			name: "language_lock",
+			content: `LANGUAGE LOCK (hard): Write ALL lyrics only in ${options.languageLabel}. Ignore conflicting language hints from user prompt or manager guidance. Set the "language" field exactly to "${options.languageLabel}".`,
+		},
+		{
+			name: "target_key",
+			content: safeTargetKey
+				? `Use the musical key: ${safeTargetKey}.`
+				: undefined,
+		},
+		{
+			name: "time_signature",
+			content: safeTimeSignature
+				? `Use time signature: ${safeTimeSignature}.`
+				: undefined,
+		},
+		{
+			name: "audio_duration",
+			content: duration
+				? `Target audio duration: ${duration} seconds.`
+				: undefined,
+		},
+	]);
+}
+
+/** Pick which base system prompt to use based on mode */
+function getSystemPrompt(distance: PromptDistance): string {
+	return buildPromptSections(buildSongSystemSections(distance)).text;
+}
+
+/** Default system prompt (close distance) — used by testlab/debug views */
+const SYSTEM_PROMPT = getSystemPrompt("close");
 
 const SONG_SCHEMA = {
 	type: "object" as const,
@@ -223,6 +329,25 @@ const SONG_SCHEMA = {
 };
 
 export { SYSTEM_PROMPT, SONG_SCHEMA };
+
+export interface SongPromptContract {
+	distance: PromptDistance;
+	systemPrompt: string;
+	sectionChars: Record<string, number>;
+	schema: typeof SONG_SCHEMA;
+}
+
+export function getSongPromptContract(
+	distance: PromptDistance = "close",
+): SongPromptContract {
+	const build = buildPromptSections(buildSongSystemSections(distance));
+	return {
+		distance,
+		systemPrompt: build.text,
+		sectionChars: build.sectionChars,
+		schema: SONG_SCHEMA,
+	};
+}
 
 export const SongMetadataSchema = z.object({
 	title: z.string().describe("Song title"),
@@ -362,6 +487,85 @@ function clampInt(
 	return Math.max(min, Math.min(max, Math.round(n)));
 }
 
+/** Strip common LLM output artifacts from free-text responses */
+function sanitizeLlmText(text: string, maxLength = 2000): string {
+	let cleaned = text.trim();
+	const fenced = cleaned.match(/^```(?:\w+)?\s*([\s\S]*?)```$/);
+	if (fenced) cleaned = fenced[1].trim();
+	if (
+		(cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+		(cleaned.startsWith("'") && cleaned.endsWith("'"))
+	) {
+		cleaned = cleaned.slice(1, -1).trim();
+	}
+	cleaned = cleaned
+		.replace(
+			/^(?:Here(?:'s| is) (?:the |an? )?(?:enhanced|updated|refined|improved) (?:prompt|request|version)[:\s]*)/i,
+			"",
+		)
+		.trim();
+	if (cleaned.length > maxLength) cleaned = cleaned.slice(0, maxLength);
+	return cleaned;
+}
+
+const ENHANCE_PLAYLIST_PROMPT_SYSTEM = `You expand a short playlist idea into a robust session theme for multi-song generation.
+
+Output ONE compact paragraph under 500 characters. Return only the enhanced session theme text.
+
+Include:
+- Core identity: reuse the user's genre/era/cultural anchor wording as written + 2-3 high-level sonic/vibe anchors.
+- Exploration range: name exactly 3-4 adjacent lanes that still fit, phrased conservatively ("-leaning"/"-inflected").
+
+Rules:
+- Do not re-label or synonym-swap the user's key anchors, and do not add new substyle labels unless explicitly mentioned.
+- Keep lane labels conservative; avoid hard pivots like "crossover" unless the user implies it.
+- Do not add prescriptive constraint clauses (no "always/never", "while staying...", or "keep the X core").
+- Do not invent signature elements not implied by the input.
+- No meta labels and no bullet formatting.`;
+
+const ENHANCE_REQUEST_SYSTEM = `You enhance short music requests for audio generation.
+
+Requirements:
+- Output ONE compact paragraph under 500 characters. Return text only.
+- Start with the user's request verbatim, then append details.
+- Preserve original intent and named references exactly.
+- Add only actionable sonic detail that improves controllability.
+- Add exactly: 2-4 specific instruments, 1-3 production/texture cues, and one concise mood-atmosphere phrase.
+- Instruments must be genre-appropriate and must not add new genre tags unless user requested.
+- Do not add explicit ambience/SFX layers unless user asked for them.`;
+
+const REFINE_PROMPT_SYSTEM = `You are a music session director. Revise a session prompt from a steering instruction.
+
+Rules:
+- Execute "less/no more" and "more/add" directions explicitly.
+- Preserve core style anchors and proper nouns unless replaced by instruction.
+- Keep revised text coherent, production-ready, and close to original length.
+- Do not output edit notes or explanations.
+
+Return only the updated session prompt.`;
+
+const SESSION_PARAMS_SYSTEM = `You are a music production expert. Convert a session description into generation-ready parameters.
+
+Hard constraints:
+- lyricsLanguage MUST be "english" or "german" only. If ambiguous, choose "english".
+- Keep inferred parameters inside realistic genre ranges.
+- Do not add unrelated genres or concepts.
+- Prefer stable defaults over risky guesses.
+
+Output requirements:
+- Return only content that matches the requested schema.
+- Do not wrap output in markdown code fences.`;
+
+const SessionParamsSchema = z.object({
+	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES),
+	targetBpm: z.number().describe("Beats per minute (60-220)"),
+	targetKey: z.string().describe('Musical key, e.g. "A minor", "C major"'),
+	timeSignature: z.string().describe('Time signature, e.g. "4/4", "3/4"'),
+	audioDuration: z.number().describe("Duration in seconds (180-300)"),
+});
+
+export type SessionParams = z.infer<typeof SessionParamsSchema>;
+
 /** Sanitize LLM-generated metadata: clamp numeric fields to safe ranges and normalize strings */
 function validateSongMetadata(raw: SongMetadata): SongMetadata {
 	const normalizedOutputLanguage = normalizeLyricsLanguage(raw.language);
@@ -427,6 +631,67 @@ export interface PersonaInput {
 	lyrics?: string;
 }
 
+function buildPersonaUserPrompt(song: PersonaInput): PromptBuildResult {
+	const safeTitle = sanitizePromptOptional(song.title);
+	const safeArtistName = sanitizePromptOptional(song.artistName);
+	const safeGenre = sanitizePromptOptional(song.genre);
+	const safeSubGenre = sanitizePromptOptional(song.subGenre);
+	const safeMood = sanitizePromptOptional(song.mood);
+	const safeEnergy = sanitizePromptOptional(song.energy);
+	const safeEra = sanitizePromptOptional(song.era);
+	const safeVocalStyle = sanitizePromptOptional(song.vocalStyle);
+	const safeDescription = sanitizePromptOptional(song.description);
+	const safeLyrics = sanitizePromptOptional(song.lyrics)?.slice(0, 300);
+	const safeInstruments = sanitizePromptList(song.instruments);
+	const safeThemes = sanitizePromptList(song.themes);
+	return buildPromptSections([
+		{
+			name: "title",
+			content: safeTitle ? `Title: "${safeTitle}"` : undefined,
+		},
+		{
+			name: "artist",
+			content: safeArtistName ? `Artist: ${safeArtistName}` : undefined,
+		},
+		{
+			name: "genre",
+			content: safeGenre
+				? `Genre: ${safeGenre}${safeSubGenre ? ` / ${safeSubGenre}` : ""}`
+				: undefined,
+		},
+		{ name: "mood", content: safeMood ? `Mood: ${safeMood}` : undefined },
+		{
+			name: "energy",
+			content: safeEnergy ? `Energy: ${safeEnergy}` : undefined,
+		},
+		{ name: "era", content: safeEra ? `Era: ${safeEra}` : undefined },
+		{
+			name: "vocal",
+			content: safeVocalStyle ? `Vocal: ${safeVocalStyle}` : undefined,
+		},
+		{
+			name: "instruments",
+			content:
+				safeInstruments.length > 0
+					? `Instruments: ${safeInstruments.join(", ")}`
+					: undefined,
+		},
+		{
+			name: "themes",
+			content:
+				safeThemes.length > 0 ? `Themes: ${safeThemes.join(", ")}` : undefined,
+		},
+		{
+			name: "description",
+			content: safeDescription ? `Description: ${safeDescription}` : undefined,
+		},
+		{
+			name: "lyrics_excerpt",
+			content: safeLyrics ? `Lyrics excerpt: ${safeLyrics}` : undefined,
+		},
+	]);
+}
+
 export async function generatePersonaExtract(options: {
 	song: PersonaInput;
 	provider: "ollama" | "openrouter" | "openai-codex";
@@ -434,31 +699,24 @@ export async function generatePersonaExtract(options: {
 	signal?: AbortSignal;
 }): Promise<string> {
 	const { song, provider, model, signal } = options;
-
-	const lines: string[] = [];
-	if (song.title) lines.push(`Title: "${song.title}"`);
-	if (song.artistName) lines.push(`Artist: ${song.artistName}`);
-	if (song.genre)
-		lines.push(
-			`Genre: ${song.genre}${song.subGenre ? ` / ${song.subGenre}` : ""}`,
-		);
-	if (song.mood) lines.push(`Mood: ${song.mood}`);
-	if (song.energy) lines.push(`Energy: ${song.energy}`);
-	if (song.era) lines.push(`Era: ${song.era}`);
-	if (song.vocalStyle) lines.push(`Vocal: ${song.vocalStyle}`);
-	if (song.instruments?.length)
-		lines.push(`Instruments: ${song.instruments.join(", ")}`);
-	if (song.themes?.length) lines.push(`Themes: ${song.themes.join(", ")}`);
-	if (song.description) lines.push(`Description: ${song.description}`);
-	if (song.lyrics) lines.push(`Lyrics excerpt: ${song.lyrics.slice(0, 300)}`);
-
-	const userMessage = lines.join("\n");
+	const systemBuild = buildPromptSections([
+		{ name: "persona_system", content: PERSONA_SYSTEM_PROMPT },
+	]);
+	const userBuild = buildPersonaUserPrompt(song);
+	logPromptBuild(
+		"persona_extract",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider, model },
+	);
 
 	const result = await callLlmObject({
 		provider,
 		model,
-		system: PERSONA_SYSTEM_PROMPT,
-		prompt: userMessage,
+		system: systemBuild.text,
+		prompt: userBuild.text,
 		schema: PersonaSchema,
 		schemaName: "persona_extract",
 		temperature: 0.7,
@@ -469,6 +727,166 @@ export async function generatePersonaExtract(options: {
 		typeof result.persona === "string" ? result.persona.trim() : "";
 	if (!persona) throw new Error("Empty persona extract");
 	return persona;
+}
+
+export async function enhancePlaylistPrompt(options: {
+	prompt: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const safePrompt = sanitizePromptOptional(options.prompt)?.slice(0, 2000);
+	if (!safePrompt) throw new Error("Prompt cannot be empty");
+	const systemBuild = buildPromptSections([
+		{
+			name: "enhance_playlist_system",
+			content: ENHANCE_PLAYLIST_PROMPT_SYSTEM,
+		},
+	]);
+	const userBuild = buildPromptSections([
+		{ name: "playlist_prompt", content: safePrompt },
+	]);
+	logPromptBuild(
+		"enhance_playlist_prompt",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider: options.provider, model: options.model },
+	);
+	const result = await callLlmText({
+		provider: options.provider,
+		model: options.model,
+		system: systemBuild.text,
+		prompt: userBuild.text,
+		temperature: 0.8,
+		signal: options.signal,
+	});
+	return sanitizeLlmText(result, 500);
+}
+
+export async function enhanceSongRequest(options: {
+	request: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const safeRequest = sanitizePromptOptional(options.request)?.slice(0, 2000);
+	if (!safeRequest) throw new Error("Request cannot be empty");
+	const systemBuild = buildPromptSections([
+		{ name: "enhance_request_system", content: ENHANCE_REQUEST_SYSTEM },
+	]);
+	const userBuild = buildPromptSections([
+		{ name: "song_request", content: safeRequest },
+	]);
+	logPromptBuild(
+		"enhance_song_request",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider: options.provider, model: options.model },
+	);
+	const result = await callLlmText({
+		provider: options.provider,
+		model: options.model,
+		system: systemBuild.text,
+		prompt: userBuild.text,
+		temperature: 0.7,
+		signal: options.signal,
+	});
+	return sanitizeLlmText(result, 500);
+}
+
+export async function refineSessionPrompt(options: {
+	currentPrompt: string;
+	direction: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	signal?: AbortSignal;
+}): Promise<string> {
+	const safeCurrentPrompt = sanitizePromptOptional(
+		options.currentPrompt,
+	)?.slice(0, 2000);
+	const safeDirection = sanitizePromptOptional(options.direction)?.slice(
+		0,
+		2000,
+	);
+	if (!safeCurrentPrompt || !safeDirection) {
+		throw new Error("Prompt and direction cannot be empty");
+	}
+	const systemBuild = buildPromptSections([
+		{ name: "refine_prompt_system", content: REFINE_PROMPT_SYSTEM },
+	]);
+	const userBuild = buildPromptSections([
+		{
+			name: "refine_input",
+			content: `Current session prompt:\n"${safeCurrentPrompt}"\n\nUser direction:\n"${safeDirection}"\n\nReturn the updated prompt:`,
+		},
+	]);
+	logPromptBuild(
+		"refine_session_prompt",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider: options.provider, model: options.model },
+	);
+	const result = await callLlmText({
+		provider: options.provider,
+		model: options.model,
+		system: systemBuild.text,
+		prompt: userBuild.text,
+		temperature: 0.7,
+		signal: options.signal,
+	});
+	return sanitizeLlmText(result, 2000);
+}
+
+export async function enhanceSessionParams(options: {
+	prompt: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	signal?: AbortSignal;
+}): Promise<SessionParams> {
+	const safePrompt = sanitizePromptOptional(options.prompt)?.slice(0, 2000);
+	if (!safePrompt) throw new Error("Prompt cannot be empty");
+	const systemBuild = buildPromptSections([
+		{ name: "session_params_system", content: SESSION_PARAMS_SYSTEM },
+	]);
+	const userBuild = buildPromptSections([
+		{ name: "session_prompt", content: safePrompt },
+	]);
+	logPromptBuild(
+		"enhance_session_params",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider: options.provider, model: options.model },
+	);
+	const params = await callLlmObject({
+		provider: options.provider,
+		model: options.model,
+		system: systemBuild.text,
+		prompt: userBuild.text,
+		schema: SessionParamsSchema,
+		schemaName: "session_params",
+		temperature: 0.7,
+		signal: options.signal,
+	});
+	return {
+		lyricsLanguage: normalizeLyricsLanguage(
+			params.lyricsLanguage ?? inferLyricsLanguageFromPrompt(safePrompt),
+		),
+		targetBpm: clampInt(params.targetBpm, 60, 220, 120),
+		targetKey: sanitizePromptOptional(params.targetKey) || "C major",
+		timeSignature:
+			/^\d+\/\d+$/.test(params.timeSignature) && params.timeSignature.trim()
+				? params.timeSignature.trim()
+				: "4/4",
+		audioDuration: clampInt(params.audioDuration, 180, 300, 240),
+	};
 }
 
 export async function generatePlaylistManagerPlan(options: {
@@ -506,67 +924,109 @@ export async function generatePlaylistManagerPlan(options: {
 	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
 	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
 
-	const messageParts: string[] = [];
-	messageParts.push(`Playlist prompt: ${prompt}`);
-	messageParts.push(`Lyrics language lock: ${languageLabel}`);
-	messageParts.push(`Current epoch: ${currentEpoch}`);
-	messageParts.push(`Plan window size: ${planWindow}`);
+	const safePrompt = sanitizePromptOptional(prompt) || "Untitled session";
+	const safePreviousBrief = sanitizePromptOptional(previousBrief);
+	const steeringLines =
+		steerHistory?.slice(-10).map((entry) => {
+			const at = new Date(entry.at).toISOString();
+			const direction = sanitizePromptOptional(entry.direction) || "(empty)";
+			return `- epoch ${entry.epoch} @ ${at}: ${direction}`;
+		}) ?? [];
+	const recentSongLines =
+		recentSongs?.slice(0, 12).map((song, index) => {
+			const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
+			const safeArtist =
+				sanitizePromptOptional(song.artistName) || "Unknown Artist";
+			const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
+			const safeSubGenre = sanitizePromptOptional(song.subGenre) || "Unknown";
+			const safeVocal = sanitizePromptOptional(song.vocalStyle);
+			const safeMood = sanitizePromptOptional(song.mood);
+			const safeEnergy = sanitizePromptOptional(song.energy);
+			return `${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre}/${safeSubGenre}${safeVocal ? `, ${safeVocal}` : ""}${safeMood ? `, mood=${safeMood}` : ""}${safeEnergy ? `, energy=${safeEnergy}` : ""}`;
+		}) ?? [];
+	const recentDescriptionLines =
+		recentDescriptions?.slice(0, 20).map((description, index) => {
+			const safeDescription = sanitizePromptOptional(description) || "(empty)";
+			return `${index + 1}. ${safeDescription}`;
+		}) ?? [];
+	const feedbackLines =
+		ratingSignals?.slice(0, 20).map((entry, index) => {
+			const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
+			const parts = [
+				`${index + 1}. ${sentiment}: "${sanitizePromptOptional(entry.title) || "Untitled"}"`,
+			];
+			const safeGenre = sanitizePromptOptional(entry.genre);
+			const safeMood = sanitizePromptOptional(entry.mood);
+			const safePersona = sanitizePromptOptional(entry.personaExtract)?.slice(
+				0,
+				220,
+			);
+			if (safeGenre) parts.push(`genre=${safeGenre}`);
+			if (safeMood) parts.push(`mood=${safeMood}`);
+			if (safePersona) parts.push(`persona=${safePersona}`);
+			return parts.join(" | ");
+		}) ?? [];
 
-	if (previousBrief?.trim()) {
-		messageParts.push(`Previous manager brief: ${previousBrief.trim()}`);
-	}
-
-	if (steerHistory?.length) {
-		const steering = steerHistory
-			.slice(-10)
-			.map((entry) => {
-				const at = new Date(entry.at).toISOString();
-				return `- epoch ${entry.epoch} @ ${at}: ${entry.direction}`;
-			})
-			.join("\n");
-		messageParts.push(`Recent steering history:\n${steering}`);
-	}
-
-	if (recentSongs?.length) {
-		const recent = recentSongs
-			.slice(0, 12)
-			.map(
-				(s, i) =>
-					`${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre}/${s.subGenre}${s.vocalStyle ? `, ${s.vocalStyle}` : ""}${s.mood ? `, mood=${s.mood}` : ""}${s.energy ? `, energy=${s.energy}` : ""}`,
-			)
-			.join("\n");
-		messageParts.push(`Recent generated songs:\n${recent}`);
-	}
-
-	if (recentDescriptions?.length) {
-		const recents = recentDescriptions
-			.slice(0, 20)
-			.map((d, i) => `${i + 1}. ${d}`)
-			.join("\n");
-		messageParts.push(`Recent story angles:\n${recents}`);
-	}
-
-	if (ratingSignals?.length) {
-		const ratingLines = ratingSignals
-			.slice(0, 20)
-			.map((entry, index) => {
-				const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
-				const parts = [`${index + 1}. ${sentiment}: "${entry.title}"`];
-				if (entry.genre) parts.push(`genre=${entry.genre}`);
-				if (entry.mood) parts.push(`mood=${entry.mood}`);
-				if (entry.personaExtract)
-					parts.push(`persona=${entry.personaExtract.slice(0, 220)}`);
-				return parts.join(" | ");
-			})
-			.join("\n");
-		messageParts.push(`User feedback signals:\n${ratingLines}`);
-	}
+	const systemBuild = buildPromptSections([
+		{ name: "playlist_manager_system", content: PLAYLIST_MANAGER_PROMPT },
+	]);
+	const userBuild = buildPromptSections([
+		{ name: "playlist_prompt", content: `Playlist prompt: ${safePrompt}` },
+		{
+			name: "language_lock",
+			content: `Lyrics language lock: ${languageLabel}`,
+		},
+		{ name: "epoch", content: `Current epoch: ${currentEpoch}` },
+		{ name: "window", content: `Plan window size: ${planWindow}` },
+		{
+			name: "previous_brief",
+			content: safePreviousBrief
+				? `Previous manager brief: ${safePreviousBrief}`
+				: undefined,
+		},
+		{
+			name: "steer_history",
+			content:
+				steeringLines.length > 0
+					? `Recent steering history:\n${steeringLines.join("\n")}`
+					: undefined,
+		},
+		{
+			name: "recent_songs",
+			content:
+				recentSongLines.length > 0
+					? `Recent generated songs:\n${recentSongLines.join("\n")}`
+					: undefined,
+		},
+		{
+			name: "recent_descriptions",
+			content:
+				recentDescriptionLines.length > 0
+					? `Recent story angles:\n${recentDescriptionLines.join("\n")}`
+					: undefined,
+		},
+		{
+			name: "rating_signals",
+			content:
+				feedbackLines.length > 0
+					? `User feedback signals:\n${feedbackLines.join("\n")}`
+					: undefined,
+		},
+	]);
+	logPromptBuild(
+		"playlist_manager_plan",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{ provider, model, planWindow },
+	);
 
 	const result = await callLlmObject({
 		provider,
 		model,
-		system: PLAYLIST_MANAGER_PROMPT,
-		prompt: messageParts.join("\n\n"),
+		system: systemBuild.text,
+		prompt: userBuild.text,
 		schema: PlaylistManagerSchema,
 		schemaName: "playlist_manager_brief",
 		temperature: 0.6,
@@ -628,6 +1088,91 @@ export async function generatePlaylistManagerPlan(options: {
 	};
 }
 
+function buildSongUserPrompt(options: {
+	prompt: string;
+	managerBrief?: string;
+	managerSlot?: PlaylistManagerPlanSlot;
+	managerTransitionPolicy?: string;
+	distance: PromptDistance;
+	recentSongs?: RecentSong[];
+	recentDescriptions?: string[];
+}): PromptBuildResult {
+	const safePrompt =
+		sanitizePromptOptional(options.prompt) || "Generate a song";
+	const safeManagerBrief = sanitizePromptOptional(options.managerBrief);
+	const safeTransitionPolicy = sanitizePromptOptional(
+		options.managerTransitionPolicy,
+	);
+	const recentSongLines =
+		options.distance !== "faithful"
+			? (options.recentSongs ?? []).map((song, index) => {
+					const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
+					const safeArtist =
+						sanitizePromptOptional(song.artistName) || "Unknown Artist";
+					const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
+					const safeSubGenre =
+						sanitizePromptOptional(song.subGenre) || "Unknown";
+					const safeVocal = sanitizePromptOptional(song.vocalStyle);
+					const safeMood = sanitizePromptOptional(song.mood);
+					return `  ${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre} / ${safeSubGenre}${safeVocal ? ` (${safeVocal})` : ""}${safeMood ? ` [${safeMood}]` : ""}`;
+				})
+			: [];
+	const recentDescriptionLines =
+		options.distance !== "faithful"
+			? (options.recentDescriptions ?? []).map((description, index) => {
+					const safeDescription =
+						sanitizePromptOptional(description) || "(empty)";
+					return `  ${index + 1}. ${safeDescription}`;
+				})
+			: [];
+	const slot = options.managerSlot;
+	return buildPromptSections([
+		{ name: "user_prompt", content: safePrompt },
+		{
+			name: "manager_brief",
+			content: safeManagerBrief
+				? `--- Playlist manager brief (high priority guidance) ---\n${safeManagerBrief}`
+				: undefined,
+		},
+		{
+			name: "transition_policy",
+			content: safeTransitionPolicy
+				? `Transition policy: ${safeTransitionPolicy}`
+				: undefined,
+		},
+		{
+			name: "manager_slot",
+			content: slot
+				? [
+						"--- Current manager slot guidance ---",
+						`Slot: ${slot.slot}`,
+						`Transition intent: ${sanitizePromptOptional(slot.transitionIntent) || ""}`,
+						`Topic hint: ${sanitizePromptOptional(slot.topicHint) || ""}`,
+						`Caption focus: ${sanitizePromptOptional(slot.captionFocus) || ""}`,
+						`Lyric theme: ${sanitizePromptOptional(slot.lyricTheme) || ""}`,
+						`Energy target: ${slot.energyTarget}`,
+					]
+						.filter(Boolean)
+						.join("\n")
+				: undefined,
+		},
+		{
+			name: "recent_songs",
+			content:
+				recentSongLines.length > 0
+					? `--- Recent songs in this playlist (for awareness — avoid duplicate titles/artists) ---\n${recentSongLines.join("\n")}\nCreate a fresh song with a different title, different artist, and ideally a different vocal style from the most recent entries.`
+					: undefined,
+		},
+		{
+			name: "recent_descriptions",
+			content:
+				recentDescriptionLines.length > 0
+					? `--- Recent song themes (try a different story/angle) ---\n${recentDescriptionLines.join("\n")}`
+					: undefined,
+		},
+	]);
+}
+
 export async function generateSongMetadata(options: {
 	prompt: string;
 	provider: "ollama" | "openrouter" | "openai-codex";
@@ -684,65 +1229,41 @@ export async function generateSongMetadata(options: {
 			temperature = 0.85;
 	}
 
-	let systemPrompt = getSystemPrompt(distance);
-
-	systemPrompt += `\n\nLANGUAGE LOCK (hard): Write ALL lyrics only in ${languageLabel}.`;
-	systemPrompt +=
-		"\nIgnore any conflicting language hints from the user prompt or manager guidance.";
-	systemPrompt += `\nSet the "language" field exactly to "${languageLabel}".`;
-	if (targetKey) {
-		systemPrompt += `\n\nUse the musical key: ${targetKey}.`;
-	}
-	if (timeSignature) {
-		systemPrompt += `\n\nUse time signature: ${timeSignature}.`;
-	}
-	if (audioDuration) {
-		systemPrompt += `\n\nTarget audio duration: ${audioDuration} seconds.`;
-	}
-
-	// Build user message with soft recent-song awareness (no bans, no forced switches)
-	let userMessage = prompt;
-	if (managerBrief?.trim()) {
-		userMessage += `\n\n--- Playlist manager brief (high priority guidance) ---\n${managerBrief.trim()}`;
-	}
-	if (managerTransitionPolicy?.trim()) {
-		userMessage += `\n\nTransition policy: ${managerTransitionPolicy.trim()}`;
-	}
-	if (managerSlot) {
-		userMessage += `\n\n--- Current manager slot guidance ---`;
-		userMessage += `\nSlot: ${managerSlot.slot}`;
-		userMessage += `\nTransition intent: ${managerSlot.transitionIntent}`;
-		userMessage += `\nTopic hint: ${managerSlot.topicHint}`;
-		userMessage += `\nCaption focus: ${managerSlot.captionFocus}`;
-		userMessage += `\nLyric theme: ${managerSlot.lyricTheme}`;
-		userMessage += `\nEnergy target: ${managerSlot.energyTarget}`;
-	}
-	if (distance !== "faithful" && recentSongs && recentSongs.length > 0) {
-		const historyLines = recentSongs
-			.map(
-				(s, i) =>
-					`  ${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre} / ${s.subGenre}${s.vocalStyle ? ` (${s.vocalStyle})` : ""}${s.mood ? ` [${s.mood}]` : ""}`,
-			)
-			.join("\n");
-
-		userMessage += `\n\n--- Recent songs in this playlist (for awareness — avoid duplicate titles/artists) ---\n${historyLines}`;
-		userMessage += `\nCreate a fresh song with a different title, different artist, and ideally a different vocal style from the most recent entries.`;
-	}
-
-	// Append broader description history for thematic variety
-	if (
-		distance !== "faithful" &&
-		recentDescriptions &&
-		recentDescriptions.length > 0
-	) {
-		userMessage += `\n\n--- Recent song themes (try a different story/angle) ---\n${recentDescriptions.map((d, i) => `  ${i + 1}. ${d}`).join("\n")}`;
-	}
+	const systemBuild = buildSongSystemPrompt({
+		distance,
+		languageLabel,
+		targetKey,
+		timeSignature,
+		audioDuration,
+	});
+	const userBuild = buildSongUserPrompt({
+		prompt,
+		managerBrief,
+		managerSlot,
+		managerTransitionPolicy,
+		distance,
+		recentSongs,
+		recentDescriptions,
+	});
+	logPromptBuild(
+		"song_metadata",
+		[
+			{ kind: "system", build: systemBuild },
+			{ kind: "user", build: userBuild },
+		],
+		{
+			distance,
+			provider,
+			model,
+			temperature,
+		},
+	);
 
 	const raw = await callLlmObject({
 		provider,
 		model,
-		system: systemPrompt,
-		prompt: userMessage,
+		system: systemBuild.text,
+		prompt: userBuild.text,
 		schema: SongMetadataSchema,
 		schemaName: "song_specification",
 		temperature,

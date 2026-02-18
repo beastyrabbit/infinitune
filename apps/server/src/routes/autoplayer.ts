@@ -6,6 +6,18 @@ import {
 	getCodexLoginStatus,
 	startCodexDeviceAuth,
 } from "../external/codex-auth";
+import {
+	enhancePlaylistPrompt,
+	enhanceSessionParams,
+	enhanceSongRequest,
+	generatePersonaExtract,
+	generateSongMetadata,
+	getSongPromptContract,
+	type PersonaInput,
+	type PromptDistance,
+	refineSessionPrompt,
+	type SongMetadata,
+} from "../external/llm";
 import { getServiceUrls, getSetting } from "../external/service-urls";
 import { logger } from "../logger";
 
@@ -30,6 +42,179 @@ interface CodexModelResponse {
 	displayName: string;
 	inputModalities: string[];
 	isDefault: boolean;
+}
+
+type AutoplayerProvider = "ollama" | "openrouter" | "openai-codex";
+
+interface SourceSong {
+	title: string;
+	artistName: string;
+	genre: string;
+	subGenre: string;
+	mood?: string;
+	energy?: string;
+	era?: string;
+	bpm?: number;
+	keyScale?: string;
+	vocalStyle?: string;
+	instruments?: string[];
+	themes?: string[];
+	description?: string;
+	lyrics?: string;
+}
+
+interface LikedSong {
+	title: string;
+	artistName: string;
+	genre: string;
+	mood?: string;
+	vocalStyle?: string;
+}
+
+interface AlbumTrackRequest {
+	playlistPrompt: string;
+	provider: AutoplayerProvider;
+	model: string;
+	sourceSong: SourceSong;
+	likedSongs?: LikedSong[];
+	personaExtracts?: string[];
+	avoidPersonaExtracts?: string[];
+	previousAlbumTracks?: SongMetadata[];
+	trackNumber: number;
+	totalTracks: number;
+	lyricsLanguage?: string;
+	targetKey?: string;
+	timeSignature?: string;
+	audioDuration?: number;
+}
+
+function parseProvider(value: unknown): AutoplayerProvider | undefined {
+	if (
+		value === "ollama" ||
+		value === "openrouter" ||
+		value === "openai-codex"
+	) {
+		return value;
+	}
+	return undefined;
+}
+
+function parsePromptDistance(value: unknown): PromptDistance | undefined {
+	if (
+		value === "close" ||
+		value === "general" ||
+		value === "faithful" ||
+		value === "album"
+	) {
+		return value;
+	}
+	return undefined;
+}
+
+function parseString(value: unknown): string {
+	return typeof value === "string" ? value : "";
+}
+
+function parseOptionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function parseOptionalNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
+}
+
+function buildAlbumPrompt(req: AlbumTrackRequest): string {
+	const lines: string[] = [];
+	lines.push(`PLAYLIST CONTEXT: ${req.playlistPrompt}`);
+	lines.push("");
+
+	const source = req.sourceSong;
+	lines.push("SOURCE SONG (the album is derived from this track):");
+	lines.push(`  Title: "${source.title}" by ${source.artistName}`);
+	lines.push(`  Genre: ${source.genre} / ${source.subGenre}`);
+	if (source.mood) lines.push(`  Mood: ${source.mood}`);
+	if (source.energy) lines.push(`  Energy: ${source.energy}`);
+	if (source.era) lines.push(`  Era: ${source.era}`);
+	if (source.bpm) lines.push(`  BPM: ${source.bpm}`);
+	if (source.keyScale) lines.push(`  Key: ${source.keyScale}`);
+	if (source.vocalStyle) lines.push(`  Vocal: ${source.vocalStyle}`);
+	if (source.instruments?.length)
+		lines.push(`  Instruments: ${source.instruments.join(", ")}`);
+	if (source.themes?.length)
+		lines.push(`  Themes: ${source.themes.join(", ")}`);
+	if (source.description) lines.push(`  Description: ${source.description}`);
+	if (source.lyrics)
+		lines.push(`  Lyrics excerpt: ${source.lyrics.slice(0, 500)}`);
+	lines.push("");
+
+	if (req.personaExtracts?.length) {
+		lines.push("LISTENER TASTE PROFILE (from liked songs this session):");
+		for (const persona of req.personaExtracts) lines.push(`  - ${persona}`);
+		lines.push(
+			"These personas represent what the listener enjoys. Align album tracks with this taste profile.",
+		);
+		lines.push("");
+	}
+
+	if (req.avoidPersonaExtracts?.length) {
+		lines.push("LISTENER DISLIKES (avoid these patterns):");
+		for (const persona of req.avoidPersonaExtracts)
+			lines.push(`  - ${persona}`);
+		lines.push(
+			"These represent what the listener does NOT enjoy. Steer away from these sonic and thematic patterns.",
+		);
+		lines.push("");
+	}
+
+	if (req.likedSongs?.length) {
+		lines.push(
+			"LIKED SONGS (listener preferences — use as additional flavor guidance):",
+		);
+		for (const song of req.likedSongs.slice(0, 10)) {
+			const parts = [`"${song.title}" by ${song.artistName}`, song.genre];
+			if (song.mood) parts.push(song.mood);
+			if (song.vocalStyle) parts.push(song.vocalStyle);
+			lines.push(`  - ${parts.join(" / ")}`);
+		}
+		lines.push("");
+	}
+
+	if (req.previousAlbumTracks?.length) {
+		lines.push(
+			"ALREADY GENERATED ALBUM TRACKS (create something DIFFERENT from these):",
+		);
+		for (const track of req.previousAlbumTracks) {
+			lines.push(
+				`  - "${track.title}" by ${track.artistName} — ${track.genre}/${track.subGenre}, ${track.mood}, ${track.energy} energy, ${track.vocalStyle}, BPM ${track.bpm}`,
+			);
+		}
+		lines.push("");
+	}
+
+	const { trackNumber, totalTracks } = req;
+	let positionHint = "Mid-album track — take creative risks within the genre.";
+	if (trackNumber === 1) {
+		positionHint =
+			"This is the ALBUM OPENER — high energy, attention-grabbing, sets the tone.";
+	} else if (trackNumber === totalTracks) {
+		positionHint =
+			"This is the ALBUM CLOSER — reflective, emotionally resonant, lasting impression.";
+	} else if (trackNumber <= 3) {
+		positionHint =
+			"Early album track — build momentum and establish album identity.";
+	} else if (trackNumber >= totalTracks - 2) {
+		positionHint =
+			"Late album track — wind down energy and prepare for the closing.";
+	}
+	lines.push(
+		`TRACK POSITION: ${trackNumber} of ${totalTracks}. ${positionHint}`,
+	);
+	lines.push("");
+	lines.push("Generate a new album track now.");
+
+	return lines.join("\n");
 }
 
 const app = new Hono();
@@ -199,6 +384,344 @@ app.get("/openrouter-models", async (c) => {
 						? error.message
 						: "Failed to fetch OpenRouter models",
 				models: [],
+			},
+			500,
+		);
+	}
+});
+
+// ─── GET /prompt-contract?distance=close|general|faithful|album ─────
+app.get("/prompt-contract", async (c) => {
+	try {
+		const distance = parsePromptDistance(c.req.query("distance")) ?? "close";
+		return c.json(getSongPromptContract(distance));
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to build prompt contract");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to build prompt contract",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /generate-song ─────────────────────────────────────────────
+app.post("/generate-song", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const prompt = parseString(body.prompt) || parseString(body.userPrompt);
+		if (!provider || !prompt) {
+			return c.json(
+				{
+					error: "Missing required fields: provider, prompt",
+				},
+				400,
+			);
+		}
+
+		const songData = await generateSongMetadata({
+			prompt,
+			provider,
+			model,
+			lyricsLanguage: parseOptionalString(body.lyricsLanguage),
+			managerBrief: parseOptionalString(body.managerBrief),
+			managerTransitionPolicy: parseOptionalString(
+				body.managerTransitionPolicy,
+			),
+			managerSlot:
+				typeof body.managerSlot === "object" && body.managerSlot !== null
+					? (body.managerSlot as {
+							slot: number;
+							transitionIntent: string;
+							topicHint: string;
+							captionFocus: string;
+							lyricTheme: string;
+							energyTarget: "low" | "medium" | "high" | "extreme";
+						})
+					: undefined,
+			targetBpm: parseOptionalNumber(body.targetBpm),
+			targetKey: parseOptionalString(body.targetKey),
+			timeSignature: parseOptionalString(body.timeSignature),
+			audioDuration: parseOptionalNumber(body.audioDuration),
+			recentSongs: Array.isArray(body.recentSongs)
+				? (body.recentSongs as {
+						title: string;
+						artistName: string;
+						genre: string;
+						subGenre: string;
+						vocalStyle?: string;
+						mood?: string;
+						energy?: string;
+					}[])
+				: undefined,
+			recentDescriptions: Array.isArray(body.recentDescriptions)
+				? (body.recentDescriptions as string[])
+				: undefined,
+			isInterrupt: body.isInterrupt === true,
+			promptDistance: parsePromptDistance(body.promptDistance),
+		});
+		return c.json(songData);
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to generate song metadata");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to generate song metadata",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /generate-album-track ──────────────────────────────────────
+app.post("/generate-album-track", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const playlistPrompt = parseString(body.playlistPrompt);
+		const sourceSong = body.sourceSong as SourceSong | undefined;
+		const trackNumber = parseOptionalNumber(body.trackNumber);
+		const totalTracks = parseOptionalNumber(body.totalTracks);
+		if (
+			!provider ||
+			!playlistPrompt ||
+			!sourceSong?.title ||
+			!sourceSong.artistName ||
+			!sourceSong.genre ||
+			!sourceSong.subGenre ||
+			!trackNumber ||
+			!totalTracks
+		) {
+			return c.json(
+				{
+					error:
+						"Missing required fields: playlistPrompt, provider, sourceSong, trackNumber, totalTracks",
+				},
+				400,
+			);
+		}
+
+		const request: AlbumTrackRequest = {
+			playlistPrompt,
+			provider,
+			model,
+			sourceSong,
+			likedSongs: Array.isArray(body.likedSongs)
+				? (body.likedSongs as LikedSong[])
+				: undefined,
+			personaExtracts: Array.isArray(body.personaExtracts)
+				? (body.personaExtracts as string[])
+				: undefined,
+			avoidPersonaExtracts: Array.isArray(body.avoidPersonaExtracts)
+				? (body.avoidPersonaExtracts as string[])
+				: undefined,
+			previousAlbumTracks: Array.isArray(body.previousAlbumTracks)
+				? (body.previousAlbumTracks as SongMetadata[])
+				: undefined,
+			trackNumber,
+			totalTracks,
+			lyricsLanguage: parseOptionalString(body.lyricsLanguage),
+			targetKey: parseOptionalString(body.targetKey),
+			timeSignature: parseOptionalString(body.timeSignature),
+			audioDuration: parseOptionalNumber(body.audioDuration),
+		};
+
+		const songData = await generateSongMetadata({
+			prompt: buildAlbumPrompt(request),
+			promptDistance: "album",
+			provider,
+			model,
+			lyricsLanguage: request.lyricsLanguage,
+			targetKey: request.targetKey,
+			timeSignature: request.timeSignature,
+			audioDuration: request.audioDuration,
+		});
+		return c.json(songData);
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to generate album track");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to generate album track",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /extract-persona ───────────────────────────────────────────
+app.post("/extract-persona", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const song =
+			typeof body.song === "object" && body.song !== null
+				? (body.song as PersonaInput)
+				: undefined;
+		if (!provider || !song) {
+			return c.json(
+				{
+					error: "Missing required fields: song, provider",
+				},
+				400,
+			);
+		}
+		const persona = await generatePersonaExtract({
+			song,
+			provider,
+			model,
+		});
+		return c.json({ persona });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to extract persona");
+		return c.json(
+			{
+				error:
+					error instanceof Error ? error.message : "Failed to extract persona",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /enhance-prompt ────────────────────────────────────────────
+app.post("/enhance-prompt", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const prompt = parseString(body.prompt);
+		if (!provider || !prompt) {
+			return c.json(
+				{ error: "Missing required fields: prompt, provider" },
+				400,
+			);
+		}
+		const result = await enhancePlaylistPrompt({
+			prompt,
+			provider,
+			model,
+		});
+		return c.json({ result });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to enhance prompt");
+		return c.json(
+			{
+				error:
+					error instanceof Error ? error.message : "Failed to enhance prompt",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /enhance-request ───────────────────────────────────────────
+app.post("/enhance-request", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const request = parseString(body.request);
+		if (!provider || !request) {
+			return c.json(
+				{ error: "Missing required fields: request, provider" },
+				400,
+			);
+		}
+		const result = await enhanceSongRequest({
+			request,
+			provider,
+			model,
+		});
+		return c.json({ result });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to enhance request");
+		return c.json(
+			{
+				error:
+					error instanceof Error ? error.message : "Failed to enhance request",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /refine-prompt ─────────────────────────────────────────────
+app.post("/refine-prompt", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const currentPrompt = parseString(body.currentPrompt);
+		const direction = parseString(body.direction);
+		if (!provider || !currentPrompt || !direction) {
+			return c.json(
+				{
+					error: "Missing required fields: currentPrompt, direction, provider",
+				},
+				400,
+			);
+		}
+		const result = await refineSessionPrompt({
+			currentPrompt,
+			direction,
+			provider,
+			model,
+		});
+		return c.json({ result });
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to refine prompt");
+		return c.json(
+			{
+				error:
+					error instanceof Error ? error.message : "Failed to refine prompt",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /enhance-session ───────────────────────────────────────────
+app.post("/enhance-session", async (c) => {
+	try {
+		const body = await c.req.json<Record<string, unknown>>();
+		const provider = parseProvider(body.provider);
+		const model = parseString(body.model);
+		const prompt = parseString(body.prompt);
+		if (!provider || !prompt) {
+			return c.json(
+				{
+					error: "Missing required fields: prompt, provider",
+				},
+				400,
+			);
+		}
+		const params = await enhanceSessionParams({
+			prompt,
+			provider,
+			model,
+		});
+		return c.json(params);
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to enhance session params");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to analyze session params",
 			},
 			500,
 		);
