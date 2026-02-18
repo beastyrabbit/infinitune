@@ -132,6 +132,13 @@ export class SongWorker {
 				const latestPlaylist = await this.loadLatestPlaylist();
 				if (latestPlaylist) {
 					this.ctx.playlist = latestPlaylist;
+				} else {
+					this.aborted = true;
+					songLogger(this.songId).info(
+						{ playlistId: this.ctx.playlist.id, currentEpoch },
+						"Playlist missing during manager refresh; cancelling song worker",
+					);
+					return;
 				}
 			} catch (err) {
 				songLogger(this.songId).warn(
@@ -162,6 +169,13 @@ export class SongWorker {
 				const latestPlaylist = await this.loadLatestPlaylist();
 				if (latestPlaylist) {
 					this.ctx.playlist = latestPlaylist;
+				} else {
+					this.aborted = true;
+					songLogger(this.songId).info(
+						{ playlistId: this.ctx.playlist.id, currentEpoch },
+						"Playlist missing before manager generation; cancelling song worker",
+					);
+					return;
 				}
 			} catch (err) {
 				songLogger(this.songId).warn(
@@ -347,6 +361,15 @@ export class SongWorker {
 
 	private async generateMetadata(): Promise<void> {
 		if (this.aborted) return;
+		const active = await this.ctx.getPlaylistActive();
+		if (!active) {
+			this.aborted = true;
+			songLogger(this.songId).info(
+				{ playlistId: this.ctx.playlist.id },
+				"Playlist is no longer active; skipping metadata generation",
+			);
+			return;
+		}
 
 		const claimed = songService.claimMetadata(this.songId);
 		if (!claimed) return;
@@ -383,6 +406,9 @@ export class SongWorker {
 							effectiveModel,
 							signal,
 						);
+						if (this.aborted) {
+							throw new Error("Cancelled");
+						}
 					}
 
 					const genOptions = {
