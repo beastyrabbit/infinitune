@@ -8,6 +8,7 @@ import { generateImage, generateObject, generateText } from "ai";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { ZodType } from "zod";
 import { codexAppServerClient } from "./codex-app-server-client";
+import { CODEX_LLM_CONCURRENCY } from "./codex-config";
 import { getServiceUrls, getSetting } from "./service-urls";
 
 // ---------------------------------------------------------------------------
@@ -16,16 +17,6 @@ import { getServiceUrls, getSetting } from "./service-urls";
 // ---------------------------------------------------------------------------
 
 type Provider = LlmProvider;
-
-export const CODEX_LLM_CONCURRENCY = (() => {
-	const raw = process.env.CODEX_LLM_CONCURRENCY;
-	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-	if (Number.isFinite(parsed) && parsed > 0) {
-		return parsed;
-	}
-	// Default to effectively unthrottled Codex calls from this process.
-	return 100;
-})();
 
 const LIMITS: Record<Provider, number> = {
 	ollama: 1,
@@ -150,7 +141,7 @@ async function resolveModelForProvider(
 	const preferred =
 		codexModels.find((m) => m.isDefault) ??
 		codexModels.find((m) => m.id === "gpt-5.2") ??
-		(codexModels.length > 0 ? codexModels[0] : undefined);
+		codexModels.at(0);
 
 	if (!preferred?.id) {
 		throw new Error(

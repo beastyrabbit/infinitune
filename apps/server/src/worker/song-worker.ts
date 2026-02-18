@@ -224,7 +224,7 @@ export class SongWorker {
 			return;
 		}
 
-		const refreshPromise = (async () => {
+		const runRefresh = async () => {
 			try {
 				const latestPlaylist = await this.loadLatestPlaylist();
 				if (latestPlaylist) {
@@ -315,16 +315,25 @@ export class SongWorker {
 					"Playlist manager brief refresh failed; continuing with current context",
 				);
 			}
-		})();
+		};
 
-		const trackedRefreshPromise = (async () => {
-			try {
-				await refreshPromise;
-			} finally {
-				managerRefreshInFlight.delete(refreshKey);
-			}
-		})();
+		let resolveTrackedRefresh!: () => void;
+		let rejectTrackedRefresh!: (reason?: unknown) => void;
+		const trackedRefreshPromise = new Promise<void>((resolve, reject) => {
+			resolveTrackedRefresh = resolve;
+			rejectTrackedRefresh = reject;
+		});
 		managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
+		void runRefresh()
+			.then(() => {
+				resolveTrackedRefresh();
+			})
+			.catch((err) => {
+				rejectTrackedRefresh(err);
+			})
+			.finally(() => {
+				managerRefreshInFlight.delete(refreshKey);
+			});
 		await trackedRefreshPromise;
 	}
 

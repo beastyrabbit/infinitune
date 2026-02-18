@@ -2,6 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import process from "node:process";
 import z, { type ZodType } from "zod";
 import { logger } from "../logger";
+import { CODEX_LLM_CONCURRENCY } from "./codex-config";
 
 type RpcError = { code?: number; message?: string };
 
@@ -45,15 +46,6 @@ export interface CodexModelInfo {
 }
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_CODEX_LLM_CONCURRENCY = 100;
-const CODEX_LLM_CONCURRENCY = (() => {
-	const raw = process.env.CODEX_LLM_CONCURRENCY;
-	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-	if (Number.isFinite(parsed) && parsed > 0) {
-		return parsed;
-	}
-	return DEFAULT_CODEX_LLM_CONCURRENCY;
-})();
 const TURN_TIMEOUT_MS = (() => {
 	const raw = process.env.CODEX_TURN_TIMEOUT_MS;
 	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;

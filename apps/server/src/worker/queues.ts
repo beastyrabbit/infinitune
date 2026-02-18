@@ -1,5 +1,5 @@
 import type { AcePollResult } from "../external/ace";
-import { CODEX_LLM_CONCURRENCY } from "../external/llm-client";
+import { CODEX_LLM_CONCURRENCY } from "../external/codex-config";
 import { AudioQueue } from "./audio-queue";
 import type {
 	EndpointType,
