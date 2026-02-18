@@ -7,7 +7,7 @@ export const CreatePlaylistSchema = z.object({
 	name: z.string().min(1),
 	prompt: z.string().min(1),
 	llmProvider: z.string().min(1),
-	llmModel: z.string().min(1),
+	llmModel: z.string(),
 	mode: z.enum(PLAYLIST_MODES).optional().default("endless"),
 	playlistKey: z.string().optional(),
 	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES).optional(),
