@@ -7,6 +7,7 @@ const isDev = process.env.NODE_ENV !== "production" && !isTest;
 
 const LOG_LEVEL = process.env.LOG_LEVEL ?? (isDev ? "debug" : "info");
 const FILE_LOGGING_ENABLED = !isTest && process.env.LOG_TO_FILE !== "0";
+const PRETTY_SINGLE_LINE = process.env.LOG_PRETTY_SINGLE_LINE !== "0";
 
 const LOGS_DIR = path.resolve(import.meta.dirname, "../../../data/logs/server");
 const LOG_SESSION_ID = new Date().toISOString().replace(/[:.]/g, "-");
@@ -28,7 +29,7 @@ if (isDev) {
 			colorize: true,
 			ignore: "pid,hostname",
 			translateTime: "HH:MM:ss",
-			singleLine: false,
+			singleLine: PRETTY_SINGLE_LINE,
 		},
 	});
 }
@@ -71,6 +72,7 @@ export const loggingConfig = {
 	fileLoggingEnabled: Boolean(LOG_FILE_PATH),
 	logFilePath: LOG_FILE_PATH,
 	logSessionId: LOG_SESSION_ID,
+	prettySingleLine: PRETTY_SINGLE_LINE,
 };
 
 /** Create a child logger with song/playlist context */

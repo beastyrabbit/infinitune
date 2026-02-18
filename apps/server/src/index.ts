@@ -31,6 +31,111 @@ import {
 } from "./worker/index";
 
 const PORT = Number(process.env.API_PORT ?? 5175);
+const REQUEST_LOG_SLOW_MS = Number(process.env.REQUEST_LOG_SLOW_MS ?? 1500);
+const REQUEST_LOG_SUMMARY_INTERVAL_MS = Number(
+	process.env.REQUEST_LOG_SUMMARY_INTERVAL_MS ?? 30000,
+);
+
+type NoisyRequestPattern = {
+	method?: string;
+	pattern: RegExp;
+	route: string;
+};
+
+type NoisyRequestAggregate = {
+	count: number;
+	totalDurationMs: number;
+	maxDurationMs: number;
+};
+
+const NOISY_REQUEST_PATTERNS: NoisyRequestPattern[] = [
+	{
+		method: "GET",
+		pattern: /^\/api\/worker\/status$/,
+		route: "GET /api/worker/status",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/songs\/queue\/[^/]+$/,
+		route: "GET /api/songs/queue/:playlistId",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/playlists\/by-key\/[^/]+$/,
+		route: "GET /api/playlists/by-key/:key",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/playlists\/[^/]+$/,
+		route: "GET /api/playlists/:playlistId",
+	},
+	{
+		method: "POST",
+		pattern: /^\/api\/playlists\/[^/]+\/heartbeat$/,
+		route: "POST /api/playlists/:playlistId/heartbeat",
+	},
+	{
+		method: "GET",
+		pattern: /^\/covers\/.+$/,
+		route: "GET /covers/:file",
+	},
+];
+
+const noisyRequestAggregates = new Map<string, NoisyRequestAggregate>();
+
+function getNoisyRoute(method: string, path: string): string | undefined {
+	for (const pattern of NOISY_REQUEST_PATTERNS) {
+		if (pattern.method && pattern.method !== method) continue;
+		if (pattern.pattern.test(path)) return pattern.route;
+	}
+	return undefined;
+}
+
+function recordNoisyRequest(route: string, durationMs: number): void {
+	const current = noisyRequestAggregates.get(route);
+	if (!current) {
+		noisyRequestAggregates.set(route, {
+			count: 1,
+			totalDurationMs: durationMs,
+			maxDurationMs: durationMs,
+		});
+		return;
+	}
+	current.count += 1;
+	current.totalDurationMs += durationMs;
+	current.maxDurationMs = Math.max(current.maxDurationMs, durationMs);
+}
+
+function flushNoisyRequestSummary(reason: "interval" | "shutdown"): void {
+	if (noisyRequestAggregates.size === 0) return;
+	const summary = [...noisyRequestAggregates.entries()]
+		.map(([route, agg]) => ({
+			route,
+			count: agg.count,
+			avgDurationMs:
+				Math.round((agg.totalDurationMs / Math.max(1, agg.count)) * 10) / 10,
+			maxDurationMs: Math.round(agg.maxDurationMs * 10) / 10,
+		}))
+		.sort((a, b) => b.count - a.count);
+	noisyRequestAggregates.clear();
+	logger.info(
+		{
+			reason,
+			intervalMs: REQUEST_LOG_SUMMARY_INTERVAL_MS,
+			routes: summary,
+		},
+		"HTTP noisy request summary",
+	);
+}
+
+const noisyRequestSummaryTimer =
+	REQUEST_LOG_SUMMARY_INTERVAL_MS > 0
+		? setInterval(
+				() => flushNoisyRequestSummary("interval"),
+				REQUEST_LOG_SUMMARY_INTERVAL_MS,
+			)
+		: null;
+noisyRequestSummaryTimer?.unref?.();
 
 // ─── Database ────────────────────────────────────────────────────────
 ensureSchema();
@@ -84,10 +189,13 @@ app.use("*", async (c, next) => {
 	const requestId = c.req.header("x-request-id") ?? randomUUID();
 	c.header("x-request-id", requestId);
 	const startedAt = performance.now();
+	const method = c.req.method;
+	const path = c.req.path;
+	const noisyRoute = getNoisyRoute(method, path);
 	const requestLogger = logger.child({
 		requestId,
-		method: c.req.method,
-		path: c.req.path,
+		method,
+		path,
 	});
 
 	try {
@@ -99,23 +207,33 @@ app.use("*", async (c, next) => {
 		const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
 		const status = c.res.status || 200;
 		const contentLength = c.res.headers.get("content-length");
-		const level =
-			status >= 500
-				? "error"
-				: status >= 400
-					? "warn"
-					: c.req.path === "/health"
-						? "debug"
-						: "info";
+		const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
+		const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
 
-		requestLogger[level](
-			{
-				status,
-				durationMs,
-				contentLength: contentLength ? Number(contentLength) : undefined,
-			},
-			"HTTP request completed",
-		);
+		if (shouldAggregateNoisy) {
+			recordNoisyRequest(noisyRoute, durationMs);
+		} else {
+			const level =
+				status >= 500
+					? "error"
+					: status >= 400
+						? "warn"
+						: isSlow
+							? "warn"
+							: c.req.path === "/health"
+								? "debug"
+								: "info";
+
+			requestLogger[level](
+				{
+					status,
+					durationMs,
+					contentLength: contentLength ? Number(contentLength) : undefined,
+					route: noisyRoute,
+				},
+				isSlow ? "HTTP request slow" : "HTTP request completed",
+			);
+		}
 	}
 });
 
@@ -256,6 +374,8 @@ startWorker().catch((err) => {
 // ─── Graceful shutdown ───────────────────────────────────────────────
 async function shutdown() {
 	logger.info("Shutting down...");
+	if (noisyRequestSummaryTimer) clearInterval(noisyRequestSummaryTimer);
+	flushNoisyRequestSummary("shutdown");
 	try {
 		roomWss.close();
 	} catch (err) {
