@@ -328,6 +328,50 @@ export class SongWorker {
 		}
 	}
 
+	private ensurePlaylistManagerRefresh(
+		currentEpoch: number,
+		provider: "ollama" | "openrouter" | "openai-codex",
+		model: string,
+	): void {
+		if (
+			!needsManagerRefresh(
+				this.ctx.playlist,
+				currentEpoch,
+				this.song.orderIndex,
+			)
+		) {
+			return;
+		}
+
+		const refreshKey = managerRefreshKey(this.ctx.playlist.id, currentEpoch);
+		if (!managerRefreshInFlight.has(refreshKey)) {
+			songLogger(this.songId).info(
+				{
+					playlistId: this.ctx.playlist.id,
+					currentEpoch,
+					orderIndex: this.song.orderIndex,
+				},
+				"Scheduling playlist manager refresh in background",
+			);
+		}
+
+		// Manager refresh is intentionally best-effort and out-of-band so song
+		// generation can start immediately. Updated manager context applies to
+		// subsequent songs (or this one if refresh wins race before LLM execute).
+		void this.refreshPlaylistManager(currentEpoch, provider, model).catch(
+			(err) => {
+				songLogger(this.songId).warn(
+					{
+						err,
+						playlistId: this.ctx.playlist.id,
+						currentEpoch,
+					},
+					"Background playlist manager refresh failed",
+				);
+			},
+		);
+	}
+
 	/** Calculate queue priority for this song based on current playlist state */
 	private getPriority(): number {
 		return calculatePriority({
@@ -469,16 +513,11 @@ export class SongWorker {
 			promptDistance = Math.random() < 0.6 ? "close" : "general";
 		}
 
-		if (
-			needsManagerRefresh(this.ctx.playlist, currentEpoch, this.song.orderIndex)
-		) {
-			await this.refreshPlaylistManager(
-				currentEpoch,
-				effectiveProvider,
-				effectiveModel,
-			);
-			if (this.aborted) return;
-		}
+		this.ensurePlaylistManagerRefresh(
+			currentEpoch,
+			effectiveProvider,
+			effectiveModel,
+		);
 
 		try {
 			const { result, processingMs } = await this.ctx.queues.llm.enqueue({
