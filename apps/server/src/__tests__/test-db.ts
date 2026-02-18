@@ -38,8 +38,12 @@ const SCHEMA_SQL = `
 		last_seen_at INTEGER,
 		prompt_epoch INTEGER DEFAULT 0,
 		steer_history TEXT,
+		manager_brief TEXT,
+		manager_plan TEXT,
+		manager_epoch INTEGER,
+		manager_updated_at INTEGER,
 		is_starred INTEGER DEFAULT 0
-	);
+		);
 
 	CREATE TABLE songs (
 		id TEXT PRIMARY KEY,

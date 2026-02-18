@@ -126,6 +126,10 @@ function mockPlaylist(overrides: Record<string, unknown> = {}) {
 		inferMethod: null,
 		lastSeenAt: null,
 		steerHistory: null,
+		managerBrief: null,
+		managerPlan: null,
+		managerEpoch: null,
+		managerUpdatedAt: null,
 		isStarred: false,
 		...overrides,
 	};

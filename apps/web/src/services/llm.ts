@@ -1,5 +1,10 @@
+import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
+import type {
+	PlaylistManagerPlan,
+	PlaylistManagerPlanSlot,
+} from "@infinitune/shared/types";
 import z from "zod";
-import { callLlmObject } from "@/services/llm-client";
+import { callLlmObject } from "./llm-client";
 
 /** Shared field guidance used across all prompt modes */
 const FIELD_GUIDANCE = `Your response must conform to the provided JSON schema. Fill in every field.
@@ -28,9 +33,12 @@ Field guidance:
   Use UPPERCASE for emotional intensity: "I will NOT surrender"
   Include at least one instrumental section. Aim for 6-10 syllables per line for vocal clarity.
   IMPORTANT: Instruments mentioned in the caption MUST appear as instrumental tags in the lyrics.
+  Keep tags concise (max one style hint in each section tag).
+  If the track should be instrumental, use [Instrumental] instead of sung lyrics.
 - caption: Audio generation prompt. Structure: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. Do NOT include vocal info, BPM, key, or duration — those go in dedicated fields. Max 300 chars.
   Examples: "shoegaze, shimmering reverb guitars, droning Juno-60 pads, tight snare, warm tape saturation, hazy and melancholic"
   "lo-fi hip-hop, dusty SP-404 samples, muted Rhodes, vinyl crackle, boom-bap drums, late-night contemplative"
+  Caption and lyrics tags must never conflict on instruments, mood, or performance direction.
 - coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
   RULES:
   1. ART STYLE — Pick ONE at random. Vary art styles across songs: expired Polaroid photo, Soviet propaganda poster, ukiyo-e woodblock print, 1970s prog rock airbrush, Alphonse Mucha art nouveau, Bauhaus geometric poster, cyberpunk manga panel, Renaissance fresco fragment, 35mm Kodachrome slide, risograph zine print, Persian miniature painting, pixel art scene, chalk pastel on black paper, oil painting with visible palette knife strokes, cyanotype botanical print, 1920s Art Deco poster, VHS screen capture, stained glass window, watercolor bleed on wet paper, double exposure film photograph, linocut print, glitch art corruption, daguerreotype portrait, neon sign in fog, collage of torn magazine pages, spray paint stencil on brick wall, Dutch Golden Age still life, Chinese ink wash painting, cross-processed 35mm film, Aboriginal dot painting, 1950s pulp sci-fi cover, solarized darkroom print
@@ -292,6 +300,58 @@ export interface RecentSong {
 	energy?: string;
 }
 
+export interface ManagerRatingSignal {
+	title: string;
+	genre?: string;
+	mood?: string;
+	personaExtract?: string;
+	rating: "up" | "down";
+}
+
+const PlaylistManagerSlotSchema = z.object({
+	slot: z.number().int().min(1).max(12),
+	transitionIntent: z.string(),
+	topicHint: z.string(),
+	captionFocus: z.string(),
+	lyricTheme: z.string(),
+	energyTarget: z.enum(["low", "medium", "high", "extreme"]),
+});
+
+const PlaylistManagerSchema = z.object({
+	managerBrief: z
+		.string()
+		.describe(
+			"Compact playlist operating brief for downstream song generation. Include core sonic identity, exploration lanes, ACE caption/lyrics consistency guardrails, and anti-patterns.",
+		),
+	strategySummary: z.string(),
+	transitionPolicy: z.string(),
+	avoidPatterns: z.array(z.string()),
+	slots: z.array(PlaylistManagerSlotSchema).min(3).max(8),
+});
+
+const PLAYLIST_MANAGER_PROMPT = `You are a playlist-level music director optimizing prompts for ACE-Step text2music.
+
+Design a rolling next-song plan that controls transitions and topic evolution.
+
+Requirements:
+- Keep one coherent musical identity with room for controlled exploration.
+- Plan an arc for the next N songs using slot-by-slot guidance.
+- Decide transition smoothness from context (party/background can stay smooth, high-energy sessions can jump harder).
+- Encode guardrails for ACE-Step:
+  - Caption is global style/instrument/texture/mood only.
+  - Lyrics are the temporal script with concise section tags.
+  - Caption and lyrics tags must stay consistent.
+  - Avoid conflicting style instructions.
+- Include 3-8 avoid patterns based on weak/down-rated outputs.
+- Use user feedback: ratings and steer history should shape the next arc.
+
+Output JSON with fields:
+- managerBrief
+- strategySummary
+- transitionPolicy
+- avoidPatterns (string[])
+- slots (array of slot objects with: slot, transitionIntent, topicHint, captionFocus, lyricTheme, energyTarget)`;
+
 function clampInt(
 	val: number,
 	min: number,
@@ -304,6 +364,10 @@ function clampInt(
 
 /** Sanitize LLM-generated metadata: clamp numeric fields to safe ranges and normalize strings */
 function validateSongMetadata(raw: SongMetadata): SongMetadata {
+	const normalizedOutputLanguage = normalizeLyricsLanguage(raw.language);
+	const languageLabel =
+		normalizedOutputLanguage === "german" ? "German" : "English";
+
 	return {
 		...raw,
 		title: raw.title?.trim() || "Untitled",
@@ -316,8 +380,6 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 			raw.caption?.trim() ||
 			"ambient electronic, soft pads, gentle beat, dreamy atmosphere",
 		coverPrompt: raw.coverPrompt?.trim() || undefined,
-		// Clamp to wider safe range (30-600s) rather than the ideal 180-300s
-		// to avoid rejecting borderline LLM outputs
 		bpm: clampInt(raw.bpm, 60, 200, 120),
 		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
 		keyScale: raw.keyScale?.trim() || "C major",
@@ -335,7 +397,7 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 				: ["synthesizer", "drum machine", "bass"],
 		tags: raw.tags?.length > 0 ? raw.tags : ["electronic", "ambient"],
 		themes: raw.themes?.length > 0 ? raw.themes : ["atmosphere"],
-		language: raw.language?.trim() || "English",
+		language: languageLabel,
 		description: raw.description?.trim() || "An AI-generated track.",
 	};
 }
@@ -409,11 +471,171 @@ export async function generatePersonaExtract(options: {
 	return persona;
 }
 
+export async function generatePlaylistManagerPlan(options: {
+	prompt: string;
+	provider: "ollama" | "openrouter" | "openai-codex";
+	model: string;
+	lyricsLanguage?: string;
+	recentSongs?: RecentSong[];
+	recentDescriptions?: string[];
+	ratingSignals?: ManagerRatingSignal[];
+	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
+	previousBrief?: string | null;
+	currentEpoch: number;
+	planWindow?: number;
+	signal?: AbortSignal;
+}): Promise<{
+	managerBrief: string;
+	managerPlan: PlaylistManagerPlan;
+}> {
+	const {
+		prompt,
+		provider,
+		model,
+		lyricsLanguage,
+		recentSongs,
+		recentDescriptions,
+		ratingSignals,
+		steerHistory,
+		previousBrief,
+		currentEpoch,
+		planWindow = 5,
+		signal,
+	} = options;
+
+	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
+	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
+
+	const messageParts: string[] = [];
+	messageParts.push(`Playlist prompt: ${prompt}`);
+	messageParts.push(`Lyrics language lock: ${languageLabel}`);
+	messageParts.push(`Current epoch: ${currentEpoch}`);
+	messageParts.push(`Plan window size: ${planWindow}`);
+
+	if (previousBrief?.trim()) {
+		messageParts.push(`Previous manager brief: ${previousBrief.trim()}`);
+	}
+
+	if (steerHistory?.length) {
+		const steering = steerHistory
+			.slice(-10)
+			.map((entry) => {
+				const at = new Date(entry.at).toISOString();
+				return `- epoch ${entry.epoch} @ ${at}: ${entry.direction}`;
+			})
+			.join("\n");
+		messageParts.push(`Recent steering history:\n${steering}`);
+	}
+
+	if (recentSongs?.length) {
+		const recent = recentSongs
+			.slice(0, 12)
+			.map(
+				(s, i) =>
+					`${i + 1}. "${s.title}" by ${s.artistName} — ${s.genre}/${s.subGenre}${s.vocalStyle ? `, ${s.vocalStyle}` : ""}${s.mood ? `, mood=${s.mood}` : ""}${s.energy ? `, energy=${s.energy}` : ""}`,
+			)
+			.join("\n");
+		messageParts.push(`Recent generated songs:\n${recent}`);
+	}
+
+	if (recentDescriptions?.length) {
+		const recents = recentDescriptions
+			.slice(0, 20)
+			.map((d, i) => `${i + 1}. ${d}`)
+			.join("\n");
+		messageParts.push(`Recent story angles:\n${recents}`);
+	}
+
+	if (ratingSignals?.length) {
+		const ratingLines = ratingSignals
+			.slice(0, 20)
+			.map((entry, index) => {
+				const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
+				const parts = [`${index + 1}. ${sentiment}: "${entry.title}"`];
+				if (entry.genre) parts.push(`genre=${entry.genre}`);
+				if (entry.mood) parts.push(`mood=${entry.mood}`);
+				if (entry.personaExtract)
+					parts.push(`persona=${entry.personaExtract.slice(0, 220)}`);
+				return parts.join(" | ");
+			})
+			.join("\n");
+		messageParts.push(`User feedback signals:\n${ratingLines}`);
+	}
+
+	const result = await callLlmObject({
+		provider,
+		model,
+		system: PLAYLIST_MANAGER_PROMPT,
+		prompt: messageParts.join("\n\n"),
+		schema: PlaylistManagerSchema,
+		schemaName: "playlist_manager_brief",
+		temperature: 0.6,
+		signal,
+	});
+
+	const brief =
+		typeof result.managerBrief === "string" ? result.managerBrief.trim() : "";
+	if (!brief) throw new Error("Empty playlist manager brief");
+
+	const slots: PlaylistManagerPlanSlot[] = result.slots
+		.slice(0, planWindow)
+		.map((slot, idx) => ({
+			slot: idx + 1,
+			transitionIntent: slot.transitionIntent.trim(),
+			topicHint: slot.topicHint.trim(),
+			captionFocus: slot.captionFocus.trim(),
+			lyricTheme: slot.lyricTheme.trim(),
+			energyTarget: slot.energyTarget,
+		}));
+
+	const managerPlan: PlaylistManagerPlan = {
+		version: 1,
+		epoch: currentEpoch,
+		windowSize: planWindow,
+		strategySummary:
+			typeof result.strategySummary === "string"
+				? result.strategySummary.trim().slice(0, 600)
+				: "Maintain coherent playlist identity while varying topic and arrangement.",
+		transitionPolicy:
+			typeof result.transitionPolicy === "string"
+				? result.transitionPolicy.trim().slice(0, 400)
+				: "Adapt transition smoothness to the playlist intent and listener feedback.",
+		avoidPatterns: Array.isArray(result.avoidPatterns)
+			? result.avoidPatterns
+					.map((pattern) => pattern.trim())
+					.filter(Boolean)
+					.slice(0, 8)
+			: [],
+		slots:
+			slots.length > 0
+				? slots
+				: [
+						{
+							slot: 1,
+							transitionIntent: "stay coherent with gentle variation",
+							topicHint: "extend current playlist theme",
+							captionFocus: "keep instrumentation family consistent",
+							lyricTheme: "advance narrative without repeating lines",
+							energyTarget: "medium",
+						},
+					],
+		updatedAt: Date.now(),
+	};
+
+	return {
+		managerBrief: brief.slice(0, 1800),
+		managerPlan,
+	};
+}
+
 export async function generateSongMetadata(options: {
 	prompt: string;
 	provider: "ollama" | "openrouter" | "openai-codex";
 	model: string;
 	lyricsLanguage?: string;
+	managerBrief?: string;
+	managerSlot?: PlaylistManagerPlanSlot;
+	managerTransitionPolicy?: string;
 	targetBpm?: number;
 	targetKey?: string;
 	timeSignature?: string;
@@ -429,6 +651,9 @@ export async function generateSongMetadata(options: {
 		provider,
 		model,
 		lyricsLanguage,
+		managerBrief,
+		managerSlot,
+		managerTransitionPolicy,
 		targetBpm,
 		targetKey,
 		timeSignature,
@@ -439,6 +664,9 @@ export async function generateSongMetadata(options: {
 		promptDistance,
 		signal,
 	} = options;
+
+	const normalizedLanguage = normalizeLyricsLanguage(lyricsLanguage);
+	const languageLabel = normalizedLanguage === "german" ? "German" : "English";
 
 	// Determine prompt distance: explicit > interrupt flag > default close
 	const distance: PromptDistance =
@@ -458,9 +686,10 @@ export async function generateSongMetadata(options: {
 
 	let systemPrompt = getSystemPrompt(distance);
 
-	if (lyricsLanguage && lyricsLanguage !== "auto") {
-		systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${lyricsLanguage.charAt(0).toUpperCase() + lyricsLanguage.slice(1)}.`;
-	}
+	systemPrompt += `\n\nLANGUAGE LOCK (hard): Write ALL lyrics only in ${languageLabel}.`;
+	systemPrompt +=
+		"\nIgnore any conflicting language hints from the user prompt or manager guidance.";
+	systemPrompt += `\nSet the "language" field exactly to "${languageLabel}".`;
 	if (targetKey) {
 		systemPrompt += `\n\nUse the musical key: ${targetKey}.`;
 	}
@@ -473,6 +702,21 @@ export async function generateSongMetadata(options: {
 
 	// Build user message with soft recent-song awareness (no bans, no forced switches)
 	let userMessage = prompt;
+	if (managerBrief?.trim()) {
+		userMessage += `\n\n--- Playlist manager brief (high priority guidance) ---\n${managerBrief.trim()}`;
+	}
+	if (managerTransitionPolicy?.trim()) {
+		userMessage += `\n\nTransition policy: ${managerTransitionPolicy.trim()}`;
+	}
+	if (managerSlot) {
+		userMessage += `\n\n--- Current manager slot guidance ---`;
+		userMessage += `\nSlot: ${managerSlot.slot}`;
+		userMessage += `\nTransition intent: ${managerSlot.transitionIntent}`;
+		userMessage += `\nTopic hint: ${managerSlot.topicHint}`;
+		userMessage += `\nCaption focus: ${managerSlot.captionFocus}`;
+		userMessage += `\nLyric theme: ${managerSlot.lyricTheme}`;
+		userMessage += `\nEnergy target: ${managerSlot.energyTarget}`;
+	}
 	if (distance !== "faithful" && recentSongs && recentSongs.length > 0) {
 		const historyLines = recentSongs
 			.map(

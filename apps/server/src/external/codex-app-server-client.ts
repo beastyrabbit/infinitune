@@ -2,6 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import process from "node:process";
 import z, { type ZodType } from "zod";
 import { logger } from "../logger";
+import { CODEX_LLM_CONCURRENCY } from "./codex-config";
 
 type RpcError = { code?: number; message?: string };
 
@@ -51,7 +52,17 @@ const TURN_TIMEOUT_MS = (() => {
 	if (Number.isFinite(parsed) && parsed > 0) {
 		return parsed;
 	}
-	return 360_000;
+	return 420_000;
+})();
+const MAX_PENDING_TURNS = (() => {
+	const raw = process.env.CODEX_MAX_PENDING_TURNS;
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	// Keep this above active concurrency so it acts as a leak guard without
+	// allowing unbounded pending-turn growth.
+	return Math.max(300, CODEX_LLM_CONCURRENCY * 3);
 })();
 
 function isNoisyRolloutWarning(message: string): boolean {
@@ -69,8 +80,6 @@ export class CodexAppServerClient {
 	private startPromise: Promise<void> | null = null;
 	private pendingRequests = new Map<number, PendingRequest>();
 	private pendingTurns = new Map<string, PendingTurn>();
-	private threadIdsByModel = new Map<string, string>();
-	private threadStartPromises = new Map<string, Promise<string>>();
 	private suppressedRolloutWarnings = 0;
 	private lastSuppressedRolloutLogAt = 0;
 
@@ -111,8 +120,6 @@ export class CodexAppServerClient {
 			this.proc = null;
 			this.initialized = false;
 			this.stdoutBuffer = "";
-			this.threadIdsByModel.clear();
-			this.threadStartPromises.clear();
 			throw error;
 		}
 	}
@@ -176,8 +183,6 @@ export class CodexAppServerClient {
 		this.proc = null;
 		this.initialized = false;
 		this.stdoutBuffer = "";
-		this.threadIdsByModel.clear();
-		this.threadStartPromises.clear();
 
 		for (const [id, pending] of this.pendingRequests) {
 			clearTimeout(pending.timeout);
@@ -441,45 +446,23 @@ export class CodexAppServerClient {
 		return await this.requestRaw(method, params, timeoutMs);
 	}
 
-	private async readThreadModel(model: string): Promise<string> {
-		const existing = this.threadIdsByModel.get(model);
-		if (existing) {
-			return existing;
+	private async startThread(model: string): Promise<string> {
+		const raw = await this.request(
+			"thread/start",
+			{
+				model,
+				cwd: process.cwd(),
+				approvalPolicy: "never",
+				sandbox: "read-only",
+			},
+			APP_SERVER_REQUEST_TIMEOUT_MS,
+		);
+		const result = raw as { thread?: { id?: string } };
+		const threadId = result.thread?.id;
+		if (!threadId) {
+			throw new Error("Codex thread/start returned no thread id");
 		}
-
-		const activeStart = this.threadStartPromises.get(model);
-		if (activeStart) {
-			return await activeStart;
-		}
-
-		const startPromise = (async () => {
-			const raw = await this.request(
-				"thread/start",
-				{
-					model,
-					cwd: process.cwd(),
-					approvalPolicy: "never",
-					sandbox: "read-only",
-				},
-				APP_SERVER_REQUEST_TIMEOUT_MS,
-			);
-			const result = raw as { thread?: { id?: string } };
-			const threadId = result.thread?.id;
-			if (!threadId) {
-				throw new Error("Codex thread/start returned no thread id");
-			}
-			this.threadIdsByModel.set(model, threadId);
-			return threadId;
-		})();
-
-		this.threadStartPromises.set(model, startPromise);
-		try {
-			return await startPromise;
-		} finally {
-			if (this.threadStartPromises.get(model) === startPromise) {
-				this.threadStartPromises.delete(model);
-			}
-		}
+		return threadId;
 	}
 
 	private async runTurn(options: {
@@ -488,7 +471,12 @@ export class CodexAppServerClient {
 		outputSchema?: Record<string, unknown>;
 		signal?: AbortSignal;
 	}): Promise<string> {
-		const threadId = await this.readThreadModel(options.model);
+		if (this.pendingTurns.size >= MAX_PENDING_TURNS) {
+			throw new Error(
+				`Codex pending-turn limit reached (${MAX_PENDING_TURNS}). Reduce concurrency or raise CODEX_MAX_PENDING_TURNS.`,
+			);
+		}
+		const threadId = await this.startThread(options.model);
 		const turnRaw = await this.request(
 			"turn/start",
 			{

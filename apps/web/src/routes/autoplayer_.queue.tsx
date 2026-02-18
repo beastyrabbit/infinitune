@@ -16,7 +16,7 @@ import {
 	getInitials,
 	getPatternStyle,
 } from "@/lib/cover-utils";
-import { formatMs } from "@/lib/format-time";
+import { formatElapsed } from "@/lib/format-time";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
 import type { Song } from "@/types";
 
@@ -477,7 +477,7 @@ function WorkerOverview({ status }: { status: WorkerStatus }) {
 			</div>
 			<div className="flex-1 px-4 py-3 text-center">
 				<div className="text-2xl font-black tabular-nums text-white/40">
-					{formatMs(status.uptime)}
+					{formatElapsed(status.uptime * 1000)}
 				</div>
 				<div className="text-[9px] text-white/30 font-bold uppercase tracking-widest">
 					UPTIME

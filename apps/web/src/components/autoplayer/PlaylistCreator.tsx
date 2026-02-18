@@ -1,3 +1,4 @@
+import { DEFAULT_TEXT_PROVIDER } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +35,11 @@ interface PlaylistCreatorProps {
 		prompt: string;
 		provider: LlmProvider;
 		model: string;
+		lyricsLanguage?: string;
+		targetBpm?: number;
+		targetKey?: string;
+		timeSignature?: string;
+		audioDuration?: number;
 		inferenceSteps?: number;
 		lmTemperature?: number;
 		lmCfgScale?: number;
@@ -49,6 +55,11 @@ interface PlaylistCreatorProps {
 		prompt: string;
 		provider: LlmProvider;
 		model: string;
+		lyricsLanguage?: string;
+		targetBpm?: number;
+		targetKey?: string;
+		timeSignature?: string;
+		audioDuration?: number;
 		inferenceSteps?: number;
 		lmTemperature?: number;
 		lmCfgScale?: number;
@@ -74,7 +85,7 @@ export function PlaylistCreator({
 	onCreatePlaylistInRoom,
 }: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
-	const [provider, setProvider] = useState<LlmProvider>("ollama");
+	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
 	const [model, setModel] = useState("");
 	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
 	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
@@ -84,7 +95,6 @@ export function PlaylistCreator({
 	const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("local");
 	const [roomName, setRoomName] = useState("");
 	const [roomNameEdited, setRoomNameEdited] = useState(false);
-	const modelSetByUserOrSettings = useRef(false);
 
 	const settings = useSettings();
 
@@ -101,12 +111,10 @@ export function PlaylistCreator({
 	useEffect(() => {
 		if (!settings || settingsApplied.current) return;
 		settingsApplied.current = true;
-		if (settings.textProvider)
-			setProvider(settings.textProvider as LlmProvider);
-		if (settings.textModel) {
-			setModel(settings.textModel);
-			modelSetByUserOrSettings.current = true;
-		}
+		const configuredProvider =
+			(settings.textProvider as LlmProvider) || DEFAULT_TEXT_PROVIDER;
+		setProvider(configuredProvider);
+		setModel(settings.textModel?.trim() || "");
 	}, [settings]);
 
 	useEffect(() => {
@@ -118,18 +126,6 @@ export function PlaylistCreator({
 			.then((d) => {
 				const allModels = d.models || [];
 				setOllamaModels(allModels);
-				// Only auto-pick a model if settings didn't already provide one
-				if (!modelSetByUserOrSettings.current) {
-					const textOnly = allModels.filter(
-						(m: ModelOption) => m.type === "text" || (!m.type && !m.vision),
-					);
-					if (textOnly.length > 0) {
-						const preferred = textOnly.find(
-							(m: ModelOption) => m.name === "gpt-oss:20b",
-						);
-						setModel(preferred ? preferred.name : textOnly[0].name);
-					}
-				}
 			})
 			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
 
@@ -160,6 +156,15 @@ export function PlaylistCreator({
 			if (!textModels.some((m) => m.name === model)) {
 				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
 				setModel(preferred ? preferred.name : textModels[0].name);
+			}
+			return;
+		}
+
+		if (provider === "openrouter") {
+			const isKnownOllamaModel = textModels.some((m) => m.name === model);
+			const isKnownCodexModel = codexTextModels.some((m) => m.name === model);
+			if (isKnownOllamaModel || isKnownCodexModel) {
+				setModel("");
 			}
 			return;
 		}
@@ -233,6 +238,12 @@ export function PlaylistCreator({
 				prompt: prompt.trim(),
 				provider,
 				model,
+				lyricsLanguage:
+					(enhancedParams.lyricsLanguage as string | undefined) || "english",
+				targetBpm: enhancedParams.targetBpm as number | undefined,
+				targetKey: enhancedParams.targetKey as string | undefined,
+				timeSignature: enhancedParams.timeSignature as string | undefined,
+				audioDuration: enhancedParams.audioDuration as number | undefined,
 				inferenceSteps:
 					(enhancedParams.inferenceSteps as number | undefined) ??
 					inferenceSteps,
@@ -246,6 +257,7 @@ export function PlaylistCreator({
 				prompt: prompt.trim(),
 				provider,
 				model,
+				lyricsLanguage: "english",
 				inferenceSteps,
 				lmTemperature,
 				lmCfgScale,
@@ -454,7 +466,7 @@ export function PlaylistCreator({
 										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 										placeholder={
 											provider === "openrouter"
-												? "GOOGLE/GEMINI-2.5-FLASH"
+												? "OPENROUTER/MODEL-ID"
 												: provider === "openai-codex"
 													? "GPT-5.3-CODEX"
 													: "LLAMA3.1:8B"

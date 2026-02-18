@@ -1,3 +1,4 @@
+import type { PlaylistManagerPlan } from "@infinitune/shared/types";
 import type { Playlist, Setting, Song } from "./db/schema";
 import { logger } from "./logger";
 
@@ -14,15 +15,17 @@ export function parseJsonField<T>(value: string | null): T | undefined {
 	}
 }
 
-export type PlaylistWire = Omit<Playlist, "steerHistory"> & {
+export type PlaylistWire = Omit<Playlist, "steerHistory" | "managerPlan"> & {
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
+	managerPlan: PlaylistManagerPlan | null;
 };
 
 export function playlistToWire(p: Playlist): PlaylistWire {
-	const { steerHistory, ...rest } = p;
+	const { steerHistory, managerPlan, ...rest } = p;
 	return {
 		...rest,
 		steerHistory: parseJsonField(steerHistory),
+		managerPlan: parseJsonField<PlaylistManagerPlan>(managerPlan) ?? null,
 	};
 }
 

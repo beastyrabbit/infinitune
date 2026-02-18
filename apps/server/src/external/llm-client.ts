@@ -1,9 +1,14 @@
+import {
+	DEFAULT_OLLAMA_TEXT_MODEL,
+	normalizeLlmProvider,
+} from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateImage, generateObject, generateText } from "ai";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { ZodType } from "zod";
 import { codexAppServerClient } from "./codex-app-server-client";
+import { CODEX_LLM_CONCURRENCY } from "./codex-config";
 import { getServiceUrls, getSetting } from "./service-urls";
 
 // ---------------------------------------------------------------------------
@@ -16,7 +21,7 @@ type Provider = LlmProvider;
 const LIMITS: Record<Provider, number> = {
 	ollama: 1,
 	openrouter: 5,
-	"openai-codex": 2,
+	"openai-codex": CODEX_LLM_CONCURRENCY,
 };
 
 interface Waiter {
@@ -109,6 +114,44 @@ async function getImageModel(model: string) {
 	return or.imageModel(model);
 }
 
+async function resolveModelForProvider(
+	provider: Provider,
+	model: string,
+): Promise<string> {
+	const explicitModel = model.trim();
+	if (explicitModel) return explicitModel;
+
+	if (provider === "ollama") {
+		return DEFAULT_OLLAMA_TEXT_MODEL;
+	}
+
+	if (provider === "openrouter") {
+		throw new Error(
+			'No OpenRouter model configured. Select a text model (for example "openai/gpt-4.1") in Settings.',
+		);
+	}
+
+	const codexModels = await codexAppServerClient.listModels();
+	if (codexModels.length === 0) {
+		throw new Error(
+			"No OpenAI Codex models are available. Complete Codex authentication in Settings.",
+		);
+	}
+
+	const preferred =
+		codexModels.find((m) => m.isDefault) ??
+		codexModels.find((m) => m.id === "gpt-5.2") ??
+		(codexModels.length > 0 ? codexModels[0] : undefined);
+
+	if (!preferred?.id) {
+		throw new Error(
+			"No OpenAI Codex models are available. Complete Codex authentication in Settings.",
+		);
+	}
+
+	return preferred.id;
+}
+
 // ---------------------------------------------------------------------------
 // Exported API
 // ---------------------------------------------------------------------------
@@ -121,14 +164,9 @@ export async function callLlmText(options: {
 	temperature?: number;
 	signal?: AbortSignal;
 }): Promise<string> {
-	const {
-		provider,
-		model,
-		system,
-		prompt,
-		temperature = 0.7,
-		signal,
-	} = options;
+	const { system, prompt, temperature = 0.7, signal } = options;
+	const provider = normalizeLlmProvider(options.provider);
+	const model = await resolveModelForProvider(provider, options.model);
 
 	if (!(provider in semaphores)) {
 		throw new Error(
@@ -177,8 +215,6 @@ export async function callLlmObject<T>(options: {
 	signal?: AbortSignal;
 }): Promise<T> {
 	const {
-		provider,
-		model,
 		system,
 		prompt,
 		schema,
@@ -187,6 +223,8 @@ export async function callLlmObject<T>(options: {
 		seed,
 		signal,
 	} = options;
+	const provider = normalizeLlmProvider(options.provider);
+	const model = await resolveModelForProvider(provider, options.model);
 
 	if (!(provider in semaphores)) {
 		throw new Error(

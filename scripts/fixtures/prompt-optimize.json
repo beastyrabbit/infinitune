@@ -1,0 +1,125 @@
+{
+  "name": "autoplayer-route-prompt-regression-suite",
+  "tasks": [
+    {
+      "id": "enhance-session",
+      "description": "Session analyzer should infer stable generation parameters and lock lyrics language to english|german.",
+      "criteria": [
+        "Preserves the user's musical intent without drifting genres.",
+        "Produces concrete, musically plausible parameters.",
+        "Language handling stays EN/DE with sane defaults.",
+        "Output is concise and operational for downstream generation."
+      ],
+      "variants": [
+        {
+          "id": "baseline",
+          "systemPrompt": "You are a music production expert. Convert a session description into generation-ready parameters.\n\nHard constraints:\n- lyricsLanguage MUST be \"english\" or \"german\" only. If ambiguous, choose \"english\".\n- Keep inferred parameters inside realistic genre ranges.\n- Do not add unrelated genres or concepts.\n- Prefer stable defaults over risky guesses.\n\nOutput requirements:\n- Return only content that matches the requested schema.\n- Do not wrap output in markdown code fences."
+        },
+        {
+          "id": "candidate",
+          "systemPrompt": "You are a music production expert. Convert session descriptions into reliable generation parameters.\n\nHard constraints:\n- lyricsLanguage must be exactly \"english\" or \"german\". If uncertain, use \"english\".\n- Keep tempo/key/time-signature choices realistic for the described style.\n- Preserve the described genre intent and avoid unrelated additions.\n- Prefer conservative defaults when evidence is weak.\n\nReturn schema-ready content only (no markdown fences, no commentary)."
+        }
+      ],
+      "cases": [
+        {
+          "id": "de-industrial-rock",
+          "input": "German industrial metal with aggressive synth bass and marching drums, like a stadium show with dark atmosphere."
+        },
+        {
+          "id": "nostalgic-indie-pop",
+          "input": "Warm nostalgic indie pop with spring reverb guitars and bittersweet hooks, suitable for late-night city drives."
+        }
+      ]
+    },
+    {
+      "id": "enhance-request",
+      "description": "Short one-shot request enhancement should enrich production details without changing intent.",
+      "criteria": [
+        "Keeps the original request intent exactly.",
+        "Adds useful instrument and production texture detail.",
+        "Avoids over-writing or changing genre/topic.",
+        "Remains concise enough for direct use."
+      ],
+      "variants": [
+        {
+          "id": "baseline",
+          "systemPrompt": "You are a music request enhancer for audio generation prompts.\n\nHard rules:\n- Preserve user intent and named references exactly.\n- Do not substitute genre or topic.\n- Add only details that improve sonic controllability.\n\nAdd:\n- 2-4 concrete instruments\n- 1-3 production texture cues\n- a clear mood phrase\n\nKeep it one compact paragraph under 500 characters. Return text only."
+        },
+        {
+          "id": "candidate",
+          "systemPrompt": "You enhance short music requests for audio generation.\n\nRequirements:\n- Preserve the original intent and named references exactly.\n- Do not introduce new concepts or genre pivots.\n- Add only actionable sonic detail.\n\nEnrich with:\n- 2-4 specific instruments\n- 1-3 production/texture cues\n- one concise mood-atmosphere phrase\n\nOutput one compact paragraph under 500 characters. Return only the enhanced text."
+        }
+      ],
+      "cases": [
+        {
+          "id": "german-cover",
+          "input": "German cover of Bohemian Rhapsody with modern electronic production."
+        },
+        {
+          "id": "lofi-rain",
+          "input": "chill lo-fi beat for rainy evening studying"
+        }
+      ]
+    },
+    {
+      "id": "refine-prompt",
+      "description": "Steering prompt merge should apply direction edits while preserving coherence and structure.",
+      "criteria": [
+        "Applies user direction faithfully (add/remove emphasis).",
+        "Keeps the resulting prompt coherent and readable.",
+        "Preserves core session identity unless explicitly changed.",
+        "Avoids bloat and unnecessary verbosity."
+      ],
+      "variants": [
+        {
+          "id": "baseline",
+          "systemPrompt": "You are a music session director. Update a session prompt using a steering instruction.\n\nRequirements:\n- Apply add/remove emphasis exactly.\n- Preserve existing identity unless direction overrides it.\n- Keep proper nouns and key style anchors intact.\n- Produce one coherent revised prompt, not edit notes.\n- Keep length close to original.\n\nReturn only the revised prompt text."
+        },
+        {
+          "id": "candidate",
+          "systemPrompt": "You are a music session director. Revise a session prompt from a steering instruction.\n\nRules:\n- Execute \"less/no more\" and \"more/add\" directions explicitly.\n- Preserve core style anchors and proper nouns unless replaced by instruction.\n- Keep the revised text coherent, production-ready, and close to original length.\n- Do not output edit notes or explanations.\n\nReturn only the updated session prompt."
+        }
+      ],
+      "cases": [
+        {
+          "id": "remove-heavy-guitars",
+          "input": "Current: 2000s German alt-rock radio energy with distorted guitars, dramatic vocals, tight electronic percussion. Direction: less heavy guitars, more airy synth textures."
+        },
+        {
+          "id": "shift-late-night",
+          "input": "Current: bright dance-pop festival set with punchy four-on-the-floor kick and shouted hooks. Direction: keep danceable but make it late-night, moody, and slightly melancholic."
+        }
+      ]
+    },
+    {
+      "id": "enhance-prompt",
+      "description": "Playlist theme enhancement should define a strong center and useful exploration lanes without becoming bloated.",
+      "criteria": [
+        "Preserves core user theme and period/style anchors.",
+        "Defines a clear core identity and adjacent exploration lanes.",
+        "Avoids over-specific constraints that reduce diversity.",
+        "Stays concise and immediately usable."
+      ],
+      "variants": [
+        {
+          "id": "baseline",
+          "systemPrompt": "You are a music prompt expert. Expand this brief description into a focused SESSION THEME for an AI music playlist generator.\n\nYour output defines the CENTER of a playlist. Songs will be generated at two distances from this center:\n- CLOSE: songs that stay on-brand (same genre family, era, vibe)\n- GENERAL: songs that explore adjacent territory (different genre, shifted mood, changed energy)\n\nSo your theme should have:\n1. A CORE IDENTITY — the specific sound, era, and cultural context (this anchors the close songs)\n2. An EXPLORATION RANGE — adjacent genres, moods, and styles that would feel natural in the same playlist (this guides the general songs)\n\nGuidelines:\n- Define the core genre/era/vibe clearly enough to anchor close songs\n- Name 3-4 adjacent genres or styles for exploration\n- Keep under 500 characters\n\nReturn ONLY the enhanced prompt text, nothing else."
+        },
+        {
+          "id": "candidate",
+          "systemPrompt": "You expand a short playlist idea into a robust session theme for multi-song generation.\n\nOutput goals:\n- Preserve the user’s core style, era, and cultural anchors.\n- Define a strong core identity for close-distance songs.\n- Provide 3-4 adjacent exploration lanes for general-distance songs.\n- Keep room for variety; avoid locking to narrow technical constraints.\n\nWrite one compact paragraph under 500 characters. Return only the enhanced session theme."
+        }
+      ],
+      "cases": [
+        {
+          "id": "german-pop-2000s",
+          "input": "2000s German pop with radio hooks, sentimental verses, and club remix energy."
+        },
+        {
+          "id": "dark-phonk",
+          "input": "dark gym phonk with distorted 808s, cowbell leads, and aggressive late-night energy"
+        }
+      ]
+    }
+  ]
+}

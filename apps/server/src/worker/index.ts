@@ -1,3 +1,7 @@
+import {
+	DEFAULT_TEXT_PROVIDER,
+	resolveTextLlmProfile,
+} from "@infinitune/shared/text-llm-profile";
 import { on } from "../events/event-bus";
 import { batchPollAce, pollAce } from "../external/ace";
 import { generatePersonaExtract, type RecentSong } from "../external/llm";
@@ -50,13 +54,24 @@ async function getSettings(): Promise<{
 	personaModel: string;
 }> {
 	const all = await settingsService.getAll();
+	const textProvider = all.textProvider || DEFAULT_TEXT_PROVIDER;
+	const textModel = all.textModel || "";
+	const personaProvider = all.personaProvider || textProvider;
+	const hasExplicitPersonaModel =
+		Boolean(all.personaModel) && all.personaModel !== "__fallback__";
+	const personaModel = hasExplicitPersonaModel
+		? all.personaModel || ""
+		: personaProvider === textProvider
+			? textModel
+			: "";
+
 	return {
-		textProvider: all.textProvider || "ollama",
-		textModel: all.textModel || "",
+		textProvider,
+		textModel,
 		imageProvider: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
-		personaProvider: all.personaProvider || "",
-		personaModel: all.personaModel || "",
+		personaProvider,
+		personaModel,
 	};
 }
 
@@ -241,40 +256,16 @@ async function runPersonaScan(
 	const needsPersona = await songService.getNeedsPersona();
 	if (needsPersona.length === 0) return;
 
-	// Resolve persona provider + model
-	const explicitPersonaProvider = settings.personaProvider || "";
-	const explicitPersonaModel =
-		settings.personaModel && settings.personaModel !== "__fallback__"
-			? settings.personaModel
-			: "";
-	let pProvider: "ollama" | "openrouter" | "openai-codex";
-	let pModel: string;
-	if (explicitPersonaModel) {
-		pProvider = (explicitPersonaProvider || "ollama") as
-			| "ollama"
-			| "openrouter"
-			| "openai-codex";
-		pModel = explicitPersonaModel;
-	} else if (
-		!explicitPersonaProvider ||
-		explicitPersonaProvider === settings.textProvider
-	) {
-		pProvider = (settings.textProvider || "ollama") as
-			| "ollama"
-			| "openrouter"
-			| "openai-codex";
-		pModel = settings.textModel;
-	} else {
-		logger.info(
-			{
-				personaProvider: explicitPersonaProvider,
-				textProvider: settings.textProvider,
-			},
-			"Skipping persona scan: no personaModel set",
+	const { provider: pProvider, model: pModel } = resolveTextLlmProfile({
+		provider: settings.personaProvider,
+		model: settings.personaModel,
+	});
+	if (pProvider === "openrouter" && !pModel.trim()) {
+		logger.warn(
+			"Skipping persona scan: OpenRouter persona provider requires an explicit persona model",
 		);
 		return;
 	}
-	if (!pModel) return;
 
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;

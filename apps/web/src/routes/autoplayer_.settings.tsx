@@ -1,3 +1,8 @@
+import {
+	DEFAULT_OLLAMA_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
+} from "@infinitune/shared/text-llm-profile";
+import { LLM_PROVIDERS, type LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Cpu, Music, Plug, ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -46,6 +51,16 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
+function normalizeProviderSetting(
+	value: string | undefined | null,
+	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
+): LlmProvider {
+	const candidate = (value ?? "").trim();
+	return LLM_PROVIDERS.includes(candidate as LlmProvider)
+		? (candidate as LlmProvider)
+		: fallback;
+}
+
 function SettingsPage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
@@ -59,7 +74,7 @@ function SettingsPage() {
 	const [activeTab, setActiveTab] = useState<Tab>("network");
 
 	// Generation params
-	const [inferSteps, setInferSteps] = useState("12");
+	const [inferSteps, setInferSteps] = useState("8");
 	const [lmTemp, setLmTemp] = useState("0.85");
 	const [lmCfg, setLmCfg] = useState("2.5");
 	const [inferMethod, setInferMethod] = useState("ode");
@@ -70,12 +85,16 @@ function SettingsPage() {
 	const [comfyuiUrl, setComfyuiUrl] = useState("http://192.168.10.120:8188");
 
 	// Model settings
-	const [textProvider, setTextProvider] = useState("ollama");
-	const [textModel, setTextModel] = useState("");
+	const [textProvider, setTextProvider] = useState<LlmProvider>(
+		DEFAULT_TEXT_PROVIDER,
+	);
+	const [textModel, setTextModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
 	const [imageProvider, setImageProvider] = useState("comfyui");
 	const [imageModel, setImageModel] = useState("");
 	const [aceModel, setAceModel] = useState("");
-	const [personaProvider, setPersonaProvider] = useState("ollama");
+	const [personaProvider, setPersonaProvider] = useState<LlmProvider>(
+		DEFAULT_TEXT_PROVIDER,
+	);
 	const [personaModel, setPersonaModel] = useState("");
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
 
@@ -112,13 +131,26 @@ function SettingsPage() {
 		setOllamaUrl(settings.ollamaUrl || "http://192.168.10.120:11434");
 		setAceStepUrl(settings.aceStepUrl || "http://192.168.10.120:8001");
 		setComfyuiUrl(settings.comfyuiUrl || "http://192.168.10.120:8188");
-		setTextProvider(settings.textProvider || "ollama");
-		setTextModel(settings.textModel || "");
+		const normalizedTextProvider = normalizeProviderSetting(
+			settings.textProvider,
+			DEFAULT_TEXT_PROVIDER,
+		);
+		setTextProvider(normalizedTextProvider);
+		const configuredTextModel = settings.textModel?.trim() || "";
+		setTextModel(
+			configuredTextModel ||
+				(normalizedTextProvider === "ollama" ? DEFAULT_OLLAMA_TEXT_MODEL : ""),
+		);
 		const imgProv = settings.imageProvider || "comfyui";
 		setImageProvider(imgProv === "ollama" ? "comfyui" : imgProv);
 		setImageModel(settings.imageModel || "");
 		setAceModel(settings.aceModel || "");
-		setPersonaProvider(settings.personaProvider || "ollama");
+		setPersonaProvider(
+			normalizeProviderSetting(
+				settings.personaProvider,
+				normalizedTextProvider,
+			),
+		);
 		setPersonaModel(normalizeFallbackModel(settings.personaModel));
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
 
@@ -126,7 +158,7 @@ function SettingsPage() {
 			setInferSteps(
 				activePlaylist.inferenceSteps?.toString() ||
 					settings.aceInferenceSteps ||
-					"12",
+					"8",
 			);
 			setLmTemp(
 				activePlaylist.lmTemperature?.toString() ||
@@ -142,7 +174,7 @@ function SettingsPage() {
 				activePlaylist.inferMethod || settings.aceInferMethod || "ode",
 			);
 		} else {
-			setInferSteps(settings.aceInferenceSteps || "12");
+			setInferSteps(settings.aceInferenceSteps || "8");
 			setLmTemp(settings.aceLmTemperature || "0.85");
 			setLmCfg(settings.aceLmCfgScale || "2.5");
 			setInferMethod(settings.aceInferMethod || "ode");
@@ -492,7 +524,11 @@ function SettingsPage() {
 						{activeTab === "models" && (
 							<SettingsTabModels
 								textProvider={textProvider}
-								setTextProvider={setTextProvider}
+								setTextProvider={(v) =>
+									setTextProvider(
+										normalizeProviderSetting(v, DEFAULT_TEXT_PROVIDER),
+									)
+								}
 								textModel={textModel}
 								setTextModel={setTextModel}
 								imageProvider={imageProvider}
@@ -502,7 +538,9 @@ function SettingsPage() {
 								aceModel={aceModel}
 								setAceModel={setAceModel}
 								personaProvider={personaProvider}
-								setPersonaProvider={setPersonaProvider}
+								setPersonaProvider={(v) =>
+									setPersonaProvider(normalizeProviderSetting(v, textProvider))
+								}
 								personaModel={personaModel}
 								setPersonaModel={setPersonaModel}
 								ollamaModels={ollamaModels}

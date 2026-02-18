@@ -1,16 +1,17 @@
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import { createFileRoute } from "@tanstack/react-router";
 import { sanitizeLlmText } from "@/lib/sanitize-llm-text";
 import { callLlmText } from "@/services/llm-client";
 
-const SYSTEM_PROMPT = `You are a music session director. You will receive a current session prompt and a user direction. Merge them into an updated prompt.
+const SYSTEM_PROMPT = `You are a music session director. Revise a session prompt from a steering instruction.
 
 Rules:
-- If the user says "no more X" or "less X" — remove or de-emphasize X from the prompt
-- If the user says "more Y" or "add Y" — add or emphasize Y in the prompt
-- If the user gives a new style/mood/genre — weave it into the existing prompt naturally
-- Keep the same approximate format and length as the original prompt
-- The result should read as a coherent music description, not a list of edits
-- Return ONLY the updated prompt text, nothing else`;
+- Execute "less/no more" and "more/add" directions explicitly.
+- Preserve core style anchors and proper nouns unless replaced by instruction.
+- Keep the revised text coherent, production-ready, and close to original length.
+- Do not output edit notes or explanations.
+
+Return only the updated session prompt.`;
 
 export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 	server: {
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						currentPrompt: string;
 						direction: string;
 						provider: string;
-						model: string;
+						model?: string;
 					};
 
 					if (
@@ -30,13 +31,12 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 						typeof currentPrompt !== "string" ||
 						!direction ||
 						typeof direction !== "string" ||
-						!provider ||
-						!model
+						!provider
 					) {
 						return new Response(
 							JSON.stringify({
 								error:
-									"Missing required fields: currentPrompt, direction, provider, model",
+									"Missing required fields: currentPrompt, direction, provider",
 							}),
 							{ status: 400, headers: { "Content-Type": "application/json" } },
 						);
@@ -52,9 +52,10 @@ export const Route = createFileRoute("/api/autoplayer/refine-prompt")({
 
 					const userMessage = `Current session prompt:\n"${trimmedPrompt}"\n\nUser direction:\n"${trimmedDirection}"\n\nReturn the updated prompt:`;
 
+					const resolved = resolveTextLlmProfile({ provider, model });
 					const result = await callLlmText({
-						provider: provider as "ollama" | "openrouter" | "openai-codex",
-						model,
+						provider: resolved.provider,
+						model: resolved.model,
 						system: SYSTEM_PROMPT,
 						prompt: userMessage,
 						temperature: 0.7,

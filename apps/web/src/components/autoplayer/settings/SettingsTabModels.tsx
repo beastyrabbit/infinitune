@@ -283,7 +283,7 @@ export function SettingsTabModels({
 							models={openRouterTextModels}
 							value={textModel}
 							onChange={setTextModel}
-							placeholder="GOOGLE/GEMINI-2.5-FLASH"
+							placeholder="OPENROUTER/MODEL-ID"
 							loading={openRouterLoading}
 						/>
 					) : textProvider === "openai-codex" ? (

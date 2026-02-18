@@ -1,4 +1,5 @@
 import type { AcePollResult } from "../external/ace";
+import { CODEX_LLM_CONCURRENCY } from "../external/codex-config";
 import { AudioQueue } from "./audio-queue";
 import type {
 	EndpointType,
@@ -11,7 +12,7 @@ import { RequestResponseQueue } from "./request-response-queue";
 const LLM_CONCURRENCY: Record<string, number> = {
 	ollama: 1,
 	openrouter: 5,
-	"openai-codex": 2,
+	"openai-codex": CODEX_LLM_CONCURRENCY,
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {

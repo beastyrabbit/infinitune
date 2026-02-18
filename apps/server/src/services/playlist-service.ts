@@ -1,3 +1,4 @@
+import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import type { PlaylistStatus } from "@infinitune/shared/types";
 import { validatePlaylistTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, ne, or, sql } from "drizzle-orm";
@@ -95,7 +96,7 @@ export async function create(data: {
 			songsGenerated: 0,
 			promptEpoch: 0,
 			playlistKey: data.playlistKey,
-			lyricsLanguage: data.lyricsLanguage,
+			lyricsLanguage: normalizeLyricsLanguage(data.lyricsLanguage),
 			targetBpm: data.targetBpm,
 			targetKey: data.targetKey,
 			timeSignature: data.timeSignature,
@@ -104,6 +105,10 @@ export async function create(data: {
 			lmTemperature: data.lmTemperature,
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
+			managerBrief: null,
+			managerPlan: null,
+			managerEpoch: null,
+			managerUpdatedAt: null,
 		})
 		.returning();
 
@@ -117,6 +122,8 @@ export async function updateParams(
 	params: Record<string, unknown>,
 ) {
 	const allowedKeys = [
+		"llmProvider",
+		"llmModel",
 		"lyricsLanguage",
 		"targetBpm",
 		"targetKey",
@@ -129,8 +136,42 @@ export async function updateParams(
 	];
 
 	const patch: Record<string, unknown> = {};
+	let touchedLyricsLanguage = false;
+	let touchedLlmProfile = false;
 	for (const key of allowedKeys) {
-		if (params[key] !== undefined) patch[key] = params[key];
+		if (params[key] === undefined) continue;
+		if (key === "llmProvider") {
+			if (typeof params[key] !== "string") continue;
+			patch[key] = params[key].trim();
+			touchedLlmProfile = true;
+			continue;
+		}
+		if (key === "llmModel") {
+			if (params[key] === null) {
+				patch[key] = "";
+				touchedLlmProfile = true;
+				continue;
+			}
+			if (typeof params[key] !== "string") continue;
+			patch[key] = params[key].trim();
+			touchedLlmProfile = true;
+			continue;
+		}
+		if (key === "lyricsLanguage") {
+			patch[key] = normalizeLyricsLanguage(
+				typeof params[key] === "string" ? params[key] : undefined,
+			);
+			touchedLyricsLanguage = true;
+			continue;
+		}
+		patch[key] = params[key];
+	}
+
+	if (touchedLlmProfile || touchedLyricsLanguage) {
+		patch.managerBrief = null;
+		patch.managerPlan = null;
+		patch.managerEpoch = null;
+		patch.managerUpdatedAt = null;
 	}
 
 	if (Object.keys(patch).length > 0) {
@@ -179,7 +220,7 @@ export async function resetDefaults(id: string) {
 	await db
 		.update(playlists)
 		.set({
-			lyricsLanguage: null,
+			lyricsLanguage: "english",
 			targetBpm: null,
 			targetKey: null,
 			timeSignature: null,
@@ -188,6 +229,10 @@ export async function resetDefaults(id: string) {
 			lmTemperature: null,
 			lmCfgScale: null,
 			inferMethod: null,
+			managerBrief: null,
+			managerPlan: null,
+			managerEpoch: null,
+			managerUpdatedAt: null,
 		})
 		.where(eq(playlists.id, id));
 
@@ -211,6 +256,10 @@ export async function steer(id: string, prompt: string) {
 			prompt,
 			promptEpoch: newEpoch,
 			steerHistory: JSON.stringify(history),
+			managerBrief: null,
+			managerPlan: null,
+			managerEpoch: null,
+			managerUpdatedAt: null,
 		})
 		.where(eq(playlists.id, id));
 
@@ -228,6 +277,27 @@ export async function toggleStar(id: string) {
 
 	emit("playlist.updated", { playlistId: id });
 	return { isStarred: updated.isStarred };
+}
+
+export async function updateManagerBrief(
+	id: string,
+	data: {
+		managerBrief: string;
+		managerPlan: string;
+		managerEpoch: number;
+	},
+) {
+	await db
+		.update(playlists)
+		.set({
+			managerBrief: data.managerBrief,
+			managerPlan: data.managerPlan,
+			managerEpoch: data.managerEpoch,
+			managerUpdatedAt: Date.now(),
+		})
+		.where(eq(playlists.id, id));
+
+	emit("playlist.updated", { playlistId: id });
 }
 
 export async function deletePlaylist(id: string) {
