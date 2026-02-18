@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -13,7 +14,7 @@ import {
 	removeClient,
 	startWsBridge,
 } from "./events/ws-bridge";
-import { logger } from "./logger";
+import { logger, loggingConfig } from "./logger";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
@@ -39,6 +40,16 @@ const roomManager = new RoomManager();
 
 // ─── Hono app ────────────────────────────────────────────────────────
 const app = new Hono();
+
+logger.info(
+	{
+		logLevel: loggingConfig.level,
+		fileLoggingEnabled: loggingConfig.fileLoggingEnabled,
+		logFilePath: loggingConfig.logFilePath,
+		logSessionId: loggingConfig.logSessionId,
+	},
+	"Logging initialized",
+);
 
 // Global error handler
 app.onError((err, c) => {
@@ -67,6 +78,46 @@ app.use(
 		allowHeaders: ["Content-Type"],
 	}),
 );
+
+// Request lifecycle logging with request IDs for easier tracing in dev/log files.
+app.use("*", async (c, next) => {
+	const requestId = c.req.header("x-request-id") ?? randomUUID();
+	c.header("x-request-id", requestId);
+	const startedAt = performance.now();
+	const requestLogger = logger.child({
+		requestId,
+		method: c.req.method,
+		path: c.req.path,
+	});
+
+	try {
+		await next();
+	} catch (err) {
+		requestLogger.error({ err }, "Request handler threw");
+		throw err;
+	} finally {
+		const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+		const status = c.res.status || 200;
+		const contentLength = c.res.headers.get("content-length");
+		const level =
+			status >= 500
+				? "error"
+				: status >= 400
+					? "warn"
+					: c.req.path === "/health"
+						? "debug"
+						: "info";
+
+		requestLogger[level](
+			{
+				status,
+				durationMs,
+				contentLength: contentLength ? Number(contentLength) : undefined,
+			},
+			"HTTP request completed",
+		);
+	}
+});
 
 // ─── Health check ────────────────────────────────────────────────────
 app.get("/health", (c) => {
@@ -219,3 +270,9 @@ async function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.on("unhandledRejection", (reason) => {
+	logger.error({ reason }, "Unhandled promise rejection");
+});
+process.on("uncaughtException", (err) => {
+	logger.fatal({ err }, "Uncaught exception");
+});
