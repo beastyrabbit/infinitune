@@ -27,6 +27,7 @@ import {
 	getQueues,
 	getWorkerStats,
 	startWorker,
+	stopWorkerDiagnostics,
 	triggerPersonaScan,
 } from "./worker/index";
 
@@ -376,6 +377,7 @@ async function shutdown() {
 	logger.info("Shutting down...");
 	if (noisyRequestSummaryTimer) clearInterval(noisyRequestSummaryTimer);
 	flushNoisyRequestSummary("shutdown");
+	stopWorkerDiagnostics();
 	try {
 		roomWss.close();
 	} catch (err) {

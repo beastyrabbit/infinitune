@@ -2,6 +2,7 @@ import {
 	DEFAULT_TEXT_PROVIDER,
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
+import { sqlite } from "../db/index";
 import { on } from "../events/event-bus";
 import { batchPollAce, pollAce } from "../external/ace";
 import { generatePersonaExtract, type RecentSong } from "../external/llm";
@@ -10,12 +11,24 @@ import * as playlistService from "../services/playlist-service";
 import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
 import type { PlaylistWire, SongWire } from "../wire";
+import type { QueueStatus } from "./endpoint-queue";
 import { calculatePriority, PERSONA_PRIORITY } from "./priority";
 import { EndpointQueues } from "./queues";
 import { SongWorker, type SongWorkerContext } from "./song-worker";
 
 const AUDIO_POLL_INTERVAL = 2_000; // 2 seconds (ACE needs frequent polling)
 const HEARTBEAT_STALE_MS = 90_000; // 90 seconds = 3 missed 30s heartbeats
+const WORKER_DIAGNOSTICS_ENABLED =
+	process.env.NODE_ENV !== "test" && process.env.WORKER_DIAGNOSTICS !== "0";
+const WORKER_DIAGNOSTICS_INTERVAL_MS = Number(
+	process.env.WORKER_DIAGNOSTICS_INTERVAL_MS ?? 30_000,
+);
+const WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS = Number(
+	process.env.WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS ?? 240_000,
+);
+const WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD = Number(
+	process.env.WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD ?? 1,
+);
 
 // ─── State ───────────────────────────────────────────────────────────
 
@@ -35,6 +48,7 @@ const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const bufferLocks = new Map<string, boolean>();
 
 let queues: EndpointQueues;
+let diagnosticsTimer: ReturnType<typeof setInterval> | null = null;
 
 // ─── Persona scan state ─────────────────────────────────────────────
 
@@ -96,6 +110,293 @@ function toRecentSongs(
 		mood: s.mood ?? undefined,
 		energy: s.energy ?? undefined,
 	}));
+}
+
+function safeMs(value: number | null | undefined): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+		return undefined;
+	}
+	return Math.round(value);
+}
+
+function summarizeQueueStatus(status: QueueStatus, now: number) {
+	const oldestActiveStartedAt =
+		status.activeItems.length > 0
+			? Math.min(...status.activeItems.map((item) => item.startedAt))
+			: undefined;
+	const oldestPendingSince =
+		status.pendingItems.length > 0
+			? Math.min(...status.pendingItems.map((item) => item.waitingSince))
+			: undefined;
+
+	return {
+		pending: status.pending,
+		active: status.active,
+		errors: status.errors,
+		lastErrorMessage: status.lastErrorMessage,
+		oldestActiveAgeMs: safeMs(
+			oldestActiveStartedAt ? now - oldestActiveStartedAt : undefined,
+		),
+		oldestPendingAgeMs: safeMs(
+			oldestPendingSince ? now - oldestPendingSince : undefined,
+		),
+		activeItems: status.activeItems.slice(0, 5).map((item) => ({
+			songId: item.songId,
+			priority: item.priority,
+			endpoint: item.endpoint,
+			ageMs: safeMs(now - item.startedAt),
+		})),
+		pendingItems: status.pendingItems.slice(0, 5).map((item) => ({
+			songId: item.songId,
+			priority: item.priority,
+			endpoint: item.endpoint,
+			waitMs: safeMs(now - item.waitingSince),
+		})),
+	};
+}
+
+function collectSongStatusCounts() {
+	const rows = sqlite
+		.prepare(
+			"SELECT status as status, COUNT(*) as count FROM songs GROUP BY status ORDER BY count DESC",
+		)
+		.all() as Array<{ status: string; count: number }>;
+
+	const byStatus = Object.fromEntries(
+		rows.map((row) => [row.status, Number(row.count)]),
+	);
+	const total = rows.reduce((sum, row) => sum + Number(row.count), 0);
+
+	return { total, byStatus };
+}
+
+function collectOldestTransientSongs(now: number, limit = 8) {
+	const rows = sqlite
+		.prepare(
+			`
+				SELECT
+					id,
+					playlist_id as playlistId,
+					status,
+					order_index as orderIndex,
+					retry_count as retryCount,
+					COALESCE(generation_started_at, created_at) as startedAt
+				FROM songs
+				WHERE status IN (
+					'pending',
+					'generating_metadata',
+					'metadata_ready',
+					'submitting_to_ace',
+					'generating_audio',
+					'saving',
+					'retry_pending'
+				)
+				ORDER BY COALESCE(generation_started_at, created_at) ASC
+				LIMIT ?
+			`,
+		)
+		.all(limit) as Array<{
+		id: string;
+		playlistId: string;
+		status: string;
+		orderIndex: number;
+		retryCount: number;
+		startedAt: number;
+	}>;
+
+	return rows.map((row) => ({
+		id: row.id,
+		playlistId: row.playlistId,
+		status: row.status,
+		orderIndex: row.orderIndex,
+		retryCount: row.retryCount ?? 0,
+		ageMs: safeMs(now - row.startedAt),
+	}));
+}
+
+function collectPlaylistFlow(now: number) {
+	const rows = sqlite
+		.prepare(
+			`
+				SELECT
+					p.id as playlistId,
+					p.status as playlistStatus,
+					p.prompt_epoch as promptEpoch,
+					p.current_order_index as currentOrderIndex,
+					p.last_seen_at as lastSeenAt,
+					COALESCE(SUM(CASE WHEN s.status = 'ready' THEN 1 ELSE 0 END), 0) as readyCount,
+					COALESCE(SUM(CASE WHEN s.status = 'played' THEN 1 ELSE 0 END), 0) as playedCount,
+					COALESCE(SUM(CASE WHEN s.status = 'error' THEN 1 ELSE 0 END), 0) as errorCount,
+					COALESCE(SUM(CASE WHEN s.status = 'retry_pending' THEN 1 ELSE 0 END), 0) as retryPendingCount,
+					COALESCE(SUM(CASE WHEN s.status IN (
+						'pending',
+						'generating_metadata',
+						'metadata_ready',
+						'submitting_to_ace',
+						'generating_audio',
+						'saving',
+						'retry_pending'
+					) THEN 1 ELSE 0 END), 0) as inFlightCount,
+					MIN(CASE WHEN s.status IN (
+						'pending',
+						'generating_metadata',
+						'metadata_ready',
+						'submitting_to_ace',
+						'generating_audio',
+						'saving',
+						'retry_pending'
+					) THEN COALESCE(s.generation_started_at, s.created_at) END) as oldestInFlightStartedAt
+				FROM playlists p
+				LEFT JOIN songs s ON s.playlist_id = p.id
+				WHERE p.status IN ('active', 'closing')
+				GROUP BY p.id
+				ORDER BY p.created_at DESC
+			`,
+		)
+		.all() as Array<{
+		playlistId: string;
+		playlistStatus: string;
+		promptEpoch: number | null;
+		currentOrderIndex: number | null;
+		lastSeenAt: number | null;
+		readyCount: number;
+		playedCount: number;
+		errorCount: number;
+		retryPendingCount: number;
+		inFlightCount: number;
+		oldestInFlightStartedAt: number | null;
+	}>;
+
+	return rows.map((row) => ({
+		playlistId: row.playlistId,
+		status: row.playlistStatus,
+		promptEpoch: row.promptEpoch ?? 0,
+		currentOrderIndex: row.currentOrderIndex ?? null,
+		readyCount: Number(row.readyCount),
+		playedCount: Number(row.playedCount),
+		errorCount: Number(row.errorCount),
+		retryPendingCount: Number(row.retryPendingCount),
+		inFlightCount: Number(row.inFlightCount),
+		heartbeatAgeMs: safeMs(
+			row.lastSeenAt ? now - Number(row.lastSeenAt) : undefined,
+		),
+		oldestInFlightAgeMs: safeMs(
+			row.oldestInFlightStartedAt
+				? now - Number(row.oldestInFlightStartedAt)
+				: undefined,
+		),
+	}));
+}
+
+async function logWorkerDiagnosticsSnapshot(
+	reason: "startup" | "interval" = "interval",
+) {
+	if (!queues) return;
+
+	const now = Date.now();
+	const queueStatus = queues.getFullStatus();
+	const queueSummary = {
+		llm: summarizeQueueStatus(queueStatus.llm, now),
+		image: summarizeQueueStatus(queueStatus.image, now),
+		audio: summarizeQueueStatus(queueStatus.audio, now),
+	};
+	const songStatus = collectSongStatusCounts();
+	const oldestTransientSongs = collectOldestTransientSongs(now);
+	const playlistFlow = collectPlaylistFlow(now);
+	const workerStats = getWorkerStats();
+
+	logger.info(
+		{
+			reason,
+			uptimeSec: Math.round(process.uptime()),
+			intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS,
+			worker: {
+				songWorkers: workerStats.songWorkerCount,
+				trackedPlaylists: workerStats.trackedPlaylists.length,
+			},
+			queues: queueSummary,
+			songs: {
+				total: songStatus.total,
+				byStatus: songStatus.byStatus,
+				oldestTransient: oldestTransientSongs,
+			},
+			playlists: playlistFlow,
+		},
+		"Worker diagnostics snapshot",
+	);
+
+	const longQueueItems = [
+		{
+			queue: "llm",
+			oldestActiveAgeMs: queueSummary.llm.oldestActiveAgeMs,
+			oldestPendingAgeMs: queueSummary.llm.oldestPendingAgeMs,
+		},
+		{
+			queue: "audio",
+			oldestActiveAgeMs: queueSummary.audio.oldestActiveAgeMs,
+			oldestPendingAgeMs: queueSummary.audio.oldestPendingAgeMs,
+		},
+	].filter(
+		(item) =>
+			(item.oldestActiveAgeMs ?? 0) >= WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS ||
+			(item.oldestPendingAgeMs ?? 0) >= WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS,
+	);
+
+	if (longQueueItems.length > 0) {
+		logger.warn(
+			{
+				warnAfterMs: WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS,
+				queues: longQueueItems,
+			},
+			"Long-running queue items detected",
+		);
+	}
+
+	const lowBufferPlaylists = playlistFlow.filter(
+		(playlist) =>
+			playlist.status === "active" &&
+			playlist.inFlightCount > 0 &&
+			playlist.readyCount <= WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD,
+	);
+	if (lowBufferPlaylists.length > 0) {
+		logger.warn(
+			{
+				readyThreshold: WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD,
+				playlists: lowBufferPlaylists,
+			},
+			"Playlist buffer is tight",
+		);
+	}
+}
+
+function startWorkerDiagnostics() {
+	if (!WORKER_DIAGNOSTICS_ENABLED) return;
+	if (
+		!Number.isFinite(WORKER_DIAGNOSTICS_INTERVAL_MS) ||
+		WORKER_DIAGNOSTICS_INTERVAL_MS < 5_000
+	) {
+		logger.warn(
+			{ intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS },
+			"Worker diagnostics disabled due to invalid interval",
+		);
+		return;
+	}
+	if (diagnosticsTimer) clearInterval(diagnosticsTimer);
+
+	logger.info(
+		{
+			intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS,
+			oldItemWarnMs: WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS,
+			lowReadyThreshold: WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD,
+		},
+		"Worker diagnostics enabled",
+	);
+	void logWorkerDiagnosticsSnapshot("startup");
+
+	diagnosticsTimer = setInterval(() => {
+		void logWorkerDiagnosticsSnapshot("interval");
+	}, WORKER_DIAGNOSTICS_INTERVAL_MS);
+	diagnosticsTimer.unref?.();
 }
 
 /** Create a SongWorker for a song and register it */
@@ -766,6 +1067,7 @@ export async function startWorker(): Promise<void> {
 
 	// Run startup sweep to catch up on any pending work
 	await startupSweep();
+	startWorkerDiagnostics();
 
 	logger.info("Worker started, listening on event bus");
 }
@@ -781,6 +1083,13 @@ export function getWorkerStats() {
 		songWorkerCount: songWorkers.size,
 		trackedPlaylists: [...playlistEpochs.keys()],
 	};
+}
+
+/** Stop diagnostics timers (used by graceful shutdown). */
+export function stopWorkerDiagnostics() {
+	if (!diagnosticsTimer) return;
+	clearInterval(diagnosticsTimer);
+	diagnosticsTimer = null;
 }
 
 /** @internal — exported for unit tests only */
