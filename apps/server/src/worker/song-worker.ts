@@ -66,9 +66,24 @@ function pickManagerSlot(
 ) {
 	if (!managerPlan?.slots?.length) return undefined;
 	const baseOrder = Number.isFinite(orderIndex) ? Math.max(1, orderIndex) : 1;
-	const slotIndex =
-		(Math.floor(baseOrder) - 1) % Math.max(1, managerPlan.slots.length);
-	return managerPlan.slots[slotIndex];
+	const rawStartOrder = managerPlan.startOrderIndex;
+	const startOrder =
+		typeof rawStartOrder === "number" && Number.isFinite(rawStartOrder)
+			? Math.max(1, Math.floor(rawStartOrder))
+			: null;
+
+	// Legacy fallback for plans created before startOrderIndex existed.
+	if (startOrder === null) {
+		const slotIndex =
+			(Math.floor(baseOrder) - 1) % Math.max(1, managerPlan.slots.length);
+		return managerPlan.slots[slotIndex];
+	}
+
+	const offset = Math.floor(baseOrder) - startOrder;
+	if (offset < 0 || offset >= managerPlan.slots.length) {
+		return undefined;
+	}
+	return managerPlan.slots[offset];
 }
 
 const managerRefreshInFlight = new Map<string, Promise<void>>();
@@ -80,11 +95,31 @@ function managerRefreshKey(playlistId: string, epoch: number): string {
 function needsManagerRefresh(
 	playlist: PlaylistWire,
 	currentEpoch: number,
+	orderIndex: number,
 ): boolean {
+	const plan = playlist.managerPlan;
+	const baseOrder = Number.isFinite(orderIndex)
+		? Math.max(1, Math.floor(orderIndex))
+		: 1;
+	const rawPlanStartOrder = plan?.startOrderIndex;
+	const planStartOrder =
+		typeof rawPlanStartOrder === "number" && Number.isFinite(rawPlanStartOrder)
+			? Math.max(1, Math.floor(rawPlanStartOrder))
+			: null;
+	const rawWindowSize = plan?.windowSize;
+	const windowSize =
+		typeof rawWindowSize === "number" && Number.isFinite(rawWindowSize)
+			? Math.max(1, Math.floor(rawWindowSize))
+			: Math.max(1, plan?.slots?.length ?? 1);
+	const pastPlannedWindow =
+		planStartOrder !== null && baseOrder >= planStartOrder + windowSize;
+
 	return (
 		!playlist.managerBrief?.trim() ||
-		!playlist.managerPlan?.slots?.length ||
-		playlist.managerEpoch !== currentEpoch
+		!plan?.slots?.length ||
+		playlist.managerEpoch !== currentEpoch ||
+		planStartOrder === null ||
+		pastPlannedWindow
 	);
 }
 
@@ -127,7 +162,9 @@ export class SongWorker {
 		signal: AbortSignal,
 	): Promise<void> {
 		// Fast path: if local snapshot looks stale, pull once from DB before trying to refresh.
-		if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+		if (
+			needsManagerRefresh(this.ctx.playlist, currentEpoch, this.song.orderIndex)
+		) {
 			try {
 				const latestPlaylist = await this.loadLatestPlaylist();
 				if (latestPlaylist) {
@@ -148,7 +185,13 @@ export class SongWorker {
 			}
 		}
 
-		if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+		if (
+			!needsManagerRefresh(
+				this.ctx.playlist,
+				currentEpoch,
+				this.song.orderIndex,
+			)
+		) {
 			return;
 		}
 
@@ -160,6 +203,23 @@ export class SongWorker {
 				await inFlightRefresh;
 			} catch {
 				// Best effort refresh: metadata generation continues below.
+			}
+			try {
+				const latestPlaylist = await this.loadLatestPlaylist();
+				if (latestPlaylist) {
+					this.ctx.playlist = latestPlaylist;
+				} else {
+					this.aborted = true;
+					songLogger(this.songId).info(
+						{ playlistId: this.ctx.playlist.id, currentEpoch },
+						"Playlist missing after in-flight manager refresh; cancelling song worker",
+					);
+				}
+			} catch (err) {
+				songLogger(this.songId).warn(
+					{ err, playlistId: this.ctx.playlist.id, currentEpoch },
+					"Failed to sync playlist after in-flight manager refresh; continuing with in-memory snapshot",
+				);
 			}
 			return;
 		}
@@ -184,7 +244,13 @@ export class SongWorker {
 				);
 			}
 
-			if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+			if (
+				!needsManagerRefresh(
+					this.ctx.playlist,
+					currentEpoch,
+					this.song.orderIndex,
+				)
+			) {
 				return;
 			}
 
@@ -223,13 +289,19 @@ export class SongWorker {
 				);
 				await playlistService.updateManagerBrief(this.ctx.playlist.id, {
 					managerBrief,
-					managerPlan: JSON.stringify(managerPlan),
+					managerPlan: JSON.stringify({
+						...managerPlan,
+						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
+					}),
 					managerEpoch: currentEpoch,
 				});
 				this.ctx.playlist = {
 					...this.ctx.playlist,
 					managerBrief,
-					managerPlan,
+					managerPlan: {
+						...managerPlan,
+						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
+					},
 					managerEpoch: currentEpoch,
 					managerUpdatedAt: Date.now(),
 				};
@@ -399,7 +471,13 @@ export class SongWorker {
 				endpoint: effectiveProvider,
 				execute: async (signal) => {
 					const currentEpoch = this.getCurrentEpoch();
-					if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+					if (
+						needsManagerRefresh(
+							this.ctx.playlist,
+							currentEpoch,
+							this.song.orderIndex,
+						)
+					) {
 						await this.refreshPlaylistManager(
 							currentEpoch,
 							effectiveProvider,

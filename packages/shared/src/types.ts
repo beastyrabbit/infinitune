@@ -63,6 +63,7 @@ export interface PlaylistManagerPlanSlot {
 export interface PlaylistManagerPlan {
 	version: number;
 	epoch: number;
+	startOrderIndex?: number;
 	windowSize: number;
 	strategySummary: string;
 	transitionPolicy: string;

@@ -5,13 +5,6 @@ export const DEFAULT_OLLAMA_TEXT_MODEL = "gpt-oss:20b";
 export const PROMPT_OPT_PROVIDER: LlmProvider = "openai-codex";
 export const PROMPT_OPT_MODEL = "gpt-5.2";
 
-/**
- * Backward-compatible aliases used in existing UI code.
- * These names are historical and no longer indicate GPT-5.2 defaults.
- */
-export const GPT52_TEXT_PROVIDER = DEFAULT_TEXT_PROVIDER;
-export const GPT52_TEXT_MODEL = DEFAULT_OLLAMA_TEXT_MODEL;
-
 export function normalizeLlmProvider(
 	value?: string | null,
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
