@@ -18,6 +18,12 @@ describe("lyrics-language", () => {
 		);
 	});
 
+	it("does not infer german from Berlin alone", () => {
+		expect(
+			inferLyricsLanguageFromPrompt("synth-pop inspired by Berlin nightlife"),
+		).toBe("english");
+	});
+
 	it("maps normalized language to ACE vocal code", () => {
 		expect(toAceVocalLanguageCode("deutsch")).toBe("de");
 		expect(toAceVocalLanguageCode("english")).toBe("en");

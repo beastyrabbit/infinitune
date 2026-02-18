@@ -42,9 +42,7 @@ export function inferLyricsLanguageFromPrompt(
 ): SupportedLyricsLanguage {
 	const lower = prompt.toLowerCase();
 
-	if (
-		/\b(german|deutsch|deutsche|neue deutsche|schlager|berlin)\b/.test(lower)
-	) {
+	if (/\b(german|deutsch|deutsche|neue deutsche|schlager)\b/.test(lower)) {
 		return "german";
 	}
 

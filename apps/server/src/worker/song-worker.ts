@@ -159,7 +159,7 @@ export class SongWorker {
 		currentEpoch: number,
 		provider: "ollama" | "openrouter" | "openai-codex",
 		model: string,
-		signal: AbortSignal,
+		signal?: AbortSignal,
 	): Promise<void> {
 		// Fast path: if local snapshot looks stale, pull once from DB before trying to refresh.
 		if (
@@ -322,6 +322,8 @@ export class SongWorker {
 		try {
 			await trackedRefreshPromise;
 		} finally {
+			// Deleting after await is intentional: workers that miss this entry
+			// still re-check fresh playlist state via needsManagerRefresh().
 			managerRefreshInFlight.delete(refreshKey);
 		}
 	}
@@ -460,10 +462,22 @@ export class SongWorker {
 		const prompt = this.song.interruptPrompt || this.ctx.playlist.prompt;
 		const isInterrupt = !!this.song.interruptPrompt;
 		const isOneshot = this.ctx.playlist.mode === "oneshot";
+		const currentEpoch = this.getCurrentEpoch();
 
 		let promptDistance: PromptDistance = "faithful";
 		if (!isInterrupt && !isOneshot) {
 			promptDistance = Math.random() < 0.6 ? "close" : "general";
+		}
+
+		if (
+			needsManagerRefresh(this.ctx.playlist, currentEpoch, this.song.orderIndex)
+		) {
+			await this.refreshPlaylistManager(
+				currentEpoch,
+				effectiveProvider,
+				effectiveModel,
+			);
+			if (this.aborted) return;
 		}
 
 		try {
@@ -472,25 +486,6 @@ export class SongWorker {
 				priority: this.getPriority(),
 				endpoint: effectiveProvider,
 				execute: async (signal) => {
-					const currentEpoch = this.getCurrentEpoch();
-					if (
-						needsManagerRefresh(
-							this.ctx.playlist,
-							currentEpoch,
-							this.song.orderIndex,
-						)
-					) {
-						await this.refreshPlaylistManager(
-							currentEpoch,
-							effectiveProvider,
-							effectiveModel,
-							signal,
-						);
-						if (this.aborted) {
-							throw new Error("Cancelled");
-						}
-					}
-
 					const genOptions = {
 						prompt,
 						provider: effectiveProvider,
