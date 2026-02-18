@@ -52,7 +52,7 @@ const TURN_TIMEOUT_MS = (() => {
 	if (Number.isFinite(parsed) && parsed > 0) {
 		return parsed;
 	}
-	return 420_000;
+	return 600_000;
 })();
 const MAX_PENDING_TURNS = (() => {
 	const raw = process.env.CODEX_MAX_PENDING_TURNS;

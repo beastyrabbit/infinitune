@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LiveTimer } from "@/components/autoplayer/LiveTimer";
 import { Badge } from "@/components/ui/badge";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
@@ -41,6 +41,18 @@ interface SongInfo {
 	orderIndex: number;
 	promptEpoch: number;
 	isInterrupt: boolean;
+}
+
+interface QueueSnapshot {
+	at: number;
+	llmActive: number;
+	llmPending: number;
+	audioActive: number;
+	audioPending: number;
+	llmOldestActiveMs: number;
+	llmOldestPendingMs: number;
+	audioOldestActiveMs: number;
+	audioOldestPendingMs: number;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -107,6 +119,84 @@ function decodePriority(p: number): { label: string; color: string } {
 	if (p === 1) return { label: "INTERRUPT", color: "text-cyan-400" };
 	if (p === 0) return { label: "ONESHOT", color: "text-yellow-400" };
 	return { label: "???", color: "text-white/20" };
+}
+
+function maxAgeFromItems(
+	items: Array<{ startedAt?: number; waitingSince?: number }>,
+	field: "startedAt" | "waitingSince",
+	now: number,
+) {
+	let maxAgeMs = 0;
+	for (const item of items) {
+		const timestamp = item[field];
+		if (typeof timestamp !== "number") continue;
+		maxAgeMs = Math.max(maxAgeMs, Math.max(0, now - timestamp));
+	}
+	return maxAgeMs;
+}
+
+function formatRuntime(ms: number) {
+	if (!Number.isFinite(ms) || ms <= 0) return "0s";
+	const totalSec = Math.floor(ms / 1000);
+	const min = Math.floor(totalSec / 60);
+	const sec = totalSec % 60;
+	if (min >= 60) {
+		const hours = Math.floor(min / 60);
+		const remMin = min % 60;
+		return `${hours}h ${remMin}m`;
+	}
+	if (min > 0) return `${min}m ${sec}s`;
+	return `${sec}s`;
+}
+
+function Sparkline({
+	values,
+	colorClass,
+}: {
+	values: number[];
+	colorClass: string;
+}) {
+	if (values.length < 2) {
+		return (
+			<div className="h-12 flex items-center justify-center text-[9px] text-white/25 uppercase tracking-widest">
+				NO TREND YET
+			</div>
+		);
+	}
+
+	const width = 220;
+	const height = 44;
+	const min = Math.min(...values);
+	const max = Math.max(...values);
+	const range = Math.max(1, max - min);
+	const stepX = width / Math.max(1, values.length - 1);
+	const points = values
+		.map((value, index) => {
+			const x = Math.round(index * stepX);
+			const y = Math.round(height - ((value - min) / range) * (height - 4) - 2);
+			return `${x},${y}`;
+		})
+		.join(" ");
+
+	return (
+		<div className="h-12">
+			<svg
+				viewBox={`0 0 ${width} ${height}`}
+				className="w-full h-full overflow-visible"
+				aria-label="Queue trend"
+			>
+				<title>Queue trend</title>
+				<polyline
+					points={points}
+					fill="none"
+					className={`${colorClass} stroke-current`}
+					strokeWidth="2.5"
+					strokeLinejoin="round"
+					strokeLinecap="round"
+				/>
+			</svg>
+		</div>
+	);
 }
 
 // ─── Song card for active/pending items ─────────────────────────────
@@ -549,6 +639,122 @@ function PipelineTruthPanel({ truth }: { truth: PipelineTruth }) {
 	);
 }
 
+function QueueMonitoringPanel({ history }: { history: QueueSnapshot[] }) {
+	const latest = history.at(-1);
+	if (!latest) return null;
+
+	const llmLongestObserved = Math.max(
+		...history.map((point) =>
+			Math.max(point.llmOldestActiveMs, point.llmOldestPendingMs),
+		),
+	);
+	const audioLongestObserved = Math.max(
+		...history.map((point) =>
+			Math.max(point.audioOldestActiveMs, point.audioOldestPendingMs),
+		),
+	);
+
+	return (
+		<div className="border-2 border-white/15 bg-black/40">
+			<div className="px-4 py-2 border-b border-white/10">
+				<div className="text-[10px] text-white/30 font-bold uppercase tracking-widest">
+					Runtime Monitoring
+				</div>
+			</div>
+			<div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/10">
+				<div className="p-3 space-y-2">
+					<div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+						<span className="font-black text-cyan-300">LLM Longest</span>
+						<span className="text-white/30">
+							Live Samples: {history.length}
+						</span>
+					</div>
+					<div className="grid grid-cols-3 gap-2">
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-cyan-300 tabular-nums">
+								{formatRuntime(latest.llmOldestActiveMs)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Active Now
+							</div>
+						</div>
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-yellow-400 tabular-nums">
+								{formatRuntime(latest.llmOldestPendingMs)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Waiting Now
+							</div>
+						</div>
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-white/80 tabular-nums">
+								{formatRuntime(llmLongestObserved)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Window Max
+							</div>
+						</div>
+					</div>
+					<div>
+						<div className="text-[9px] text-white/25 uppercase tracking-widest mb-1">
+							LLM Active Workers Trend
+						</div>
+						<Sparkline
+							values={history.map((point) => point.llmActive)}
+							colorClass="text-cyan-300"
+						/>
+					</div>
+				</div>
+				<div className="p-3 space-y-2">
+					<div className="flex items-center justify-between text-[10px] uppercase tracking-widest">
+						<span className="font-black text-amber-300">AUDIO Longest</span>
+						<span className="text-white/30">
+							Live Samples: {history.length}
+						</span>
+					</div>
+					<div className="grid grid-cols-3 gap-2">
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-amber-300 tabular-nums">
+								{formatRuntime(latest.audioOldestActiveMs)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Active Now
+							</div>
+						</div>
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-yellow-400 tabular-nums">
+								{formatRuntime(latest.audioOldestPendingMs)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Waiting Now
+							</div>
+						</div>
+						<div className="border border-white/10 p-2">
+							<div className="text-lg font-black text-white/80 tabular-nums">
+								{formatRuntime(audioLongestObserved)}
+							</div>
+							<div className="text-[9px] text-white/30 uppercase tracking-widest">
+								Window Max
+							</div>
+						</div>
+					</div>
+					<div>
+						<div className="text-[9px] text-white/25 uppercase tracking-widest mb-1">
+							AUDIO Queue Pressure Trend
+						</div>
+						<Sparkline
+							values={history.map(
+								(point) => point.audioActive + point.audioPending,
+							)}
+							colorClass="text-amber-300"
+						/>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 // ─── Main page ──────────────────────────────────────────────────────
 
 function QueuePage() {
@@ -558,6 +764,7 @@ function QueuePage() {
 	usePlaylistHeartbeat(playlistByKey?.id ?? null);
 	const playlistSongs = useSongQueue(playlistByKey?.id ?? null);
 	const { status, error } = useWorkerStatus();
+	const [history, setHistory] = useState<QueueSnapshot[]>([]);
 
 	// Collect all unique song IDs from the worker status
 	const songIds = useMemo(() => {
@@ -596,6 +803,39 @@ function QueuePage() {
 		() => computePipelineTruth(playlistSongs, status),
 		[playlistSongs, status],
 	);
+
+	useEffect(() => {
+		if (!status) return;
+		const now = Date.now();
+		const snapshot: QueueSnapshot = {
+			at: now,
+			llmActive: status.queues.llm.active,
+			llmPending: status.queues.llm.pending,
+			audioActive: status.queues.audio.active,
+			audioPending: status.queues.audio.pending,
+			llmOldestActiveMs: maxAgeFromItems(
+				status.queues.llm.activeItems,
+				"startedAt",
+				now,
+			),
+			llmOldestPendingMs: maxAgeFromItems(
+				status.queues.llm.pendingItems,
+				"waitingSince",
+				now,
+			),
+			audioOldestActiveMs: maxAgeFromItems(
+				status.queues.audio.activeItems,
+				"startedAt",
+				now,
+			),
+			audioOldestPendingMs: maxAgeFromItems(
+				status.queues.audio.pendingItems,
+				"waitingSince",
+				now,
+			),
+		};
+		setHistory((prev) => [...prev.slice(-59), snapshot]);
+	}, [status]);
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white">
@@ -664,6 +904,7 @@ function QueuePage() {
 						{/* Overview strip */}
 						<WorkerOverview status={status} />
 						<PipelineTruthPanel truth={pipelineTruth} />
+						<QueueMonitoringPanel history={history} />
 
 						{/* Endpoint panels */}
 						<div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
