@@ -120,6 +120,124 @@ export class SongWorker {
 		return latest ? playlistToWire(latest) : null;
 	}
 
+	private async refreshPlaylistManager(
+		currentEpoch: number,
+		provider: "ollama" | "openrouter" | "openai-codex",
+		model: string,
+		signal: AbortSignal,
+	): Promise<void> {
+		// Fast path: if local snapshot looks stale, pull once from DB before trying to refresh.
+		if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+			try {
+				const latestPlaylist = await this.loadLatestPlaylist();
+				if (latestPlaylist) {
+					this.ctx.playlist = latestPlaylist;
+				}
+			} catch (err) {
+				songLogger(this.songId).warn(
+					{ err, playlistId: this.ctx.playlist.id, currentEpoch },
+					"Failed to load latest playlist before manager refresh; continuing with in-memory snapshot",
+				);
+			}
+		}
+
+		if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+			return;
+		}
+
+		const refreshKey = managerRefreshKey(this.ctx.playlist.id, currentEpoch);
+		const inFlightRefresh = managerRefreshInFlight.get(refreshKey);
+
+		if (inFlightRefresh) {
+			try {
+				await inFlightRefresh;
+			} catch {
+				// Best effort refresh: metadata generation continues below.
+			}
+			return;
+		}
+
+		const refreshPromise = (async () => {
+			try {
+				const latestPlaylist = await this.loadLatestPlaylist();
+				if (latestPlaylist) {
+					this.ctx.playlist = latestPlaylist;
+				}
+			} catch (err) {
+				songLogger(this.songId).warn(
+					{ err, playlistId: this.ctx.playlist.id, currentEpoch },
+					"Failed to refresh playlist snapshot before manager generation; continuing with in-memory snapshot",
+				);
+			}
+
+			if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+				return;
+			}
+
+			try {
+				const ratingSignals: ManagerRatingSignal[] = (
+					await songService.listByPlaylist(this.ctx.playlist.id)
+				)
+					.filter(
+						(song) => song.userRating === "up" || song.userRating === "down",
+					)
+					.sort((a, b) => b.orderIndex - a.orderIndex)
+					.slice(0, 20)
+					.map((song) => ({
+						title: song.title || "Untitled",
+						genre: song.genre || undefined,
+						mood: song.mood || undefined,
+						personaExtract: song.personaExtract || undefined,
+						rating: song.userRating as "up" | "down",
+					}));
+
+				const { managerBrief, managerPlan } = await generatePlaylistManagerPlan(
+					{
+						prompt: this.ctx.playlist.prompt,
+						provider,
+						model,
+						lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
+						recentSongs: this.ctx.recentSongs,
+						recentDescriptions: this.ctx.recentDescriptions,
+						ratingSignals,
+						steerHistory: this.ctx.playlist.steerHistory,
+						previousBrief: this.ctx.playlist.managerBrief,
+						currentEpoch,
+						planWindow: 5,
+						signal,
+					},
+				);
+				await playlistService.updateManagerBrief(this.ctx.playlist.id, {
+					managerBrief,
+					managerPlan: JSON.stringify(managerPlan),
+					managerEpoch: currentEpoch,
+				});
+				this.ctx.playlist = {
+					...this.ctx.playlist,
+					managerBrief,
+					managerPlan,
+					managerEpoch: currentEpoch,
+					managerUpdatedAt: Date.now(),
+				};
+			} catch (err) {
+				songLogger(this.songId).warn(
+					{
+						err,
+						playlistId: this.ctx.playlist.id,
+						currentEpoch,
+					},
+					"Playlist manager brief refresh failed; continuing with current context",
+				);
+			}
+		})();
+
+		const trackedRefreshPromise = refreshPromise.finally(() => {
+			managerRefreshInFlight.delete(refreshKey);
+		});
+		managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
+		await trackedRefreshPromise;
+	}
+
 	/** Calculate queue priority for this song based on current playlist state */
 	private getPriority(): number {
 		return calculatePriority({
@@ -257,6 +375,16 @@ export class SongWorker {
 				priority: this.getPriority(),
 				endpoint: effectiveProvider,
 				execute: async (signal) => {
+					const currentEpoch = this.getCurrentEpoch();
+					if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
+						await this.refreshPlaylistManager(
+							currentEpoch,
+							effectiveProvider,
+							effectiveModel,
+							signal,
+						);
+					}
+
 					const genOptions = {
 						prompt,
 						provider: effectiveProvider,
@@ -279,110 +407,6 @@ export class SongWorker {
 						promptDistance,
 						signal,
 					};
-
-					const currentEpoch = this.getCurrentEpoch();
-					if (needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
-						const refreshKey = managerRefreshKey(
-							this.ctx.playlist.id,
-							currentEpoch,
-						);
-						const inFlightRefresh = managerRefreshInFlight.get(refreshKey);
-
-						if (inFlightRefresh) {
-							try {
-								await inFlightRefresh;
-							} catch {
-								// Best effort refresh: metadata generation continues below.
-							}
-						} else {
-							const refreshPromise = (async () => {
-								const latestPlaylist = await this.loadLatestPlaylist();
-								if (latestPlaylist) {
-									this.ctx.playlist = latestPlaylist;
-								}
-
-								if (!needsManagerRefresh(this.ctx.playlist, currentEpoch)) {
-									return;
-								}
-
-								try {
-									const ratingSignals: ManagerRatingSignal[] = (
-										await songService.listByPlaylist(this.ctx.playlist.id)
-									)
-										.filter(
-											(song) =>
-												song.userRating === "up" || song.userRating === "down",
-										)
-										.sort((a, b) => b.orderIndex - a.orderIndex)
-										.slice(0, 20)
-										.map((song) => ({
-											title: song.title || "Untitled",
-											genre: song.genre || undefined,
-											mood: song.mood || undefined,
-											personaExtract: song.personaExtract || undefined,
-											rating: song.userRating as "up" | "down",
-										}));
-
-									const { managerBrief, managerPlan } =
-										await generatePlaylistManagerPlan({
-											prompt: this.ctx.playlist.prompt,
-											provider: effectiveProvider,
-											model: effectiveModel,
-											lyricsLanguage:
-												this.ctx.playlist.lyricsLanguage ?? undefined,
-											recentSongs: this.ctx.recentSongs,
-											recentDescriptions: this.ctx.recentDescriptions,
-											ratingSignals,
-											steerHistory: this.ctx.playlist.steerHistory,
-											previousBrief: this.ctx.playlist.managerBrief,
-											currentEpoch,
-											planWindow: 5,
-											signal,
-										});
-									await playlistService.updateManagerBrief(
-										this.ctx.playlist.id,
-										{
-											managerBrief,
-											managerPlan: JSON.stringify(managerPlan),
-											managerEpoch: currentEpoch,
-										},
-									);
-									this.ctx.playlist = {
-										...this.ctx.playlist,
-										managerBrief,
-										managerPlan,
-										managerEpoch: currentEpoch,
-										managerUpdatedAt: Date.now(),
-									};
-								} catch (err) {
-									songLogger(this.songId).warn(
-										{
-											err,
-											playlistId: this.ctx.playlist.id,
-											currentEpoch,
-										},
-										"Playlist manager brief refresh failed; continuing with current context",
-									);
-								}
-							})();
-
-							const trackedRefreshPromise = refreshPromise.finally(() => {
-								managerRefreshInFlight.delete(refreshKey);
-							});
-							managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
-							await trackedRefreshPromise;
-						}
-
-						// Manager refresh logic above already syncs this.ctx.playlist.
-						genOptions.managerBrief =
-							this.ctx.playlist.managerBrief ?? undefined;
-						genOptions.managerTransitionPolicy =
-							this.ctx.playlist.managerPlan?.transitionPolicy;
-						genOptions.managerSlot = pickManagerSlot(
-							this.song.orderIndex,
-							this.ctx.playlist.managerPlan,
-						);
-					}
 
 					let result = await generateSongMetadata(genOptions);
 

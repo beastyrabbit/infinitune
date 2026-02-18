@@ -1,5 +1,6 @@
 import {
 	inferLyricsLanguageFromPrompt,
+	normalizeLyricsLanguage,
 	SUPPORTED_LYRICS_LANGUAGES,
 } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
@@ -59,9 +60,9 @@ export const Route = createFileRoute("/api/autoplayer/enhance-session")({
 						temperature: 0.7,
 					});
 
-					const hardLanguage = params.lyricsLanguage
-						? params.lyricsLanguage
-						: inferLyricsLanguageFromPrompt(prompt);
+					const hardLanguage = normalizeLyricsLanguage(
+						params.lyricsLanguage ?? inferLyricsLanguageFromPrompt(prompt),
+					);
 
 					return new Response(
 						JSON.stringify({

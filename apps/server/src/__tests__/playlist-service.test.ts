@@ -69,6 +69,91 @@ describe("playlist-service", () => {
 		});
 	});
 
+	describe("updateParams", () => {
+		it("resets manager fields when llm provider/model change", async () => {
+			const pl = await playlistService.create({
+				name: "Manager Reset",
+				prompt: "test",
+				llmProvider: "ollama",
+				llmModel: "llama3",
+			});
+
+			const db = getTestDb();
+			await db
+				.update(playlists)
+				.set({
+					managerBrief: "existing brief",
+					managerPlan: JSON.stringify({
+						strategySummary: "keep vibe",
+						transitionPolicy: "smooth",
+						avoidPatterns: [],
+						slots: [],
+					}),
+					managerEpoch: 2,
+					managerUpdatedAt: Date.now(),
+				})
+				.where(eq(playlists.id, pl.id));
+
+			emittedEvents.length = 0;
+			await playlistService.updateParams(pl.id, {
+				llmProvider: "openai-codex",
+				llmModel: "",
+			});
+
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+
+			expect(updated.llmProvider).toBe("openai-codex");
+			expect(updated.llmModel).toBe("");
+			expect(updated.managerBrief).toBeNull();
+			expect(updated.managerPlan).toBeNull();
+			expect(updated.managerEpoch).toBeNull();
+			expect(updated.managerUpdatedAt).toBeNull();
+			expect(emittedEvents[0]).toMatchObject({
+				event: "playlist.updated",
+				data: { playlistId: pl.id },
+			});
+		});
+
+		it("treats null llmModel as empty string fallback", async () => {
+			const pl = await playlistService.create({
+				name: "Model Fallback",
+				prompt: "test",
+				llmProvider: "openrouter",
+				llmModel: "openai/gpt-4.1",
+			});
+
+			const db = getTestDb();
+			await db
+				.update(playlists)
+				.set({
+					managerBrief: "existing brief",
+					managerPlan: JSON.stringify({
+						strategySummary: "keep vibe",
+						transitionPolicy: "smooth",
+						avoidPatterns: [],
+						slots: [],
+					}),
+					managerEpoch: 1,
+					managerUpdatedAt: Date.now(),
+				})
+				.where(eq(playlists.id, pl.id));
+
+			await playlistService.updateParams(pl.id, { llmModel: null });
+
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+
+			expect(updated.llmModel).toBe("");
+			expect(updated.managerBrief).toBeNull();
+			expect(updated.managerPlan).toBeNull();
+		});
+	});
+
 	// ─── updateStatus ──────────────────────────────────────────────
 
 	describe("updateStatus", () => {

@@ -141,6 +141,12 @@ async function resolveModelForProvider(
 	}
 
 	const codexModels = await codexAppServerClient.listModels();
+	if (codexModels.length === 0) {
+		throw new Error(
+			"No OpenAI Codex models are available. Complete Codex authentication in Settings.",
+		);
+	}
+
 	const preferred =
 		codexModels.find((m) => m.isDefault) ??
 		codexModels.find((m) => m.id === "gpt-5.2") ??

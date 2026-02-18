@@ -3,6 +3,11 @@ export const SUPPORTED_LYRICS_LANGUAGES = ["english", "german"] as const;
 export type SupportedLyricsLanguage =
 	(typeof SUPPORTED_LYRICS_LANGUAGES)[number];
 
+/**
+ * Normalizes any input into a hard language lock.
+ * Null/empty values intentionally resolve to English; callers that want
+ * auto-detection should run inferLyricsLanguageFromPrompt() first.
+ */
 export function normalizeLyricsLanguage(
 	value?: string | null,
 ): SupportedLyricsLanguage {

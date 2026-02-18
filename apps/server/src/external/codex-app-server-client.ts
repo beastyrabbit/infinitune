@@ -53,6 +53,14 @@ const TURN_TIMEOUT_MS = (() => {
 	}
 	return 420_000;
 })();
+const MAX_PENDING_TURNS = (() => {
+	const raw = process.env.CODEX_MAX_PENDING_TURNS;
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	return 200;
+})();
 
 function isNoisyRolloutWarning(message: string): boolean {
 	return (
@@ -460,6 +468,11 @@ export class CodexAppServerClient {
 		outputSchema?: Record<string, unknown>;
 		signal?: AbortSignal;
 	}): Promise<string> {
+		if (this.pendingTurns.size >= MAX_PENDING_TURNS) {
+			throw new Error(
+				`Codex pending-turn limit reached (${MAX_PENDING_TURNS}). Reduce concurrency or raise CODEX_MAX_PENDING_TURNS.`,
+			);
+		}
 		const threadId = await this.startThread(options.model);
 		const turnRaw = await this.request(
 			"turn/start",

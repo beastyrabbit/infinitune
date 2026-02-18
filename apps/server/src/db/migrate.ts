@@ -123,6 +123,7 @@ export function ensureSchema() {
 		}
 	}
 
+	// SQLite only supports one ADD COLUMN per ALTER TABLE statement.
 	try {
 		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_brief TEXT");
 	} catch (err) {

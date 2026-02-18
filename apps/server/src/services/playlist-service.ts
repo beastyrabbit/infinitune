@@ -122,6 +122,8 @@ export async function updateParams(
 	params: Record<string, unknown>,
 ) {
 	const allowedKeys = [
+		"llmProvider",
+		"llmModel",
 		"lyricsLanguage",
 		"targetBpm",
 		"targetKey",
@@ -136,6 +138,20 @@ export async function updateParams(
 	const patch: Record<string, unknown> = {};
 	for (const key of allowedKeys) {
 		if (params[key] === undefined) continue;
+		if (key === "llmProvider") {
+			if (typeof params[key] !== "string") continue;
+			patch[key] = params[key].trim();
+			continue;
+		}
+		if (key === "llmModel") {
+			if (params[key] === null) {
+				patch[key] = "";
+				continue;
+			}
+			if (typeof params[key] !== "string") continue;
+			patch[key] = params[key].trim();
+			continue;
+		}
 		if (key === "lyricsLanguage") {
 			patch[key] = normalizeLyricsLanguage(
 				typeof params[key] === "string" ? params[key] : undefined,
@@ -145,7 +161,11 @@ export async function updateParams(
 		patch[key] = params[key];
 	}
 
-	if (patch.lyricsLanguage !== undefined) {
+	if (
+		patch.llmProvider !== undefined ||
+		patch.llmModel !== undefined ||
+		patch.lyricsLanguage !== undefined
+	) {
 		patch.managerBrief = null;
 		patch.managerPlan = null;
 		patch.managerEpoch = null;

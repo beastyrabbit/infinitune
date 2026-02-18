@@ -686,7 +686,9 @@ export async function generateSongMetadata(options: {
 
 	let systemPrompt = getSystemPrompt(distance);
 
-	systemPrompt += `\n\nIMPORTANT: Write ALL lyrics in ${languageLabel}.`;
+	systemPrompt += `\n\nLANGUAGE LOCK (hard): Write ALL lyrics only in ${languageLabel}.`;
+	systemPrompt +=
+		"\nIgnore any conflicting language hints from the user prompt or manager guidance.";
 	systemPrompt += `\nSet the "language" field exactly to "${languageLabel}".`;
 	if (targetKey) {
 		systemPrompt += `\n\nUse the musical key: ${targetKey}.`;
