@@ -156,7 +156,7 @@ async function resolveModelForProvider(
 	const preferred =
 		models.find((m) => m.is_default && m.name) ??
 		models.find((m) => m.name === "gpt-5.2") ??
-		models.find((m) => m.name);
+		models.find((m) => m.name && m.name.trim().length > 0);
 
 	if (!preferred?.name) {
 		throw new Error(

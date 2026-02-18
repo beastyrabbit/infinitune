@@ -317,24 +317,13 @@ export class SongWorker {
 			}
 		};
 
-		let resolveTrackedRefresh!: () => void;
-		let rejectTrackedRefresh!: (reason?: unknown) => void;
-		const trackedRefreshPromise = new Promise<void>((resolve, reject) => {
-			resolveTrackedRefresh = resolve;
-			rejectTrackedRefresh = reject;
-		});
+		const trackedRefreshPromise = Promise.resolve().then(runRefresh);
 		managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
-		void runRefresh()
-			.then(() => {
-				resolveTrackedRefresh();
-			})
-			.catch((err) => {
-				rejectTrackedRefresh(err);
-			})
-			.finally(() => {
-				managerRefreshInFlight.delete(refreshKey);
-			});
-		await trackedRefreshPromise;
+		try {
+			await trackedRefreshPromise;
+		} finally {
+			managerRefreshInFlight.delete(refreshKey);
+		}
 	}
 
 	/** Calculate queue priority for this song based on current playlist state */
