@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import {
-	PROMPT_OPT_MODEL,
-	PROMPT_OPT_PROVIDER,
+	PROMPT_OPTIMIZATION_MODEL,
+	PROMPT_OPTIMIZATION_PROVIDER,
 } from "@infinitune/shared/text-llm-profile";
 import z from "zod";
 import { callLlmObject, callLlmText } from "../apps/server/src/external/llm-client";
@@ -121,7 +121,7 @@ async function generateVariantOutput(options: {
 	input: string;
 }): Promise<string> {
 	const output = await callLlmText({
-		provider: PROMPT_OPT_PROVIDER,
+		provider: PROMPT_OPTIMIZATION_PROVIDER,
 		model: options.model,
 		system: options.systemPrompt,
 		prompt: options.input,
@@ -172,7 +172,7 @@ Return JSON fields:
 - rationale: short explanation`;
 
 	return await callLlmObject({
-		provider: PROMPT_OPT_PROVIDER,
+		provider: PROMPT_OPTIMIZATION_PROVIDER,
 		model: options.model,
 		system: judgeSystemPrompt,
 		prompt: judgePrompt,
@@ -278,7 +278,7 @@ Return JSON:
 - changeSummary: string[] (up to 6 bullet points)`;
 
 	const candidate = await callLlmObject({
-		provider: PROMPT_OPT_PROVIDER,
+		provider: PROMPT_OPTIMIZATION_PROVIDER,
 		model: options.model,
 		system: proposerSystem,
 		prompt,
@@ -422,7 +422,9 @@ async function main() {
 		"--fixture",
 		path.resolve("scripts/fixtures/prompt-optimize.json"),
 	);
-	const model = getArg("--model", PROMPT_OPT_MODEL) || PROMPT_OPT_MODEL;
+	const model =
+		getArg("--model", PROMPT_OPTIMIZATION_MODEL) ||
+		PROMPT_OPTIMIZATION_MODEL;
 	const iterations = getArgInt("--iterations", 5);
 
 	if (!fixturePath) {
@@ -432,7 +434,9 @@ async function main() {
 	log(`Loading fixture: ${fixturePath}`);
 	let fixture = await loadFixture(fixturePath);
 	log(`Fixture "${fixture.name}" with ${fixture.tasks.length} task(s)`);
-	log(`Provider: ${PROMPT_OPT_PROVIDER}, model: ${model}, iterations=${iterations}`);
+	log(
+		`Provider: ${PROMPT_OPTIMIZATION_PROVIDER}, model: ${model}, iterations=${iterations}`,
+	);
 
 	const startedAt = Date.now();
 	const reports: IterationReport[] = [];
@@ -486,7 +490,7 @@ async function main() {
 		JSON.stringify(
 			{
 				fixture: fixture.name,
-				provider: PROMPT_OPT_PROVIDER,
+				provider: PROMPT_OPTIMIZATION_PROVIDER,
 				model,
 				iterations,
 				elapsedMs,

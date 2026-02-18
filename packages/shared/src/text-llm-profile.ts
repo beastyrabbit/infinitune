@@ -2,8 +2,8 @@ import type { LlmProvider } from "./types";
 
 export const DEFAULT_TEXT_PROVIDER: LlmProvider = "ollama";
 export const DEFAULT_OLLAMA_TEXT_MODEL = "gpt-oss:20b";
-export const PROMPT_OPT_PROVIDER: LlmProvider = "openai-codex";
-export const PROMPT_OPT_MODEL = "gpt-5.2";
+export const PROMPT_OPTIMIZATION_PROVIDER: LlmProvider = "openai-codex";
+export const PROMPT_OPTIMIZATION_MODEL = "gpt-5.2";
 
 export function normalizeLlmProvider(
 	value?: string | null,

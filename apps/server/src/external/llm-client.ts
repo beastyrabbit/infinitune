@@ -150,7 +150,7 @@ async function resolveModelForProvider(
 	const preferred =
 		codexModels.find((m) => m.isDefault) ??
 		codexModels.find((m) => m.id === "gpt-5.2") ??
-		codexModels[0];
+		(codexModels.length > 0 ? codexModels[0] : undefined);
 
 	if (!preferred?.id) {
 		throw new Error(

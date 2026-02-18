@@ -45,6 +45,15 @@ export interface CodexModelInfo {
 }
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_CODEX_LLM_CONCURRENCY = 100;
+const CODEX_LLM_CONCURRENCY = (() => {
+	const raw = process.env.CODEX_LLM_CONCURRENCY;
+	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+	if (Number.isFinite(parsed) && parsed > 0) {
+		return parsed;
+	}
+	return DEFAULT_CODEX_LLM_CONCURRENCY;
+})();
 const TURN_TIMEOUT_MS = (() => {
 	const raw = process.env.CODEX_TURN_TIMEOUT_MS;
 	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
@@ -59,9 +68,9 @@ const MAX_PENDING_TURNS = (() => {
 	if (Number.isFinite(parsed) && parsed > 0) {
 		return parsed;
 	}
-	// Keep this comfortably above default CODEX_LLM_CONCURRENCY (100) so it
-	// serves as a leak guard rather than a normal throughput limiter.
-	return 1000;
+	// Keep this above active concurrency so it acts as a leak guard without
+	// allowing unbounded pending-turn growth.
+	return Math.max(300, CODEX_LLM_CONCURRENCY * 3);
 })();
 
 function isNoisyRolloutWarning(message: string): boolean {

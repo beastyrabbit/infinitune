@@ -317,9 +317,13 @@ export class SongWorker {
 			}
 		})();
 
-		const trackedRefreshPromise = refreshPromise.finally(() => {
-			managerRefreshInFlight.delete(refreshKey);
-		});
+		const trackedRefreshPromise = (async () => {
+			try {
+				await refreshPromise;
+			} finally {
+				managerRefreshInFlight.delete(refreshKey);
+			}
+		})();
 		managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
 		await trackedRefreshPromise;
 	}
