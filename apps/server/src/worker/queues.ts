@@ -1,4 +1,5 @@
 import type { AcePollResult } from "../external/ace";
+import { CODEX_LLM_CONCURRENCY } from "../external/llm-client";
 import { AudioQueue } from "./audio-queue";
 import type {
 	EndpointType,
@@ -6,16 +7,6 @@ import type {
 	QueueStatus,
 } from "./endpoint-queue";
 import { RequestResponseQueue } from "./request-response-queue";
-
-const CODEX_LLM_CONCURRENCY = (() => {
-	const raw = process.env.CODEX_LLM_CONCURRENCY;
-	const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
-	if (Number.isFinite(parsed) && parsed > 0) {
-		return parsed;
-	}
-	// Default to effectively unthrottled Codex calls from this process.
-	return 100;
-})();
 
 // ─── Concurrency defaults by provider ────────────────────────────────
 const LLM_CONCURRENCY: Record<string, number> = {

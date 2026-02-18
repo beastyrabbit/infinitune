@@ -366,12 +366,11 @@ export class SongWorker {
 								}
 							})();
 
-							managerRefreshInFlight.set(refreshKey, refreshPromise);
-							try {
-								await refreshPromise;
-							} finally {
+							const trackedRefreshPromise = refreshPromise.finally(() => {
 								managerRefreshInFlight.delete(refreshKey);
-							}
+							});
+							managerRefreshInFlight.set(refreshKey, trackedRefreshPromise);
+							await trackedRefreshPromise;
 						}
 
 						// Manager refresh logic above already syncs this.ctx.playlist.
