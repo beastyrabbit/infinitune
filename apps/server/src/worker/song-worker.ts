@@ -374,18 +374,15 @@ export class SongWorker {
 							}
 						}
 
-						const latestPlaylist = await this.loadLatestPlaylist();
-						if (latestPlaylist) {
-							this.ctx.playlist = latestPlaylist;
-							genOptions.managerBrief =
-								latestPlaylist.managerBrief ?? undefined;
-							genOptions.managerTransitionPolicy =
-								latestPlaylist.managerPlan?.transitionPolicy;
-							genOptions.managerSlot = pickManagerSlot(
-								this.song.orderIndex,
-								latestPlaylist.managerPlan,
-							);
-						}
+						// Manager refresh logic above already syncs this.ctx.playlist.
+						genOptions.managerBrief =
+							this.ctx.playlist.managerBrief ?? undefined;
+						genOptions.managerTransitionPolicy =
+							this.ctx.playlist.managerPlan?.transitionPolicy;
+						genOptions.managerSlot = pickManagerSlot(
+							this.song.orderIndex,
+							this.ctx.playlist.managerPlan,
+						);
 					}
 
 					let result = await generateSongMetadata(genOptions);
