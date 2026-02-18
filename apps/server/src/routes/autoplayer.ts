@@ -15,6 +15,8 @@ import {
 	getSongPromptContract,
 	type PersonaInput,
 	type PromptDistance,
+	type PromptMode,
+	type PromptProfile,
 	refineSessionPrompt,
 	type SongMetadata,
 } from "../external/llm";
@@ -105,6 +107,25 @@ function parsePromptDistance(value: unknown): PromptDistance | undefined {
 		value === "general" ||
 		value === "faithful" ||
 		value === "album"
+	) {
+		return value;
+	}
+	return undefined;
+}
+
+function parsePromptMode(value: unknown): PromptMode | undefined {
+	if (value === "full" || value === "minimal" || value === "none") {
+		return value;
+	}
+	return undefined;
+}
+
+function parsePromptProfile(value: unknown): PromptProfile | undefined {
+	if (
+		value === "strict" ||
+		value === "balanced" ||
+		value === "creative" ||
+		value === "compact"
 	) {
 		return value;
 	}
@@ -394,7 +415,9 @@ app.get("/openrouter-models", async (c) => {
 app.get("/prompt-contract", async (c) => {
 	try {
 		const distance = parsePromptDistance(c.req.query("distance")) ?? "close";
-		return c.json(getSongPromptContract(distance));
+		const profile = parsePromptProfile(c.req.query("profile"));
+		const mode = parsePromptMode(c.req.query("mode"));
+		return c.json(getSongPromptContract(distance, profile, mode));
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to build prompt contract");
 		return c.json(
@@ -465,6 +488,8 @@ app.post("/generate-song", async (c) => {
 				: undefined,
 			isInterrupt: body.isInterrupt === true,
 			promptDistance: parsePromptDistance(body.promptDistance),
+			promptProfile: parsePromptProfile(body.promptProfile),
+			promptMode: parsePromptMode(body.promptMode),
 		});
 		return c.json(songData);
 	} catch (error: unknown) {
@@ -544,6 +569,8 @@ app.post("/generate-album-track", async (c) => {
 			targetKey: request.targetKey,
 			timeSignature: request.timeSignature,
 			audioDuration: request.audioDuration,
+			promptProfile: parsePromptProfile(body.promptProfile),
+			promptMode: parsePromptMode(body.promptMode),
 		});
 		return c.json(songData);
 	} catch (error: unknown) {

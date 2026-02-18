@@ -138,6 +138,39 @@ Model/test endpoints also proxy to backend:
 Shared proxy helper:
 - `apps/web/src/lib/autoplayer-proxy.ts`
 
+### 4. Prompt text optimization (OpenClaw-inspired, backend-owned)
+
+Files:
+- `apps/server/src/external/llm.ts`
+- `apps/server/src/routes/autoplayer.ts`
+
+Implemented:
+- Added explicit prompt profiles for song generation:
+  - `strict`
+  - `balanced`
+  - `creative`
+  - `compact`
+- Added mode-aware system prompt composition:
+  - `full`
+  - `minimal`
+  - `none`
+- Added adaptive defaults:
+  - `faithful` defaults to `strict` (with controlled relaxation to `balanced` when prompt explicitly asks for exploration).
+  - `general` defaults to `creative`.
+  - `close` and `album` default to `balanced`.
+- Added prompt budget diagnostics to prompt contract:
+  - `estimatedTokens`
+  - `budget.maxChars`
+  - `budget.overBudget`
+  - `budget.warnings`
+- Extended backend prompt contract endpoint to accept:
+  - `distance`
+  - `profile`
+  - `mode`
+- Rewrote manager/persona/refine/enhance prompt texts to be more compact, explicit, and anti-drift aware.
+- Added prompt regression tests:
+  - `apps/server/src/__tests__/prompt-contract.test.ts`
+
 ## What We Learned From OpenClaw (Directly Applied)
 
 1. Prompt text should be assembled from explicit named sections.
@@ -148,6 +181,6 @@ Shared proxy helper:
 
 ## Remaining Improvement Opportunities
 
-1. Add prompt-focused regression tests for Infinitune section presence and lock rules.
-2. Add token/char budget thresholds per prompt path (song/persona/manager).
-3. Add explicit prompt mode variants (for lightweight album batch generation or fast paths).
+1. Extend prompt regression coverage beyond song contract into manager/persona prompt sections.
+2. Add explicit per-flow budget thresholds and warning logs for manager/persona/enhance prompt paths.
+3. Run offline A/B evaluation (strict vs balanced vs creative) on representative prompt sets and lock recommended defaults from measured outcomes.

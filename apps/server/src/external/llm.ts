@@ -21,6 +21,11 @@ interface PromptBuildResult {
 	sectionChars: Record<string, number>;
 }
 
+function estimatePromptTokens(text: string): number {
+	// Lightweight deterministic estimate for diagnostics; not billing-accurate.
+	return Math.max(1, Math.ceil(text.length / 4));
+}
+
 function buildPromptSections(sections: PromptSection[]): PromptBuildResult {
 	const sectionChars: Record<string, number> = {};
 	const chunks: string[] = [];
@@ -47,6 +52,7 @@ function logPromptBuild(
 			prompt: parts.map((part) => ({
 				kind: part.kind,
 				totalChars: part.build.text.length,
+				estimatedTokens: estimatePromptTokens(part.build.text),
 				sectionChars: part.build.sectionChars,
 			})),
 		},
@@ -136,8 +142,7 @@ const FIELD_GUIDANCE_MUSIC_PARAMS = `- bpm: Beats per minute appropriate for the
 
 const FIELD_GUIDANCE_JSON = `JSON OUTPUT: All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
 
-/** Shared field guidance used across all prompt modes */
-const FIELD_GUIDANCE = buildPromptSections([
+const FIELD_GUIDANCE_FULL = buildPromptSections([
 	{ name: "contract_intro", content: FIELD_GUIDANCE_INTRO },
 	{ name: "core_fields", content: FIELD_GUIDANCE_CORE_FIELDS },
 	{ name: "lyrics_rules", content: FIELD_GUIDANCE_LYRICS },
@@ -148,8 +153,82 @@ const FIELD_GUIDANCE = buildPromptSections([
 ]).text;
 
 export type PromptDistance = "close" | "general" | "faithful" | "album";
+export type PromptMode = "full" | "minimal" | "none";
+export type PromptProfile = "strict" | "balanced" | "creative" | "compact";
 
 const SYSTEM_ROLE_SECTION = `You are a music producer AI. Generate production-ready, high-quality song specs for downstream audio generation.`;
+
+const FIELD_GUIDANCE_MINIMAL = buildPromptSections([
+	{ name: "contract_intro", content: FIELD_GUIDANCE_INTRO },
+	{ name: "core_fields", content: FIELD_GUIDANCE_CORE_FIELDS },
+	{
+		name: "lyrics_rules_compact",
+		content:
+			"- lyrics: section-tagged and singable. Include at least one instrumental section tag. Keep section tags concise.",
+	},
+	{
+		name: "caption_rules_compact",
+		content:
+			"- caption: [genre/style], [2-4 instruments], [texture], [mood]. No vocal info, BPM, key, duration.",
+	},
+	{
+		name: "cover_rules_compact",
+		content:
+			"- coverPrompt: specific visual scene, concrete textures, precise lighting, 3-5 exact colors, no text/logos.",
+	},
+	{ name: "music_params", content: FIELD_GUIDANCE_MUSIC_PARAMS },
+	{ name: "json_output", content: FIELD_GUIDANCE_JSON },
+]).text;
+
+const FIELD_GUIDANCE_NONE = buildPromptSections([
+	{ name: "contract_intro", content: FIELD_GUIDANCE_INTRO },
+	{
+		name: "essential_fields",
+		content:
+			'Return valid JSON for all schema fields with concrete values; avoid placeholders. Keep "caption" production-focused and "lyrics" performance-ready.',
+	},
+	{ name: "json_output", content: FIELD_GUIDANCE_JSON },
+]).text;
+
+const PROFILE_BEHAVIOR: Record<PromptProfile, string> = {
+	strict:
+		"PROFILE=strict: maximize request adherence and controllability. Prefer conservative choices over novelty.",
+	balanced:
+		"PROFILE=balanced: preserve core anchors while allowing modest adjacent variation.",
+	creative:
+		"PROFILE=creative: keep one clear thread to the prompt, but explore adjacent moods/eras/arrangements for diversity.",
+	compact:
+		"PROFILE=compact: be decisive and concise. Use shortest clear phrasing that still satisfies quality and schema.",
+};
+
+const ANTI_DRIFT_RULES: Record<PromptProfile, string> = {
+	strict: `ANTI-DRIFT RULES (strict):
+- Keep the user's explicit genre/style anchors as written.
+- Do NOT introduce new genre families, signature motifs, or setting pivots unless the user explicitly requests them.
+- Keep caption, lyrics tags, and metadata mutually consistent.`,
+	balanced: `ANTI-DRIFT RULES (balanced):
+- Preserve explicit anchors and proper nouns.
+- Adjacent variation is allowed only when it still reads as the same musical world.
+- Avoid contradictions between caption, lyrics tags, and metadata.`,
+	creative: `ANTI-DRIFT RULES (creative):
+- Preserve at least one strong anchor from the source prompt.
+- Exploration may widen mood/era/arrangement, but avoid hard identity breaks with no connective thread.
+- Keep caption, lyrics tags, and metadata internally consistent.`,
+	compact: `ANTI-DRIFT RULES (compact):
+- Preserve explicit anchors.
+- Do not introduce unrelated genre pivots.
+- Keep output internally consistent.`,
+};
+
+const CREATIVE_VARIATION_RULES = `DIVERSITY TARGETS:
+- Vary at least 2 dimensions among mood, energy, tempo feel, vocal texture, instrumentation, and lyrical angle.
+- Prefer fresh combinations over repeating obvious prior patterns.`;
+
+const PROMPT_CONTRACT_MAX_CHARS: Record<PromptMode, number> = {
+	full: 13000,
+	minimal: 6500,
+	none: 2500,
+};
 
 const DISTANCE_BEHAVIOR: Record<PromptDistance, string> = {
 	close: `Stay in the same genre family, similar era and vibe. Like a radio station that stays on-brand — same world, different song. Use a different title, different lyrics, and different specific instruments while keeping a cohesive overall feel.`,
@@ -165,20 +244,84 @@ const ALBUM_RULES = `ALBUM RULES:
 - Each new track must differ from previous tracks in at least 3 dimensions (mood, energy, tempo, vocal style, lyrical theme, instruments).
 - Preserve a cohesive production aesthetic across the full album.`;
 
-function buildSongSystemSections(distance: PromptDistance): PromptSection[] {
+function getFieldGuidance(mode: PromptMode): string {
+	switch (mode) {
+		case "none":
+			return FIELD_GUIDANCE_NONE;
+		case "minimal":
+			return FIELD_GUIDANCE_MINIMAL;
+		default:
+			return FIELD_GUIDANCE_FULL;
+	}
+}
+
+function defaultSongPromptProfile(distance: PromptDistance): PromptProfile {
+	switch (distance) {
+		case "faithful":
+			return "strict";
+		case "general":
+			return "creative";
+		default:
+			return "balanced";
+	}
+}
+
+function defaultSongPromptMode(
+	distance: PromptDistance,
+	profile: PromptProfile,
+): PromptMode {
+	if (profile === "compact") return "minimal";
+	if (distance === "faithful") return "minimal";
+	return "full";
+}
+
+const FAITHFUL_FLEX_REQUEST_RE =
+	/\b(surprise me|creative libert|experiment|explore|reinterpret|unexpected|adventurous|go wild|different take|looser)\b/i;
+
+export function resolveSongPromptProfile(options: {
+	distance: PromptDistance;
+	prompt: string;
+	requestedProfile?: PromptProfile;
+}): PromptProfile {
+	const baseProfile =
+		options.requestedProfile ?? defaultSongPromptProfile(options.distance);
+	if (options.distance !== "faithful" || baseProfile !== "strict") {
+		return baseProfile;
+	}
+	const safePrompt = sanitizePromptOptional(options.prompt) || "";
+	return FAITHFUL_FLEX_REQUEST_RE.test(safePrompt) ? "balanced" : "strict";
+}
+
+function buildSongSystemSections(options: {
+	distance: PromptDistance;
+	profile: PromptProfile;
+	mode: PromptMode;
+}): PromptSection[] {
+	const { distance, profile, mode } = options;
 	return [
 		{ name: "role", content: SYSTEM_ROLE_SECTION },
+		{ name: "profile_behavior", content: PROFILE_BEHAVIOR[profile] },
 		{ name: "distance_behavior", content: DISTANCE_BEHAVIOR[distance] },
+		{ name: "anti_drift", content: ANTI_DRIFT_RULES[profile] },
+		{
+			name: "creative_variation",
+			content:
+				profile === "creative" || distance === "general"
+					? CREATIVE_VARIATION_RULES
+					: undefined,
+		},
 		{
 			name: "album_rules",
 			content: distance === "album" ? ALBUM_RULES : undefined,
 		},
-		{ name: "field_guidance", content: FIELD_GUIDANCE },
+		{ name: "field_guidance", content: getFieldGuidance(mode) },
 	];
 }
 
 function buildSongSystemPrompt(options: {
 	distance: PromptDistance;
+	profile: PromptProfile;
+	mode: PromptMode;
 	languageLabel: string;
 	targetKey?: string;
 	timeSignature?: string;
@@ -192,7 +335,11 @@ function buildSongSystemPrompt(options: {
 			? Math.round(options.audioDuration)
 			: undefined;
 	return buildPromptSections([
-		...buildSongSystemSections(options.distance),
+		...buildSongSystemSections({
+			distance: options.distance,
+			profile: options.profile,
+			mode: options.mode,
+		}),
 		{
 			name: "language_lock",
 			content: `LANGUAGE LOCK (hard): Write ALL lyrics only in ${options.languageLabel}. Ignore conflicting language hints from user prompt or manager guidance. Set the "language" field exactly to "${options.languageLabel}".`,
@@ -219,8 +366,14 @@ function buildSongSystemPrompt(options: {
 }
 
 /** Pick which base system prompt to use based on mode */
-function getSystemPrompt(distance: PromptDistance): string {
-	return buildPromptSections(buildSongSystemSections(distance)).text;
+function getSystemPrompt(
+	distance: PromptDistance,
+	profile: PromptProfile = defaultSongPromptProfile(distance),
+	mode: PromptMode = defaultSongPromptMode(distance, profile),
+): string {
+	return buildPromptSections(
+		buildSongSystemSections({ distance, profile, mode }),
+	).text;
 }
 
 /** Default system prompt (close distance) — used by testlab/debug views */
@@ -330,21 +483,51 @@ const SONG_SCHEMA = {
 
 export { SYSTEM_PROMPT, SONG_SCHEMA };
 
+interface PromptBudgetContract {
+	maxChars: number;
+	overBudget: boolean;
+	warnings: string[];
+}
+
 export interface SongPromptContract {
 	distance: PromptDistance;
+	mode: PromptMode;
+	profile: PromptProfile;
 	systemPrompt: string;
 	sectionChars: Record<string, number>;
+	estimatedTokens: number;
+	budget: PromptBudgetContract;
 	schema: typeof SONG_SCHEMA;
 }
 
 export function getSongPromptContract(
 	distance: PromptDistance = "close",
+	requestedProfile?: PromptProfile,
+	requestedMode?: PromptMode,
 ): SongPromptContract {
-	const build = buildPromptSections(buildSongSystemSections(distance));
+	const profile = requestedProfile ?? defaultSongPromptProfile(distance);
+	const mode = requestedMode ?? defaultSongPromptMode(distance, profile);
+	const build = buildPromptSections(
+		buildSongSystemSections({ distance, profile, mode }),
+	);
+	const maxChars = PROMPT_CONTRACT_MAX_CHARS[mode];
+	const overBudget = build.text.length > maxChars;
 	return {
 		distance,
+		mode,
+		profile,
 		systemPrompt: build.text,
 		sectionChars: build.sectionChars,
+		estimatedTokens: estimatePromptTokens(build.text),
+		budget: {
+			maxChars,
+			overBudget,
+			warnings: overBudget
+				? [
+						`System prompt length ${build.text.length} exceeds budget ${maxChars} chars for mode=${mode}`,
+					]
+				: [],
+		},
 		schema: SONG_SCHEMA,
 	};
 }
@@ -454,28 +637,20 @@ const PlaylistManagerSchema = z.object({
 	slots: z.array(PlaylistManagerSlotSchema).min(3).max(8),
 });
 
-const PLAYLIST_MANAGER_PROMPT = `You are a playlist-level music director optimizing prompts for ACE-Step text2music.
+const PLAYLIST_MANAGER_PROMPT = `You are a playlist-level music director for ACE-Step.
 
-Design a rolling next-song plan that controls transitions and topic evolution.
+Goal: build a rolling plan for the next N songs that balances coherence, variety, and listener feedback.
 
-Requirements:
-- Keep one coherent musical identity with room for controlled exploration.
-- Plan an arc for the next N songs using slot-by-slot guidance.
-- Decide transition smoothness from context (party/background can stay smooth, high-energy sessions can jump harder).
-- Encode guardrails for ACE-Step:
-  - Caption is global style/instrument/texture/mood only.
-  - Lyrics are the temporal script with concise section tags.
-  - Caption and lyrics tags must stay consistent.
-  - Avoid conflicting style instructions.
-- Include 3-8 avoid patterns based on weak/down-rated outputs.
-- Use user feedback: ratings and steer history should shape the next arc.
+Hard rules:
+- Preserve the playlist's core anchors unless steer history explicitly changes them.
+- Use ratings: reinforce up-rated traits, suppress down-rated traits.
+- Keep caption guidance (style/instruments/texture/mood) consistent with lyrical direction.
+- Avoid contradictory instructions across managerBrief, transitionPolicy, and slot directives.
+- Include 3-8 concrete avoidPatterns from weak or down-rated outcomes.
 
-Output JSON with fields:
-- managerBrief
-- strategySummary
-- transitionPolicy
-- avoidPatterns (string[])
-- slots (array of slot objects with: slot, transitionIntent, topicHint, captionFocus, lyricTheme, energyTarget)`;
+Output:
+- Return valid JSON only, matching the schema exactly.
+- Keep managerBrief compact and actionable for downstream song generation.`;
 
 function clampInt(
 	val: number,
@@ -508,53 +683,59 @@ function sanitizeLlmText(text: string, maxLength = 2000): string {
 	return cleaned;
 }
 
-const ENHANCE_PLAYLIST_PROMPT_SYSTEM = `You expand a short playlist idea into a robust session theme for multi-song generation.
+const ENHANCE_PLAYLIST_PROMPT_SYSTEM = `Rewrite a short playlist idea into one production-ready session theme.
 
-Output ONE compact paragraph under 500 characters. Return only the enhanced session theme text.
-
-Include:
-- Core identity: reuse the user's genre/era/cultural anchor wording as written + 2-3 high-level sonic/vibe anchors.
-- Exploration range: name exactly 3-4 adjacent lanes that still fit, phrased conservatively ("-leaning"/"-inflected").
-
-Rules:
-- Do not re-label or synonym-swap the user's key anchors, and do not add new substyle labels unless explicitly mentioned.
-- Keep lane labels conservative; avoid hard pivots like "crossover" unless the user implies it.
-- Do not add prescriptive constraint clauses (no "always/never", "while staying...", or "keep the X core").
-- Do not invent signature elements not implied by the input.
-- No meta labels and no bullet formatting.`;
-
-const ENHANCE_REQUEST_SYSTEM = `You enhance short music requests for audio generation.
+Output:
+- Exactly one compact paragraph under 500 characters.
+- Return plain text only.
 
 Requirements:
-- Output ONE compact paragraph under 500 characters. Return text only.
-- Start with the user's request verbatim, then append details.
-- Preserve original intent and named references exactly.
-- Add only actionable sonic detail that improves controllability.
-- Add exactly: 2-4 specific instruments, 1-3 production/texture cues, and one concise mood-atmosphere phrase.
-- Instruments must be genre-appropriate and must not add new genre tags unless user requested.
-- Do not add explicit ambience/SFX layers unless user asked for them.`;
+- Reuse explicit user anchors as written.
+- Add 2-3 sonic identity cues.
+- Add 3-4 adjacent exploration lanes that remain plausibly connected.
 
-const REFINE_PROMPT_SYSTEM = `You are a music session director. Revise a session prompt from a steering instruction.
+Anti-drift rules:
+- Do not invent unrelated subgenres, eras, or signature motifs.
+- Avoid hard pivots unless user intent implies it.
+- No meta labels, bullets, or explanations.`;
+
+const ENHANCE_REQUEST_SYSTEM = `Enhance a short music request for controllable generation.
+
+Output:
+- Exactly one compact paragraph under 500 characters.
+- Return text only.
+- Start with the original request verbatim, then add details.
+
+Requirements:
+- Preserve named references and core intent.
+- Add 2-4 concrete instruments, 1-3 texture/production cues, and one concise mood phrase.
+- Keep additions genre-appropriate.
+
+Anti-drift rules:
+- Do not introduce unrelated genre pivots.
+- Do not add ambience/SFX layers unless explicitly requested.`;
+
+const REFINE_PROMPT_SYSTEM = `You revise a music session prompt from a steering instruction.
 
 Rules:
-- Execute "less/no more" and "more/add" directions explicitly.
-- Preserve core style anchors and proper nouns unless replaced by instruction.
-- Keep revised text coherent, production-ready, and close to original length.
-- Do not output edit notes or explanations.
+- Apply "more/add" and "less/no more" directives explicitly.
+- Preserve anchors and proper nouns unless the instruction replaces them.
+- Keep the revised prompt coherent, production-ready, and close in length.
+- No commentary, no edit notes.
 
-Return only the updated session prompt.`;
+Return only the revised prompt text.`;
 
-const SESSION_PARAMS_SYSTEM = `You are a music production expert. Convert a session description into generation-ready parameters.
+const SESSION_PARAMS_SYSTEM = `Convert a session description into generation parameters.
 
 Hard constraints:
-- lyricsLanguage MUST be "english" or "german" only. If ambiguous, choose "english".
-- Keep inferred parameters inside realistic genre ranges.
-- Do not add unrelated genres or concepts.
-- Prefer stable defaults over risky guesses.
+- lyricsLanguage must be "english" or "german". If unclear, choose "english".
+- Keep BPM/key/time signature/duration in realistic ranges.
+- Avoid unrelated genre or concept injection.
+- Prefer stable defaults over risky inference.
 
-Output requirements:
-- Return only content that matches the requested schema.
-- Do not wrap output in markdown code fences.`;
+Output:
+- Return valid schema-matching content only.
+- No markdown fences or extra text.`;
 
 const SessionParamsSchema = z.object({
 	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES),
@@ -614,7 +795,19 @@ const PersonaSchema = z.object({
 		),
 });
 
-const PERSONA_SYSTEM_PROMPT = `You are a music analyst. Extract the musical DNA of this song into a concise persona summary covering: genre family, production aesthetic, vocal character, mood/energy patterns, instrumentation signature, lyrical world. Be specific and concise. Return JSON with a single "persona" field.`;
+const PERSONA_SYSTEM_PROMPT = `Extract a concise "musical DNA" persona from the song metadata.
+
+Include:
+- genre family
+- production aesthetic
+- vocal character
+- mood/energy signature
+- instrumentation fingerprint
+- lyrical world
+
+Output requirements:
+- Return valid JSON with one field: "persona".
+- Keep persona specific, compact, and non-generic.`;
 
 export interface PersonaInput {
 	title?: string;
@@ -1094,6 +1287,7 @@ function buildSongUserPrompt(options: {
 	managerSlot?: PlaylistManagerPlanSlot;
 	managerTransitionPolicy?: string;
 	distance: PromptDistance;
+	profile: PromptProfile;
 	recentSongs?: RecentSong[];
 	recentDescriptions?: string[];
 }): PromptBuildResult {
@@ -1103,31 +1297,52 @@ function buildSongUserPrompt(options: {
 	const safeTransitionPolicy = sanitizePromptOptional(
 		options.managerTransitionPolicy,
 	);
+	const contextLimits =
+		options.profile === "compact"
+			? { songs: 4, descriptions: 6 }
+			: options.profile === "creative"
+				? { songs: 12, descriptions: 16 }
+				: { songs: 8, descriptions: 10 };
+	const profileDirective: Record<PromptProfile, string> = {
+		strict:
+			"Execution policy: strict adherence. Keep anchors exact and avoid unrelated additions.",
+		balanced:
+			"Execution policy: balanced. Preserve anchors while allowing modest variation.",
+		creative:
+			"Execution policy: creative. Explore adjacent lanes while preserving a recognizable thread.",
+		compact:
+			"Execution policy: compact. Be concise and decisive with no unnecessary prose.",
+	};
 	const recentSongLines =
 		options.distance !== "faithful"
-			? (options.recentSongs ?? []).map((song, index) => {
-					const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
-					const safeArtist =
-						sanitizePromptOptional(song.artistName) || "Unknown Artist";
-					const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
-					const safeSubGenre =
-						sanitizePromptOptional(song.subGenre) || "Unknown";
-					const safeVocal = sanitizePromptOptional(song.vocalStyle);
-					const safeMood = sanitizePromptOptional(song.mood);
-					return `  ${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre} / ${safeSubGenre}${safeVocal ? ` (${safeVocal})` : ""}${safeMood ? ` [${safeMood}]` : ""}`;
-				})
+			? (options.recentSongs ?? [])
+					.slice(0, contextLimits.songs)
+					.map((song, index) => {
+						const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
+						const safeArtist =
+							sanitizePromptOptional(song.artistName) || "Unknown Artist";
+						const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
+						const safeSubGenre =
+							sanitizePromptOptional(song.subGenre) || "Unknown";
+						const safeVocal = sanitizePromptOptional(song.vocalStyle);
+						const safeMood = sanitizePromptOptional(song.mood);
+						return `  ${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre} / ${safeSubGenre}${safeVocal ? ` (${safeVocal})` : ""}${safeMood ? ` [${safeMood}]` : ""}`;
+					})
 			: [];
 	const recentDescriptionLines =
 		options.distance !== "faithful"
-			? (options.recentDescriptions ?? []).map((description, index) => {
-					const safeDescription =
-						sanitizePromptOptional(description) || "(empty)";
-					return `  ${index + 1}. ${safeDescription}`;
-				})
+			? (options.recentDescriptions ?? [])
+					.slice(0, contextLimits.descriptions)
+					.map((description, index) => {
+						const safeDescription =
+							sanitizePromptOptional(description) || "(empty)";
+						return `  ${index + 1}. ${safeDescription}`;
+					})
 			: [];
 	const slot = options.managerSlot;
 	return buildPromptSections([
 		{ name: "user_prompt", content: safePrompt },
+		{ name: "profile_directive", content: profileDirective[options.profile] },
 		{
 			name: "manager_brief",
 			content: safeManagerBrief
@@ -1189,6 +1404,8 @@ export async function generateSongMetadata(options: {
 	recentDescriptions?: string[];
 	isInterrupt?: boolean;
 	promptDistance?: PromptDistance;
+	promptProfile?: PromptProfile;
+	promptMode?: PromptMode;
 	signal?: AbortSignal;
 }): Promise<SongMetadata> {
 	const {
@@ -1207,6 +1424,8 @@ export async function generateSongMetadata(options: {
 		recentDescriptions,
 		isInterrupt,
 		promptDistance,
+		promptProfile,
+		promptMode,
 		signal,
 	} = options;
 
@@ -1216,21 +1435,38 @@ export async function generateSongMetadata(options: {
 	// Determine prompt distance: explicit > interrupt flag > default close
 	const distance: PromptDistance =
 		promptDistance ?? (isInterrupt ? "faithful" : "close");
+	const profile = resolveSongPromptProfile({
+		distance,
+		prompt,
+		requestedProfile: promptProfile,
+	});
+	const mode = promptMode ?? defaultSongPromptMode(distance, profile);
 
-	let temperature: number;
-	switch (distance) {
-		case "faithful":
-			temperature = 0.7;
+	let temperature: number = 0.82;
+	switch (profile) {
+		case "strict":
+			temperature = 0.65;
 			break;
-		case "album":
-			temperature = 0.9;
+		case "balanced":
+			temperature = 0.82;
 			break;
-		default:
-			temperature = 0.85;
+		case "creative":
+			temperature = 0.95;
+			break;
+		case "compact":
+			temperature = 0.72;
+			break;
+	}
+	if (distance === "faithful") {
+		temperature = Math.min(temperature, 0.72);
+	} else if (distance === "album" && profile !== "strict") {
+		temperature = Math.max(temperature, 0.88);
 	}
 
 	const systemBuild = buildSongSystemPrompt({
 		distance,
+		profile,
+		mode,
 		languageLabel,
 		targetKey,
 		timeSignature,
@@ -1242,6 +1478,7 @@ export async function generateSongMetadata(options: {
 		managerSlot,
 		managerTransitionPolicy,
 		distance,
+		profile,
 		recentSongs,
 		recentDescriptions,
 	});
@@ -1253,6 +1490,8 @@ export async function generateSongMetadata(options: {
 		],
 		{
 			distance,
+			profile,
+			mode,
 			provider,
 			model,
 			temperature,
