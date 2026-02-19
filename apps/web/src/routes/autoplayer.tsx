@@ -2,7 +2,7 @@ import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import { Disc3, Minimize2, Plus, Radio, Zap } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
@@ -40,12 +40,35 @@ import {
 	useUpdatePlaylistStatus,
 } from "@/integrations/api/hooks";
 import { API_URL } from "@/lib/endpoints";
+import { computePipelineTruth } from "@/lib/pipeline-truth";
 import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
 	validatePlaylistKeySearch,
 } from "@/lib/playlist-key";
-import type { SongMetadata } from "@/services/llm";
+
+interface GeneratedSongMetadata {
+	title: string;
+	artistName: string;
+	genre: string;
+	subGenre: string;
+	vocalStyle: string;
+	lyrics: string;
+	caption: string;
+	coverPrompt?: string;
+	bpm: number;
+	keyScale: string;
+	timeSignature: string;
+	audioDuration: number;
+	mood: string;
+	energy: string;
+	era: string;
+	instruments: string[];
+	tags: string[];
+	themes: string[];
+	language: string;
+	description: string;
+}
 
 function EndpointDot({
 	label,
@@ -125,10 +148,15 @@ function AutoplayerPage() {
 
 	useVolumeSync();
 	usePlaylistHeartbeat(playlistId);
+	const { status: workerStatus } = useWorkerStatus();
 
 	// --- Derive effective state ---
 	const songs = isRoomMode ? roomSongs : autoplayer.songs;
 	const playlist = isRoomMode ? roomPlaylist : autoplayer.playlist;
+	const pipelineTruth = useMemo(
+		() => computePipelineTruth(songs, workerStatus),
+		[songs, workerStatus],
+	);
 	const currentSongId = isRoomMode
 		? roomConnection.playback.currentSongId
 		: localCurrentSongId;
@@ -146,8 +174,6 @@ function AutoplayerPage() {
 		}
 		prevStatusRef.current = status;
 	}, [playlist?.status, navigate]);
-
-	const { status: workerStatus } = useWorkerStatus();
 
 	const currentSong = songs?.find((s) => s.id === currentSongId) ?? null;
 
@@ -416,7 +442,7 @@ function AutoplayerPage() {
 			);
 			const epoch = playlist.promptEpoch ?? 0;
 
-			const previousAlbumTracks: SongMetadata[] = [];
+			const previousAlbumTracks: GeneratedSongMetadata[] = [];
 			let completed = 0;
 
 			for (
@@ -470,7 +496,7 @@ function AutoplayerPage() {
 						signal: abortController.signal,
 					}).then(async (res) => {
 						if (!res.ok) throw new Error(await res.text());
-						const metadata = (await res.json()) as SongMetadata;
+						const metadata = (await res.json()) as GeneratedSongMetadata;
 						await createMetadataReady({
 							playlistId,
 							orderIndex: maxOrder + batchStart + i + 1,
@@ -914,6 +940,33 @@ function AutoplayerPage() {
 						{songs?.filter((s) => s.status === "ready" || s.status === "played")
 							.length ?? 0}{" "}
 						{"READY"}
+					</span>
+					<span className="hidden md:flex items-center gap-2">
+						<span className="text-cyan-300">
+							LYRICS {pipelineTruth.lyricsInProgress}
+						</span>
+						<span className="text-white/20">{"("}</span>
+						<span className="text-green-400">
+							LLM {pipelineTruth.lyricsInQueue}
+						</span>
+						<span
+							className={
+								pipelineTruth.lyricsPreQueue > 0
+									? "text-yellow-400"
+									: "text-white/30"
+							}
+						>
+							PRE {pipelineTruth.lyricsPreQueue}
+						</span>
+						<span className="text-white/20">{")"}</span>
+						<span className="text-amber-300">
+							AUDIO {pipelineTruth.audioInProgress}
+						</span>
+						{pipelineTruth.personaLlmJobs > 0 && (
+							<span className="text-pink-400">
+								PERSONA {pipelineTruth.personaLlmJobs}
+							</span>
+						)}
 					</span>
 					<span className="animate-pulse text-red-500">[LIVE]</span>
 				</div>

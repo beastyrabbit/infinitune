@@ -5,9 +5,12 @@ import {
 	CollapsibleJson,
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
-import { useSettings } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
-import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
+import {
+	useAutoplayerPromptContract,
+	useCodexTextModels,
+	useOllamaTextModels,
+	useSettings,
+} from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/testlab/llm")({
 	component: LlmTestPage,
@@ -24,18 +27,20 @@ interface Generation {
 	error: string | null;
 }
 
+const PROMPT_FIELD_ID = "llm-test-prompt";
+const MODEL_FIELD_ID = "llm-test-model";
+
 function LlmTestPage() {
 	const settings = useSettings();
-
-	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [provider, setProvider] = useState<
 		"ollama" | "openrouter" | "openai-codex"
 	>("ollama");
+	const ollamaModels = useOllamaTextModels(provider === "ollama") ?? [];
+	const codexModels = useCodexTextModels(provider === "openai-codex") ?? [];
+	const promptContract = useAutoplayerPromptContract();
+
+	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [model, setModel] = useState("");
-	const [ollamaModels, setOllamaModels] = useState<string[]>([]);
-	const [codexModels, setCodexModels] = useState<
-		Array<{ name: string; displayName?: string }>
-	>([]);
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<Generation[]>([]);
 	const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -54,55 +59,26 @@ function LlmTestPage() {
 		}
 	}, [settings]);
 
-	// Fetch provider-specific models
 	useEffect(() => {
 		if (provider === "ollama") {
-			fetch(`${API_URL}/api/autoplayer/ollama-models`)
-				.then((r) => {
-					if (!r.ok) throw new Error(`HTTP ${r.status}`);
-					return r.json();
-				})
-				.then((data) => {
-					const names = (data.models || [])
-						.filter((m: unknown) => (m as { type: string }).type === "text")
-						.map((m: unknown) => (m as { name: string }).name);
-					setOllamaModels(names);
-					setModel((current) => {
-						if (names.length === 0) return current;
-						if (current && names.includes(current)) return current;
-						return names[0];
-					});
-				})
-				.catch(() => setOllamaModels([]));
+			if (ollamaModels.length === 0) return;
+			setModel((current) => {
+				if (current && ollamaModels.includes(current)) return current;
+				return ollamaModels[0];
+			});
 			return;
 		}
 
 		if (provider === "openai-codex") {
-			fetch(`${API_URL}/api/autoplayer/codex-models`)
-				.then((r) => {
-					if (!r.ok) throw new Error(`HTTP ${r.status}`);
-					return r.json();
-				})
-				.then((data) => {
-					const models: Array<{ name: string; displayName?: string }> = (
-						data.models || []
-					)
-						.filter((m: unknown) => (m as { type?: string }).type === "text")
-						.map((m: unknown) => ({
-							name: (m as { name: string }).name,
-							displayName: (m as { displayName?: string }).displayName,
-						}));
-					setCodexModels(models);
-					setModel((current) => {
-						if (models.length === 0) return current;
-						if (current && models.some((m) => m.name === current))
-							return current;
-						return models[0].name;
-					});
-				})
-				.catch(() => setCodexModels([]));
+			if (codexModels.length === 0) return;
+			setModel((current) => {
+				if (current && codexModels.some((item) => item.name === current)) {
+					return current;
+				}
+				return codexModels[0].name;
+			});
 		}
-	}, [provider]);
+	}, [provider, ollamaModels, codexModels]);
 
 	const handleGenerate = useCallback(async () => {
 		setIsRunning(true);
@@ -198,11 +174,14 @@ function LlmTestPage() {
 				</div>
 				<div className="p-4 space-y-4">
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={PROMPT_FIELD_ID}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Prompt
 						</label>
 						<textarea
+							id={PROMPT_FIELD_ID}
 							className="w-full h-20 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white p-2 focus:outline-none focus:border-yellow-500"
 							value={prompt}
 							onChange={(e) => setPrompt(e.target.value)}
@@ -212,57 +191,64 @@ function LlmTestPage() {
 
 					<div className="grid grid-cols-2 gap-4">
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
-								Provider
-							</label>
-							<div className="flex gap-2">
-								<button
-									type="button"
-									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-										provider === "ollama"
-											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-											: "border-white/10 text-white/40"
-									}`}
-									onClick={() => setProvider("ollama")}
-									disabled={isRunning}
-								>
-									Ollama
-								</button>
-								<button
-									type="button"
-									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-										provider === "openrouter"
-											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-											: "border-white/10 text-white/40"
-									}`}
-									onClick={() => setProvider("openrouter")}
-									disabled={isRunning}
-								>
-									OpenRouter
-								</button>
-								<button
-									type="button"
-									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-										provider === "openai-codex"
-											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-											: "border-white/10 text-white/40"
-									}`}
-									onClick={() => setProvider("openai-codex")}
-									disabled={isRunning}
-								>
-									OpenAI Codex
-								</button>
-							</div>
+							<fieldset>
+								<legend className="text-xs font-bold uppercase text-white/40 mb-1 block">
+									Provider
+								</legend>
+								<div className="flex gap-2">
+									<button
+										type="button"
+										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+											provider === "ollama"
+												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+												: "border-white/10 text-white/40"
+										}`}
+										onClick={() => setProvider("ollama")}
+										disabled={isRunning}
+										aria-pressed={provider === "ollama"}
+									>
+										Ollama
+									</button>
+									<button
+										type="button"
+										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+											provider === "openrouter"
+												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+												: "border-white/10 text-white/40"
+										}`}
+										onClick={() => setProvider("openrouter")}
+										disabled={isRunning}
+										aria-pressed={provider === "openrouter"}
+									>
+										OpenRouter
+									</button>
+									<button
+										type="button"
+										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+											provider === "openai-codex"
+												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+												: "border-white/10 text-white/40"
+										}`}
+										onClick={() => setProvider("openai-codex")}
+										disabled={isRunning}
+										aria-pressed={provider === "openai-codex"}
+									>
+										OpenAI Codex
+									</button>
+								</div>
+							</fieldset>
 						</div>
 
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+							<label
+								htmlFor={MODEL_FIELD_ID}
+								className="text-xs font-bold uppercase text-white/40 mb-1 block"
+							>
 								Model
 							</label>
 							{provider === "ollama" ? (
 								<select
+									id={MODEL_FIELD_ID}
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
@@ -276,6 +262,7 @@ function LlmTestPage() {
 								</select>
 							) : provider === "openai-codex" && codexModels.length > 0 ? (
 								<select
+									id={MODEL_FIELD_ID}
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
@@ -289,6 +276,7 @@ function LlmTestPage() {
 								</select>
 							) : (
 								<input
+									id={MODEL_FIELD_ID}
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
@@ -333,8 +321,14 @@ function LlmTestPage() {
 					</span>
 				</div>
 				<div className="p-4 space-y-1">
-					<CollapsibleJson label="SYSTEM PROMPT" data={SYSTEM_PROMPT} />
-					<CollapsibleJson label="JSON SCHEMA" data={SONG_SCHEMA} />
+					<CollapsibleJson
+						label="SYSTEM PROMPT"
+						data={promptContract?.systemPrompt ?? "Loading from backend..."}
+					/>
+					<CollapsibleJson
+						label="JSON SCHEMA"
+						data={promptContract?.schema ?? "Loading from backend..."}
+					/>
 					<div className="mt-2 text-[10px] font-bold uppercase text-white/20">
 						Structured output:{" "}
 						{provider === "ollama"

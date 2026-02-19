@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -13,7 +14,7 @@ import {
 	removeClient,
 	startWsBridge,
 } from "./events/ws-bridge";
-import { logger } from "./logger";
+import { logger, loggingConfig } from "./logger";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
@@ -26,10 +27,116 @@ import {
 	getQueues,
 	getWorkerStats,
 	startWorker,
+	stopWorkerDiagnostics,
 	triggerPersonaScan,
 } from "./worker/index";
 
 const PORT = Number(process.env.API_PORT ?? 5175);
+const REQUEST_LOG_SLOW_MS = Number(process.env.REQUEST_LOG_SLOW_MS ?? 1500);
+const REQUEST_LOG_SUMMARY_INTERVAL_MS = Number(
+	process.env.REQUEST_LOG_SUMMARY_INTERVAL_MS ?? 30000,
+);
+
+type NoisyRequestPattern = {
+	method?: string;
+	pattern: RegExp;
+	route: string;
+};
+
+type NoisyRequestAggregate = {
+	count: number;
+	totalDurationMs: number;
+	maxDurationMs: number;
+};
+
+const NOISY_REQUEST_PATTERNS: NoisyRequestPattern[] = [
+	{
+		method: "GET",
+		pattern: /^\/api\/worker\/status$/,
+		route: "GET /api/worker/status",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/songs\/queue\/[^/]+$/,
+		route: "GET /api/songs/queue/:playlistId",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/playlists\/by-key\/[^/]+$/,
+		route: "GET /api/playlists/by-key/:key",
+	},
+	{
+		method: "GET",
+		pattern: /^\/api\/playlists\/[^/]+$/,
+		route: "GET /api/playlists/:playlistId",
+	},
+	{
+		method: "POST",
+		pattern: /^\/api\/playlists\/[^/]+\/heartbeat$/,
+		route: "POST /api/playlists/:playlistId/heartbeat",
+	},
+	{
+		method: "GET",
+		pattern: /^\/covers\/.+$/,
+		route: "GET /covers/:file",
+	},
+];
+
+const noisyRequestAggregates = new Map<string, NoisyRequestAggregate>();
+
+function getNoisyRoute(method: string, path: string): string | undefined {
+	for (const pattern of NOISY_REQUEST_PATTERNS) {
+		if (pattern.method && pattern.method !== method) continue;
+		if (pattern.pattern.test(path)) return pattern.route;
+	}
+	return undefined;
+}
+
+function recordNoisyRequest(route: string, durationMs: number): void {
+	const current = noisyRequestAggregates.get(route);
+	if (!current) {
+		noisyRequestAggregates.set(route, {
+			count: 1,
+			totalDurationMs: durationMs,
+			maxDurationMs: durationMs,
+		});
+		return;
+	}
+	current.count += 1;
+	current.totalDurationMs += durationMs;
+	current.maxDurationMs = Math.max(current.maxDurationMs, durationMs);
+}
+
+function flushNoisyRequestSummary(reason: "interval" | "shutdown"): void {
+	if (noisyRequestAggregates.size === 0) return;
+	const summary = [...noisyRequestAggregates.entries()]
+		.map(([route, agg]) => ({
+			route,
+			count: agg.count,
+			avgDurationMs:
+				Math.round((agg.totalDurationMs / Math.max(1, agg.count)) * 10) / 10,
+			maxDurationMs: Math.round(agg.maxDurationMs * 10) / 10,
+		}))
+		.sort((a, b) => b.count - a.count);
+	noisyRequestAggregates.clear();
+	logger.info(
+		{
+			reason,
+			intervalMs: REQUEST_LOG_SUMMARY_INTERVAL_MS,
+			routes: summary,
+		},
+		"HTTP noisy request summary",
+	);
+}
+
+const noisyRequestSummaryTimer =
+	REQUEST_LOG_SUMMARY_INTERVAL_MS > 0
+		? setInterval(
+				() => flushNoisyRequestSummary("interval"),
+				REQUEST_LOG_SUMMARY_INTERVAL_MS,
+			)
+		: null;
+noisyRequestSummaryTimer?.unref?.();
 
 // ─── Database ────────────────────────────────────────────────────────
 ensureSchema();
@@ -39,6 +146,16 @@ const roomManager = new RoomManager();
 
 // ─── Hono app ────────────────────────────────────────────────────────
 const app = new Hono();
+
+logger.info(
+	{
+		logLevel: loggingConfig.level,
+		fileLoggingEnabled: loggingConfig.fileLoggingEnabled,
+		logFilePath: loggingConfig.logFilePath,
+		logSessionId: loggingConfig.logSessionId,
+	},
+	"Logging initialized",
+);
 
 // Global error handler
 app.onError((err, c) => {
@@ -67,6 +184,59 @@ app.use(
 		allowHeaders: ["Content-Type"],
 	}),
 );
+
+// Request lifecycle logging with request IDs for easier tracing in dev/log files.
+app.use("*", async (c, next) => {
+	const requestId = c.req.header("x-request-id") ?? randomUUID();
+	c.header("x-request-id", requestId);
+	const startedAt = performance.now();
+	const method = c.req.method;
+	const path = c.req.path;
+	const noisyRoute = getNoisyRoute(method, path);
+	const requestLogger = logger.child({
+		requestId,
+		method,
+		path,
+	});
+
+	try {
+		await next();
+	} catch (err) {
+		requestLogger.error({ err }, "Request handler threw");
+		throw err;
+	} finally {
+		const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+		const status = c.res.status || 200;
+		const contentLength = c.res.headers.get("content-length");
+		const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
+		const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
+
+		if (shouldAggregateNoisy) {
+			recordNoisyRequest(noisyRoute, durationMs);
+		} else {
+			const level =
+				status >= 500
+					? "error"
+					: status >= 400
+						? "warn"
+						: isSlow
+							? "warn"
+							: c.req.path === "/health"
+								? "debug"
+								: "info";
+
+			requestLogger[level](
+				{
+					status,
+					durationMs,
+					contentLength: contentLength ? Number(contentLength) : undefined,
+					route: noisyRoute,
+				},
+				isSlow ? "HTTP request slow" : "HTTP request completed",
+			);
+		}
+	}
+});
 
 // ─── Health check ────────────────────────────────────────────────────
 app.get("/health", (c) => {
@@ -205,6 +375,9 @@ startWorker().catch((err) => {
 // ─── Graceful shutdown ───────────────────────────────────────────────
 async function shutdown() {
 	logger.info("Shutting down...");
+	if (noisyRequestSummaryTimer) clearInterval(noisyRequestSummaryTimer);
+	flushNoisyRequestSummary("shutdown");
+	stopWorkerDiagnostics();
 	try {
 		roomWss.close();
 	} catch (err) {
@@ -219,3 +392,9 @@ async function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.on("unhandledRejection", (reason) => {
+	logger.error({ reason }, "Unhandled promise rejection");
+});
+process.on("uncaughtException", (err) => {
+	logger.fatal({ err }, "Uncaught exception");
+});

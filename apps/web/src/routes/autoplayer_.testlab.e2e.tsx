@@ -9,6 +9,7 @@ import {
 	type StepState,
 } from "@/components/autoplayer/test/shared";
 import {
+	useAutoplayerPromptContract,
 	useCreateSong,
 	useCurrentPlaylist,
 	useIncrementSongsGenerated,
@@ -18,7 +19,6 @@ import {
 	useUpdateCover,
 	useUpdateStoragePath,
 } from "@/integrations/api/hooks";
-import { SONG_SCHEMA, SYSTEM_PROMPT } from "./api.autoplayer.generate-song";
 
 export const Route = createFileRoute("/autoplayer_/testlab/e2e")({
 	component: PipelineTestPage,
@@ -35,6 +35,7 @@ const STEP_NAMES: Record<string, string> = {
 };
 
 const STEP_ORDER = ["llm", "create", "ace", "cover", "poll", "save", "ready"];
+const PROMPT_FIELD_ID = "pipeline-test-prompt";
 
 function createInitialSteps(): Record<string, StepState> {
 	const steps: Record<string, StepState> = {};
@@ -62,6 +63,7 @@ function PipelineTestPage() {
 	const updateStoragePath = useUpdateStoragePath();
 	const markReady = useMarkReady();
 	const incrementSongs = useIncrementSongsGenerated();
+	const promptContract = useAutoplayerPromptContract();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [steps, setSteps] =
@@ -131,9 +133,10 @@ function PipelineTestPage() {
 					const llmInput = {
 						provider,
 						model,
-						systemPrompt: SYSTEM_PROMPT,
+						systemPrompt:
+							promptContract?.systemPrompt || "Server-managed prompt contract",
 						userPrompt: prompt,
-						schema: SONG_SCHEMA,
+						schema: promptContract?.schema || "Server-managed JSON schema",
 						structuredOutput:
 							provider === "ollama"
 								? "format (JSON schema)"
@@ -531,6 +534,7 @@ function PipelineTestPage() {
 			markReady,
 			incrementSongs,
 			updateStep,
+			promptContract,
 		],
 	);
 
@@ -564,11 +568,14 @@ function PipelineTestPage() {
 				</div>
 				<div className="p-4 space-y-4">
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={PROMPT_FIELD_ID}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Prompt
 						</label>
 						<textarea
+							id={PROMPT_FIELD_ID}
 							className="w-full h-20 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white p-2 focus:outline-none focus:border-yellow-500"
 							value={prompt}
 							onChange={(e) => setPrompt(e.target.value)}

@@ -28,6 +28,17 @@ export type EventMap = {
 type Handler<T> = (data: T) => void | Promise<void>;
 
 const listeners = new Map<string, Set<Handler<unknown>>>();
+const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+const isDev = process.env.NODE_ENV !== "production" && !isTest;
+const EVENT_TRACE_ENABLED =
+	process.env.LOG_EVENT_BUS !== undefined
+		? process.env.LOG_EVENT_BUS !== "0"
+		: isDev;
+const EVENT_HANDLER_TRACE_ENABLED = process.env.LOG_EVENT_HANDLER_TRACE === "1";
+const EVENT_HANDLER_SLOW_MS = Number(
+	process.env.LOG_EVENT_HANDLER_SLOW_MS ?? 200,
+);
+let emittedSequence = 0;
 
 /**
  * Subscribe to an event. Returns an unsubscribe function.
@@ -56,11 +67,37 @@ export function emit<K extends keyof EventMap>(
 	data: EventMap[K],
 ): void {
 	const handlers = listeners.get(event);
+	const sequence = ++emittedSequence;
+
+	if (EVENT_TRACE_ENABLED) {
+		logger.debug(
+			{
+				event,
+				sequence,
+				listenerCount: handlers?.size ?? 0,
+				payload: data,
+			},
+			"Event emitted",
+		);
+	}
+
 	if (!handlers) return;
 	for (const handler of handlers) {
 		queueMicrotask(async () => {
+			const startedAt = Date.now();
 			try {
 				await handler(data);
+				if (EVENT_TRACE_ENABLED) {
+					const elapsedMs = Date.now() - startedAt;
+					if (elapsedMs >= EVENT_HANDLER_SLOW_MS) {
+						logger.warn(
+							{ event, sequence, elapsedMs, slowMs: EVENT_HANDLER_SLOW_MS },
+							"Event handler slow",
+						);
+					} else if (EVENT_HANDLER_TRACE_ENABLED) {
+						logger.debug({ event, sequence, elapsedMs }, "Event handled");
+					}
+				}
 			} catch (err) {
 				logger.error({ err, event }, "Event handler error");
 			}
