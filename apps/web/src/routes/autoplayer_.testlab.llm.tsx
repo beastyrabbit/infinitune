@@ -32,14 +32,14 @@ const MODEL_FIELD_ID = "llm-test-model";
 
 function LlmTestPage() {
 	const settings = useSettings();
-	const ollamaModels = useOllamaTextModels() ?? [];
-	const codexModels = useCodexTextModels() ?? [];
-	const promptContract = useAutoplayerPromptContract();
-
-	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [provider, setProvider] = useState<
 		"ollama" | "openrouter" | "openai-codex"
 	>("ollama");
+	const ollamaModels = useOllamaTextModels(provider === "ollama") ?? [];
+	const codexModels = useCodexTextModels(provider === "openai-codex") ?? [];
+	const promptContract = useAutoplayerPromptContract();
+
+	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [model, setModel] = useState("");
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<Generation[]>([]);
@@ -195,11 +195,7 @@ function LlmTestPage() {
 								<legend className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Provider
 								</legend>
-								<div
-									className="flex gap-2"
-									role="radiogroup"
-									aria-label="Provider"
-								>
+								<div className="flex gap-2">
 									<button
 										type="button"
 										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${

@@ -163,24 +163,41 @@ export function useAutoplayerPromptContract():
 	return data;
 }
 
-export function useOllamaTextModels(): string[] | undefined {
+export function useOllamaTextModels(enabled = true): string[] | undefined {
 	const { data } = useQuery({
 		queryKey: ["autoplayer", "models", "ollama", "text"],
 		queryFn: async () =>
 			extractOllamaTextModelNames(
 				await api.get<unknown>("/api/autoplayer/ollama-models"),
 			),
+		enabled,
 	});
 	return data;
 }
 
-export function useCodexTextModels(): TextModelOption[] | undefined {
+export function useCodexTextModels(
+	enabled = true,
+): TextModelOption[] | undefined {
 	const { data } = useQuery({
 		queryKey: ["autoplayer", "models", "codex", "text"],
-		queryFn: async () =>
-			extractCodexTextModels(
-				await api.get<unknown>("/api/autoplayer/codex-models"),
-			),
+		queryFn: async () => {
+			try {
+				return extractCodexTextModels(
+					await api.get<unknown>("/api/autoplayer/codex-models"),
+				);
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					(error.message.includes(": 401") ||
+						error.message.toLowerCase().includes("unauthorized"))
+				) {
+					return [];
+				}
+				throw error;
+			}
+		},
+		enabled,
+		retry: false,
 	});
 	return data;
 }
