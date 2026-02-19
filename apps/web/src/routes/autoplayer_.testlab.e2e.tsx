@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
 	CollapsibleJson,
 	formatElapsed,
@@ -9,6 +9,7 @@ import {
 	type StepState,
 } from "@/components/autoplayer/test/shared";
 import {
+	useAutoplayerPromptContract,
 	useCreateSong,
 	useCurrentPlaylist,
 	useIncrementSongsGenerated,
@@ -34,6 +35,7 @@ const STEP_NAMES: Record<string, string> = {
 };
 
 const STEP_ORDER = ["llm", "create", "ace", "cover", "poll", "save", "ready"];
+const PROMPT_FIELD_ID = "pipeline-test-prompt";
 
 function createInitialSteps(): Record<string, StepState> {
 	const steps: Record<string, StepState> = {};
@@ -61,6 +63,7 @@ function PipelineTestPage() {
 	const updateStoragePath = useUpdateStoragePath();
 	const markReady = useMarkReady();
 	const incrementSongs = useIncrementSongsGenerated();
+	const promptContract = useAutoplayerPromptContract();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
 	const [steps, setSteps] =
@@ -71,10 +74,6 @@ function PipelineTestPage() {
 	const [songMeta, setSongMeta] = useState<Record<string, unknown> | null>(
 		null,
 	);
-	const [promptContract, setPromptContract] = useState<{
-		systemPrompt: string;
-		schema: unknown;
-	} | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
 
 	const collectedData = useRef<{
@@ -90,22 +89,6 @@ function PipelineTestPage() {
 			...prev,
 			[key]: { ...prev[key], ...patch },
 		}));
-	}, []);
-
-	useEffect(() => {
-		fetch("/api/autoplayer/prompt-contract")
-			.then((r) => (r.ok ? r.json() : null))
-			.then((data) => {
-				if (!data) return;
-				setPromptContract({
-					systemPrompt:
-						typeof data.systemPrompt === "string" ? data.systemPrompt : "",
-					schema: data.schema ?? null,
-				});
-			})
-			.catch(() => {
-				setPromptContract(null);
-			});
 	}, []);
 
 	const runPipeline = useCallback(
@@ -585,11 +568,14 @@ function PipelineTestPage() {
 				</div>
 				<div className="p-4 space-y-4">
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={PROMPT_FIELD_ID}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Prompt
 						</label>
 						<textarea
+							id={PROMPT_FIELD_ID}
 							className="w-full h-20 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white p-2 focus:outline-none focus:border-yellow-500"
 							value={prompt}
 							onChange={(e) => setPrompt(e.target.value)}

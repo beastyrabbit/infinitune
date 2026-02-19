@@ -69,6 +69,67 @@ function normalizeSongList(songs: Song[] | undefined): Song[] | undefined {
 	return songs?.map(normalizeSongMedia);
 }
 
+type PromptContract = {
+	systemPrompt: string;
+	schema: unknown;
+};
+
+type TextModelOption = {
+	name: string;
+	displayName?: string;
+};
+
+function normalizePromptContract(payload: unknown): PromptContract | null {
+	if (!payload || typeof payload !== "object") return null;
+	const data = payload as {
+		systemPrompt?: unknown;
+		schema?: unknown;
+	};
+	return {
+		systemPrompt:
+			typeof data.systemPrompt === "string" ? data.systemPrompt : "",
+		schema: data.schema ?? null,
+	};
+}
+
+function extractOllamaTextModelNames(payload: unknown): string[] {
+	if (!payload || typeof payload !== "object") return [];
+	const models = (payload as { models?: unknown }).models;
+	if (!Array.isArray(models)) return [];
+	return models.flatMap((model) => {
+		if (!model || typeof model !== "object") return [];
+		const typedModel = model as { type?: unknown; name?: unknown };
+		if (typedModel.type !== "text") return [];
+		return typeof typedModel.name === "string" ? [typedModel.name] : [];
+	});
+}
+
+function extractCodexTextModels(payload: unknown): TextModelOption[] {
+	if (!payload || typeof payload !== "object") return [];
+	const models = (payload as { models?: unknown }).models;
+	if (!Array.isArray(models)) return [];
+	return models.flatMap((model) => {
+		if (!model || typeof model !== "object") return [];
+		const typedModel = model as {
+			type?: unknown;
+			name?: unknown;
+			displayName?: unknown;
+		};
+		if (typedModel.type !== "text" || typeof typedModel.name !== "string") {
+			return [];
+		}
+		return [
+			{
+				name: typedModel.name,
+				displayName:
+					typeof typedModel.displayName === "string"
+						? typedModel.displayName
+						: undefined,
+			},
+		];
+	});
+}
+
 // ─── Settings ────────────────────────────────────────────────────────
 
 export function useSettings(): Record<string, string> | undefined {
@@ -84,6 +145,42 @@ export function useSetting(key: string): string | null | undefined {
 		queryKey: ["settings", key],
 		queryFn: () =>
 			api.get<string | null>(`/api/settings/${encodeURIComponent(key)}`),
+	});
+	return data;
+}
+
+export function useAutoplayerPromptContract():
+	| PromptContract
+	| null
+	| undefined {
+	const { data } = useQuery({
+		queryKey: ["autoplayer", "prompt-contract"],
+		queryFn: async () =>
+			normalizePromptContract(
+				await api.get<unknown>("/api/autoplayer/prompt-contract"),
+			),
+	});
+	return data;
+}
+
+export function useOllamaTextModels(): string[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["autoplayer", "models", "ollama", "text"],
+		queryFn: async () =>
+			extractOllamaTextModelNames(
+				await api.get<unknown>("/api/autoplayer/ollama-models"),
+			),
+	});
+	return data;
+}
+
+export function useCodexTextModels(): TextModelOption[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["autoplayer", "models", "codex", "text"],
+		queryFn: async () =>
+			extractCodexTextModels(
+				await api.get<unknown>("/api/autoplayer/codex-models"),
+			),
 	});
 	return data;
 }
