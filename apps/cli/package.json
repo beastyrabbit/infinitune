@@ -1,0 +1,20 @@
+{
+	"name": "@infinitune/cli",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"infi": "tsx src/cli.ts",
+		"dev": "tsx src/cli.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@infinitune/shared": "workspace:*",
+		"ws": "^8.19.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.19.11",
+		"@types/ws": "^8.18.1",
+		"tsx": "^4.21.0",
+		"typescript": "^5.9.3"
+	}
+}
