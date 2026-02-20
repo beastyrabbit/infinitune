@@ -57,10 +57,7 @@ function PlaylistsPage() {
 		return items;
 	}, [playlists, search, modeFilter]);
 
-	const starredCount = useMemo(
-		() => filtered.filter((p) => p.isStarred).length,
-		[filtered],
-	);
+	const starredCount = filtered.filter((p) => p.isStarred).length;
 
 	const counts = useMemo(() => {
 		if (!playlists) return { all: 0, endless: 0, oneshot: 0 };

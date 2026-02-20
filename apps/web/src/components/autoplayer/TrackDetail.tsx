@@ -20,6 +20,17 @@ interface TrackDetailProps {
 	onDeleted?: () => void;
 }
 
+function toUniqueStringEntries(
+	values: string[],
+): { key: string; value: string }[] {
+	const seen = new Map<string, number>();
+	return values.map((value) => {
+		const count = (seen.get(value) ?? 0) + 1;
+		seen.set(value, count);
+		return { key: `${value}-${count}`, value };
+	});
+}
+
 export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 	const deleteSong = useDeleteSong();
 	const revertStatuses = useRevertSong();
@@ -53,6 +64,9 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 		song.generationStartedAt && song.generationCompletedAt
 			? song.generationCompletedAt - song.generationStartedAt
 			: null;
+	const instrumentEntries = toUniqueStringEntries(song.instruments ?? []);
+	const themeEntries = toUniqueStringEntries(song.themes ?? []);
+	const tagEntries = toUniqueStringEntries(song.tags ?? []);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
@@ -303,55 +317,52 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 										</span>
 									)}
 								</div>
-								{song.instruments && song.instruments.length > 0 && (
+								{instrumentEntries.length > 0 && (
 									<div>
 										<p className="text-[10px] font-bold uppercase text-white/30 mb-1">
 											INSTRUMENTS
 										</p>
 										<div className="flex flex-wrap gap-1">
-											{song.instruments.map((inst, i) => (
+											{instrumentEntries.map((entry) => (
 												<span
-													// biome-ignore lint/suspicious/noArrayIndexKey: instrument arrays don't have stable IDs
-													key={i}
+													key={entry.key}
 													className="border border-white/10 px-2 py-0.5 text-xs font-bold uppercase text-white/50"
 												>
-													{inst}
+													{entry.value}
 												</span>
 											))}
 										</div>
 									</div>
 								)}
-								{song.themes && song.themes.length > 0 && (
+								{themeEntries.length > 0 && (
 									<div>
 										<p className="text-[10px] font-bold uppercase text-white/30 mb-1">
 											THEMES
 										</p>
 										<div className="flex flex-wrap gap-1">
-											{song.themes.map((theme, i) => (
+											{themeEntries.map((entry) => (
 												<span
-													// biome-ignore lint/suspicious/noArrayIndexKey: theme arrays don't have stable IDs
-													key={i}
+													key={entry.key}
 													className="border border-pink-500/30 px-2 py-0.5 text-xs font-bold uppercase text-pink-400/70"
 												>
-													{theme}
+													{entry.value}
 												</span>
 											))}
 										</div>
 									</div>
 								)}
-								{song.tags && song.tags.length > 0 && (
+								{tagEntries.length > 0 && (
 									<div>
 										<p className="text-[10px] font-bold uppercase text-white/30 mb-1">
 											TAGS
 										</p>
 										<div className="flex flex-wrap gap-1">
-											{song.tags.map((tag, i) => (
+											{tagEntries.map((entry) => (
 												<span
-													// biome-ignore lint/suspicious/noArrayIndexKey: tag arrays don't have stable IDs
-													key={i}
+													key={entry.key}
 													className="border border-green-500/30 px-2 py-0.5 text-xs font-bold uppercase text-green-400/70"
 												>
-													{tag}
+													{entry.value}
 												</span>
 											))}
 										</div>

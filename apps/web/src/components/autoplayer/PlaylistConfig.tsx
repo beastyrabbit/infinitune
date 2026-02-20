@@ -7,7 +7,7 @@ interface PlaylistConfigProps {
 	prompt: string;
 	provider: string;
 	model: string;
-	onUpdatePrompt: (prompt: string) => void;
+	onUpdatePrompt: (prompt: string) => void | Promise<void>;
 }
 
 export function PlaylistConfig({
@@ -16,17 +16,27 @@ export function PlaylistConfig({
 	model,
 	onUpdatePrompt,
 }: PlaylistConfigProps) {
-	const [value, setValue] = useState(prompt);
+	const [draft, setDraft] = useState<string | null>(null);
+	const [submittedPrompt, setSubmittedPrompt] = useState<string | null>(null);
+	const value = draft ?? prompt;
 
-	// Sync if prompt changes externally
 	useEffect(() => {
-		setValue(prompt);
-	}, [prompt]);
+		if (!submittedPrompt) return;
+		if (prompt !== submittedPrompt) return;
+		setDraft(null);
+		setSubmittedPrompt(null);
+	}, [prompt, submittedPrompt]);
 
-	const handleUpdate = () => {
+	const handleUpdate = async () => {
+		if (submittedPrompt !== null) return;
 		const trimmed = value.trim();
 		if (!trimmed || trimmed === prompt) return;
-		onUpdatePrompt(trimmed);
+		setSubmittedPrompt(trimmed);
+		try {
+			await Promise.resolve(onUpdatePrompt(trimmed));
+		} finally {
+			setSubmittedPrompt((current) => (current === trimmed ? null : current));
+		}
 	};
 
 	return (
@@ -38,8 +48,12 @@ export function PlaylistConfig({
 			<div className="flex gap-0">
 				<Input
 					className="h-12 flex-1 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-white/40"
+					aria-label="Playlist prompt"
 					value={value}
-					onChange={(e) => setValue(e.target.value)}
+					onChange={(e) => {
+						setDraft(e.target.value);
+						setSubmittedPrompt(null);
+					}}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") handleUpdate();
 					}}
@@ -47,7 +61,9 @@ export function PlaylistConfig({
 				<Button
 					className="h-12 rounded-none border-4 border-l-0 border-white/20 bg-red-500 font-mono text-sm font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
 					onClick={handleUpdate}
-					disabled={!value.trim() || value.trim() === prompt}
+					disabled={
+						!value.trim() || value.trim() === prompt || submittedPrompt !== null
+					}
 				>
 					UPDATE
 				</Button>

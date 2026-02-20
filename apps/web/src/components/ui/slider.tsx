@@ -3,22 +3,35 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+type SliderProps = React.ComponentProps<typeof SliderPrimitive.Root> & {
+	thumbAriaLabels?: string[];
+};
+
 function Slider({
 	className,
 	defaultValue,
 	value,
 	min = 0,
 	max = 100,
+	thumbAriaLabels,
 	...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: SliderProps) {
 	const _values = React.useMemo(
 		() =>
 			Array.isArray(value)
 				? value
 				: Array.isArray(defaultValue)
 					? defaultValue
-					: [min, max],
-		[value, defaultValue, min, max],
+					: [min],
+		[value, defaultValue, min],
+	);
+	const thumbKeys = React.useMemo(
+		() =>
+			Array.from(
+				{ length: _values.length },
+				(_, thumbIndex) => `thumb-${thumbIndex}`,
+			),
+		[_values.length],
 	);
 
 	return (
@@ -47,11 +60,11 @@ function Slider({
 					)}
 				/>
 			</SliderPrimitive.Track>
-			{Array.from({ length: _values.length }, (_, index) => (
+			{thumbKeys.map((thumbKey, index) => (
 				<SliderPrimitive.Thumb
 					data-slot="slider-thumb"
-					// biome-ignore lint/suspicious/noArrayIndexKey: Radix UI slider thumbs have no stable IDs
-					key={index}
+					key={thumbKey}
+					aria-label={thumbAriaLabels?.[index] ?? `Slider value ${index + 1}`}
 					className="border-primary ring-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
 				/>
 			))}
