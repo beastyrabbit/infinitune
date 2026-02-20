@@ -13,6 +13,7 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 pnpm dev:all          # Web + server (2 processes, recommended)
 pnpm dev              # Vite dev server on :5173
 pnpm server           # Unified backend on :5175 (API + worker + rooms)
+pnpm infi --help      # Terminal daemon/controller CLI
 
 # Quality
 pnpm check            # Biome lint + format
@@ -37,6 +38,7 @@ infinitune/
   apps/
     web/               # @infinitune/web — React frontend (Vite + TanStack)
     server/            # @infinitune/server — Unified backend (Hono)
+    cli/               # @infinitune/cli — terminal daemon + room control commands
 ```
 
 ```
@@ -69,6 +71,15 @@ The worker spawns a `SongWorker` per song. Concurrency queues manage throughput 
 ### Room Server (Multi-Device Playback)
 
 Integrated into the unified server. Devices join a **room** as either **player** (outputs audio) or **controller** (remote control, no audio). All players sync playback. WebSocket protocol: Zod-validated messages in `packages/shared/src/protocol.ts`. REST API: `GET /api/v1/rooms`, `POST /api/v1/rooms`, `GET /api/v1/now-playing?room={id}`.
+
+### Terminal Daemon CLI (apps/cli)
+
+`infi` provides room-aware terminal control and local daemon playback using `ffplay`.
+
+- Core controls: `infi play`, `infi stop`, `infi skip`, `infi volume up|down`, `infi mute`
+- Interactive selectors (`fzf`): playlist/room/song picking
+- Daemon lifecycle: `infi daemon start|stop|status`
+- Systemd user service helpers: `infi service install|restart|uninstall`
 
 ### Queue Priority (pick-next-song.ts)
 
@@ -187,6 +198,13 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - Room hooks: `hooks/useRoomConnection.ts`, `hooks/useRoomPlayer.ts`, `hooks/useRoomController.ts`
 - Mini player: `components/mini-player/MiniPlayer.tsx`
 - LLM prompts: `services/llm.ts`
+
+### CLI (apps/cli/src/)
+- Entry point: `cli.ts`
+- Daemon runtime: `daemon/runtime.ts`
+- Audio backend: `audio/ffplay-engine.ts`
+- Room/playlist resolution: `lib/room-resolution.ts`
+- IPC socket protocol: `lib/ipc.ts`
 
 ### Tests (apps/server/src/__tests__/)
 - `song-service.test.ts` — 28 tests: CRUD, status transitions, claims, work queue
