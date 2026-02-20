@@ -38,11 +38,12 @@ import { useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import {
+	useAutoplayerCodexModels,
+	useAutoplayerOllamaModels,
 	useCreatePlaylist,
 	usePlaylistByKey,
 	useSettings,
 } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
 import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
@@ -65,15 +66,6 @@ export const Route = createFileRoute("/autoplayer_/oneshot")({
 });
 
 // ─── Constants ──────────────────────────────────────────────────────
-
-interface ModelOption {
-	name: string;
-	displayName?: string;
-	is_default?: boolean;
-	inputModalities?: string[];
-	type?: string;
-	vision?: boolean;
-}
 
 // Stored as constants to avoid TS/git merge-conflict-marker false positives
 const GENERATE_LABEL = "\u00BB\u00BB\u00BB GENERATE SONG \u00AB\u00AB\u00AB";
@@ -102,8 +94,8 @@ function OneshotPage() {
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
 	const [model, setModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
-	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
-	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
+	const ollamaModels = useAutoplayerOllamaModels() ?? [];
+	const codexModels = useAutoplayerCodexModels() ?? [];
 	const [enhancing, setEnhancing] = useState(false);
 	const [generating, setGenerating] = useState(false);
 	const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -168,39 +160,6 @@ function OneshotPage() {
 		}
 		modelSetByUserOrSettings.current = true;
 	}, [settings]);
-
-	// ── Ollama models ──
-	useEffect(() => {
-		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => {
-				const allModels = d.models || [];
-				setOllamaModels(allModels);
-				if (!modelSetByUserOrSettings.current) {
-					const textOnly = allModels.filter(
-						(m: ModelOption) => m.type === "text" || (!m.type && !m.vision),
-					);
-					if (textOnly.length > 0) {
-						const preferred = textOnly.find(
-							(m: ModelOption) => m.name === "gpt-oss:20b",
-						);
-						setModel(preferred ? preferred.name : textOnly[0].name);
-					}
-				}
-			})
-			.catch(() => {});
-
-		fetch(`${API_URL}/api/autoplayer/codex-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setCodexModels(d.models || []))
-			.catch(() => setCodexModels([]));
-	}, []);
 
 	const textModels = useMemo(
 		() =>
@@ -476,10 +435,9 @@ function OneshotPage() {
 							{/* Provider + Model */}
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 								<div>
-									{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-									<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+									<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 										PROVIDER
-									</label>
+									</p>
 									<div className="flex gap-0">
 										<button
 											type="button"
@@ -518,10 +476,9 @@ function OneshotPage() {
 								</div>
 
 								<div>
-									{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-									<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+									<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 										TEXT MODEL
-									</label>
+									</p>
 									{provider === "ollama" && textModels.length > 0 ? (
 										<Select value={model} onValueChange={setModel}>
 											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
@@ -594,10 +551,9 @@ function OneshotPage() {
 								<div className="border-4 border-white/10 bg-gray-900/50 p-4 space-y-4">
 									{/* Language */}
 									<div>
-										{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-										<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 											LYRICS LANGUAGE
-										</label>
+										</p>
 										<select
 											value={language}
 											onChange={(e) => setLanguage(e.target.value)}
@@ -614,10 +570,9 @@ function OneshotPage() {
 									{/* BPM + Key */}
 									<div className="grid grid-cols-2 gap-3">
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												BPM
-											</label>
+											</p>
 											<input
 												type="text"
 												inputMode="numeric"
@@ -634,10 +589,9 @@ function OneshotPage() {
 											/>
 										</div>
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												KEY
-											</label>
+											</p>
 											<input
 												type="text"
 												value={key}
@@ -651,10 +605,9 @@ function OneshotPage() {
 									{/* Time Sig + Duration */}
 									<div className="grid grid-cols-2 gap-3">
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												TIME SIG
-											</label>
+											</p>
 											<input
 												type="text"
 												value={timeSig}
@@ -664,10 +617,9 @@ function OneshotPage() {
 											/>
 										</div>
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												DURATION (S)
-											</label>
+											</p>
 											<input
 												type="text"
 												inputMode="numeric"
@@ -687,10 +639,9 @@ function OneshotPage() {
 
 									{/* Inference Steps */}
 									<div>
-										{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-										<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 											INFERENCE STEPS
-										</label>
+										</p>
 										<input
 											type="text"
 											inputMode="numeric"
@@ -713,10 +664,9 @@ function OneshotPage() {
 									{/* LM Temp + CFG */}
 									<div className="grid grid-cols-2 gap-3">
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												LM TEMP
-											</label>
+											</p>
 											<input
 												type="text"
 												inputMode="decimal"
@@ -736,10 +686,9 @@ function OneshotPage() {
 											</p>
 										</div>
 										<div>
-											{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-											<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 												LM CFG
-											</label>
+											</p>
 											<input
 												type="text"
 												inputMode="decimal"
@@ -762,10 +711,9 @@ function OneshotPage() {
 
 									{/* Diffusion Method */}
 									<div>
-										{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-										<label className="text-xs font-bold uppercase text-white/50 mb-1 block">
+										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
 											DIFFUSION METHOD
-										</label>
+										</p>
 										<div className="flex gap-0">
 											<button
 												type="button"

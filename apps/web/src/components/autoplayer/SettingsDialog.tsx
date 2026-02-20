@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import {
+	TestButton,
+	type TestStatus,
+} from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -14,26 +18,18 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { useSetSetting, useSettings } from "@/integrations/api/hooks";
+import {
+	useAutoplayerAceModels,
+	useAutoplayerOllamaModels,
+	useSetSetting,
+	useSettings,
+} from "@/integrations/api/hooks";
 import { API_URL } from "@/lib/endpoints";
 
 interface SettingsDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }
-
-interface ModelOption {
-	name: string;
-	is_default?: boolean;
-	vision?: boolean;
-	type?: string;
-}
-
-type TestStatus =
-	| { state: "idle" }
-	| { state: "testing" }
-	| { state: "ok"; message: string }
-	| { state: "error"; message: string };
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 	const settings = useSettings();
@@ -45,9 +41,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 	const [imageModel, setImageModel] = useState("");
 	const [aceModel, setAceModel] = useState("");
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
-
-	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
-	const [aceModels, setAceModels] = useState<ModelOption[]>([]);
+	const ollamaModels = useAutoplayerOllamaModels(open) ?? [];
+	const aceModels = useAutoplayerAceModels(open) ?? [];
 
 	const [ollamaTest, setOllamaTest] = useState<TestStatus>({ state: "idle" });
 	const [openrouterTest, setOpenrouterTest] = useState<TestStatus>({
@@ -66,27 +61,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 		setAceModel(settings.aceModel || "");
 		setOpenrouterApiKey(settings.openrouterApiKey || "");
 	}, [settings]);
-
-	// Fetch available models when dialog opens
-	useEffect(() => {
-		if (!open) return;
-
-		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setOllamaModels(d.models || []))
-			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
-
-		fetch(`${API_URL}/api/autoplayer/ace-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setAceModels(d.models || []))
-			.catch((e) => console.warn("Failed to fetch ACE models:", e));
-	}, [open]);
 
 	const textModels = ollamaModels.filter(
 		(m) => m.type === "text" || (!m.type && !m.vision),
@@ -135,36 +109,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 		onOpenChange(false);
 	};
 
-	// biome-ignore lint/correctness/noNestedComponentDefinitions: uses testConnection from closure
-	const TestButton = ({
-		provider,
-		status,
-	}: {
-		provider: string;
-		status: TestStatus;
-	}) => (
-		<div className="flex items-center gap-2">
-			<button
-				type="button"
-				className="font-mono text-[10px] font-black uppercase tracking-wider text-white/40 hover:text-yellow-400 transition-colors"
-				onClick={() => testConnection(provider)}
-				disabled={status.state === "testing"}
-			>
-				{status.state === "testing" ? "[TESTING...]" : "[TEST]"}
-			</button>
-			{status.state === "ok" && (
-				<span className="text-[10px] font-bold uppercase text-green-400">
-					{status.message}
-				</span>
-			)}
-			{status.state === "error" && (
-				<span className="text-[10px] font-bold uppercase text-red-400">
-					{status.message}
-				</span>
-			)}
-		</div>
-	);
-
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="font-mono bg-gray-950 text-white border-4 border-white/20 rounded-none max-w-2xl max-h-[90vh] overflow-y-auto [&>button]:text-white">
@@ -185,15 +129,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 						<div className="space-y-3">
 							<div>
 								<div className="flex items-center justify-between mb-1">
-									{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-									<label className="text-xs font-bold uppercase text-white/40">
+									<p className="text-xs font-bold uppercase text-white/40">
 										Provider
-									</label>
+									</p>
 									{textProvider === "ollama" && (
-										<TestButton provider="ollama" status={ollamaTest} />
+										<TestButton
+											provider="ollama"
+											status={ollamaTest}
+											onTest={testConnection}
+										/>
 									)}
 									{textProvider === "openrouter" && (
-										<TestButton provider="openrouter" status={openrouterTest} />
+										<TestButton
+											provider="openrouter"
+											status={openrouterTest}
+											onTest={testConnection}
+										/>
 									)}
 								</div>
 								<div className="flex gap-0">
@@ -222,10 +173,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 								</div>
 							</div>
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								<p className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Model
-								</label>
+								</p>
 								{textProvider === "ollama" && textModels.length > 0 ? (
 									<Select value={textModel} onValueChange={setTextModel}>
 										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
@@ -266,18 +216,25 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 								IMAGE MODEL — COVER ART
 							</h3>
 							{imageProvider === "comfyui" && (
-								<TestButton provider="comfyui" status={comfyuiTest} />
+								<TestButton
+									provider="comfyui"
+									status={comfyuiTest}
+									onTest={testConnection}
+								/>
 							)}
 							{imageProvider === "openrouter" && (
-								<TestButton provider="openrouter" status={openrouterTest} />
+								<TestButton
+									provider="openrouter"
+									status={openrouterTest}
+									onTest={testConnection}
+								/>
 							)}
 						</div>
 						<div className="space-y-3">
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								<p className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Provider
-								</label>
+								</p>
 								<div className="flex gap-0">
 									<button
 										type="button"
@@ -304,10 +261,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 								</div>
 							</div>
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								<p className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Model
-								</label>
+								</p>
 								{imageProvider === "comfyui" ? (
 									<div className="h-10 flex items-center border-4 border-white/20 bg-gray-900 px-3 font-mono text-sm font-bold uppercase text-white/60">
 										Z-IMAGE (LUMINA2) — 512×512
@@ -330,14 +286,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 							<h3 className="text-sm font-black uppercase tracking-widest text-red-500">
 								ACE-STEP — AUDIO GENERATION
 							</h3>
-							<TestButton provider="ace-step" status={aceTest} />
+							<TestButton
+								provider="ace-step"
+								status={aceTest}
+								onTest={testConnection}
+							/>
 						</div>
 						<div className="space-y-3">
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								<p className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Model
-								</label>
+								</p>
 								{aceModels.length > 0 ? (
 									<Select value={aceModel} onValueChange={setAceModel}>
 										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
@@ -381,10 +340,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 						</h3>
 						<div className="space-y-3">
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+								<p className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									OpenRouter API Key
-								</label>
+								</p>
 								<Input
 									type="password"
 									className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0"

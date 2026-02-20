@@ -1,5 +1,5 @@
 import { Music } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -16,17 +16,14 @@ export function PlaylistConfig({
 	model,
 	onUpdatePrompt,
 }: PlaylistConfigProps) {
-	const [value, setValue] = useState(prompt);
-
-	// Sync if prompt changes externally
-	useEffect(() => {
-		setValue(prompt);
-	}, [prompt]);
+	const [draft, setDraft] = useState("");
+	const value = draft === "" ? prompt : draft;
 
 	const handleUpdate = () => {
 		const trimmed = value.trim();
 		if (!trimmed || trimmed === prompt) return;
 		onUpdatePrompt(trimmed);
+		setDraft("");
 	};
 
 	return (
@@ -39,7 +36,7 @@ export function PlaylistConfig({
 				<Input
 					className="h-12 flex-1 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-white/40"
 					value={value}
-					onChange={(e) => setValue(e.target.value)}
+					onChange={(e) => setDraft(e.target.value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter") handleUpdate();
 					}}

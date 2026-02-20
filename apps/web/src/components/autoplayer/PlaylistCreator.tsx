@@ -15,17 +15,11 @@ import {
 import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
 import VinylIcon from "@/components/ui/vinyl-icon";
-import { useSettings } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
-
-interface ModelOption {
-	name: string;
-	displayName?: string;
-	is_default?: boolean;
-	inputModalities?: string[];
-	type?: string;
-	vision?: boolean;
-}
+import {
+	useAutoplayerCodexModels,
+	useAutoplayerOllamaModels,
+	useSettings,
+} from "@/integrations/api/hooks";
 
 type PlaybackMode = "local" | "room";
 
@@ -87,8 +81,8 @@ export function PlaylistCreator({
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
 	const [model, setModel] = useState("");
-	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
-	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
+	const ollamaModels = useAutoplayerOllamaModels() ?? [];
+	const codexModels = useAutoplayerCodexModels() ?? [];
 	const [loading, setLoading] = useState(false);
 	const [enhancing, setEnhancing] = useState(false);
 	const [loadingState, setLoadingState] = useState("");
@@ -116,27 +110,6 @@ export function PlaylistCreator({
 		setProvider(configuredProvider);
 		setModel(settings.textModel?.trim() || "");
 	}, [settings]);
-
-	useEffect(() => {
-		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => {
-				const allModels = d.models || [];
-				setOllamaModels(allModels);
-			})
-			.catch((e) => console.warn("Failed to fetch Ollama models:", e));
-
-		fetch(`${API_URL}/api/autoplayer/codex-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setCodexModels(d.models || []))
-			.catch(() => setCodexModels([]));
-	}, []);
 
 	const textModels = useMemo(
 		() =>
@@ -351,10 +324,9 @@ export function PlaylistCreator({
 					<div className="p-6 space-y-6">
 						{/* Prompt */}
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+							<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 								DESCRIBE YOUR MUSIC
-							</label>
+							</p>
 							<Textarea
 								className="min-h-[120px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-white/40 resize-none"
 								placeholder="GERMAN ROCK LIKE RAMMSTEIN MEETS LINKIN PARK WITH HEAVY INDUSTRIAL BEATS..."
@@ -379,10 +351,9 @@ export function PlaylistCreator({
 						{/* Model selection */}
 						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									PROVIDER
-								</label>
+								</p>
 								<div className="flex gap-0">
 									<button
 										type="button"
@@ -421,10 +392,9 @@ export function PlaylistCreator({
 							</div>
 
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									TEXT MODEL
-								</label>
+								</p>
 								{provider === "ollama" && textModels.length > 0 ? (
 									<Select value={model} onValueChange={setModel}>
 										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
@@ -481,10 +451,9 @@ export function PlaylistCreator({
 						{/* Playback mode toggle */}
 						{onCreatePlaylistInRoom && (
 							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-								<label className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									PLAYBACK
-								</label>
+								</p>
 								<div className="flex gap-0">
 									<button
 										type="button"

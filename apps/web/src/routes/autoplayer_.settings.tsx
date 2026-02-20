@@ -17,6 +17,10 @@ import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import {
+	useAutoplayerAceModels,
+	useAutoplayerCodexModelsQuery,
+	useAutoplayerOllamaModels,
+	useAutoplayerOpenRouterModelsQuery,
 	usePlaylistByKey,
 	useSetSetting,
 	useSettings,
@@ -99,17 +103,37 @@ function SettingsPage() {
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
 
 	// Available models
-	const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
-	const [aceModels, setAceModels] = useState<ModelOption[]>([]);
-	const [openRouterTextModels, setOpenRouterTextModels] = useState<
-		OpenRouterModelOption[]
-	>([]);
-	const [openRouterImageModels, setOpenRouterImageModels] = useState<
-		OpenRouterModelOption[]
-	>([]);
-	const [openRouterLoading, setOpenRouterLoading] = useState(false);
-	const [codexModels, setCodexModels] = useState<ModelOption[]>([]);
-	const [codexLoading, setCodexLoading] = useState(false);
+	const ollamaModels = useAutoplayerOllamaModels() ?? [];
+	const aceModels = useAutoplayerAceModels() ?? [];
+	const needsOpenRouter =
+		(textProvider === "openrouter" ||
+			imageProvider === "openrouter" ||
+			personaProvider === "openrouter") &&
+		!!openrouterApiKey;
+	const openRouterTextModelsQuery = useAutoplayerOpenRouterModelsQuery(
+		"text",
+		needsOpenRouter,
+	);
+	const openRouterImageModelsQuery = useAutoplayerOpenRouterModelsQuery(
+		"image",
+		needsOpenRouter,
+	);
+	const openRouterTextModels: OpenRouterModelOption[] = needsOpenRouter
+		? (openRouterTextModelsQuery.data ?? [])
+		: [];
+	const openRouterImageModels: OpenRouterModelOption[] = needsOpenRouter
+		? (openRouterImageModelsQuery.data ?? [])
+		: [];
+	const openRouterLoading =
+		needsOpenRouter &&
+		(openRouterTextModelsQuery.isFetching ||
+			openRouterImageModelsQuery.isFetching);
+	const needsCodex =
+		textProvider === "openai-codex" || personaProvider === "openai-codex";
+	const codexModelsQuery = useAutoplayerCodexModelsQuery(needsCodex);
+	const { refetch: refetchCodexModels } = codexModelsQuery;
+	const codexModels: ModelOption[] = codexModelsQuery.data ?? [];
+	const codexLoading = needsCodex && codexModelsQuery.isFetching;
 	const [codexAuthSession, setCodexAuthSession] =
 		useState<CodexAuthSession | null>(null);
 
@@ -181,77 +205,6 @@ function SettingsPage() {
 		}
 	}, [settings, activePlaylist]);
 
-	// Fetch Ollama + ACE models on mount
-	useEffect(() => {
-		fetch(`${API_URL}/api/autoplayer/ollama-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setOllamaModels(d.models || []))
-			.catch(() => {});
-
-		fetch(`${API_URL}/api/autoplayer/ace-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((d) => setAceModels(d.models || []))
-			.catch(() => {});
-	}, []);
-
-	// Fetch OpenRouter models when provider is selected + key exists
-	useEffect(() => {
-		const needsOpenRouter =
-			textProvider === "openrouter" ||
-			imageProvider === "openrouter" ||
-			personaProvider === "openrouter";
-		if (!needsOpenRouter || !openrouterApiKey) {
-			setOpenRouterTextModels([]);
-			setOpenRouterImageModels([]);
-			return;
-		}
-
-		setOpenRouterLoading(true);
-		Promise.all([
-			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=text`)
-				.then((r) => {
-					if (!r.ok) throw new Error(`HTTP ${r.status}`);
-					return r.json();
-				})
-				.then((d) => d.models || [])
-				.catch(() => []),
-			fetch(`${API_URL}/api/autoplayer/openrouter-models?type=image`)
-				.then((r) => {
-					if (!r.ok) throw new Error(`HTTP ${r.status}`);
-					return r.json();
-				})
-				.then((d) => d.models || [])
-				.catch(() => []),
-		]).then(([text, image]) => {
-			setOpenRouterTextModels(text);
-			setOpenRouterImageModels(image);
-			setOpenRouterLoading(false);
-		});
-	}, [textProvider, imageProvider, personaProvider, openrouterApiKey]);
-
-	const refreshCodexModels = useCallback(async () => {
-		setCodexLoading(true);
-		try {
-			const res = await fetch(`${API_URL}/api/autoplayer/codex-models`);
-			if (!res.ok) {
-				setCodexModels([]);
-				return;
-			}
-			const data = await res.json();
-			setCodexModels(data.models || []);
-		} catch {
-			setCodexModels([]);
-		} finally {
-			setCodexLoading(false);
-		}
-	}, []);
-
 	// Poll Codex auth status while network tab is visible.
 	const refreshCodexAuthStatus = useCallback(async () => {
 		try {
@@ -269,7 +222,7 @@ function SettingsPage() {
 					textProvider === "openai-codex" ||
 					personaProvider === "openai-codex"
 				) {
-					void refreshCodexModels();
+					void refetchCodexModels();
 				}
 			} else if (data.session?.state === "error") {
 				setCodexTest({
@@ -282,7 +235,7 @@ function SettingsPage() {
 		} catch {
 			// Ignore polling errors.
 		}
-	}, [personaProvider, refreshCodexModels, textProvider]);
+	}, [personaProvider, refetchCodexModels, textProvider]);
 
 	useEffect(() => {
 		if (activeTab !== "network") return;
@@ -336,15 +289,6 @@ function SettingsPage() {
 			// Ignore cancel errors.
 		}
 	}, [codexAuthSession?.id]);
-
-	// Fetch Codex models when selected for text/persona generation.
-	useEffect(() => {
-		const needsCodex =
-			textProvider === "openai-codex" || personaProvider === "openai-codex";
-		if (!needsCodex) return;
-
-		void refreshCodexModels();
-	}, [textProvider, personaProvider, refreshCodexModels]);
 
 	const testConnection = useCallback(
 		async (provider: string) => {

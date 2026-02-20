@@ -74,6 +74,23 @@ type PromptContract = {
 	schema: unknown;
 };
 
+export type AutoplayerModelOption = {
+	name: string;
+	displayName?: string;
+	is_default?: boolean;
+	inputModalities?: string[];
+	type?: string;
+	vision?: boolean;
+};
+
+export type OpenRouterModelOption = {
+	id: string;
+	name: string;
+	promptPrice: string;
+	completionPrice: string;
+	contextLength: number;
+};
+
 type TextModelOption = {
 	name: string;
 	displayName?: string;
@@ -92,32 +109,23 @@ function normalizePromptContract(payload: unknown): PromptContract | null {
 	};
 }
 
-function extractOllamaTextModelNames(payload: unknown): string[] {
-	if (!payload || typeof payload !== "object") return [];
-	const models = (payload as { models?: unknown }).models;
-	if (!Array.isArray(models)) return [];
-	return models.flatMap((model) => {
-		if (!model || typeof model !== "object") return [];
-		const typedModel = model as { type?: unknown; name?: unknown };
-		if (typedModel.type !== "text") return [];
-		return typeof typedModel.name === "string" ? [typedModel.name] : [];
-	});
-}
-
-function extractCodexTextModels(payload: unknown): TextModelOption[] {
+function extractAutoplayerModelOptions(
+	payload: unknown,
+): AutoplayerModelOption[] {
 	if (!payload || typeof payload !== "object") return [];
 	const models = (payload as { models?: unknown }).models;
 	if (!Array.isArray(models)) return [];
 	return models.flatMap((model) => {
 		if (!model || typeof model !== "object") return [];
 		const typedModel = model as {
-			type?: unknown;
 			name?: unknown;
 			displayName?: unknown;
+			is_default?: unknown;
+			inputModalities?: unknown;
+			type?: unknown;
+			vision?: unknown;
 		};
-		if (typedModel.type !== "text" || typeof typedModel.name !== "string") {
-			return [];
-		}
+		if (typeof typedModel.name !== "string") return [];
 		return [
 			{
 				name: typedModel.name,
@@ -125,9 +133,71 @@ function extractCodexTextModels(payload: unknown): TextModelOption[] {
 					typeof typedModel.displayName === "string"
 						? typedModel.displayName
 						: undefined,
+				is_default:
+					typeof typedModel.is_default === "boolean"
+						? typedModel.is_default
+						: undefined,
+				inputModalities: Array.isArray(typedModel.inputModalities)
+					? typedModel.inputModalities.flatMap((item) =>
+							typeof item === "string" ? [item] : [],
+						)
+					: undefined,
+				type: typeof typedModel.type === "string" ? typedModel.type : undefined,
+				vision:
+					typeof typedModel.vision === "boolean"
+						? typedModel.vision
+						: undefined,
 			},
 		];
 	});
+}
+
+function extractOpenRouterModels(payload: unknown): OpenRouterModelOption[] {
+	if (!payload || typeof payload !== "object") return [];
+	const models = (payload as { models?: unknown }).models;
+	if (!Array.isArray(models)) return [];
+	return models.flatMap((model) => {
+		if (!model || typeof model !== "object") return [];
+		const typedModel = model as {
+			id?: unknown;
+			name?: unknown;
+			promptPrice?: unknown;
+			completionPrice?: unknown;
+			contextLength?: unknown;
+		};
+		if (
+			typeof typedModel.id !== "string" ||
+			typeof typedModel.name !== "string" ||
+			typeof typedModel.promptPrice !== "string" ||
+			typeof typedModel.completionPrice !== "string" ||
+			typeof typedModel.contextLength !== "number"
+		) {
+			return [];
+		}
+		return [
+			{
+				id: typedModel.id,
+				name: typedModel.name,
+				promptPrice: typedModel.promptPrice,
+				completionPrice: typedModel.completionPrice,
+				contextLength: typedModel.contextLength,
+			},
+		];
+	});
+}
+
+function extractOllamaTextModelNames(payload: unknown): string[] {
+	return extractAutoplayerModelOptions(payload).flatMap((model) =>
+		model.type === "text" || (!model.type && !model.vision) ? [model.name] : [],
+	);
+}
+
+function extractCodexTextModels(payload: unknown): TextModelOption[] {
+	return extractAutoplayerModelOptions(payload).flatMap((model) =>
+		model.type === "text"
+			? [{ name: model.name, displayName: model.displayName }]
+			: [],
+	);
 }
 
 // ─── Settings ────────────────────────────────────────────────────────
@@ -163,11 +233,13 @@ export function useAutoplayerPromptContract():
 	return data;
 }
 
-export function useOllamaTextModels(enabled = true): string[] | undefined {
+export function useAutoplayerOllamaModels(
+	enabled = true,
+): AutoplayerModelOption[] | undefined {
 	const { data } = useQuery({
-		queryKey: ["autoplayer", "models", "ollama", "text"],
+		queryKey: ["autoplayer", "models", "ollama", "all"],
 		queryFn: async () =>
-			extractOllamaTextModelNames(
+			extractAutoplayerModelOptions(
 				await api.get<unknown>("/api/autoplayer/ollama-models"),
 			),
 		enabled,
@@ -175,14 +247,26 @@ export function useOllamaTextModels(enabled = true): string[] | undefined {
 	return data;
 }
 
-export function useCodexTextModels(
+export function useAutoplayerAceModels(
 	enabled = true,
-): TextModelOption[] | undefined {
+): AutoplayerModelOption[] | undefined {
 	const { data } = useQuery({
-		queryKey: ["autoplayer", "models", "codex", "text"],
+		queryKey: ["autoplayer", "models", "ace", "all"],
+		queryFn: async () =>
+			extractAutoplayerModelOptions(
+				await api.get<unknown>("/api/autoplayer/ace-models"),
+			),
+		enabled,
+	});
+	return data;
+}
+
+export function useAutoplayerCodexModelsQuery(enabled = true) {
+	return useQuery({
+		queryKey: ["autoplayer", "models", "codex", "all"],
 		queryFn: async () => {
 			try {
-				return extractCodexTextModels(
+				return extractAutoplayerModelOptions(
 					await api.get<unknown>("/api/autoplayer/codex-models"),
 				);
 			} catch (error) {
@@ -199,6 +283,53 @@ export function useCodexTextModels(
 		enabled,
 		retry: false,
 	});
+}
+
+export function useAutoplayerCodexModels(
+	enabled = true,
+): AutoplayerModelOption[] | undefined {
+	const { data } = useAutoplayerCodexModelsQuery(enabled);
+	return data;
+}
+
+type OpenRouterModelType = "text" | "image";
+
+export function useAutoplayerOpenRouterModelsQuery(
+	type: OpenRouterModelType,
+	enabled = true,
+) {
+	return useQuery({
+		queryKey: ["autoplayer", "models", "openrouter", type],
+		queryFn: async () =>
+			extractOpenRouterModels(
+				await api.get<unknown>(
+					`/api/autoplayer/openrouter-models?type=${type}`,
+				),
+			),
+		enabled,
+	});
+}
+
+export function useAutoplayerOpenRouterModels(
+	type: OpenRouterModelType,
+	enabled = true,
+): OpenRouterModelOption[] | undefined {
+	const { data } = useAutoplayerOpenRouterModelsQuery(type, enabled);
+	return data;
+}
+
+export function useOllamaTextModels(enabled = true): string[] | undefined {
+	const models = useAutoplayerOllamaModels(enabled);
+	if (!models) return undefined;
+	return extractOllamaTextModelNames({ models });
+}
+
+export function useCodexTextModels(
+	enabled = true,
+): TextModelOption[] | undefined {
+	const codexModels = useAutoplayerCodexModels(enabled);
+	if (!codexModels) return undefined;
+	const data = extractCodexTextModels({ models: codexModels });
 	return data;
 }
 

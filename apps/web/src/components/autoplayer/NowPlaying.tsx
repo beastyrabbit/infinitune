@@ -33,24 +33,47 @@ interface NowPlayingProps {
 /** Parse lyrics into structured sections */
 function parseLyrics(raw: string) {
 	const lines = raw.split("\n");
-	const sections: { heading?: string; lines: string[] }[] = [];
+	const sections: {
+		id: string;
+		heading?: string;
+		lines: { id: string; text: string }[];
+	}[] = [];
 	let current: { heading?: string; lines: string[] } = { lines: [] };
+	let sectionCount = 0;
+
+	const pushCurrent = () => {
+		if (!current.heading && current.lines.length === 0) return;
+		sectionCount += 1;
+		const sectionPrefix = current.heading
+			? current.heading.toLowerCase().replace(/\s+/g, "-")
+			: "section";
+		const lineCounts = new Map<string, number>();
+		const sectionLines = current.lines.map((line) => {
+			const duplicateCount = (lineCounts.get(line) ?? 0) + 1;
+			lineCounts.set(line, duplicateCount);
+			return {
+				id: `${sectionPrefix}-${duplicateCount}-${line}`,
+				text: line,
+			};
+		});
+		sections.push({
+			id: `${sectionPrefix}-${sectionCount}`,
+			heading: current.heading,
+			lines: sectionLines,
+		});
+	};
 
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (/^\[.+\]$/.test(trimmed)) {
 			// Start new section
-			if (current.heading || current.lines.length > 0) {
-				sections.push(current);
-			}
+			pushCurrent();
 			current = { heading: trimmed.slice(1, -1), lines: [] };
 		} else if (trimmed) {
 			current.lines.push(trimmed);
 		}
 	}
-	if (current.heading || current.lines.length > 0) {
-		sections.push(current);
-	}
+	pushCurrent();
 	return sections;
 }
 
@@ -145,21 +168,19 @@ export function NowPlaying({
 							ref={lyricsRef}
 							className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
 						>
-							{lyricsSections.map((section, i) => (
-								// biome-ignore lint/suspicious/noArrayIndexKey: lyrics sections don't have stable IDs
-								<div key={i}>
+							{lyricsSections.map((section) => (
+								<div key={section.id}>
 									{section.heading && (
 										<p className="text-xs font-black uppercase tracking-wider text-red-500/80 mb-1">
 											[{section.heading}]
 										</p>
 									)}
-									{section.lines.map((line, j) => (
+									{section.lines.map((line) => (
 										<p
-											// biome-ignore lint/suspicious/noArrayIndexKey: lyrics lines don't have stable IDs
-											key={j}
+											key={line.id}
 											className="text-sm font-bold text-white/80 leading-relaxed"
 										>
-											{line}
+											{line.text}
 										</p>
 									))}
 								</div>

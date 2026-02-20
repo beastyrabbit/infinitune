@@ -7,14 +7,23 @@ import {
 	LiveTimer,
 	StatusBadge,
 } from "@/components/autoplayer/test/shared";
-import { useSettings } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
+import { useAutoplayerAceModels, useSettings } from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/testlab/ace")({
 	component: AceTestPage,
 });
 
 type TaskStatus = "idle" | "submitting" | "running" | "succeeded" | "failed";
+
+const FIELD_IDS = {
+	caption: "ace-test-caption",
+	lyrics: "ace-test-lyrics",
+	bpm: "ace-test-bpm",
+	keyScale: "ace-test-key-scale",
+	timeSignature: "ace-test-time-signature",
+	duration: "ace-test-duration",
+	model: "ace-test-model",
+} as const;
 
 function AceTestPage() {
 	const settings = useSettings();
@@ -30,7 +39,7 @@ function AceTestPage() {
 	const [timeSignature, setTimeSignature] = useState("4/4");
 	const [duration, setDuration] = useState(240);
 	const [aceModel, setAceModel] = useState("");
-	const [aceModels, setAceModels] = useState<string[]>([]);
+	const aceModels = useAutoplayerAceModels() ?? [];
 
 	const [taskStatus, setTaskStatus] = useState<TaskStatus>("idle");
 	const [taskId, setTaskId] = useState<string | null>(null);
@@ -47,22 +56,12 @@ function AceTestPage() {
 		if (settings?.aceModel) setAceModel(settings.aceModel);
 	}, [settings]);
 
-	// Fetch ACE models
 	useEffect(() => {
-		fetch(`${API_URL}/api/autoplayer/ace-models`)
-			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				return r.json();
-			})
-			.then((data) => {
-				const names = (data.models || []).map(
-					(m: unknown) => (m as { name: string }).name,
-				);
-				setAceModels(names);
-				if (names.length > 0 && !aceModel) setAceModel(names[0]);
-			})
-			.catch(() => {});
-	}, [aceModel]);
+		if (aceModels.length === 0) return;
+		if (!aceModel) {
+			setAceModel(aceModels[0].name);
+		}
+	}, [aceModels, aceModel]);
 
 	const stopPolling = useCallback(() => {
 		if (pollRef.current) {
@@ -184,11 +183,14 @@ function AceTestPage() {
 				</div>
 				<div className="p-4 space-y-4">
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={FIELD_IDS.caption}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Caption
 						</label>
 						<input
+							id={FIELD_IDS.caption}
 							className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 							value={caption}
 							onChange={(e) => setCaption(e.target.value)}
@@ -197,11 +199,14 @@ function AceTestPage() {
 					</div>
 
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={FIELD_IDS.lyrics}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Lyrics
 						</label>
 						<textarea
+							id={FIELD_IDS.lyrics}
 							className="w-full h-40 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white p-2 focus:outline-none focus:border-yellow-500"
 							value={lyrics}
 							onChange={(e) => setLyrics(e.target.value)}
@@ -211,11 +216,14 @@ function AceTestPage() {
 
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+							<label
+								htmlFor={FIELD_IDS.bpm}
+								className="text-xs font-bold uppercase text-white/40 mb-1 block"
+							>
 								BPM
 							</label>
 							<input
+								id={FIELD_IDS.bpm}
 								type="number"
 								className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 								value={bpm}
@@ -226,11 +234,14 @@ function AceTestPage() {
 							/>
 						</div>
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+							<label
+								htmlFor={FIELD_IDS.keyScale}
+								className="text-xs font-bold uppercase text-white/40 mb-1 block"
+							>
 								Key
 							</label>
 							<input
+								id={FIELD_IDS.keyScale}
 								className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 								value={keyScale}
 								onChange={(e) => setKeyScale(e.target.value)}
@@ -240,11 +251,14 @@ function AceTestPage() {
 							/>
 						</div>
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+							<label
+								htmlFor={FIELD_IDS.timeSignature}
+								className="text-xs font-bold uppercase text-white/40 mb-1 block"
+							>
 								Time Sig
 							</label>
 							<input
+								id={FIELD_IDS.timeSignature}
 								className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 								value={timeSignature}
 								onChange={(e) => setTimeSignature(e.target.value)}
@@ -254,11 +268,14 @@ function AceTestPage() {
 							/>
 						</div>
 						<div>
-							{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-							<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+							<label
+								htmlFor={FIELD_IDS.duration}
+								className="text-xs font-bold uppercase text-white/40 mb-1 block"
+							>
 								Duration (s)
 							</label>
 							<input
+								id={FIELD_IDS.duration}
 								type="number"
 								className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 								value={duration}
@@ -271,20 +288,23 @@ function AceTestPage() {
 					</div>
 
 					<div>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
-						<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
+						<label
+							htmlFor={FIELD_IDS.model}
+							className="text-xs font-bold uppercase text-white/40 mb-1 block"
+						>
 							Model
 						</label>
 						<select
+							id={FIELD_IDS.model}
 							className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 							value={aceModel}
 							onChange={(e) => setAceModel(e.target.value)}
 							disabled={taskStatus === "submitting" || taskStatus === "running"}
 						>
 							{aceModels.length === 0 && <option value="">Loading...</option>}
-							{aceModels.map((m) => (
-								<option key={m} value={m}>
-									{m}
+							{aceModels.map((modelOption) => (
+								<option key={modelOption.name} value={modelOption.name}>
+									{modelOption.name}
 								</option>
 							))}
 						</select>

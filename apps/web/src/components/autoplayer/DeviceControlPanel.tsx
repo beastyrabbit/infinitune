@@ -56,22 +56,53 @@ function ProgressBar({
 				onSeek(ratio * duration);
 			}
 		: undefined;
+	const handleKeyDown = onSeek
+		? (e: React.KeyboardEvent<HTMLDivElement>) => {
+				const step = Math.max(duration / 20, 1);
+				if (e.key === "ArrowRight") {
+					e.preventDefault();
+					onSeek(Math.min(duration, currentTime + step));
+				} else if (e.key === "ArrowLeft") {
+					e.preventDefault();
+					onSeek(Math.max(0, currentTime - step));
+				} else if (e.key === "Home") {
+					e.preventDefault();
+					onSeek(0);
+				} else if (e.key === "End") {
+					e.preventDefault();
+					onSeek(duration);
+				}
+			}
+		: undefined;
+	const trackClassName = `flex-1 h-1 bg-white/10 overflow-hidden ${onSeek ? "cursor-pointer hover:h-1.5 transition-[height]" : ""}`;
+	const fill = (
+		<div
+			className={`h-full bg-red-500 ${isJump ? "" : "transition-[width] duration-1000 ease-linear"}`}
+			style={{ width: `${pct}%` }}
+		/>
+	);
 	return (
 		<div className={`flex items-center gap-2 ${className}`}>
 			<span className="text-[10px] font-bold text-white/40 tabular-nums w-8 text-right flex-shrink-0">
 				{formatTime(currentTime)}
 			</span>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: progress bar seek is mouse-only */}
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: progress bar seek */}
-			<div
-				className={`flex-1 h-1 bg-white/10 overflow-hidden ${onSeek ? "cursor-pointer hover:h-1.5 transition-[height]" : ""}`}
-				onClick={handleClick}
-			>
+			{onSeek ? (
 				<div
-					className={`h-full bg-red-500 ${isJump ? "" : "transition-[width] duration-1000 ease-linear"}`}
-					style={{ width: `${pct}%` }}
-				/>
-			</div>
+					className={trackClassName}
+					role="slider"
+					tabIndex={0}
+					aria-label="Seek position"
+					aria-valuemin={0}
+					aria-valuemax={Math.max(duration, 0)}
+					aria-valuenow={Math.max(currentTime, 0)}
+					onClick={handleClick}
+					onKeyDown={handleKeyDown}
+				>
+					{fill}
+				</div>
+			) : (
+				<div className={trackClassName}>{fill}</div>
+			)}
 			<span className="text-[10px] font-bold text-white/40 tabular-nums w-8 flex-shrink-0">
 				{formatTime(duration)}
 			</span>
