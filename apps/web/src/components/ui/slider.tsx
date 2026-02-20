@@ -3,22 +3,27 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+type SliderProps = React.ComponentProps<typeof SliderPrimitive.Root> & {
+	thumbAriaLabels?: string[];
+};
+
 function Slider({
 	className,
 	defaultValue,
 	value,
 	min = 0,
 	max = 100,
+	thumbAriaLabels,
 	...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: SliderProps) {
 	const _values = React.useMemo(
 		() =>
 			Array.isArray(value)
 				? value
 				: Array.isArray(defaultValue)
 					? defaultValue
-					: [min, max],
-		[value, defaultValue, min, max],
+					: [min],
+		[value, defaultValue, min],
 	);
 	const thumbKeys = React.useMemo(
 		() =>
@@ -55,10 +60,11 @@ function Slider({
 					)}
 				/>
 			</SliderPrimitive.Track>
-			{thumbKeys.map((thumbKey) => (
+			{thumbKeys.map((thumbKey, index) => (
 				<SliderPrimitive.Thumb
 					data-slot="slider-thumb"
 					key={thumbKey}
+					aria-label={thumbAriaLabels?.[index] ?? `Slider value ${index + 1}`}
 					className="border-primary ring-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
 				/>
 			))}
