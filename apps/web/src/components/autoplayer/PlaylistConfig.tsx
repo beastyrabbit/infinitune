@@ -16,14 +16,14 @@ export function PlaylistConfig({
 	model,
 	onUpdatePrompt,
 }: PlaylistConfigProps) {
-	const [draft, setDraft] = useState("");
-	const value = draft === "" ? prompt : draft;
+	const [draft, setDraft] = useState<string | null>(null);
+	const value = draft ?? prompt;
 
 	const handleUpdate = () => {
 		const trimmed = value.trim();
 		if (!trimmed || trimmed === prompt) return;
 		onUpdatePrompt(trimmed);
-		setDraft("");
+		setDraft(null);
 	};
 
 	return (

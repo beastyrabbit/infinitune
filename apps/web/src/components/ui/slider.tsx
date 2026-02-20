@@ -20,6 +20,14 @@ function Slider({
 					: [min, max],
 		[value, defaultValue, min, max],
 	);
+	const thumbKeys = React.useMemo(
+		() =>
+			Array.from(
+				{ length: _values.length },
+				(_, thumbIndex) => `thumb-${thumbIndex}`,
+			),
+		[_values.length],
+	);
 
 	return (
 		<SliderPrimitive.Root
@@ -47,20 +55,13 @@ function Slider({
 					)}
 				/>
 			</SliderPrimitive.Track>
-			{(() => {
-				const seen = new Map<number, number>();
-				return _values.map((sliderValue) => {
-					const duplicateCount = seen.get(sliderValue) ?? 0;
-					seen.set(sliderValue, duplicateCount + 1);
-					return (
-						<SliderPrimitive.Thumb
-							data-slot="slider-thumb"
-							key={`thumb-${sliderValue}-${duplicateCount}`}
-							className="border-primary ring-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
-						/>
-					);
-				});
-			})()}
+			{thumbKeys.map((thumbKey) => (
+				<SliderPrimitive.Thumb
+					data-slot="slider-thumb"
+					key={thumbKey}
+					className="border-primary ring-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+				/>
+			))}
 		</SliderPrimitive.Root>
 	);
 }
