@@ -7,6 +7,10 @@ const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const CLI_ENTRY_PATH = path.resolve(LIB_DIR, "../cli.ts");
 export const CLI_PACKAGE_ROOT = path.resolve(LIB_DIR, "../..");
 export const REPO_ROOT = path.resolve(LIB_DIR, "../../../..");
+export const TSX_LOADER_PATH = path.resolve(
+	REPO_ROOT,
+	"node_modules/tsx/dist/loader.mjs",
+);
 
 export function getConfigRoot(): string {
 	const xdg = process.env.XDG_CONFIG_HOME;

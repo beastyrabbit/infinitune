@@ -18,6 +18,7 @@ import {
 	getRuntimePaths,
 	getSystemdUserDir,
 	REPO_ROOT,
+	TSX_LOADER_PATH,
 } from "./lib/paths";
 import {
 	pickExistingRoom,
@@ -60,6 +61,10 @@ function toDisplayPercent(volume: number | undefined): string {
 	return `${Math.round(volume * 100)}%`;
 }
 
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 async function waitForDaemonReady(timeoutMs = 6000): Promise<boolean> {
 	const startedAt = Date.now();
 	while (Date.now() - startedAt < timeoutMs) {
@@ -83,7 +88,7 @@ async function startDaemonProcess(flags: {
 	cleanupStaleRuntimeFiles();
 
 	const logFd = fs.openSync(runtimePaths.logPath, "a");
-	const args = ["--import", "tsx", CLI_ENTRY_PATH, "daemon", "run"];
+	const args = ["--import", TSX_LOADER_PATH, CLI_ENTRY_PATH, "daemon", "run"];
 	if (flags.serverUrl) args.push("--server", flags.serverUrl);
 	if (flags.roomId) args.push("--room", flags.roomId);
 	if (flags.playlistKey) args.push("--playlist-key", flags.playlistKey);
@@ -393,7 +398,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 function writeExecutableScript(targetPath: string): void {
 	const script = `#!/usr/bin/env bash
 set -euo pipefail
-exec ${process.execPath} --import tsx ${CLI_ENTRY_PATH} "$@"
+exec ${shellQuote(process.execPath)} --import ${shellQuote(TSX_LOADER_PATH)} ${shellQuote(CLI_ENTRY_PATH)} "$@"
 `;
 	fs.mkdirSync(path.dirname(targetPath), { recursive: true });
 	fs.writeFileSync(targetPath, script, { mode: 0o755 });
@@ -432,7 +437,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${REPO_ROOT}
-ExecStart=${process.execPath} --import tsx ${CLI_ENTRY_PATH} daemon run --server ${serverUrl}
+ExecStart=${process.execPath} --import ${TSX_LOADER_PATH} ${CLI_ENTRY_PATH} daemon run --server ${serverUrl}
 Restart=on-failure
 RestartSec=2
 

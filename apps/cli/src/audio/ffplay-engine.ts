@@ -26,7 +26,7 @@ export class FfplayEngine {
 	private pausedAtSec: number | null = null;
 	private volume = 0.8;
 	private muted = false;
-	private expectExit = false;
+	private expectedExits = new WeakSet<ChildProcess>();
 	private preloadSongId: string | null = null;
 	private onEnded: () => void;
 
@@ -222,13 +222,17 @@ export class FfplayEngine {
 		this.process = processHandle;
 
 		processHandle.on("exit", () => {
-			if (this.process !== processHandle) return;
-			this.process = null;
-
-			if (this.expectExit) {
-				this.expectExit = false;
+			const wasExpected = this.expectedExits.has(processHandle);
+			if (wasExpected) {
+				this.expectedExits.delete(processHandle);
+				if (this.process === processHandle) {
+					this.process = null;
+				}
 				return;
 			}
+
+			if (this.process !== processHandle) return;
+			this.process = null;
 
 			if (this.pausedAtSec !== null) return;
 			this.onEnded();
@@ -247,11 +251,13 @@ export class FfplayEngine {
 		}
 
 		if (this.process) {
-			this.expectExit = true;
+			const processToStop = this.process;
+			this.expectedExits.add(processToStop);
 			try {
-				this.process.kill("SIGTERM");
+				processToStop.kill("SIGTERM");
 			} catch {
 				// Ignore kill failures.
+				this.expectedExits.delete(processToStop);
 			}
 			this.process = null;
 		}

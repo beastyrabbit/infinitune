@@ -64,6 +64,11 @@ export class DaemonRuntime {
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private syncTimer: ReturnType<typeof setInterval> | null = null;
 	private shouldRun = true;
+	private connectionWaiters = new Set<{
+		resolve: () => void;
+		reject: (error: Error) => void;
+		timeout: ReturnType<typeof setTimeout>;
+	}>();
 
 	private serverUrl: string | null;
 	private roomId: string | null;
@@ -148,6 +153,7 @@ export class DaemonRuntime {
 				this.roomName = joinPayload.roomName ?? null;
 				if (joinPayload.deviceName) this.deviceName = joinPayload.deviceName;
 				this.connect();
+				await this.waitUntilConnected();
 				return this.getStatus();
 			}
 			case "play":
@@ -216,8 +222,10 @@ export class DaemonRuntime {
 		this.ws = ws;
 
 		ws.on("open", () => {
+			if (this.ws !== ws) return;
 			this.connected = true;
 			this.lastError = null;
+			this.resolveConnectionWaiters();
 			const join: ClientMessage = {
 				type: "join",
 				roomId,
@@ -236,16 +244,28 @@ export class DaemonRuntime {
 		});
 
 		ws.on("message", (data) => {
+			if (this.ws !== ws) return;
 			this.handleServerMessage(data.toString());
 		});
 
 		ws.on("error", (error) => {
+			if (this.ws !== ws) return;
 			this.lastError = error.message;
+			if (!this.connected) {
+				this.rejectConnectionWaiters(
+					new Error(`Failed to connect to room socket: ${error.message}`),
+				);
+			}
 		});
 
 		ws.on("close", () => {
+			if (this.ws !== ws) return;
+			const wasConnected = this.connected;
 			this.connected = false;
 			this.ws = null;
+			if (!wasConnected) {
+				this.rejectConnectionWaiters(new Error("Room socket closed"));
+			}
 			if (!this.shouldRun || !this.roomId || !this.serverUrl) return;
 			this.reconnectTimer = setTimeout(() => {
 				this.connect();
@@ -258,6 +278,7 @@ export class DaemonRuntime {
 			clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
 		}
+		this.rejectConnectionWaiters(new Error("Connection replaced"));
 		if (this.ws) {
 			try {
 				this.ws.close();
@@ -366,10 +387,11 @@ export class DaemonRuntime {
 		action: CommandAction,
 		payload?: Record<string, unknown>,
 	): void {
-		if (!this.connected) {
+		const ws = this.ws;
+		if (!this.connected || !ws || ws.readyState !== WebSocket.OPEN) {
 			throw new Error("Daemon is not connected to a room yet.");
 		}
-		this.send({ type: "command", action, payload });
+		ws.send(JSON.stringify({ type: "command", action, payload }));
 	}
 
 	private sendSyncPulse(): void {
@@ -400,6 +422,55 @@ export class DaemonRuntime {
 			engine: this.ffplay.getSnapshot(),
 			lastError: this.lastError,
 		};
+	}
+
+	private waitUntilConnected(timeoutMs = 5000): Promise<void> {
+		const ws = this.ws;
+		if (this.connected && ws && ws.readyState === WebSocket.OPEN) {
+			return Promise.resolve();
+		}
+
+		return new Promise<void>((resolve, reject) => {
+			const waiter = {
+				resolve: () => {
+					clearTimeout(waiter.timeout);
+					this.connectionWaiters.delete(waiter);
+					resolve();
+				},
+				reject: (error: Error) => {
+					clearTimeout(waiter.timeout);
+					this.connectionWaiters.delete(waiter);
+					reject(error);
+				},
+				timeout: setTimeout(() => {
+					this.connectionWaiters.delete(waiter);
+					reject(
+						new Error(`Timed out waiting for room connection (${timeoutMs}ms)`),
+					);
+				}, timeoutMs),
+			};
+			this.connectionWaiters.add(waiter);
+		});
+	}
+
+	private resolveConnectionWaiters(): void {
+		if (this.connectionWaiters.size === 0) return;
+		const waiters = Array.from(this.connectionWaiters);
+		this.connectionWaiters.clear();
+		for (const waiter of waiters) {
+			clearTimeout(waiter.timeout);
+			waiter.resolve();
+		}
+	}
+
+	private rejectConnectionWaiters(error: Error): void {
+		if (this.connectionWaiters.size === 0) return;
+		const waiters = Array.from(this.connectionWaiters);
+		this.connectionWaiters.clear();
+		for (const waiter of waiters) {
+			clearTimeout(waiter.timeout);
+			waiter.reject(error);
+		}
 	}
 
 	async shutdown(exitCode: number): Promise<void> {
