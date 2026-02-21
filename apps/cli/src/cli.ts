@@ -535,10 +535,27 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	console.log("Updated infi config.");
 	printConfig(next);
 
-	if (typeof patch.serverUrl === "string" && (await isDaemonResponsive())) {
-		console.log(
-			"Daemon is running. Run `infi daemon restart` to apply server changes.",
-		);
+	if (await isDaemonResponsive()) {
+		const daemonPatch: Record<string, unknown> = {};
+		if (typeof patch.serverUrl === "string") {
+			daemonPatch.serverUrl = patch.serverUrl;
+		}
+		if (typeof patch.deviceName === "string") {
+			daemonPatch.deviceName = patch.deviceName;
+		}
+		if (Object.keys(daemonPatch).length > 0) {
+			try {
+				const response = await sendDaemonRequest("configure", daemonPatch);
+				requireOk(response);
+				console.log("Applied config changes to running daemon.");
+			} catch (error) {
+				console.log(
+					`Warning: failed to apply config to daemon (${
+						error instanceof Error ? error.message : String(error)
+					}). Run \`infi daemon restart\` if needed.`,
+				);
+			}
+		}
 	}
 }
 

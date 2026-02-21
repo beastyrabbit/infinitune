@@ -6,6 +6,7 @@ import { getRuntimePaths } from "./paths";
 export type DaemonAction =
 	| "status"
 	| "shutdown"
+	| "configure"
 	| "joinRoom"
 	| "play"
 	| "pause"

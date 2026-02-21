@@ -156,6 +156,28 @@ export class DaemonRuntime {
 				await this.waitUntilConnected();
 				return this.getStatus();
 			}
+			case "configure": {
+				const nextServerUrl = asString(payload?.serverUrl);
+				const nextDeviceName = asString(payload?.deviceName);
+				const shouldReconnect =
+					(typeof nextServerUrl === "string" &&
+						nextServerUrl !== this.serverUrl) ||
+					(typeof nextDeviceName === "string" &&
+						nextDeviceName !== this.deviceName);
+
+				if (typeof nextServerUrl === "string") {
+					this.serverUrl = nextServerUrl;
+				}
+				if (typeof nextDeviceName === "string") {
+					this.deviceName = nextDeviceName;
+				}
+
+				if (shouldReconnect && this.roomId && this.serverUrl) {
+					this.connect();
+				}
+
+				return this.getStatus();
+			}
 			case "play":
 				this.sendCommand("play");
 				return { ok: true };
