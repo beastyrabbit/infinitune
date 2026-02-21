@@ -8,6 +8,12 @@ import {
 } from "./api";
 import { pickFromFzf } from "./fzf";
 
+export type ResolvePlaylistOptions = {
+	explicitPlaylistKey?: string;
+	defaultPlaylistKey?: string | null;
+	interactivePlaylist?: boolean;
+};
+
 export type ResolvedRoom = {
 	room: RoomInfo;
 	playlist: Playlist | null;
@@ -37,7 +43,9 @@ function createRoomIdFromPlaylist(playlist: Playlist): string {
 	return `${slug}-${suffix}`;
 }
 
-async function pickPlaylistInteractive(serverUrl: string): Promise<Playlist> {
+export async function pickPlaylistInteractive(
+	serverUrl: string,
+): Promise<Playlist> {
 	const playlists = await listPlaylists(serverUrl);
 	if (playlists.length === 0) {
 		throw new Error("No playlists found on server.");
@@ -67,6 +75,49 @@ async function pickPlaylistInteractive(serverUrl: string): Promise<Playlist> {
 		throw new Error("Selected playlist has no playlistKey.");
 	}
 	return playlist;
+}
+
+export async function resolvePlaylist(
+	serverUrl: string,
+	options: ResolvePlaylistOptions,
+): Promise<Playlist> {
+	const playlists = await listPlaylists(serverUrl);
+	if (playlists.length === 0) {
+		throw new Error("No playlists found on server.");
+	}
+
+	if (options.explicitPlaylistKey) {
+		const playlist = playlists.find(
+			(entry) => entry.playlistKey === options.explicitPlaylistKey,
+		);
+		if (!playlist) {
+			throw new Error(
+				`Playlist with key "${options.explicitPlaylistKey}" not found.`,
+			);
+		}
+		return playlist;
+	}
+
+	if (options.defaultPlaylistKey) {
+		const playlist = playlists.find(
+			(entry) => entry.playlistKey === options.defaultPlaylistKey,
+		);
+		if (playlist) {
+			return playlist;
+		}
+	}
+
+	if (options.interactivePlaylist === false) {
+		const current = await getCurrentPlaylist(serverUrl);
+		if (!current) {
+			throw new Error(
+				"No current playlist found and interactive mode is disabled.",
+			);
+		}
+		return current;
+	}
+
+	return pickPlaylistInteractive(serverUrl);
 }
 
 async function pickRoomInteractive(rooms: RoomInfo[]): Promise<RoomInfo> {

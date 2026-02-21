@@ -3,12 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { getConfigRoot } from "./lib/paths";
 
-const CONFIG_VERSION = 1;
+const CONFIG_VERSION = 2;
+
+export type PlaybackMode = "room" | "local";
 
 export interface InfiConfig {
 	version: number;
 	serverUrl: string;
 	deviceName: string;
+	playbackMode: PlaybackMode;
 	defaultRoomId: string | null;
 	defaultPlaylistKey: string | null;
 	volumeStep: number;
@@ -28,6 +31,7 @@ function defaultConfig(): InfiConfig {
 		version: CONFIG_VERSION,
 		serverUrl: DEFAULT_SERVER_URL,
 		deviceName: defaultDeviceName(),
+		playbackMode: "room",
 		defaultRoomId: null,
 		defaultPlaylistKey: null,
 		volumeStep: 0.05,
@@ -48,6 +52,9 @@ function sanitize(raw: Partial<InfiConfig> | null | undefined): InfiConfig {
 			? raw.deviceName
 			: defaults.deviceName;
 
+	const playbackMode: PlaybackMode =
+		raw.playbackMode === "local" ? "local" : "room";
+
 	const volumeStep =
 		typeof raw.volumeStep === "number" &&
 		Number.isFinite(raw.volumeStep) &&
@@ -60,6 +67,7 @@ function sanitize(raw: Partial<InfiConfig> | null | undefined): InfiConfig {
 		version: CONFIG_VERSION,
 		serverUrl,
 		deviceName,
+		playbackMode,
 		defaultRoomId:
 			typeof raw.defaultRoomId === "string" ? raw.defaultRoomId : null,
 		defaultPlaylistKey:

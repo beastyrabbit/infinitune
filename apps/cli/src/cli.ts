@@ -2,12 +2,15 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { stdin as input, stdout as output } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { InfiConfig } from "./config";
+import type { InfiConfig, PlaybackMode } from "./config";
 import { loadConfig, patchConfig } from "./config";
 import { runDaemonRuntime } from "./daemon/runtime";
-import { getNowPlaying, normalizeServerUrl } from "./lib/api";
-import { getFlagNumber, getFlagString, parseArgs } from "./lib/flags";
+import { getNowPlaying, listPlaylists, normalizeServerUrl } from "./lib/api";
+import { getFlagNumber, getFlagString, hasFlag, parseArgs } from "./lib/flags";
+import { pickFromFzf } from "./lib/fzf";
 import {
 	cleanupStaleRuntimeFiles,
 	isDaemonResponsive,
@@ -24,13 +27,14 @@ import {
 import {
 	pickExistingRoom,
 	pickSongFromQueue,
+	resolvePlaylist,
 	resolveRoom,
 } from "./lib/room-resolution";
 
 function printHelp(): void {
 	console.log(`
 Usage:
-  infi play [--room <id>] [--playlist-key <key>] [--server <url>]
+  infi play [--room <id>] [--playlist-key <key>] [--local] [--server <url>]
   infi stop
   infi skip
   infi volume up|down [--step 0.05]
@@ -40,6 +44,7 @@ Usage:
   infi room pick
   infi song pick
   infi config [--server <url>] [--device-name <name>] [--volume-step <n>]
+             [--mode room|local] [--interactive]
   infi setup [--server <url>]
 
   infi daemon start|stop|status|restart
@@ -89,9 +94,29 @@ function printConfig(config: InfiConfig): void {
 	console.log("Current infi config:");
 	console.log(`  serverUrl: ${config.serverUrl}`);
 	console.log(`  deviceName: ${config.deviceName}`);
+	console.log(`  playbackMode: ${config.playbackMode}`);
 	console.log(`  volumeStep: ${config.volumeStep}`);
 	console.log(`  defaultRoomId: ${config.defaultRoomId ?? "-"}`);
 	console.log(`  defaultPlaylistKey: ${config.defaultPlaylistKey ?? "-"}`);
+}
+
+function parsePlaybackMode(
+	raw: string | undefined,
+	current: PlaybackMode,
+): PlaybackMode {
+	if (!raw) return current;
+	if (raw === "local" || raw === "room") return raw;
+	throw new Error(`mode must be "local" or "room" (received "${raw}")`);
+}
+
+function resolvePlaybackMode(
+	parsed: ReturnType<typeof parseArgs>,
+	current: PlaybackMode,
+): PlaybackMode {
+	if (hasFlag(parsed, "local")) return "local";
+	if (hasFlag(parsed, "room-mode")) return "room";
+	const fromFlag = getFlagString(parsed, "mode");
+	return parsePlaybackMode(fromFlag, current);
 }
 
 async function waitForDaemonReady(timeoutMs = 6000): Promise<boolean> {
@@ -251,9 +276,19 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			}
 			const response = await sendDaemonRequest("status");
 			const data = requireOk(response) as Record<string, unknown>;
+			const mode =
+				typeof data.mode === "string" && data.mode.length > 0
+					? data.mode
+					: "room";
 			console.log(`Daemon: running (pid ${String(data.pid ?? "?")})`);
+			console.log(`Mode: ${mode}`);
 			console.log(`Connected: ${data.connected ? "yes" : "no"}`);
 			console.log(`Room: ${String(data.roomId ?? "-")}`);
+			if (mode === "local") {
+				console.log(
+					`Local Playlist: ${String(data.localPlaylistName ?? data.localPlaylistId ?? "-")}`,
+				);
+			}
 			console.log(`Server: ${String(data.serverUrl ?? "-")}`);
 			console.log(`Config Server: ${config.serverUrl}`);
 			console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
@@ -261,8 +296,10 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			const engine = data.engine as Record<string, unknown> | undefined;
 			if (playback) {
 				console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
+				const volumeLabel =
+					mode === "local" ? "Playback Volume" : "Room Volume";
 				console.log(
-					`Room Volume: ${toDisplayPercent(
+					`${volumeLabel}: ${toDisplayPercent(
 						typeof playback.volume === "number" ? playback.volume : undefined,
 					)}`,
 				);
@@ -289,6 +326,45 @@ async function cmdPlay(args: string[]): Promise<void> {
 	const config = loadConfig();
 	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
+	const playbackMode = resolvePlaybackMode(parsed, config.playbackMode);
+
+	if (playbackMode === "local" && getFlagString(parsed, "room")) {
+		throw new Error("--room cannot be used with local playback.");
+	}
+
+	await ensureDaemonRunning(serverUrl, deviceName);
+
+	if (playbackMode === "local") {
+		const playlist = await resolvePlaylist(serverUrl, {
+			explicitPlaylistKey: getFlagString(parsed, "playlist-key"),
+			defaultPlaylistKey: config.defaultPlaylistKey,
+			interactivePlaylist: true,
+		});
+
+		const startLocalResponse = await sendDaemonRequest("startLocal", {
+			serverUrl,
+			playlistId: playlist.id,
+			playlistKey: playlist.playlistKey ?? undefined,
+			playlistName: playlist.name,
+			deviceName,
+		});
+		requireOk(startLocalResponse);
+
+		const playResponse = await sendDaemonRequest("play");
+		requireOk(playResponse);
+
+		patchConfig({
+			serverUrl,
+			deviceName,
+			playbackMode: "local",
+			defaultPlaylistKey: playlist.playlistKey ?? null,
+		});
+
+		console.log(
+			`Playing locally from playlist ${playlist.playlistKey ?? playlist.id} (${playlist.name}).`,
+		);
+		return;
+	}
 
 	const resolved = await resolveRoom(serverUrl, {
 		explicitRoomId: getFlagString(parsed, "room"),
@@ -297,8 +373,6 @@ async function cmdPlay(args: string[]): Promise<void> {
 		defaultPlaylistKey: config.defaultPlaylistKey,
 		interactivePlaylist: true,
 	});
-
-	await ensureDaemonRunning(serverUrl, deviceName);
 
 	const joinResponse = await sendDaemonRequest("joinRoom", {
 		serverUrl,
@@ -315,6 +389,7 @@ async function cmdPlay(args: string[]): Promise<void> {
 	patchConfig({
 		serverUrl,
 		deviceName,
+		playbackMode: "room",
 		defaultRoomId: resolved.room.id,
 		defaultPlaylistKey: resolved.room.playlistKey,
 	});
@@ -380,7 +455,12 @@ async function cmdRoom(args: string[]): Promise<void> {
 				deviceName,
 			});
 			requireOk(response);
-			patchConfig({ serverUrl, deviceName, defaultRoomId: roomId });
+			patchConfig({
+				serverUrl,
+				deviceName,
+				playbackMode: "room",
+				defaultRoomId: roomId,
+			});
 			console.log(`Joined room ${roomId}.`);
 			return;
 		}
@@ -397,6 +477,7 @@ async function cmdRoom(args: string[]): Promise<void> {
 			patchConfig({
 				serverUrl,
 				deviceName,
+				playbackMode: "room",
 				defaultRoomId: room.id,
 				defaultPlaylistKey: room.playlistKey,
 			});
@@ -437,7 +518,7 @@ async function cmdSong(args: string[]): Promise<void> {
 		console.log(
 			`Not connected to a room${
 				roomId ? ` (${roomId})` : ""
-			}. Run \`infi play\` or \`infi room join --room <id>\`.`,
+			}. Run \`infi play\`, \`infi play --local\`, or \`infi room join --room <id>\`.`,
 		);
 		return;
 	}
@@ -459,12 +540,30 @@ async function cmdStatus(args: string[]): Promise<void> {
 
 	const daemonResponse = await sendDaemonRequest("status");
 	const daemonData = requireOk(daemonResponse) as Record<string, unknown>;
+	const mode =
+		typeof daemonData.mode === "string" && daemonData.mode.length > 0
+			? daemonData.mode
+			: "room";
 	const roomId =
 		typeof daemonData.roomId === "string" ? daemonData.roomId : undefined;
+	const localPlaylistName =
+		typeof daemonData.localPlaylistName === "string"
+			? daemonData.localPlaylistName
+			: undefined;
+	const localPlaylistId =
+		typeof daemonData.localPlaylistId === "string"
+			? daemonData.localPlaylistId
+			: undefined;
 
 	console.log(`Daemon: running (pid ${String(daemonData.pid ?? "?")})`);
+	console.log(`Mode: ${mode}`);
 	console.log(`Connected: ${daemonData.connected ? "yes" : "no"}`);
 	console.log(`Room: ${roomId ?? "-"}`);
+	if (mode === "local") {
+		console.log(
+			`Local Playlist: ${localPlaylistName ?? localPlaylistId ?? "-"}`,
+		);
+	}
 	console.log(`Server: ${String(daemonData.serverUrl ?? serverUrl)}`);
 	console.log(`Config Server: ${config.serverUrl}`);
 	console.log(`Queue Length: ${String(daemonData.queueLength ?? "0")}`);
@@ -473,8 +572,9 @@ async function cmdStatus(args: string[]): Promise<void> {
 	const engine = daemonData.engine as Record<string, unknown> | undefined;
 	if (playback) {
 		console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
+		const volumeLabel = mode === "local" ? "Playback Volume" : "Room Volume";
 		console.log(
-			`Room Volume: ${toDisplayPercent(
+			`${volumeLabel}: ${toDisplayPercent(
 				typeof playback.volume === "number" ? playback.volume : undefined,
 			)}`,
 		);
@@ -493,7 +593,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 		console.log(`Last Error: ${daemonData.lastError}`);
 	}
 
-	if (roomId) {
+	if (mode === "room" && roomId) {
 		try {
 			const nowPlaying = await getNowPlaying(serverUrl, roomId);
 			if (nowPlaying.song?.title) {
@@ -508,26 +608,161 @@ async function cmdStatus(args: string[]): Promise<void> {
 	}
 }
 
+async function promptWithDefault(
+	rl: ReturnType<typeof createInterface>,
+	question: string,
+	defaultValue: string,
+): Promise<string> {
+	const answer = await rl.question(`${question} [${defaultValue}]: `);
+	const trimmed = answer.trim();
+	return trimmed.length > 0 ? trimmed : defaultValue;
+}
+
+async function pickModeInteractive(
+	current: PlaybackMode,
+	rl: ReturnType<typeof createInterface>,
+): Promise<PlaybackMode> {
+	const options = [
+		"room\tRoom playback (shared control + sync)",
+		"local\tLocal playback (no room)",
+	];
+	try {
+		const picked = pickFromFzf(options, {
+			prompt: "mode",
+			header: "mode | description",
+			delimiter: "\t",
+			withNth: "1..",
+		});
+		if (!picked) return current;
+		const mode = picked.split("\t")[0];
+		return mode === "local" ? "local" : "room";
+	} catch {
+		const raw = await promptWithDefault(
+			rl,
+			"Playback mode (room/local)",
+			current,
+		);
+		return parsePlaybackMode(raw, current);
+	}
+}
+
+async function pickDefaultPlaylistKeyInteractive(
+	serverUrl: string,
+	current: string | null,
+): Promise<string | null> {
+	let playlists: Awaited<ReturnType<typeof listPlaylists>>;
+	try {
+		playlists = await listPlaylists(serverUrl);
+	} catch {
+		return current;
+	}
+
+	const keyable = playlists
+		.filter((playlist) => typeof playlist.playlistKey === "string")
+		.sort((a, b) => b.createdAt - a.createdAt);
+	if (keyable.length === 0) {
+		return current;
+	}
+
+	const lines = [
+		"-\t(no default playlist)",
+		...keyable.map((playlist) => {
+			const name = playlist.name.trim() || "(untitled playlist)";
+			return `${playlist.playlistKey}\t${name}`;
+		}),
+	];
+
+	try {
+		const picked = pickFromFzf(lines, {
+			prompt: "playlist",
+			header: "playlistKey | name",
+			delimiter: "\t",
+			withNth: "1..",
+		});
+		if (!picked) return current;
+		const key = picked.split("\t")[0];
+		return key === "-" ? null : key;
+	} catch {
+		return current;
+	}
+}
+
+async function runConfigWizard(
+	current: InfiConfig,
+): Promise<Partial<InfiConfig>> {
+	const rl = createInterface({ input, output });
+	try {
+		const patch: Partial<InfiConfig> = {};
+		const serverInput = await promptWithDefault(
+			rl,
+			"Server URL",
+			current.serverUrl,
+		);
+		patch.serverUrl = normalizeServerSetting(serverInput);
+
+		const deviceInput = await promptWithDefault(
+			rl,
+			"Device Name",
+			current.deviceName,
+		);
+		if (!deviceInput.trim()) {
+			throw new Error("device-name cannot be empty");
+		}
+		patch.deviceName = deviceInput.trim();
+
+		const volumeInput = await promptWithDefault(
+			rl,
+			"Volume Step (0..1)",
+			String(current.volumeStep),
+		);
+		const volumeStep = Number(volumeInput);
+		if (!Number.isFinite(volumeStep) || volumeStep <= 0 || volumeStep > 1) {
+			throw new Error("volume-step must be a number between 0 and 1");
+		}
+		patch.volumeStep = volumeStep;
+
+		patch.playbackMode = await pickModeInteractive(current.playbackMode, rl);
+		patch.defaultPlaylistKey = await pickDefaultPlaylistKeyInteractive(
+			patch.serverUrl,
+			current.defaultPlaylistKey,
+		);
+
+		return patch;
+	} finally {
+		rl.close();
+	}
+}
+
 async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	const parsed = parseArgs(args);
 	const current = loadConfig();
+	const interactive =
+		hasFlag(parsed, "interactive", "wizard") ||
+		(setupMode && parsed.positionals.length === 0 && parsed.flags.size === 0);
 
 	const server = getFlagString(parsed, "server");
 	const deviceName = getFlagString(parsed, "device-name", "device");
 	const volumeStepRaw = getFlagString(parsed, "volume-step", "step");
+	const playbackModeRaw = getFlagString(parsed, "mode");
 	const defaultRoomId = getFlagString(parsed, "default-room", "room");
 	const defaultPlaylistKey = getFlagString(
 		parsed,
 		"default-playlist-key",
 		"playlist-key",
 	);
+	const localFlag = hasFlag(parsed, "local");
+	const roomModeFlag = hasFlag(parsed, "room-mode");
 	const clearRoom = parsed.flags.has("clear-room");
 	const clearPlaylist = parsed.flags.has("clear-playlist");
 
 	const hasUpdates =
+		interactive ||
 		typeof server === "string" ||
 		typeof deviceName === "string" ||
 		typeof volumeStepRaw === "string" ||
+		typeof playbackModeRaw === "string" ||
+		localFlag ||
+		roomModeFlag ||
 		typeof defaultRoomId === "string" ||
 		typeof defaultPlaylistKey === "string" ||
 		clearRoom ||
@@ -537,7 +772,7 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		if (setupMode) {
 			console.log("Usage: infi setup --server <url>");
 			console.log(
-				"Optional: --device-name <name> --volume-step <n> --default-room <id>",
+				"Optional: --device-name <name> --volume-step <n> --mode room|local",
 			);
 			return;
 		}
@@ -545,7 +780,9 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		return;
 	}
 
-	const patch: Partial<InfiConfig> = {};
+	const patch: Partial<InfiConfig> = interactive
+		? await runConfigWizard(current)
+		: {};
 
 	if (typeof server === "string") {
 		patch.serverUrl = normalizeServerSetting(server);
@@ -563,6 +800,18 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 			throw new Error("volume-step must be a number between 0 and 1");
 		}
 		patch.volumeStep = value;
+	}
+	if (typeof playbackModeRaw === "string") {
+		patch.playbackMode = parsePlaybackMode(
+			playbackModeRaw,
+			current.playbackMode,
+		);
+	}
+	if (localFlag) {
+		patch.playbackMode = "local";
+	}
+	if (roomModeFlag) {
+		patch.playbackMode = "room";
 	}
 	if (typeof defaultRoomId === "string") {
 		patch.defaultRoomId = defaultRoomId.trim() || null;
@@ -588,6 +837,9 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		}
 		if (typeof patch.deviceName === "string") {
 			daemonPatch.deviceName = patch.deviceName;
+		}
+		if (typeof patch.playbackMode === "string") {
+			daemonPatch.playbackMode = patch.playbackMode;
 		}
 		if (Object.keys(daemonPatch).length > 0) {
 			try {

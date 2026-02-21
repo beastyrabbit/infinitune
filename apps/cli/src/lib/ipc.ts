@@ -8,6 +8,7 @@ export type DaemonAction =
 	| "shutdown"
 	| "configure"
 	| "joinRoom"
+	| "startLocal"
 	| "play"
 	| "pause"
 	| "toggle"

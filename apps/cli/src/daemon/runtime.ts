@@ -8,9 +8,17 @@ import {
 	ServerMessageSchema,
 	type SongData,
 } from "@infinitune/shared/protocol";
+import type { Song } from "@infinitune/shared/types";
 import WebSocket from "ws";
 import { FfplayEngine } from "../audio/ffplay-engine";
-import { resolveMediaUrl, toRoomWsUrl } from "../lib/api";
+import {
+	heartbeatPlaylist,
+	listSongsByPlaylist,
+	resolveMediaUrl,
+	toRoomWsUrl,
+	updatePlaylistPosition,
+	updateSongStatus,
+} from "../lib/api";
 import {
 	createIpcServer,
 	type DaemonAction,
@@ -27,6 +35,12 @@ const INITIAL_PLAYBACK: PlaybackState = {
 	isMuted: false,
 };
 
+const LOCAL_QUEUE_REFRESH_MS = 4_000;
+const LOCAL_HEARTBEAT_MS = 30_000;
+const LOCAL_START_SONGS_FROM_END = 10;
+
+type PlaybackMode = "room" | "local";
+
 function asString(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim().length > 0
 		? value
@@ -39,11 +53,45 @@ function asNumber(value: unknown): number | undefined {
 	return value;
 }
 
+function toSongData(song: Song): SongData {
+	return {
+		id: song.id,
+		title: song.title ?? undefined,
+		artistName: song.artistName ?? undefined,
+		genre: song.genre ?? undefined,
+		subGenre: song.subGenre ?? undefined,
+		coverUrl: song.coverUrl ?? undefined,
+		audioUrl: song.audioUrl ?? undefined,
+		status: song.status,
+		orderIndex: song.orderIndex,
+		isInterrupt: song.isInterrupt ?? undefined,
+		promptEpoch: song.promptEpoch ?? undefined,
+		createdAt: song.createdAt,
+		audioDuration: song.audioDuration ?? undefined,
+		mood: song.mood ?? undefined,
+		energy: song.energy ?? undefined,
+		era: song.era ?? undefined,
+		vocalStyle: song.vocalStyle ?? undefined,
+		userRating: song.userRating ?? undefined,
+		bpm: song.bpm ?? undefined,
+		keyScale: song.keyScale ?? undefined,
+		lyrics: song.lyrics ?? undefined,
+	};
+}
+
 type JoinRoomPayload = {
 	serverUrl: string;
 	roomId: string;
 	playlistKey?: string;
 	roomName?: string;
+	deviceName?: string;
+};
+
+type StartLocalPayload = {
+	serverUrl: string;
+	playlistId: string;
+	playlistKey?: string;
+	playlistName?: string;
 	deviceName?: string;
 };
 
@@ -63,6 +111,8 @@ export class DaemonRuntime {
 	private ws: WebSocket | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private syncTimer: ReturnType<typeof setInterval> | null = null;
+	private localRefreshTimer: ReturnType<typeof setInterval> | null = null;
+	private localHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	private shouldRun = true;
 	private connectionWaiters = new Set<{
 		resolve: () => void;
@@ -75,6 +125,9 @@ export class DaemonRuntime {
 	private playlistKey: string | null;
 	private roomName: string | null;
 	private deviceName: string;
+	private mode: PlaybackMode = "room";
+	private localPlaylistId: string | null = null;
+	private localPlaylistName: string | null = null;
 
 	private connected = false;
 	private serverTimeOffset = 0;
@@ -90,6 +143,10 @@ export class DaemonRuntime {
 		this.roomName = options.roomName ?? null;
 		this.deviceName = options.deviceName;
 		this.ffplay = new FfplayEngine(() => {
+			if (this.mode === "local") {
+				void this.handleLocalSongEnded();
+				return;
+			}
 			this.send({ type: "songEnded" });
 		});
 		this.ipcServer = createIpcServer(this.handleIpc);
@@ -147,6 +204,9 @@ export class DaemonRuntime {
 				if (!joinPayload.serverUrl || !joinPayload.roomId) {
 					throw new Error("joinRoom requires serverUrl and roomId");
 				}
+				this.stopLocalMode();
+				this.mode = "room";
+				this.queue = [];
 				this.serverUrl = joinPayload.serverUrl;
 				this.roomId = joinPayload.roomId;
 				this.playlistKey = joinPayload.playlistKey ?? null;
@@ -156,9 +216,29 @@ export class DaemonRuntime {
 				await this.waitUntilConnected();
 				return this.getStatus();
 			}
+			case "startLocal": {
+				const localPayload: StartLocalPayload = {
+					serverUrl: asString(payload?.serverUrl) ?? "",
+					playlistId: asString(payload?.playlistId) ?? "",
+					playlistKey: asString(payload?.playlistKey),
+					playlistName: asString(payload?.playlistName),
+					deviceName: asString(payload?.deviceName),
+				};
+				if (!localPayload.serverUrl || !localPayload.playlistId) {
+					throw new Error("startLocal requires serverUrl and playlistId");
+				}
+				if (localPayload.deviceName) this.deviceName = localPayload.deviceName;
+				await this.startLocalMode(localPayload);
+				return this.getStatus();
+			}
 			case "configure": {
 				const nextServerUrl = asString(payload?.serverUrl);
 				const nextDeviceName = asString(payload?.deviceName);
+				const nextModeRaw = asString(payload?.playbackMode);
+				const nextMode =
+					nextModeRaw === "local" || nextModeRaw === "room"
+						? nextModeRaw
+						: undefined;
 				const shouldReconnect =
 					(typeof nextServerUrl === "string" &&
 						nextServerUrl !== this.serverUrl) ||
@@ -172,23 +252,61 @@ export class DaemonRuntime {
 					this.deviceName = nextDeviceName;
 				}
 
-				if (shouldReconnect && this.roomId && this.serverUrl) {
-					this.connect();
+				if (nextMode === "room" && this.mode !== "room") {
+					this.stopLocalMode();
+					this.mode = "room";
+					this.disconnect(false);
+					this.playlistKey = null;
+				}
+
+				if (nextMode === "local" && this.mode !== "local") {
+					this.mode = "local";
+					this.disconnect(false);
+					this.roomId = null;
+					this.roomName = null;
+					this.connected = false;
+				}
+
+				if (shouldReconnect) {
+					if (this.mode === "room" && this.roomId && this.serverUrl) {
+						this.connect();
+					}
+					if (this.mode === "local" && this.localPlaylistId && this.serverUrl) {
+						await this.refreshLocalQueue();
+					}
 				}
 
 				return this.getStatus();
 			}
 			case "play":
-				this.sendCommand("play");
+				if (this.mode === "local") {
+					this.playLocal();
+				} else {
+					this.sendCommand("play");
+				}
 				return { ok: true };
 			case "pause":
-				this.sendCommand("pause");
+				if (this.mode === "local") {
+					this.ffplay.pause();
+					this.playback.isPlaying = false;
+				} else {
+					this.sendCommand("pause");
+				}
 				return { ok: true };
 			case "toggle":
-				this.sendCommand("toggle");
+				if (this.mode === "local") {
+					this.ffplay.toggle();
+					this.playback.isPlaying = this.ffplay.isPlaying();
+				} else {
+					this.sendCommand("toggle");
+				}
 				return { ok: true };
 			case "skip":
-				this.sendCommand("skip");
+				if (this.mode === "local") {
+					void this.handleLocalSongEnded();
+				} else {
+					this.sendCommand("skip");
+				}
 				return { ok: true };
 			case "setVolume": {
 				const value = asNumber(payload?.volume);
@@ -196,7 +314,12 @@ export class DaemonRuntime {
 					throw new Error("setVolume requires numeric payload.volume");
 				}
 				const next = Math.max(0, Math.min(1, value));
-				this.sendCommand("setVolume", { volume: next });
+				if (this.mode === "local") {
+					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
+				} else {
+					this.sendCommand("setVolume", { volume: next });
+				}
 				return { volume: next };
 			}
 			case "volumeDelta": {
@@ -205,22 +328,38 @@ export class DaemonRuntime {
 					throw new Error("volumeDelta requires numeric payload.delta");
 				}
 				const base =
-					typeof this.playback.volume === "number"
-						? this.playback.volume
-						: this.ffplay.getVolume();
+					this.mode === "local"
+						? this.ffplay.getVolume()
+						: typeof this.playback.volume === "number"
+							? this.playback.volume
+							: this.ffplay.getVolume();
 				const next = Math.max(0, Math.min(1, base + delta));
-				this.sendCommand("setVolume", { volume: next });
+				if (this.mode === "local") {
+					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
+				} else {
+					this.sendCommand("setVolume", { volume: next });
+				}
 				return { volume: next };
 			}
 			case "toggleMute":
-				this.sendCommand("toggleMute");
+				if (this.mode === "local") {
+					this.ffplay.toggleMute();
+					this.playback.isMuted = this.ffplay.isMuted();
+				} else {
+					this.sendCommand("toggleMute");
+				}
 				return { ok: true };
 			case "selectSong": {
 				const songId = asString(payload?.songId);
 				if (!songId) {
 					throw new Error("selectSong requires payload.songId");
 				}
-				this.sendCommand("selectSong", { songId });
+				if (this.mode === "local") {
+					this.selectLocalSong(songId);
+				} else {
+					this.sendCommand("selectSong", { songId });
+				}
 				return { ok: true };
 			}
 			case "seek": {
@@ -228,13 +367,20 @@ export class DaemonRuntime {
 				if (time === undefined) {
 					throw new Error("seek requires numeric payload.time");
 				}
-				this.sendCommand("seek", { time: Math.max(0, time) });
+				const nextTime = Math.max(0, time);
+				if (this.mode === "local") {
+					this.ffplay.seek(nextTime);
+					this.playback.currentTime = nextTime;
+				} else {
+					this.sendCommand("seek", { time: nextTime });
+				}
 				return { ok: true };
 			}
 		}
 	};
 
 	private connect(): void {
+		if (this.mode !== "room") return;
 		if (!this.serverUrl || !this.roomId) return;
 		this.disconnect(false);
 		const roomId = this.roomId;
@@ -415,6 +561,9 @@ export class DaemonRuntime {
 		action: CommandAction,
 		payload?: Record<string, unknown>,
 	): void {
+		if (this.mode !== "room") {
+			throw new Error("Daemon is in local mode; room command is unavailable.");
+		}
 		const ws = this.ws;
 		if (!this.connected || !ws || ws.readyState !== WebSocket.OPEN) {
 			throw new Error("Daemon is not connected to a room yet.");
@@ -423,6 +572,10 @@ export class DaemonRuntime {
 	}
 
 	private sendSyncPulse(): void {
+		if (this.mode === "local") {
+			this.syncLocalPlaybackSnapshot();
+			return;
+		}
 		if (!this.connected) return;
 		const snapshot = this.ffplay.getSnapshot();
 		if (!snapshot.songId) return;
@@ -438,11 +591,14 @@ export class DaemonRuntime {
 	private getStatus(): Record<string, unknown> {
 		return {
 			pid: process.pid,
+			mode: this.mode,
 			connected: this.connected,
 			deviceId: this.deviceId,
 			deviceName: this.deviceName,
 			serverUrl: this.serverUrl,
 			roomId: this.roomId,
+			localPlaylistId: this.localPlaylistId,
+			localPlaylistName: this.localPlaylistName,
 			playlistKey: this.playlistKey,
 			playback: this.playback,
 			currentSong: this.currentSong,
@@ -450,6 +606,245 @@ export class DaemonRuntime {
 			engine: this.ffplay.getSnapshot(),
 			lastError: this.lastError,
 		};
+	}
+
+	private async startLocalMode(payload: StartLocalPayload): Promise<void> {
+		this.mode = "local";
+		this.disconnect(true);
+		this.stopLocalMode();
+
+		this.serverUrl = payload.serverUrl;
+		this.localPlaylistId = payload.playlistId;
+		this.localPlaylistName = payload.playlistName ?? null;
+		this.playlistKey = payload.playlistKey ?? null;
+		this.connected = false;
+		this.lastError = null;
+
+		await this.refreshLocalQueue(true);
+		this.localRefreshTimer = setInterval(() => {
+			void this.refreshLocalQueue();
+		}, LOCAL_QUEUE_REFRESH_MS);
+		this.localHeartbeatTimer = setInterval(() => {
+			void this.sendLocalHeartbeat();
+		}, LOCAL_HEARTBEAT_MS);
+		void this.sendLocalHeartbeat();
+	}
+
+	private stopLocalMode(): void {
+		if (this.localRefreshTimer) {
+			clearInterval(this.localRefreshTimer);
+			this.localRefreshTimer = null;
+		}
+		if (this.localHeartbeatTimer) {
+			clearInterval(this.localHeartbeatTimer);
+			this.localHeartbeatTimer = null;
+		}
+		this.localPlaylistId = null;
+		this.localPlaylistName = null;
+		if (this.mode === "local") {
+			this.connected = false;
+			this.queue = [];
+			this.currentSong = null;
+			this.playback.currentSongId = null;
+			this.playback.currentTime = 0;
+			this.playback.duration = 0;
+			this.playback.isPlaying = false;
+		}
+	}
+
+	private async refreshLocalQueue(throwOnError = false): Promise<void> {
+		if (
+			this.mode !== "local" ||
+			!this.serverUrl ||
+			!this.localPlaylistId ||
+			!this.shouldRun
+		) {
+			return;
+		}
+
+		try {
+			const songs = await listSongsByPlaylist(
+				this.serverUrl,
+				this.localPlaylistId,
+			);
+			const playable = songs
+				.filter((song) => song.status === "ready" && Boolean(song.audioUrl))
+				.sort((a, b) => a.orderIndex - b.orderIndex)
+				.map(toSongData);
+
+			this.queue = playable;
+			this.connected = true;
+			this.lastError = null;
+			this.reconcileLocalQueue(playable);
+		} catch (error) {
+			this.connected = false;
+			this.lastError = error instanceof Error ? error.message : String(error);
+			if (throwOnError) {
+				throw error;
+			}
+		}
+	}
+
+	private reconcileLocalQueue(queue: SongData[]): void {
+		const hasCurrent =
+			this.currentSong !== null &&
+			queue.some((song) => song.id === this.currentSong?.id);
+		if (!hasCurrent) {
+			this.currentSong = null;
+			this.playback.currentSongId = null;
+			this.playback.currentTime = 0;
+			this.playback.duration = 0;
+			this.playback.isPlaying = false;
+		}
+
+		if (!this.currentSong && queue.length > 0) {
+			const seed = this.pickLocalStartSong(queue);
+			if (seed) {
+				this.playLocalSong(seed);
+			}
+		}
+	}
+
+	private pickLocalStartSong(queue: SongData[]): SongData | null {
+		if (queue.length === 0) return null;
+		const maxOrderIndex = queue[queue.length - 1]?.orderIndex ?? 0;
+		const targetOrderIndex = maxOrderIndex - LOCAL_START_SONGS_FROM_END;
+		const candidate = [...queue]
+			.reverse()
+			.find((song) => song.orderIndex <= targetOrderIndex);
+		return candidate ?? queue[0] ?? null;
+	}
+
+	private playLocal(): void {
+		if (this.mode !== "local") return;
+
+		const snapshot = this.ffplay.getSnapshot();
+		if (snapshot.songId && !snapshot.isPlaying) {
+			this.ffplay.play();
+			this.playback.isPlaying = true;
+			return;
+		}
+
+		if (this.currentSong) {
+			this.ffplay.play();
+			this.playback.isPlaying = this.ffplay.isPlaying();
+			return;
+		}
+
+		const seed = this.pickLocalStartSong(this.queue);
+		if (!seed) {
+			throw new Error("No local songs are ready yet.");
+		}
+		this.playLocalSong(seed);
+	}
+
+	private playLocalSong(song: SongData): void {
+		if (!this.serverUrl || !song.audioUrl) return;
+		this.currentSong = song;
+		this.playback.currentSongId = song.id;
+		this.playback.currentTime = 0;
+		this.playback.duration = song.audioDuration ?? 0;
+		this.playback.isPlaying = true;
+
+		const url = resolveMediaUrl(this.serverUrl, song.audioUrl);
+		this.ffplay.loadSong(song.id, url, undefined, 0);
+		this.playback.volume = this.ffplay.getVolume();
+		this.playback.isMuted = this.ffplay.isMuted();
+
+		if (this.localPlaylistId) {
+			void this.reportLocalPlaylistPosition(song.orderIndex);
+		}
+	}
+
+	private selectLocalSong(songId: string): void {
+		if (this.mode !== "local") return;
+		const song = this.queue.find((entry) => entry.id === songId);
+		if (!song?.audioUrl) {
+			throw new Error(`Song "${songId}" is not ready for local playback.`);
+		}
+		void this.markCurrentLocalSongPlayed();
+		this.playLocalSong(song);
+	}
+
+	private async handleLocalSongEnded(): Promise<void> {
+		if (this.mode !== "local") return;
+		await this.markCurrentLocalSongPlayed();
+		const next = this.pickNextLocalSong();
+		if (!next) {
+			this.currentSong = null;
+			this.playback.currentSongId = null;
+			this.playback.currentTime = 0;
+			this.playback.duration = 0;
+			this.playback.isPlaying = false;
+			return;
+		}
+		this.playLocalSong(next);
+	}
+
+	private pickNextLocalSong(): SongData | null {
+		if (!this.currentSong) return this.pickLocalStartSong(this.queue);
+		const currentOrder = this.currentSong.orderIndex;
+		const ahead = this.queue.find((song) => song.orderIndex > currentOrder);
+		if (ahead) return ahead;
+		return null;
+	}
+
+	private async markCurrentLocalSongPlayed(): Promise<void> {
+		if (
+			this.mode !== "local" ||
+			!this.serverUrl ||
+			!this.currentSong ||
+			!this.localPlaylistId
+		) {
+			return;
+		}
+		const song = this.currentSong;
+		await Promise.allSettled([
+			updateSongStatus(this.serverUrl, song.id, "played"),
+			this.reportLocalPlaylistPosition(song.orderIndex),
+		]);
+	}
+
+	private async reportLocalPlaylistPosition(orderIndex: number): Promise<void> {
+		if (!this.serverUrl || !this.localPlaylistId) return;
+		try {
+			await updatePlaylistPosition(
+				this.serverUrl,
+				this.localPlaylistId,
+				Math.max(0, orderIndex),
+			);
+		} catch {
+			// Keep local playback resilient if position updates fail.
+		}
+	}
+
+	private async sendLocalHeartbeat(): Promise<void> {
+		if (
+			this.mode !== "local" ||
+			!this.serverUrl ||
+			!this.localPlaylistId ||
+			!this.shouldRun
+		) {
+			return;
+		}
+		try {
+			await heartbeatPlaylist(this.serverUrl, this.localPlaylistId);
+		} catch {
+			// Heartbeat failures should not interrupt local playback.
+		}
+	}
+
+	private syncLocalPlaybackSnapshot(): void {
+		const snapshot = this.ffplay.getSnapshot();
+		this.playback.currentSongId = snapshot.songId;
+		this.playback.isPlaying = snapshot.isPlaying;
+		this.playback.currentTime = snapshot.currentTime;
+		this.playback.volume = snapshot.volume;
+		this.playback.isMuted = snapshot.isMuted;
+		if (this.currentSong) {
+			this.playback.duration =
+				this.currentSong.audioDuration ?? this.playback.duration;
+		}
 	}
 
 	private waitUntilConnected(timeoutMs = 5000): Promise<void> {
@@ -507,6 +902,7 @@ export class DaemonRuntime {
 			clearInterval(this.syncTimer);
 			this.syncTimer = null;
 		}
+		this.stopLocalMode();
 		this.disconnect(true);
 		this.ffplay.destroy();
 
