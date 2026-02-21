@@ -342,6 +342,7 @@ function DeviceCard({
 									volumeSendTimer.current = null;
 									return;
 								}
+								if (!volumeSendTimer.current) return;
 								onSetDeviceVolume(device.id, v);
 								volumeSendTimer.current = null;
 							}, 150);
@@ -576,6 +577,7 @@ export function DeviceControlPanel({
 											roomVolumeSendTimer.current = null;
 											return;
 										}
+										if (!roomVolumeSendTimer.current) return;
 										onSetVolume(v);
 										roomVolumeSendTimer.current = null;
 									}, 150);

@@ -133,7 +133,7 @@ function asFiniteNumber(value: unknown): number | undefined {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-	if (!value || typeof value !== "object") {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error("Daemon returned malformed response payload.");
 	}
 	return value as Record<string, unknown>;
