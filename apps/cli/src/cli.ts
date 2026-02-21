@@ -18,7 +18,9 @@ import {
 } from "./lib/ipc";
 import {
 	CLI_ENTRY_PATH,
+	CLI_MANPAGE_SOURCE_PATH,
 	getLocalBinDir,
+	getLocalManDir,
 	getRuntimePaths,
 	getSystemdUserDir,
 	REPO_ROOT,
@@ -87,6 +89,10 @@ Service Commands (systemd user unit):
 
 Install Wrapper:
   infi install-cli
+  infi install-man
+
+Manual:
+  infi man
 `);
 }
 
@@ -1052,6 +1058,53 @@ async function cmdInstallCli(): Promise<void> {
 	console.log("Ensure ~/.local/bin is in your PATH.");
 }
 
+function resolveInstalledManpagePath(): string {
+	return path.join(getLocalManDir(), "man1", "infi.1");
+}
+
+async function cmdInstallMan(): Promise<void> {
+	if (!fs.existsSync(CLI_MANPAGE_SOURCE_PATH)) {
+		throw new Error(`Man page source not found: ${CLI_MANPAGE_SOURCE_PATH}`);
+	}
+
+	const targetPath = resolveInstalledManpagePath();
+	fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+	fs.copyFileSync(CLI_MANPAGE_SOURCE_PATH, targetPath);
+
+	console.log(`Installed man page: ${targetPath}`);
+	console.log(
+		'If needed, run: export MANPATH="$HOME/.local/share/man:$MANPATH"',
+	);
+	console.log("Then use: man infi");
+}
+
+async function cmdMan(): Promise<void> {
+	const installed = resolveInstalledManpagePath();
+	const preferredPath = fs.existsSync(installed)
+		? installed
+		: CLI_MANPAGE_SOURCE_PATH;
+
+	if (!fs.existsSync(preferredPath)) {
+		throw new Error(`Man page not found. Run \`infi install-man\` first.`);
+	}
+
+	const result = spawnSync("man", ["-l", preferredPath], { stdio: "inherit" });
+	if (result.error) {
+		if ((result.error as NodeJS.ErrnoException).code === "ENOENT") {
+			throw new Error(
+				"`man` command not found on this system. Open the file directly: " +
+					preferredPath,
+			);
+		}
+		throw result.error;
+	}
+	if (result.status !== 0) {
+		throw new Error(
+			`Failed to render man page (exit ${String(result.status)})`,
+		);
+	}
+}
+
 async function main(): Promise<void> {
 	const [command, ...rest] = process.argv.slice(2);
 	if (!command || command === "help" || command === "--help") {
@@ -1098,6 +1151,12 @@ async function main(): Promise<void> {
 			return;
 		case "install-cli":
 			await cmdInstallCli();
+			return;
+		case "install-man":
+			await cmdInstallMan();
+			return;
+		case "man":
+			await cmdMan();
 			return;
 		default:
 			throw new Error(`Unknown command: ${command}`);

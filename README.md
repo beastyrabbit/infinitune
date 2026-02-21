@@ -156,11 +156,19 @@ Install a local command wrapper:
 pnpm infi install-cli
 ```
 
+Install the CLI man page:
+
+```bash
+pnpm infi install-man
+```
+
 Then use:
 
 ```bash
 infi play
 infi stop
+infi man
+man infi
 ```
 
 Install daemon as a systemd user service:

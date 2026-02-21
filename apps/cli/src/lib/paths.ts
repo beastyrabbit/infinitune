@@ -7,6 +7,10 @@ const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const CLI_ENTRY_PATH = path.resolve(LIB_DIR, "../cli.ts");
 export const CLI_PACKAGE_ROOT = path.resolve(LIB_DIR, "../..");
 export const REPO_ROOT = path.resolve(LIB_DIR, "../../../..");
+export const CLI_MANPAGE_SOURCE_PATH = path.resolve(
+	CLI_PACKAGE_ROOT,
+	"man/infi.1",
+);
 export const TSX_LOADER_PATH = path.resolve(
 	REPO_ROOT,
 	"node_modules/tsx/dist/loader.mjs",
@@ -66,4 +70,12 @@ export function getLocalBinDir(): string {
 
 export function getSystemdUserDir(): string {
 	return path.join(os.homedir(), ".config", "systemd", "user");
+}
+
+export function getLocalManDir(): string {
+	const xdg = process.env.XDG_DATA_HOME;
+	if (xdg && xdg.trim().length > 0) {
+		return path.join(xdg, "man");
+	}
+	return path.join(os.homedir(), ".local", "share", "man");
 }
