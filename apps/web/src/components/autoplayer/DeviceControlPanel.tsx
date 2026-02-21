@@ -197,6 +197,7 @@ function DeviceCard({
 	const [localPlaying, setLocalPlaying] = useState(playback.isPlaying);
 	const volumeDragging = useRef(false);
 	const volumeSendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const suppressDebouncedVolumeSendUntil = useRef(0);
 
 	// Default-mode devices: sync volume from room state when not dragging
 	useEffect(() => {
@@ -323,6 +324,7 @@ function DeviceCard({
 									clearTimeout(volumeSendTimer.current);
 									volumeSendTimer.current = null;
 								}
+								suppressDebouncedVolumeSendUntil.current = Date.now() + 250;
 								onSetDeviceVolume(device.id, v);
 							}
 							setTimeout(() => {
@@ -336,6 +338,10 @@ function DeviceCard({
 								clearTimeout(volumeSendTimer.current);
 							}
 							volumeSendTimer.current = setTimeout(() => {
+								if (Date.now() < suppressDebouncedVolumeSendUntil.current) {
+									volumeSendTimer.current = null;
+									return;
+								}
 								onSetDeviceVolume(device.id, v);
 								volumeSendTimer.current = null;
 							}, 150);
@@ -389,6 +395,7 @@ export function DeviceControlPanel({
 	const roomVolumeSendTimer = useRef<ReturnType<typeof setTimeout> | null>(
 		null,
 	);
+	const suppressDebouncedRoomVolumeSendUntil = useRef(0);
 	useEffect(() => {
 		if (!roomVolumeDragging.current) {
 			setRoomVolume(playback.volume);
@@ -548,6 +555,8 @@ export function DeviceControlPanel({
 											clearTimeout(roomVolumeSendTimer.current);
 											roomVolumeSendTimer.current = null;
 										}
+										suppressDebouncedRoomVolumeSendUntil.current =
+											Date.now() + 250;
 										onSetVolume(v);
 									}
 									setTimeout(() => {
@@ -561,6 +570,12 @@ export function DeviceControlPanel({
 										clearTimeout(roomVolumeSendTimer.current);
 									}
 									roomVolumeSendTimer.current = setTimeout(() => {
+										if (
+											Date.now() < suppressDebouncedRoomVolumeSendUntil.current
+										) {
+											roomVolumeSendTimer.current = null;
+											return;
+										}
 										onSetVolume(v);
 										roomVolumeSendTimer.current = null;
 									}, 150);

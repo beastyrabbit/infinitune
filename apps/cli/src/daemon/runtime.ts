@@ -435,6 +435,7 @@ export class DaemonRuntime {
 					this.playback.volume = this.ffplay.getVolume();
 				} else if (this.roomDeviceMode === "individual") {
 					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
@@ -466,6 +467,7 @@ export class DaemonRuntime {
 					this.playback.volume = this.ffplay.getVolume();
 				} else if (this.roomDeviceMode === "individual") {
 					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
