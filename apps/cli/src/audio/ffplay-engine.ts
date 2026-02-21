@@ -26,6 +26,7 @@ export class FfplayEngine {
 	private pausedAtSec: number | null = null;
 	private volume = 0.8;
 	private muted = false;
+	private restartOnResume = false;
 	private expectedExits = new WeakSet<ChildProcess>();
 	private preloadSongId: string | null = null;
 	private onEnded: () => void;
@@ -44,6 +45,7 @@ export class FfplayEngine {
 		this.url = url;
 		this.startOffsetSec = 0;
 		this.pausedAtSec = null;
+		this.restartOnResume = false;
 
 		const localStartAt =
 			typeof startAt === "number" ? startAt - serverTimeOffsetMs : undefined;
@@ -58,6 +60,13 @@ export class FfplayEngine {
 	play(): void {
 		if (!this.songId || !this.url) return;
 		if (this.process && this.pausedAtSec !== null) {
+			if (this.restartOnResume) {
+				const offset = this.pausedAtSec;
+				this.pausedAtSec = null;
+				this.restartOnResume = false;
+				this.startAtOffset(offset);
+				return;
+			}
 			this.process.kill("SIGCONT");
 			this.startOffsetSec = this.pausedAtSec;
 			this.startedAtMs = Date.now();
@@ -67,6 +76,7 @@ export class FfplayEngine {
 		if (!this.process) {
 			const offset = this.pausedAtSec ?? this.startOffsetSec;
 			this.pausedAtSec = null;
+			this.restartOnResume = false;
 			this.startAtOffset(offset);
 		}
 	}
@@ -93,6 +103,7 @@ export class FfplayEngine {
 			this.stopProcess(false);
 			this.startOffsetSec = target;
 			this.pausedAtSec = target;
+			this.restartOnResume = false;
 			return;
 		}
 
@@ -102,7 +113,10 @@ export class FfplayEngine {
 	setVolume(volume: number): void {
 		this.volume = clamp01(volume);
 		if (!this.songId || !this.url) return;
-		if (this.pausedAtSec !== null) return;
+		if (this.pausedAtSec !== null) {
+			this.restartOnResume = true;
+			return;
+		}
 		this.startAtOffset(this.currentTime());
 	}
 
@@ -113,14 +127,20 @@ export class FfplayEngine {
 
 	toggleMute(): boolean {
 		this.muted = !this.muted;
-		if (this.songId && this.url && this.pausedAtSec === null) {
-			this.startAtOffset(this.currentTime());
+		if (!this.songId || !this.url) {
+			return this.muted;
 		}
+		if (this.pausedAtSec !== null) {
+			this.restartOnResume = true;
+			return this.muted;
+		}
+		this.startAtOffset(this.currentTime());
 		return this.muted;
 	}
 
 	stop(resetSong = false): void {
 		this.stopProcess(resetSong);
+		this.restartOnResume = false;
 		if (resetSong) {
 			this.songId = null;
 			this.url = null;
@@ -202,6 +222,7 @@ export class FfplayEngine {
 		this.startOffsetSec = Math.max(0, offsetSec);
 		this.startedAtMs = Date.now();
 		this.pausedAtSec = null;
+		this.restartOnResume = false;
 
 		const args = [
 			"-nodisp",

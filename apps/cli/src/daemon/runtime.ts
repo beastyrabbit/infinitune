@@ -913,6 +913,7 @@ export class DaemonRuntime {
 		this.localPlaylistId = null;
 		this.localPlaylistName = null;
 		if (this.mode === "local") {
+			this.ffplay.stop(true);
 			this.connected = false;
 			this.queue = [];
 			this.currentSong = null;

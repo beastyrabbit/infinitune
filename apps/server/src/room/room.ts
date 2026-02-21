@@ -395,7 +395,7 @@ export class Room {
 
 	private pickIdleResumeSong(songs: SongData[]): SongData | null {
 		const playable = songs
-			.filter((song) => Boolean(song.audioUrl))
+			.filter((song) => song.status === "ready" && Boolean(song.audioUrl))
 			.sort((a, b) => a.orderIndex - b.orderIndex);
 		if (playable.length === 0) {
 			return null;
