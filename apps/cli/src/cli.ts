@@ -33,22 +33,59 @@ import {
 
 function printHelp(): void {
 	console.log(`
-Usage:
-  infi play [--room <id>] [--playlist-key <key>] [--local] [--server <url>]
+Infinitune CLI controls a background daemon that owns playback.
+Most commands talk to that daemon over IPC.
+
+Modes:
+  room   Join/sync a shared room via server WebSocket (multi-device control).
+  local  Play songs directly from a playlist on this machine (no room needed).
+
+Common Workflows:
+  First-time setup (guided):
+    infi setup
+
+  Use local mode by default:
+    infi config --mode local
+    infi play
+
+  Use room mode by default:
+    infi config --mode room --default-room <room-id>
+    infi play
+
+  One-off override:
+    infi play --local
+    infi play --room <room-id>
+    infi play --playlist-key <playlist-key>
+
+Playback Commands:
+  infi play [--local] [--room <id>] [--playlist-key <key>] [--server <url>]
   infi stop
   infi skip
-  infi volume up|down [--step 0.05]
+  infi volume up|down [--step <0..1>]
   infi mute
+  infi song pick
   infi status
+
+Room Commands:
   infi room join --room <id>
   infi room pick
-  infi song pick
-  infi config [--server <url>] [--device-name <name>] [--volume-step <n>]
-             [--mode room|local] [--interactive]
+
+Config Commands:
+  infi config
+  infi config --interactive
+  infi config [--server <url>] [--device-name <name>] [--volume-step <0..1>]
+             [--mode room|local] [--local] [--room-mode]
+             [--default-room <id>] [--default-playlist-key <key>]
+             [--clear-room] [--clear-playlist]
   infi setup [--server <url>]
 
+Daemon Commands:
   infi daemon start|stop|status|restart
+
+Service Commands (systemd user unit):
   infi service install|uninstall|restart
+
+Install Wrapper:
   infi install-cli
 `);
 }
