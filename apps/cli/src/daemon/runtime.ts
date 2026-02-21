@@ -10,6 +10,7 @@ import { createConnection, type Server as NetServer } from "node:net";
 import {
 	type ClientMessage,
 	type CommandAction,
+	type DeviceMode,
 	type PlaybackState,
 	ServerMessageSchema,
 	type SongData,
@@ -164,6 +165,7 @@ export class DaemonRuntime {
 	private daemonHttpHost: string;
 	private daemonHttpPort: number;
 	private mode: PlaybackMode = "room";
+	private roomDeviceMode: DeviceMode = "default";
 	private localPlaylistId: string | null = null;
 	private localPlaylistName: string | null = null;
 
@@ -411,10 +413,21 @@ export class DaemonRuntime {
 				if (this.mode === "local") {
 					this.ffplay.setVolume(next);
 					this.playback.volume = this.ffplay.getVolume();
+				} else if (this.roomDeviceMode === "individual") {
+					this.ffplay.setVolume(next);
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
-				return { volume: next };
+				return {
+					volume:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? this.ffplay.getVolume()
+							: next,
+					scope:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? "device"
+							: "room",
+				};
 			}
 			case "volumeDelta": {
 				const delta = asNumber(payload?.delta);
@@ -422,7 +435,7 @@ export class DaemonRuntime {
 					throw new Error("volumeDelta requires numeric payload.delta");
 				}
 				const base =
-					this.mode === "local"
+					this.mode === "local" || this.roomDeviceMode === "individual"
 						? this.ffplay.getVolume()
 						: typeof this.playback.volume === "number"
 							? this.playback.volume
@@ -431,10 +444,21 @@ export class DaemonRuntime {
 				if (this.mode === "local") {
 					this.ffplay.setVolume(next);
 					this.playback.volume = this.ffplay.getVolume();
+				} else if (this.roomDeviceMode === "individual") {
+					this.ffplay.setVolume(next);
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
-				return { volume: next };
+				return {
+					volume:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? this.ffplay.getVolume()
+							: next,
+					scope:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? "device"
+							: "room",
+				};
 			}
 			case "toggleMute":
 				if (this.mode === "local") {
@@ -545,6 +569,7 @@ export class DaemonRuntime {
 			this.ws = null;
 		}
 		this.connected = false;
+		this.roomDeviceMode = "default";
 		if (clearRoom) {
 			this.roomId = null;
 			this.playlistKey = null;
@@ -572,6 +597,9 @@ export class DaemonRuntime {
 				}
 				this.playback = message.playback;
 				this.currentSong = message.currentSong;
+				this.roomDeviceMode =
+					message.devices.find((device) => device.id === this.deviceId)?.mode ??
+					"default";
 				break;
 			case "queue":
 				this.queue = message.songs;
@@ -687,6 +715,7 @@ export class DaemonRuntime {
 			deviceName: this.deviceName,
 			serverUrl: this.serverUrl,
 			roomId: this.roomId,
+			roomDeviceMode: this.roomDeviceMode,
 			localPlaylistId: this.localPlaylistId,
 			localPlaylistName: this.localPlaylistName,
 			playlistKey: this.playlistKey,

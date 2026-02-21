@@ -480,10 +480,15 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				typeof data.mode === "string" && data.mode.length > 0
 					? data.mode
 					: "room";
+			const roomDeviceMode =
+				typeof data.roomDeviceMode === "string" ? data.roomDeviceMode : "-";
 			console.log(`Daemon: running (pid ${String(data.pid ?? "?")})`);
 			console.log(`Mode: ${mode}`);
 			console.log(`Connected: ${data.connected ? "yes" : "no"}`);
 			console.log(`Room: ${String(data.roomId ?? "-")}`);
+			if (mode === "room") {
+				console.log(`Device Sync Mode: ${roomDeviceMode}`);
+			}
 			if (mode === "local") {
 				console.log(
 					`Local Playlist: ${String(data.localPlaylistName ?? data.localPlaylistId ?? "-")}`,
@@ -633,8 +638,9 @@ async function cmdVolume(args: string[]): Promise<void> {
 	const step = getFlagNumber(parsed, config.volumeStep, "step");
 	const delta = direction === "up" ? Math.abs(step) : -Math.abs(step);
 	const response = await sendDaemonRequest("volumeDelta", { delta });
-	const data = requireOk(response) as { volume?: number };
-	console.log(`Volume: ${toDisplayPercent(data.volume)}`);
+	const data = requireOk(response) as { volume?: number; scope?: string };
+	const label = data.scope === "device" ? "Local Volume" : "Volume";
+	console.log(`${label}: ${toDisplayPercent(data.volume)}`);
 }
 
 async function cmdMute(): Promise<void> {
@@ -847,6 +853,10 @@ async function cmdStatus(args: string[]): Promise<void> {
 		typeof daemonData.mode === "string" && daemonData.mode.length > 0
 			? daemonData.mode
 			: "room";
+	const roomDeviceMode =
+		typeof daemonData.roomDeviceMode === "string"
+			? daemonData.roomDeviceMode
+			: undefined;
 	const roomId =
 		typeof daemonData.roomId === "string" ? daemonData.roomId : undefined;
 	const localPlaylistName =
@@ -862,6 +872,9 @@ async function cmdStatus(args: string[]): Promise<void> {
 	console.log(`Mode: ${mode}`);
 	console.log(`Connected: ${daemonData.connected ? "yes" : "no"}`);
 	console.log(`Room: ${roomId ?? "-"}`);
+	if (mode === "room") {
+		console.log(`Device Sync Mode: ${roomDeviceMode ?? "-"}`);
+	}
 	if (mode === "local") {
 		console.log(
 			`Local Playlist: ${localPlaylistName ?? localPlaylistId ?? "-"}`,
