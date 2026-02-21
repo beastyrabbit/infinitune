@@ -196,6 +196,7 @@ function DeviceCard({
 	const [localVolume, setLocalVolume] = useState(playback.volume);
 	const [localPlaying, setLocalPlaying] = useState(playback.isPlaying);
 	const volumeDragging = useRef(false);
+	const volumeSendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Default-mode devices: sync volume from room state when not dragging
 	useEffect(() => {
@@ -220,6 +221,15 @@ function DeviceCard({
 		}
 		prevModeRef.current = device.mode;
 	}, [isIndividual, playback.volume, playback.isPlaying, device.mode]);
+
+	useEffect(() => {
+		return () => {
+			if (volumeSendTimer.current) {
+				clearTimeout(volumeSendTimer.current);
+				volumeSendTimer.current = null;
+			}
+		};
+	}, []);
 
 	return (
 		<div
@@ -306,7 +316,15 @@ function DeviceCard({
 						onPointerDown={() => {
 							volumeDragging.current = true;
 						}}
-						onPointerUp={() => {
+						onPointerUp={(e) => {
+							const v = Number.parseFloat((e.target as HTMLInputElement).value);
+							if (Number.isFinite(v)) {
+								if (volumeSendTimer.current) {
+									clearTimeout(volumeSendTimer.current);
+									volumeSendTimer.current = null;
+								}
+								onSetDeviceVolume(device.id, v);
+							}
 							setTimeout(() => {
 								volumeDragging.current = false;
 							}, 300);
@@ -314,7 +332,13 @@ function DeviceCard({
 						onChange={(e) => {
 							const v = Number.parseFloat(e.target.value);
 							setLocalVolume(v);
-							onSetDeviceVolume(device.id, v);
+							if (volumeSendTimer.current) {
+								clearTimeout(volumeSendTimer.current);
+							}
+							volumeSendTimer.current = setTimeout(() => {
+								onSetDeviceVolume(device.id, v);
+								volumeSendTimer.current = null;
+							}, 150);
 						}}
 						className="flex-1 h-1 accent-red-500 cursor-pointer"
 					/>
@@ -362,11 +386,22 @@ export function DeviceControlPanel({
 	// Local volume state for ALL PLAYERS slider — immediate feedback, server sync when idle
 	const [roomVolume, setRoomVolume] = useState(playback.volume);
 	const roomVolumeDragging = useRef(false);
+	const roomVolumeSendTimer = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	);
 	useEffect(() => {
 		if (!roomVolumeDragging.current) {
 			setRoomVolume(playback.volume);
 		}
 	}, [playback.volume]);
+	useEffect(() => {
+		return () => {
+			if (roomVolumeSendTimer.current) {
+				clearTimeout(roomVolumeSendTimer.current);
+				roomVolumeSendTimer.current = null;
+			}
+		};
+	}, []);
 
 	return (
 		<div className="flex flex-col h-full bg-black/50">
@@ -504,7 +539,17 @@ export function DeviceControlPanel({
 								onPointerDown={() => {
 									roomVolumeDragging.current = true;
 								}}
-								onPointerUp={() => {
+								onPointerUp={(e) => {
+									const v = Number.parseFloat(
+										(e.target as HTMLInputElement).value,
+									);
+									if (Number.isFinite(v)) {
+										if (roomVolumeSendTimer.current) {
+											clearTimeout(roomVolumeSendTimer.current);
+											roomVolumeSendTimer.current = null;
+										}
+										onSetVolume(v);
+									}
 									setTimeout(() => {
 										roomVolumeDragging.current = false;
 									}, 300);
@@ -512,7 +557,13 @@ export function DeviceControlPanel({
 								onChange={(e) => {
 									const v = Number.parseFloat(e.target.value);
 									setRoomVolume(v);
-									onSetVolume(v);
+									if (roomVolumeSendTimer.current) {
+										clearTimeout(roomVolumeSendTimer.current);
+									}
+									roomVolumeSendTimer.current = setTimeout(() => {
+										onSetVolume(v);
+										roomVolumeSendTimer.current = null;
+									}, 150);
 								}}
 								className="flex-1 h-1 accent-red-500 cursor-pointer"
 							/>

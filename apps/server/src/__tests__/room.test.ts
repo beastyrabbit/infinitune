@@ -178,6 +178,21 @@ describe("Room", () => {
 			// Should still be on whatever song was current (queue auto-start may have skipped it)
 			expect(room.playback.currentSongId).not.toBe("s-1");
 		});
+
+		it("updates playlist position when selecting a song", () => {
+			const updatePosition = vi.fn().mockResolvedValue(undefined);
+			room.playlistId = "pl-1";
+			room.setPositionCallback(updatePosition);
+			const queue = [
+				song("s-51", { audioUrl: "/a/51.mp3", orderIndex: 51 }),
+				song("s-52", { audioUrl: "/a/52.mp3", orderIndex: 52 }),
+			];
+			room.updateQueue(queue, 0);
+
+			room.handleCommand("d1", "selectSong", { songId: "s-52" });
+
+			expect(updatePosition).toHaveBeenCalledWith("pl-1", 52);
+		});
 	});
 
 	// ─── Song queue + auto-start ────────────────────────────────────

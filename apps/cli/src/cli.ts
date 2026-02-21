@@ -712,12 +712,24 @@ async function cmdThumb(args: string[]): Promise<void> {
 	);
 }
 
+function printRoomSubcommandHelp(): void {
+	console.log("Room commands:");
+	console.log("  infi room join --room <id>");
+	console.log("  infi room pick");
+	console.log("  infi room leave");
+	console.log("  infi room help");
+}
+
 async function cmdRoom(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
-	const sub = parsed.positionals[0] ?? "pick";
+	const sub = parsed.positionals[0];
 	const config = loadConfig();
 	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
+	if (!sub || sub === "help" || sub === "--help") {
+		printRoomSubcommandHelp();
+		return;
+	}
 
 	if (sub === "leave") {
 		if (!(await isDaemonResponsive())) {

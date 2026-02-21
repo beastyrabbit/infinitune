@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 
 export type PlaybackSnapshot = {
 	songId: string | null;
@@ -29,6 +29,7 @@ export class FfplayEngine {
 	private restartOnResume = false;
 	private expectedExits = new WeakSet<ChildProcess>();
 	private preloadSongId: string | null = null;
+	private appliedVolumePercent = 80;
 	private onEnded: () => void;
 
 	constructor(onEnded: () => void) {
@@ -117,6 +118,9 @@ export class FfplayEngine {
 			this.restartOnResume = true;
 			return;
 		}
+		if (this.tryApplyLiveVolume()) {
+			return;
+		}
 		this.startAtOffset(this.currentTime());
 	}
 
@@ -132,6 +136,9 @@ export class FfplayEngine {
 		}
 		if (this.pausedAtSec !== null) {
 			this.restartOnResume = true;
+			return this.muted;
+		}
+		if (this.tryApplyLiveVolume()) {
 			return this.muted;
 		}
 		this.startAtOffset(this.currentTime());
@@ -248,10 +255,11 @@ export class FfplayEngine {
 		childEnv["PULSE_PROP_application.icon_name"] = "multimedia-player";
 
 		const processHandle = spawn("ffplay", args, {
-			stdio: ["ignore", "ignore", "ignore"],
+			stdio: ["pipe", "ignore", "ignore"],
 			env: childEnv,
 		});
 		this.process = processHandle;
+		this.appliedVolumePercent = this.effectiveVolumePercent();
 
 		processHandle.on("exit", () => {
 			const wasExpected = this.expectedExits.has(processHandle);
@@ -297,5 +305,61 @@ export class FfplayEngine {
 		if (!resetSong) {
 			this.startOffsetSec = this.pausedAtSec ?? this.startOffsetSec;
 		}
+	}
+
+	private tryApplyLiveVolume(): boolean {
+		const processHandle = this.process;
+		if (!processHandle || this.pausedAtSec !== null) {
+			return false;
+		}
+		const pid = processHandle.pid;
+		if (!pid || !Number.isInteger(pid) || pid <= 0) {
+			return false;
+		}
+		const targetPercent = this.effectiveVolumePercent();
+		if (targetPercent === this.appliedVolumePercent) {
+			return true;
+		}
+		const sinkInputId = this.findPulseSinkInputIdByPid(pid);
+		if (!sinkInputId) {
+			return false;
+		}
+		const setVolumeResult = spawnSync(
+			"pactl",
+			["set-sink-input-volume", sinkInputId, `${String(targetPercent)}%`],
+			{
+				encoding: "utf8",
+			},
+		);
+		if (setVolumeResult.error || setVolumeResult.status !== 0) {
+			return false;
+		}
+		this.appliedVolumePercent = targetPercent;
+		return true;
+	}
+
+	private findPulseSinkInputIdByPid(pid: number): string | null {
+		const result = spawnSync("pactl", ["list", "sink-inputs"], {
+			encoding: "utf8",
+		});
+		if (
+			result.error ||
+			result.status !== 0 ||
+			typeof result.stdout !== "string"
+		) {
+			return null;
+		}
+		const processMarker = `application.process.id = "${String(pid)}"`;
+		const blocks = result.stdout.split(/\n(?=Sink Input #)/g);
+		for (const block of blocks) {
+			if (!block.includes(processMarker)) {
+				continue;
+			}
+			const match = block.match(/^Sink Input #(\d+)/m);
+			if (match?.[1]) {
+				return match[1];
+			}
+		}
+		return null;
 	}
 }

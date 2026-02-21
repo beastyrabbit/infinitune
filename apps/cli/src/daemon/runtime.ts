@@ -575,12 +575,7 @@ export class DaemonRuntime {
 			this.send({ type: "ping", clientTime: Date.now() });
 			// Backward compatibility for older room servers that don't emit joinAck.
 			this.joinAckFallbackTimer = setTimeout(() => {
-				if (
-					this.ws !== ws ||
-					this.connected ||
-					!this.roomStateReceived ||
-					this.joinAcknowledged
-				) {
+				if (this.ws !== ws || this.connected || this.joinAcknowledged) {
 					return;
 				}
 				this.joinAcknowledged = true;
@@ -695,10 +690,12 @@ export class DaemonRuntime {
 				this.roomDeviceMode =
 					message.devices.find((device) => device.id === this.deviceId)?.mode ??
 					"default";
-				this.roomProtocolVersion =
-					typeof message.protocolVersion === "number"
-						? message.protocolVersion
-						: this.roomProtocolVersion;
+				if (typeof message.protocolVersion === "number") {
+					this.roomProtocolVersion = message.protocolVersion;
+				} else if (!this.joinAcknowledged) {
+					// Legacy room servers don't send joinAck/protocolVersion.
+					this.joinAcknowledged = true;
+				}
 				this.markRoomConnected();
 				break;
 			case "queue":
