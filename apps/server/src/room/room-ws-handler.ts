@@ -58,6 +58,9 @@ function handleClientMessage(
 					roomId: msg.roomId,
 					deviceId: msg.deviceId,
 				});
+				// Ensure queue/state is hydrated for both newly created and pre-existing rooms.
+				// Without this, rooms created via REST can stay unsynced until another playlist/song event happens.
+				void syncRoom(room);
 			} else {
 				ws.send(
 					JSON.stringify({

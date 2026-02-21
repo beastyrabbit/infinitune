@@ -26,6 +26,7 @@
 - **Song Library** — browse all generated songs with genre, mood, energy, and era filters
 - **Playlist Management** — star favorites, search, filter by mode (endless/oneshot)
 - **Multi-Device Rooms** — synchronized playback across devices (Sonos-style)
+- **Terminal Daemon Control** — run local playback as a background daemon and control it with `infi` commands
 - **Gapless Playback** — next song preloads in background, zero gaps between tracks
 - **Rating & Feedback** — thumbs up/down to influence future generation
 - **Cover Art** — AI-generated vinyl-style album covers for every song
@@ -117,6 +118,72 @@ Infinitune includes an integrated **Room Server** for synchronized playback — 
 - **Per-device control** — adjust volume or pause individual players independently
 - **Clock sync** — NTP-style ping/pong calibration, synchronized within ~50ms across LAN
 - **Gapless** — next song preloads in background while current one plays
+
+### Terminal Daemon (`infi`)
+
+Use the terminal daemon when you want room playback without keeping the browser open.
+
+```bash
+# Start daemon manually
+pnpm infi daemon start
+
+# Pick playlist + play (auto-creates room when needed)
+pnpm infi play
+
+# Playback controls
+pnpm infi stop
+pnpm infi skip
+pnpm infi volume up
+pnpm infi volume down --step 0.1
+pnpm infi mute
+
+# Interactive selectors
+pnpm infi room pick
+pnpm infi song pick
+
+# Status
+pnpm infi status
+
+# Persist CLI defaults (server/device/step)
+pnpm infi config --server http://localhost:5175
+pnpm infi config --device-name "DESK SPEAKER"
+pnpm infi config --daemon-host 127.0.0.1 --daemon-port 17653
+pnpm infi config
+
+# Daemon HTTP endpoints (for Waybar/custom scripts)
+curl -s http://127.0.0.1:17653/status | jq
+curl -s http://127.0.0.1:17653/queue | jq
+curl -s http://127.0.0.1:17653/waybar | jq
+```
+
+Install a local command wrapper:
+
+```bash
+pnpm infi install-cli
+```
+
+Install the CLI man page:
+
+```bash
+pnpm infi install-man
+```
+
+Then use:
+
+```bash
+infi play
+infi stop
+infi man
+man infi
+```
+
+Install daemon as a systemd user service:
+
+```bash
+pnpm infi service install
+pnpm infi service restart
+pnpm infi service uninstall
+```
 
 ## Tech Stack
 

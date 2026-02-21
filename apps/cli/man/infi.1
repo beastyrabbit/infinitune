@@ -1,0 +1,174 @@
+.TH INFI 1 "February 2026" "Infinitune CLI" "User Commands"
+.SH NAME
+infi \- control Infinitune daemon playback from the terminal
+.SH SYNOPSIS
+.B infi
+.RI [ command ] " [options]"
+.br
+.B infi
+.B play
+.RI [ --local ]
+.RI [ --room " ID" ]
+.RI [ --playlist-key " KEY" ]
+.RI [ --server " URL" ]
+.br
+.B infi
+.B config
+.RI [ --interactive ]
+.RI [ --mode " room|local" ]
+.RI [ --server " URL" ]
+.RI [ --device-name " NAME" ]
+.RI [ --volume-step " 0..1" ]
+.RI [ --daemon-host " HOST" ]
+.RI [ --daemon-port " 1..65535" ]
+.SH DESCRIPTION
+.B infi
+controls a background daemon that owns local audio playback.
+Commands send IPC requests to the daemon.
+The daemon can run in either
+.B room
+mode (shared playback via server room WebSocket) or
+.B local
+mode (playlist playback on this machine, no room required).
+.SH MODES
+.TP
+.B room
+Join a room and follow room state and commands.
+Best for multi-device synchronized playback.
+.TP
+.B local
+Play ready songs directly from a playlist.
+The daemon tracks playlist position and heartbeat, and supports local controls.
+.SH COMMANDS
+.TP
+.B play
+Start playback.
+Uses configured mode by default.
+Use
+.B --local
+for one-off local playback or
+.B --room
+to target a room directly.
+.TP
+.B stop
+Pause playback.
+.TP
+.B skip
+Skip to the next song.
+.TP
+.B volume up|down
+Adjust volume by configured step (or
+.B --step
+).
+.TP
+.B mute
+Toggle mute.
+.TP
+.B song pick
+Interactive queue song picker (requires
+.BR fzf (1)).
+.TP
+.B room join --room
+Join an existing room by ID.
+.TP
+.B room pick
+Interactive room picker.
+.TP
+.B status
+Show daemon status summary.
+.TP
+.B daemon start|stop|status|restart
+Manage daemon process lifecycle.
+Daemon also exposes local HTTP endpoints for external status consumers:
+.br
+.I /status
+, 
+.I /queue
+, and
+.I /waybar
+.
+.TP
+.B config
+Show or update CLI config.
+Use
+.B --interactive
+for guided setup.
+.TP
+.B setup
+Alias for guided config-oriented setup.
+.TP
+.B service install|uninstall|restart
+Manage a user-level systemd service for the daemon.
+.TP
+.B install-cli
+Install an executable wrapper to
+.I ~/.local/bin/infi
+.
+.TP
+.B install-man
+Install this man page to
+.I ~/.local/share/man/man1/infi.1
+.
+.TP
+.B man
+Open the local
+.BR infi (1)
+page with
+.BR man (1).
+.SH CONFIG FILE
+Configuration is stored at:
+.br
+.I ~/.config/infinitune/config.json
+.P
+Important keys:
+.IP \(bu 2
+.B serverUrl
+\- API/server base URL
+.IP \(bu 2
+.B playbackMode
+\- \fBroom\fR or \fBlocal\fR
+.IP \(bu 2
+.B defaultRoomId
+\- default room for room mode
+.IP \(bu 2
+.B defaultPlaylistKey
+\- default playlist key for local mode or room resolution
+.IP \(bu 2
+.B volumeStep
+\- volume increment/decrement step
+.IP \(bu 2
+.B daemonHttpHost
+\- daemon HTTP bind host (default:
+.BR 127.0.0.1 )
+.IP \(bu 2
+.B daemonHttpPort
+\- daemon HTTP bind port (default:
+.BR 17653 )
+.SH EXAMPLES
+.TP
+Guided setup:
+.B pnpm infi setup
+.TP
+Set default local mode and play:
+.B pnpm infi config --mode local
+.br
+.B pnpm infi play
+.TP
+Set default room mode and room:
+.B pnpm infi config --mode room --default-room my-room-id
+.br
+.B pnpm infi play
+.TP
+Query daemon JSON endpoint for Waybar:
+.B curl -s http://127.0.0.1:17653/waybar
+.TP
+Install wrapper and man page:
+.B pnpm infi install-cli
+.br
+.B pnpm infi install-man
+.br
+.B man infi
+.SH SEE ALSO
+.BR man (1),
+.BR systemctl (1),
+.BR fzf (1)

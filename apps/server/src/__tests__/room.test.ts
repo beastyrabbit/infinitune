@@ -192,6 +192,20 @@ describe("Room", () => {
 			expect(room.playback.isPlaying).toBe(true);
 		});
 
+		it("auto-starts from 10 songs back when queue is long", () => {
+			const queue = Array.from({ length: 109 }, (_, i) =>
+				song(`s-${i + 1}`, {
+					audioUrl: `/a/${i + 1}.mp3`,
+					orderIndex: i + 1,
+				}),
+			);
+
+			room.updateQueue(queue, 0);
+
+			expect(room.playback.currentSongId).toBe("s-99");
+			expect(room.playback.isPlaying).toBe(true);
+		});
+
 		it("does not auto-start songs without audioUrl", () => {
 			const queue = [song("s-1", { status: "pending", orderIndex: 1 })];
 
