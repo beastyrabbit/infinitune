@@ -9,6 +9,9 @@ export type DaemonAction =
 	| "configure"
 	| "joinRoom"
 	| "startLocal"
+	| "leaveRoom"
+	| "leavePlaylist"
+	| "clearSession"
 	| "play"
 	| "pause"
 	| "toggle"
@@ -16,6 +19,7 @@ export type DaemonAction =
 	| "setVolume"
 	| "volumeDelta"
 	| "toggleMute"
+	| "rate"
 	| "selectSong"
 	| "seek"
 	| "queue";

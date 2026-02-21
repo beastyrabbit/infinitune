@@ -10,7 +10,9 @@ import { createConnection, type Server as NetServer } from "node:net";
 import {
 	type ClientMessage,
 	type CommandAction,
+	type DeviceMode,
 	type PlaybackState,
+	ROOM_PROTOCOL_VERSION,
 	ServerMessageSchema,
 	type SongData,
 } from "@infinitune/shared/protocol";
@@ -20,6 +22,7 @@ import { FfplayEngine } from "../audio/ffplay-engine";
 import {
 	heartbeatPlaylist,
 	listSongsByPlaylist,
+	rateSong,
 	resolveMediaUrl,
 	toRoomWsUrl,
 	updatePlaylistPosition,
@@ -46,6 +49,11 @@ const LOCAL_HEARTBEAT_MS = 30_000;
 const LOCAL_START_SONGS_FROM_END = 10;
 
 type PlaybackMode = "room" | "local";
+type ConnectionState =
+	| "disconnected"
+	| "connecting"
+	| "reconnecting"
+	| "connected";
 
 function asString(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim().length > 0
@@ -164,6 +172,14 @@ export class DaemonRuntime {
 	private daemonHttpHost: string;
 	private daemonHttpPort: number;
 	private mode: PlaybackMode = "room";
+	private roomDeviceMode: DeviceMode = "default";
+	private connectionState: ConnectionState = "disconnected";
+	private reconnectAttempts = 0;
+	private lastDisconnectReason: string | null = null;
+	private joinAcknowledged = false;
+	private roomStateReceived = false;
+	private joinAckFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+	private roomProtocolVersion: number | null = null;
 	private localPlaylistId: string | null = null;
 	private localPlaylistName: string | null = null;
 
@@ -274,6 +290,15 @@ export class DaemonRuntime {
 				await this.startLocalMode(localPayload);
 				return this.getStatus();
 			}
+			case "leaveRoom":
+				this.leaveRoomSession();
+				return this.getStatus();
+			case "leavePlaylist":
+				this.leavePlaylistSession();
+				return this.getStatus();
+			case "clearSession":
+				this.clearSession();
+				return this.getStatus();
 			case "configure": {
 				const nextServerUrl = asString(payload?.serverUrl);
 				const nextDeviceName = asString(payload?.deviceName);
@@ -362,6 +387,12 @@ export class DaemonRuntime {
 					this.playLocal();
 				} else {
 					this.sendCommand("play");
+					// Keep individual device isolation: only apply room fast-path when
+					// this player is in default sync mode.
+					if (this.roomDeviceMode !== "individual") {
+						this.ffplay.play();
+						this.playback.isPlaying = true;
+					}
 				}
 				return { ok: true };
 			case "pause":
@@ -370,6 +401,12 @@ export class DaemonRuntime {
 					this.playback.isPlaying = false;
 				} else {
 					this.sendCommand("pause");
+					// Keep individual device isolation: only apply room fast-path when
+					// this player is in default sync mode.
+					if (this.roomDeviceMode !== "individual") {
+						this.ffplay.pause();
+						this.playback.isPlaying = false;
+					}
 				}
 				return { ok: true };
 			case "toggle":
@@ -396,10 +433,22 @@ export class DaemonRuntime {
 				if (this.mode === "local") {
 					this.ffplay.setVolume(next);
 					this.playback.volume = this.ffplay.getVolume();
+				} else if (this.roomDeviceMode === "individual") {
+					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
-				return { volume: next };
+				return {
+					volume:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? this.ffplay.getVolume()
+							: next,
+					scope:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? "device"
+							: "room",
+				};
 			}
 			case "volumeDelta": {
 				const delta = asNumber(payload?.delta);
@@ -407,7 +456,7 @@ export class DaemonRuntime {
 					throw new Error("volumeDelta requires numeric payload.delta");
 				}
 				const base =
-					this.mode === "local"
+					this.mode === "local" || this.roomDeviceMode === "individual"
 						? this.ffplay.getVolume()
 						: typeof this.playback.volume === "number"
 							? this.playback.volume
@@ -416,10 +465,22 @@ export class DaemonRuntime {
 				if (this.mode === "local") {
 					this.ffplay.setVolume(next);
 					this.playback.volume = this.ffplay.getVolume();
+				} else if (this.roomDeviceMode === "individual") {
+					this.ffplay.setVolume(next);
+					this.playback.volume = this.ffplay.getVolume();
 				} else {
 					this.sendCommand("setVolume", { volume: next });
 				}
-				return { volume: next };
+				return {
+					volume:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? this.ffplay.getVolume()
+							: next,
+					scope:
+						this.mode === "local" || this.roomDeviceMode === "individual"
+							? "device"
+							: "room",
+				};
 			}
 			case "toggleMute":
 				if (this.mode === "local") {
@@ -429,6 +490,27 @@ export class DaemonRuntime {
 					this.sendCommand("toggleMute");
 				}
 				return { ok: true };
+			case "rate": {
+				const rating = asString(payload?.rating);
+				if (rating !== "up" && rating !== "down") {
+					throw new Error('rate requires payload.rating "up" or "down"');
+				}
+				if (!this.serverUrl) {
+					throw new Error("Daemon server URL is not configured.");
+				}
+				const songId =
+					this.currentSong?.id ?? this.playback.currentSongId ?? null;
+				if (!songId) {
+					throw new Error("No current song to rate.");
+				}
+				await rateSong(this.serverUrl, songId, rating);
+				return {
+					ok: true,
+					songId,
+					rating,
+					title: this.currentSong?.title ?? null,
+				};
+			}
 			case "selectSong": {
 				const songId = asString(payload?.songId);
 				if (!songId) {
@@ -463,6 +545,15 @@ export class DaemonRuntime {
 		if (!this.serverUrl || !this.roomId) return;
 		this.disconnect(false);
 		const roomId = this.roomId;
+		this.connectionState =
+			this.reconnectAttempts > 0 ? "reconnecting" : "connecting";
+		this.joinAcknowledged = false;
+		this.roomStateReceived = false;
+		this.roomProtocolVersion = null;
+		if (this.joinAckFallbackTimer) {
+			clearTimeout(this.joinAckFallbackTimer);
+			this.joinAckFallbackTimer = null;
+		}
 
 		const wsUrl = toRoomWsUrl(this.serverUrl);
 		const ws = new WebSocket(wsUrl);
@@ -480,9 +571,18 @@ export class DaemonRuntime {
 				role: "player",
 				playlistKey: this.playlistKey ?? undefined,
 				roomName: this.roomName ?? undefined,
+				protocolVersion: ROOM_PROTOCOL_VERSION,
 			};
 			this.send(join);
 			this.send({ type: "ping", clientTime: Date.now() });
+			// Backward compatibility for older room servers that don't emit joinAck.
+			this.joinAckFallbackTimer = setTimeout(() => {
+				if (this.ws !== ws || this.connected || this.joinAcknowledged) {
+					return;
+				}
+				this.joinAcknowledged = true;
+				this.markRoomConnected();
+			}, 600);
 		});
 
 		ws.on("message", (data) => {
@@ -493,6 +593,7 @@ export class DaemonRuntime {
 		ws.on("error", (error) => {
 			if (this.ws !== ws) return;
 			this.lastError = error.message;
+			this.lastDisconnectReason = error.message;
 			if (!this.connected) {
 				this.rejectConnectionWaiters(
 					new Error(`Failed to connect to room socket: ${error.message}`),
@@ -500,18 +601,38 @@ export class DaemonRuntime {
 			}
 		});
 
-		ws.on("close", () => {
+		ws.on("close", (code, reasonBuffer) => {
 			if (this.ws !== ws) return;
 			const wasConnected = this.connected;
 			this.connected = false;
 			this.ws = null;
-			if (!wasConnected) {
-				this.rejectConnectionWaiters(new Error("Room socket closed"));
+			if (this.joinAckFallbackTimer) {
+				clearTimeout(this.joinAckFallbackTimer);
+				this.joinAckFallbackTimer = null;
 			}
-			if (!this.shouldRun || !this.roomId || !this.serverUrl) return;
+			const reason =
+				typeof reasonBuffer === "string"
+					? reasonBuffer
+					: Buffer.from(reasonBuffer).toString("utf8");
+			this.lastDisconnectReason =
+				reason.trim().length > 0
+					? `ws close ${String(code)}: ${reason}`
+					: `ws close ${String(code)}`;
+			if (!wasConnected) {
+				this.rejectConnectionWaiters(
+					new Error(this.lastDisconnectReason ?? "Room socket closed"),
+				);
+			}
+			if (!this.shouldRun || !this.roomId || !this.serverUrl) {
+				this.connectionState = "disconnected";
+				return;
+			}
+			this.connectionState = "reconnecting";
+			this.reconnectAttempts += 1;
+			const jitterMs = Math.floor(Math.random() * 400);
 			this.reconnectTimer = setTimeout(() => {
 				this.connect();
-			}, 1500);
+			}, 1500 + jitterMs);
 		});
 	}
 
@@ -519,6 +640,10 @@ export class DaemonRuntime {
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
+		}
+		if (this.joinAckFallbackTimer) {
+			clearTimeout(this.joinAckFallbackTimer);
+			this.joinAckFallbackTimer = null;
 		}
 		this.rejectConnectionWaiters(new Error("Connection replaced"));
 		if (this.ws) {
@@ -530,6 +655,11 @@ export class DaemonRuntime {
 			this.ws = null;
 		}
 		this.connected = false;
+		this.roomDeviceMode = "default";
+		this.joinAcknowledged = false;
+		this.roomStateReceived = false;
+		this.roomProtocolVersion = null;
+		this.connectionState = "disconnected";
 		if (clearRoom) {
 			this.roomId = null;
 			this.playlistKey = null;
@@ -550,13 +680,25 @@ export class DaemonRuntime {
 
 		const message = parsed.data;
 		switch (message.type) {
+			case "joinAck":
+				this.joinAcknowledged = true;
+				this.roomProtocolVersion = message.protocolVersion;
+				this.markRoomConnected();
+				break;
 			case "state":
-				if (!this.connected) {
-					this.connected = true;
-					this.resolveConnectionWaiters();
-				}
+				this.roomStateReceived = true;
 				this.playback = message.playback;
 				this.currentSong = message.currentSong;
+				this.roomDeviceMode =
+					message.devices.find((device) => device.id === this.deviceId)?.mode ??
+					"default";
+				if (typeof message.protocolVersion === "number") {
+					this.roomProtocolVersion = message.protocolVersion;
+				} else if (!this.joinAcknowledged) {
+					// Legacy room servers don't send joinAck/protocolVersion.
+					this.joinAcknowledged = true;
+				}
+				this.markRoomConnected();
 				break;
 			case "queue":
 				this.queue = message.songs;
@@ -573,6 +715,15 @@ export class DaemonRuntime {
 				break;
 			case "nextSong": {
 				if (!this.serverUrl) return;
+				const snapshot = this.ffplay.getSnapshot();
+				if (
+					snapshot.songId === message.songId &&
+					typeof message.startAt !== "number"
+				) {
+					// Ignore duplicate "nextSong" for the currently loaded song when no
+					// synchronized start time was requested.
+					break;
+				}
 				const songUrl = resolveMediaUrl(this.serverUrl, message.audioUrl);
 				this.ffplay.loadSong(
 					message.songId,
@@ -595,6 +746,19 @@ export class DaemonRuntime {
 				}
 				break;
 		}
+	}
+
+	private markRoomConnected(): void {
+		if (!this.roomStateReceived || !this.joinAcknowledged) {
+			return;
+		}
+		if (!this.connected) {
+			this.connected = true;
+			this.resolveConnectionWaiters();
+		}
+		this.connectionState = "connected";
+		this.reconnectAttempts = 0;
+		this.lastDisconnectReason = null;
 	}
 
 	private applyExecute(
@@ -637,11 +801,15 @@ export class DaemonRuntime {
 		payload?: Record<string, unknown>,
 	): void {
 		if (this.mode !== "room") {
-			throw new Error("Daemon is in local mode; room command is unavailable.");
+			throw new Error(
+				`Daemon is in ${this.mode} mode; room command "${action}" is unavailable.`,
+			);
 		}
 		const ws = this.ws;
 		if (!this.connected || !ws || ws.readyState !== WebSocket.OPEN) {
-			throw new Error("Daemon is not connected to a room yet.");
+			throw new Error(
+				`Daemon is not connected to a room yet (connectionState=${this.connectionState}, roomId=${this.roomId ?? "-"})`,
+			);
 		}
 		ws.send(JSON.stringify({ type: "command", action, payload }));
 	}
@@ -668,10 +836,16 @@ export class DaemonRuntime {
 			pid: process.pid,
 			mode: this.mode,
 			connected: this.connected,
+			connectionState: this.connectionState,
 			deviceId: this.deviceId,
 			deviceName: this.deviceName,
 			serverUrl: this.serverUrl,
 			roomId: this.roomId,
+			roomDeviceMode: this.roomDeviceMode,
+			joinAcknowledged: this.joinAcknowledged,
+			roomProtocolVersion: this.roomProtocolVersion,
+			reconnectAttempts: this.reconnectAttempts,
+			lastDisconnectReason: this.lastDisconnectReason,
 			localPlaylistId: this.localPlaylistId,
 			localPlaylistName: this.localPlaylistName,
 			playlistKey: this.playlistKey,
@@ -969,6 +1143,7 @@ export class DaemonRuntime {
 		this.localPlaylistName = payload.playlistName ?? null;
 		this.playlistKey = payload.playlistKey ?? null;
 		this.connected = false;
+		this.connectionState = "connecting";
 		this.lastError = null;
 
 		await this.refreshLocalQueue(true);
@@ -995,13 +1170,47 @@ export class DaemonRuntime {
 		if (this.mode === "local") {
 			this.ffplay.stop(true);
 			this.connected = false;
-			this.queue = [];
-			this.currentSong = null;
-			this.playback.currentSongId = null;
-			this.playback.currentTime = 0;
-			this.playback.duration = 0;
-			this.playback.isPlaying = false;
+			this.connectionState = "disconnected";
+			this.resetPlaybackState();
 		}
+	}
+
+	private resetPlaybackState(): void {
+		this.queue = [];
+		this.currentSong = null;
+		this.playback.currentSongId = null;
+		this.playback.currentTime = 0;
+		this.playback.duration = 0;
+		this.playback.isPlaying = false;
+		this.playback.volume = this.ffplay.getVolume();
+		this.playback.isMuted = this.ffplay.isMuted();
+	}
+
+	private leaveRoomSession(): void {
+		if (this.mode !== "room") return;
+		this.disconnect(true);
+		this.ffplay.stop(true);
+		this.resetPlaybackState();
+	}
+
+	private leavePlaylistSession(): void {
+		if (this.mode !== "local") return;
+		this.stopLocalMode();
+		this.playlistKey = null;
+	}
+
+	private clearSession(): void {
+		this.stopLocalMode();
+		this.disconnect(true);
+		this.ffplay.stop(true);
+		this.mode = "room";
+		this.localPlaylistId = null;
+		this.localPlaylistName = null;
+		this.playlistKey = null;
+		this.lastError = null;
+		this.lastDisconnectReason = null;
+		this.reconnectAttempts = 0;
+		this.resetPlaybackState();
 	}
 
 	private async refreshLocalQueue(throwOnError = false): Promise<void> {
@@ -1026,10 +1235,14 @@ export class DaemonRuntime {
 
 			this.queue = playable;
 			this.connected = true;
+			this.connectionState = "connected";
+			this.reconnectAttempts = 0;
 			this.lastError = null;
 			this.reconcileLocalQueue(playable);
 		} catch (error) {
 			this.connected = false;
+			this.connectionState = "reconnecting";
+			this.reconnectAttempts += 1;
 			this.lastError = error instanceof Error ? error.message : String(error);
 			if (throwOnError) {
 				throw error;

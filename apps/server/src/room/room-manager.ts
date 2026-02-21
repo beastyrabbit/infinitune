@@ -6,14 +6,30 @@ import { Room } from "./room";
 export class RoomManager {
 	private rooms = new Map<string, Room>();
 	private markPlayedCallback: ((songId: string) => Promise<void>) | null = null;
+	private positionCallback:
+		| ((playlistId: string, orderIndex: number) => Promise<void>)
+		| null = null;
 
 	setMarkPlayedCallback(cb: (songId: string) => Promise<void>): void {
 		this.markPlayedCallback = cb;
+		for (const room of this.rooms.values()) {
+			room.setMarkPlayedCallback(cb);
+		}
+	}
+
+	setPositionCallback(
+		cb: (playlistId: string, orderIndex: number) => Promise<void>,
+	): void {
+		this.positionCallback = cb;
+		for (const room of this.rooms.values()) {
+			room.setPositionCallback(cb);
+		}
 	}
 
 	createRoom(id: string, name: string, playlistKey: string): Room {
-		if (this.rooms.has(id)) {
-			return this.rooms.get(id)!;
+		const existingRoom = this.rooms.get(id);
+		if (existingRoom) {
+			return existingRoom;
 		}
 		const room = new Room(
 			id,
@@ -21,6 +37,12 @@ export class RoomManager {
 			playlistKey,
 			this.markPlayedCallback ?? undefined,
 		);
+		if (this.markPlayedCallback) {
+			room.setMarkPlayedCallback(this.markPlayedCallback);
+		}
+		if (this.positionCallback) {
+			room.setPositionCallback(this.positionCallback);
+		}
 		this.rooms.set(id, room);
 		logger.info({ roomId: id, name, playlistKey }, "Room created");
 		return room;

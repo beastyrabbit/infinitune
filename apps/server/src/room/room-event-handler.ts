@@ -160,6 +160,20 @@ async function markSongPlayed(songId: string): Promise<void> {
 	}
 }
 
+async function reportPlaylistPosition(
+	playlistId: string,
+	orderIndex: number,
+): Promise<void> {
+	try {
+		await playlistService.updatePosition(playlistId, orderIndex);
+	} catch (err) {
+		logger.error(
+			{ err, playlistId, orderIndex },
+			"Failed to update playlist position from room",
+		);
+	}
+}
+
 // ─── Event handler registration ──────────────────────────────────────
 
 /**
@@ -169,6 +183,7 @@ async function markSongPlayed(songId: string): Promise<void> {
 export function startRoomEventSync(roomManager: RoomManager): void {
 	// Wire up the "mark played" callback so rooms can mark songs played
 	roomManager.setMarkPlayedCallback(markSongPlayed);
+	roomManager.setPositionCallback(reportPlaylistPosition);
 
 	// Song events → refresh rooms that show the affected playlist
 	const handleSongEvent = async (data: { playlistId: string }) => {

@@ -8,6 +8,7 @@ import type {
 	ServerMessage,
 	SongData,
 } from "@infinitune/shared/protocol";
+import { ROOM_PROTOCOL_VERSION } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger";
 
@@ -45,6 +46,9 @@ export class Room {
 	private lastStateBroadcast = 0;
 	private stateBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
 	private markPlayedCallback: ((songId: string) => Promise<void>) | null = null;
+	private positionCallback:
+		| ((playlistId: string, orderIndex: number) => Promise<void>)
+		| null = null;
 	private lastSeekAt = 0;
 	// After play/pause/toggle, bypass sync throttle so the player's
 	// immediate sync gets broadcast to controllers right away.
@@ -60,6 +64,16 @@ export class Room {
 		this.name = name;
 		this.playlistKey = playlistKey;
 		if (markPlayedCallback) this.markPlayedCallback = markPlayedCallback;
+	}
+
+	setMarkPlayedCallback(cb: (songId: string) => Promise<void>): void {
+		this.markPlayedCallback = cb;
+	}
+
+	setPositionCallback(
+		cb: (playlistId: string, orderIndex: number) => Promise<void>,
+	): void {
+		this.positionCallback = cb;
 	}
 
 	// ─── Device Management ──────────────────────────────────────────
@@ -421,6 +435,7 @@ export class Room {
 		this.playback.duration = song.audioDuration ?? 0;
 		this.playback.isPlaying = true;
 		this.syncPriorityUntil = Date.now() + 1000;
+		this.reportPlaylistPosition(song.orderIndex);
 
 		const startAt = Date.now() + 500; // 500ms buffer for network
 
@@ -434,6 +449,18 @@ export class Room {
 
 		this.broadcastState();
 		this.sendPreloadHint();
+	}
+
+	private reportPlaylistPosition(orderIndex: number): void {
+		if (!this.positionCallback || !this.playlistId) {
+			return;
+		}
+		this.positionCallback(this.playlistId, orderIndex).catch((err) => {
+			logger.error(
+				{ err, roomId: this.id, playlistId: this.playlistId, orderIndex },
+				"Failed to update playlist position from room playback",
+			);
+		});
 	}
 
 	private sendPreloadHint(): void {
@@ -459,6 +486,7 @@ export class Room {
 			playback: { ...this.playback },
 			currentSong: this.getCurrentSong(),
 			devices: this.getDevices(),
+			protocolVersion: ROOM_PROTOCOL_VERSION,
 		};
 	}
 

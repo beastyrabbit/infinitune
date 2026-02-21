@@ -1,5 +1,7 @@
 import z from "zod";
 
+export const ROOM_PROTOCOL_VERSION = 1 as const;
+
 // ─── Shared Types ───────────────────────────────────────────────────
 
 export const DeviceRoleSchema = z.enum(["player", "controller"]);
@@ -77,6 +79,7 @@ const JoinMessageSchema = z.object({
 	role: DeviceRoleSchema,
 	playlistKey: z.string().optional(),
 	roomName: z.string().optional(),
+	protocolVersion: z.number().int().positive().optional(),
 });
 
 const CommandMessageSchema = z.object({
@@ -132,6 +135,14 @@ const StateMessageSchema = z.object({
 	playback: PlaybackStateSchema,
 	currentSong: SongDataSchema.nullable(),
 	devices: z.array(DeviceSchema),
+	protocolVersion: z.number().int().positive().optional(),
+});
+
+const JoinAckMessageSchema = z.object({
+	type: z.literal("joinAck"),
+	roomId: z.string(),
+	deviceId: z.string(),
+	protocolVersion: z.number().int().positive(),
 });
 
 const ExecuteMessageSchema = z.object({
@@ -171,6 +182,7 @@ const ErrorMessageSchema = z.object({
 });
 
 export const ServerMessageSchema = z.union([
+	JoinAckMessageSchema,
 	StateMessageSchema,
 	ExecuteMessageSchema,
 	QueueMessageSchema,

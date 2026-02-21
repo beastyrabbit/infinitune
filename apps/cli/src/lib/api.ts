@@ -1,5 +1,11 @@
-import type { NowPlayingResponse, RoomInfo } from "@infinitune/shared/protocol";
+import {
+	type NowPlayingResponse,
+	NowPlayingResponseSchema,
+	type RoomInfo,
+	RoomInfoSchema,
+} from "@infinitune/shared/protocol";
 import type { Playlist, Song, SongStatus } from "@infinitune/shared/types";
+import z from "zod";
 
 export function normalizeServerUrl(serverUrl: string): string {
 	return serverUrl.replace(/\/+$/, "");
@@ -25,9 +31,43 @@ export function resolveMediaUrl(
 	return `${base}${maybeRelative.startsWith("/") ? "" : "/"}${maybeRelative}`;
 }
 
+const PlaylistSchema = z
+	.object({
+		id: z.string(),
+		createdAt: z.number(),
+		name: z.string(),
+		playlistKey: z.string().nullable(),
+	})
+	.passthrough();
+
+const SongSchema = z
+	.object({
+		id: z.string(),
+		createdAt: z.number(),
+		playlistId: z.string(),
+		orderIndex: z.number(),
+		title: z.string().nullable(),
+		artistName: z.string().nullable(),
+		status: z.string(),
+		audioUrl: z.string().nullable(),
+		audioDuration: z.number().nullable(),
+	})
+	.passthrough();
+
+const OkResponseSchema = z.object({
+	ok: z.boolean(),
+});
+
+const RoomCreateResponseSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	playlistKey: z.string(),
+});
+
 async function requestJson<T>(
 	serverUrl: string,
 	pathname: string,
+	schema: z.ZodType<T>,
 	init?: RequestInit,
 ): Promise<T> {
 	const base = normalizeServerUrl(serverUrl);
@@ -51,17 +91,39 @@ async function requestJson<T>(
 		const body = await response.text();
 		throw new Error(`HTTP ${response.status} ${pathname}: ${body}`);
 	}
-	return (await response.json()) as T;
+	let payload: unknown;
+	try {
+		payload = await response.json();
+	} catch (error) {
+		throw new Error(
+			`Invalid JSON response from ${pathname}: ${
+				error instanceof Error ? error.message : String(error)
+			}`,
+		);
+	}
+	const parsed = schema.safeParse(payload);
+	if (!parsed.success) {
+		throw new Error(
+			`Invalid response schema from ${pathname}: ${parsed.error.message}`,
+		);
+	}
+	return parsed.data;
 }
 
 export function listPlaylists(serverUrl: string): Promise<Playlist[]> {
-	return requestJson<Playlist[]>(serverUrl, "/api/playlists");
+	return requestJson(serverUrl, "/api/playlists", z.array(PlaylistSchema)).then(
+		(value) => value as unknown as Playlist[],
+	);
 }
 
 export function getCurrentPlaylist(
 	serverUrl: string,
 ): Promise<Playlist | null> {
-	return requestJson<Playlist | null>(serverUrl, "/api/playlists/current");
+	return requestJson(
+		serverUrl,
+		"/api/playlists/current",
+		PlaylistSchema.nullable(),
+	).then((value) => value as Playlist | null);
 }
 
 export function getPlaylistByKey(
@@ -69,10 +131,11 @@ export function getPlaylistByKey(
 	playlistKey: string,
 ): Promise<Playlist | null> {
 	const encoded = encodeURIComponent(playlistKey);
-	return requestJson<Playlist | null>(
+	return requestJson(
 		serverUrl,
 		`/api/playlists/by-key/${encoded}`,
-	);
+		PlaylistSchema.nullable(),
+	).then((value) => value as Playlist | null);
 }
 
 export function listSongsByPlaylist(
@@ -80,7 +143,11 @@ export function listSongsByPlaylist(
 	playlistId: string,
 ): Promise<Song[]> {
 	const encoded = encodeURIComponent(playlistId);
-	return requestJson<Song[]>(serverUrl, `/api/songs/by-playlist/${encoded}`);
+	return requestJson(
+		serverUrl,
+		`/api/songs/by-playlist/${encoded}`,
+		z.array(SongSchema),
+	).then((value) => value as unknown as Song[]);
 }
 
 export function heartbeatPlaylist(
@@ -88,9 +155,10 @@ export function heartbeatPlaylist(
 	playlistId: string,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(playlistId);
-	return requestJson<{ ok: boolean }>(
+	return requestJson(
 		serverUrl,
 		`/api/playlists/${encoded}/heartbeat`,
+		OkResponseSchema,
 		{
 			method: "POST",
 		},
@@ -103,9 +171,10 @@ export function updatePlaylistPosition(
 	currentOrderIndex: number,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(playlistId);
-	return requestJson<{ ok: boolean }>(
+	return requestJson(
 		serverUrl,
 		`/api/playlists/${encoded}/position`,
+		OkResponseSchema,
 		{
 			method: "PATCH",
 			body: JSON.stringify({ currentOrderIndex }),
@@ -120,9 +189,10 @@ export function updateSongStatus(
 	errorMessage?: string,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(songId);
-	return requestJson<{ ok: boolean }>(
+	return requestJson(
 		serverUrl,
 		`/api/songs/${encoded}/status`,
+		OkResponseSchema,
 		{
 			method: "PATCH",
 			body: JSON.stringify({
@@ -133,22 +203,35 @@ export function updateSongStatus(
 	);
 }
 
+export function rateSong(
+	serverUrl: string,
+	songId: string,
+	rating: "up" | "down",
+): Promise<{ ok: boolean }> {
+	const encoded = encodeURIComponent(songId);
+	return requestJson(
+		serverUrl,
+		`/api/songs/${encoded}/rating`,
+		OkResponseSchema,
+		{
+			method: "POST",
+			body: JSON.stringify({ rating }),
+		},
+	);
+}
+
 export function listRooms(serverUrl: string): Promise<RoomInfo[]> {
-	return requestJson<RoomInfo[]>(serverUrl, "/api/v1/rooms");
+	return requestJson(serverUrl, "/api/v1/rooms", z.array(RoomInfoSchema));
 }
 
 export function createRoom(
 	serverUrl: string,
 	payload: { id: string; name: string; playlistKey: string },
 ): Promise<{ id: string; name: string; playlistKey: string }> {
-	return requestJson<{ id: string; name: string; playlistKey: string }>(
-		serverUrl,
-		"/api/v1/rooms",
-		{
-			method: "POST",
-			body: JSON.stringify(payload),
-		},
-	);
+	return requestJson(serverUrl, "/api/v1/rooms", RoomCreateResponseSchema, {
+		method: "POST",
+		body: JSON.stringify(payload),
+	});
 }
 
 export function getNowPlaying(
@@ -156,8 +239,9 @@ export function getNowPlaying(
 	roomId: string,
 ): Promise<NowPlayingResponse> {
 	const encoded = encodeURIComponent(roomId);
-	return requestJson<NowPlayingResponse>(
+	return requestJson(
 		serverUrl,
 		`/api/v1/now-playing?room=${encoded}`,
+		NowPlayingResponseSchema,
 	);
 }
