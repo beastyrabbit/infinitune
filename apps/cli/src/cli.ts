@@ -63,6 +63,7 @@ Playback Commands:
   infi play [--local] [--room <id>] [--playlist-key <key>] [--server <url>]
   infi stop
   infi skip
+  infi thumb up|down
   infi volume up|down [--step <0..1>]
   infi mute
   infi song pick
@@ -647,6 +648,26 @@ async function cmdMute(): Promise<void> {
 	const response = await sendDaemonRequest("toggleMute");
 	requireOk(response);
 	console.log("Toggled mute.");
+}
+
+async function cmdThumb(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const direction = parsed.positionals[0];
+	if (direction !== "up" && direction !== "down") {
+		throw new Error("Usage: infi thumb up|down");
+	}
+	const response = await sendDaemonRequest("rate", { rating: direction });
+	const data = requireOk(response) as {
+		songId?: string;
+		title?: string | null;
+	};
+	const label =
+		typeof data.title === "string" && data.title.trim().length > 0
+			? data.title.trim()
+			: (data.songId ?? "current song");
+	console.log(
+		`Thumbs ${direction} sent for ${label}. Repeating the same vote toggles it off.`,
+	);
 }
 
 async function cmdRoom(args: string[]): Promise<void> {
@@ -1414,6 +1435,10 @@ async function main(): Promise<void> {
 			return;
 		case "skip":
 			await cmdSkip();
+			return;
+		case "thumb":
+		case "thumbs":
+			await cmdThumb(rest);
 			return;
 		case "volume":
 			await cmdVolume(rest);

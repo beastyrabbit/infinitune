@@ -19,6 +19,7 @@ export type DaemonAction =
 	| "setVolume"
 	| "volumeDelta"
 	| "toggleMute"
+	| "rate"
 	| "selectSong"
 	| "seek"
 	| "queue";

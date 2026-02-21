@@ -133,6 +133,22 @@ export function updateSongStatus(
 	);
 }
 
+export function rateSong(
+	serverUrl: string,
+	songId: string,
+	rating: "up" | "down",
+): Promise<{ ok: boolean }> {
+	const encoded = encodeURIComponent(songId);
+	return requestJson<{ ok: boolean }>(
+		serverUrl,
+		`/api/songs/${encoded}/rating`,
+		{
+			method: "POST",
+			body: JSON.stringify({ rating }),
+		},
+	);
+}
+
 export function listRooms(serverUrl: string): Promise<RoomInfo[]> {
 	return requestJson<RoomInfo[]>(serverUrl, "/api/v1/rooms");
 }

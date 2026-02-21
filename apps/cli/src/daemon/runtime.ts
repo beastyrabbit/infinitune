@@ -21,6 +21,7 @@ import { FfplayEngine } from "../audio/ffplay-engine";
 import {
 	heartbeatPlaylist,
 	listSongsByPlaylist,
+	rateSong,
 	resolveMediaUrl,
 	toRoomWsUrl,
 	updatePlaylistPosition,
@@ -468,6 +469,27 @@ export class DaemonRuntime {
 					this.sendCommand("toggleMute");
 				}
 				return { ok: true };
+			case "rate": {
+				const rating = asString(payload?.rating);
+				if (rating !== "up" && rating !== "down") {
+					throw new Error('rate requires payload.rating "up" or "down"');
+				}
+				if (!this.serverUrl) {
+					throw new Error("Daemon server URL is not configured.");
+				}
+				const songId =
+					this.currentSong?.id ?? this.playback.currentSongId ?? null;
+				if (!songId) {
+					throw new Error("No current song to rate.");
+				}
+				await rateSong(this.serverUrl, songId, rating);
+				return {
+					ok: true,
+					songId,
+					rating,
+					title: this.currentSong?.title ?? null,
+				};
+			}
 			case "selectSong": {
 				const songId = asString(payload?.songId);
 				if (!songId) {
