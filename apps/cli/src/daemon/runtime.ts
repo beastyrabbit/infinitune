@@ -6,7 +6,7 @@ import {
 	type IncomingMessage,
 	type ServerResponse,
 } from "node:http";
-import type { Server as NetServer } from "node:net";
+import { createConnection, type Server as NetServer } from "node:net";
 import {
 	type ClientMessage,
 	type CommandAction,
@@ -198,9 +198,7 @@ export class DaemonRuntime {
 
 	async start(): Promise<void> {
 		fs.mkdirSync(this.runtimePaths.runtimeRoot, { recursive: true });
-		if (fs.existsSync(this.runtimePaths.socketPath)) {
-			fs.unlinkSync(this.runtimePaths.socketPath);
-		}
+		await this.ensureSocketPathReady();
 		fs.writeFileSync(this.runtimePaths.pidPath, `${process.pid}\n`, "utf8");
 
 		await new Promise<void>((resolve, reject) => {
@@ -484,11 +482,7 @@ export class DaemonRuntime {
 				roomName: this.roomName ?? undefined,
 			};
 			this.send(join);
-			for (let i = 0; i < 5; i += 1) {
-				setTimeout(() => {
-					this.send({ type: "ping", clientTime: Date.now() });
-				}, i * 150);
-			}
+			this.send({ type: "ping", clientTime: Date.now() });
 		});
 
 		ws.on("message", (data) => {
@@ -720,6 +714,43 @@ export class DaemonRuntime {
 			server.once("listening", onListening);
 			server.listen(port, host);
 		});
+	}
+
+	private async ensureSocketPathReady(): Promise<void> {
+		const socketPath = this.runtimePaths.socketPath;
+		if (!fs.existsSync(socketPath)) return;
+
+		const socketActive = await new Promise<boolean>((resolve) => {
+			let settled = false;
+			const socket = createConnection(socketPath);
+			socket.once("connect", () => {
+				if (settled) return;
+				settled = true;
+				socket.end();
+				resolve(true);
+			});
+			socket.once("error", () => {
+				if (settled) return;
+				settled = true;
+				resolve(false);
+			});
+			socket.setTimeout(300, () => {
+				if (settled) return;
+				settled = true;
+				socket.destroy();
+				resolve(true);
+			});
+		});
+
+		if (socketActive) {
+			throw new Error(`Daemon already running (socket in use): ${socketPath}`);
+		}
+
+		try {
+			fs.unlinkSync(socketPath);
+		} catch {
+			// Best-effort stale socket cleanup.
+		}
 	}
 
 	private async stopHttpServer(): Promise<void> {

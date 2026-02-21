@@ -192,6 +192,21 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function readLogTail(logPath: string, maxLines = 40): string | null {
+	if (!fs.existsSync(logPath)) return null;
+	try {
+		const content = fs.readFileSync(logPath, "utf8");
+		const lines = content
+			.split("\n")
+			.map((line) => line.trimEnd())
+			.filter((line) => line.length > 0);
+		if (lines.length === 0) return null;
+		return lines.slice(-maxLines).join("\n");
+	} catch {
+		return null;
+	}
+}
+
 function normalizeServerSetting(value: string): string {
 	const trimmed = value.trim();
 	if (!trimmed) {
@@ -320,8 +335,10 @@ async function startDaemonProcess(flags: {
 
 	const ready = await waitForDaemonReady();
 	if (!ready) {
+		const logTail = readLogTail(runtimePaths.logPath);
+		const details = logTail ? `\nRecent daemon log:\n${logTail}` : "";
 		throw new Error(
-			`Daemon failed to start. Check log file: ${runtimePaths.logPath}`,
+			`Daemon failed to start. Check log file: ${runtimePaths.logPath}${details}`,
 		);
 	}
 }
