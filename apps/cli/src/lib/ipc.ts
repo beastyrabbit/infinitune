@@ -58,29 +58,35 @@ export function createIpcServer(handler: IpcHandler): net.Server {
 				try {
 					request = JSON.parse(line) as IpcRequest;
 				} catch {
-					socket.end(
+					const response: IpcResponse = {
+						id: "unknown",
+						ok: false,
+						error: "Invalid JSON request",
+					};
+					socket.write(
 						`${JSON.stringify({
-							id: "unknown",
-							ok: false,
-							error: "Invalid JSON request",
+							id: response.id,
+							ok: response.ok,
+							error: response.error,
 						})}\n`,
 					);
-					break;
+					newlineIndex = buffer.indexOf("\n");
+					continue;
 				}
 
 				try {
 					const data = await handler(request.action, request.payload);
 					const response: IpcResponse = { id: request.id, ok: true, data };
-					socket.end(`${JSON.stringify(response)}\n`);
+					socket.write(`${JSON.stringify(response)}\n`);
 				} catch (error) {
 					const response: IpcResponse = {
 						id: request.id,
 						ok: false,
 						error: error instanceof Error ? error.message : String(error),
 					};
-					socket.end(`${JSON.stringify(response)}\n`);
+					socket.write(`${JSON.stringify(response)}\n`);
 				}
-				break;
+				newlineIndex = buffer.indexOf("\n");
 			}
 		});
 	});
@@ -131,19 +137,19 @@ export async function sendDaemonRequest(
 					continue;
 				}
 
-				if (resolved) break;
-				resolved = true;
-				clearTimeout(timer);
-
-				try {
-					const response = JSON.parse(line) as IpcResponse;
-					resolve(response);
-				} catch (error) {
-					reject(error);
-				} finally {
-					socket.end();
+				if (!resolved) {
+					resolved = true;
+					clearTimeout(timer);
+					try {
+						const response = JSON.parse(line) as IpcResponse;
+						resolve(response);
+					} catch (error) {
+						reject(error);
+					} finally {
+						socket.end();
+					}
 				}
-				break;
+				newlineIndex = buffer.indexOf("\n");
 			}
 		});
 
