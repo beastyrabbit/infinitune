@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 export type FzfOptions = {
 	prompt: string;
 	header?: string;
+	delimiter?: string;
+	withNth?: string;
 };
 
 export function pickFromFzf(
@@ -21,6 +23,12 @@ export function pickFromFzf(
 	];
 	if (options.header) {
 		args.push("--header", options.header);
+	}
+	if (options.delimiter) {
+		args.push("--delimiter", options.delimiter);
+	}
+	if (options.withNth) {
+		args.push("--with-nth", options.withNth);
 	}
 
 	const result = spawnSync("fzf", args, {

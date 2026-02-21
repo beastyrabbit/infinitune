@@ -45,15 +45,15 @@ async function pickPlaylistInteractive(serverUrl: string): Promise<Playlist> {
 
 	const sorted = [...playlists].sort((a, b) => b.createdAt - a.createdAt);
 	const lines = sorted.map((playlist) => {
-		const key = playlist.playlistKey ?? "-";
-		const mode = playlist.mode;
-		const status = playlist.status;
-		return `${playlist.id}\t${playlist.name}\t${key}\t${mode}\t${status}`;
+		const name = playlist.name.trim() || "(untitled playlist)";
+		return `${playlist.id}\t${name}`;
 	});
 
 	const picked = pickFromFzf(lines, {
 		prompt: "playlist",
-		header: "name | playlistKey | mode | status",
+		header: "playlist name",
+		delimiter: "\t",
+		withNth: "2..",
 	});
 	if (!picked) {
 		throw new Error("Playlist selection cancelled.");
@@ -76,6 +76,8 @@ async function pickRoomInteractive(rooms: RoomInfo[]): Promise<RoomInfo> {
 	const picked = pickFromFzf(lines, {
 		prompt: "room",
 		header: "name | playlistKey | devices",
+		delimiter: "\t",
+		withNth: "2..",
 	});
 	if (!picked) {
 		throw new Error("Room selection cancelled.");
@@ -224,6 +226,8 @@ export function pickSongFromQueue(
 	const picked = pickFromFzf(lines, {
 		prompt: "song",
 		header: "title | artist | status",
+		delimiter: "\t",
+		withNth: "2..",
 	});
 	if (!picked) {
 		throw new Error("Song selection cancelled.");
