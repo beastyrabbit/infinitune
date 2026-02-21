@@ -106,6 +106,80 @@ function toDisplayPercent(volume: number | undefined): string {
 	return `${Math.round(volume * 100)}%`;
 }
 
+function asFiniteNumber(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
+}
+
+function formatRuntimeClock(seconds: number): string {
+	const total = Math.max(0, Math.floor(seconds));
+	const hours = Math.floor(total / 3600);
+	const minutes = Math.floor((total % 3600) / 60);
+	const secs = total % 60;
+	if (hours > 0) {
+		return `${String(hours)}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+	}
+	return `${String(minutes)}:${String(secs).padStart(2, "0")}`;
+}
+
+function printSongRuntimeStatus(data: Record<string, unknown>): {
+	hasSongLine: boolean;
+} {
+	const playback = data.playback as Record<string, unknown> | undefined;
+	const engine = data.engine as Record<string, unknown> | undefined;
+	const currentSong = data.currentSong as Record<string, unknown> | undefined;
+
+	const title =
+		typeof currentSong?.title === "string" &&
+		currentSong.title.trim().length > 0
+			? currentSong.title.trim()
+			: undefined;
+	const artist =
+		typeof currentSong?.artistName === "string" &&
+		currentSong.artistName.trim().length > 0
+			? currentSong.artistName.trim()
+			: undefined;
+	const songId =
+		(typeof currentSong?.id === "string" && currentSong.id) ||
+		(typeof playback?.currentSongId === "string" && playback.currentSongId) ||
+		(typeof engine?.songId === "string" && engine.songId) ||
+		undefined;
+
+	if (title) {
+		console.log(`Song: ${title}${artist ? ` — ${artist}` : ""}`);
+	}
+	if (songId) {
+		console.log(`Song ID: ${songId}`);
+	}
+
+	const runtimeSec =
+		asFiniteNumber(engine?.currentTime) ??
+		asFiniteNumber(playback?.currentTime);
+	const durationRaw =
+		asFiniteNumber(playback?.duration) ??
+		asFiniteNumber(currentSong?.audioDuration);
+	const durationSec =
+		typeof durationRaw === "number" && durationRaw > 0
+			? durationRaw
+			: undefined;
+
+	if (runtimeSec !== undefined || durationSec !== undefined) {
+		const runtimeText = formatRuntimeClock(runtimeSec ?? 0);
+		let line = `Runtime: ${runtimeText}`;
+		if (durationSec !== undefined) {
+			line += ` / ${formatRuntimeClock(durationSec)}`;
+			if (durationSec > 0 && runtimeSec !== undefined) {
+				const ratio = Math.max(0, Math.min(1, runtimeSec / durationSec));
+				line += ` (${Math.round(ratio * 100)}%)`;
+			}
+		}
+		console.log(line);
+	}
+
+	return { hasSongLine: Boolean(title) };
+}
+
 function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -348,6 +422,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 					)}`,
 				);
 			}
+			printSongRuntimeStatus(data);
 			if (typeof data.lastError === "string" && data.lastError.length > 0) {
 				console.log(`Last Error: ${data.lastError}`);
 			}
@@ -623,6 +698,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 			)}`,
 		);
 	}
+	const songStatus = printSongRuntimeStatus(daemonData);
 	if (
 		typeof daemonData.lastError === "string" &&
 		daemonData.lastError.length > 0
@@ -630,7 +706,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 		console.log(`Last Error: ${daemonData.lastError}`);
 	}
 
-	if (mode === "room" && roomId) {
+	if (mode === "room" && roomId && !songStatus.hasSongLine) {
 		try {
 			const nowPlaying = await getNowPlaying(serverUrl, roomId);
 			if (nowPlaying.song?.title) {
