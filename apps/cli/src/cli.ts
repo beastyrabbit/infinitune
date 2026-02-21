@@ -192,6 +192,10 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function systemdQuote(value: string): string {
+	return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
 function readLogTail(logPath: string, maxLines = 40): string | null {
 	if (!fs.existsSync(logPath)) return null;
 	try {
@@ -1134,8 +1138,8 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=${REPO_ROOT}
-ExecStart=${process.execPath} --import ${TSX_LOADER_PATH} ${CLI_ENTRY_PATH} daemon run --server ${serverUrl}
+WorkingDirectory=${systemdQuote(REPO_ROOT)}
+ExecStart=${systemdQuote(process.execPath)} --import ${systemdQuote(TSX_LOADER_PATH)} ${systemdQuote(CLI_ENTRY_PATH)} daemon run --server ${systemdQuote(serverUrl)}
 Restart=on-failure
 RestartSec=2
 

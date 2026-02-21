@@ -69,11 +69,13 @@ async function primePlaylistForIdleRoomStart(
 		const workQueue = await songService.getWorkQueue(playlistId);
 		const baseOrder = Math.ceil(workQueue.maxOrderIndex);
 
-		for (let i = 0; i < IDLE_ROOM_MANUAL_TOP_UP_COUNT; i++) {
-			await songService.createPending(playlistId, baseOrder + i + 1, {
-				promptEpoch,
-			});
-		}
+		await Promise.all(
+			Array.from({ length: IDLE_ROOM_MANUAL_TOP_UP_COUNT }, (_, i) =>
+				songService.createPending(playlistId, baseOrder + i + 1, {
+					promptEpoch,
+				}),
+			),
+		);
 
 		logger.info(
 			{
