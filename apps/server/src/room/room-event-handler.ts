@@ -58,12 +58,22 @@ async function refreshRooms(playlistId: string, rooms: Room[]): Promise<void> {
 /** Resolve a room's playlist key to an ID and sync its queue. */
 export async function syncRoom(room: Room): Promise<void> {
 	try {
-		if (!room.playlistId) {
-			const playlist = await playlistService.getByKey(room.playlistKey);
-			if (!playlist) return;
-			room.playlistId = playlist.id;
+		// Always re-resolve by playlist key to avoid stale room.playlistId linkage.
+		const byKey = await playlistService.getByKey(room.playlistKey);
+		if (byKey) {
+			room.playlistId = byKey.id;
+			await refreshRooms(byKey.id, [room]);
+			return;
 		}
-		await refreshRooms(room.playlistId, [room]);
+
+		// Fallback for legacy rooms that still have an ID but key lookup fails.
+		if (room.playlistId) {
+			await refreshRooms(room.playlistId, [room]);
+			return;
+		}
+
+		// No playlist mapping available: clear queue state.
+		room.updateQueue([], 0);
 	} catch (err) {
 		logger.error({ err, roomId: room.id }, "Failed to sync room");
 	}

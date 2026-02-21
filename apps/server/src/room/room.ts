@@ -116,16 +116,30 @@ export class Room {
 		this.playlistEpoch = playlistEpoch;
 		this.broadcast({ type: "queue", songs });
 
+		// If the current song no longer exists in this queue snapshot,
+		// reset playback state so controllers/players don't show stale playback.
+		const hasCurrentSong =
+			this.playback.currentSongId !== null &&
+			songs.some((song) => song.id === this.playback.currentSongId);
+		if (!hasCurrentSong) {
+			this.playback.currentSongId = null;
+			this.playback.isPlaying = false;
+			this.playback.currentTime = 0;
+			this.playback.duration = 0;
+		}
+
 		// If we have no current song but there are ready songs, auto-start
 		if (!this.playback.currentSongId) {
 			const next = pickNextSong(songs, null, playlistEpoch);
 			if (next?.audioUrl) {
 				this.advanceToSong(next);
+				return;
 			}
 		}
 
 		// Preload the next song for players
 		this.sendPreloadHint();
+		this.broadcastState();
 	}
 
 	getQueue(): SongData[] {
