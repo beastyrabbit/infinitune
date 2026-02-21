@@ -30,6 +30,9 @@ export class FfplayEngine {
 	private expectedExits = new WeakSet<ChildProcess>();
 	private preloadSongId: string | null = null;
 	private appliedVolumePercent = 80;
+	private pulseSinkInputId: string | null = null;
+	private liveVolumeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	private liveVolumeRetryAttempts = 0;
 	private onEnded: () => void;
 
 	constructor(onEnded: () => void) {
@@ -124,6 +127,7 @@ export class FfplayEngine {
 		// Keep the current stream alive: if live volume control isn't available,
 		// apply the new level on the next natural spawn (next track/seek/reload).
 		this.appliedVolumePercent = -1;
+		this.scheduleLiveVolumeRetry();
 	}
 
 	adjustVolume(delta: number): number {
@@ -146,6 +150,7 @@ export class FfplayEngine {
 		// Keep the current stream alive: if live mute/unmute control isn't available,
 		// apply on the next natural spawn (next track/seek/reload).
 		this.appliedVolumePercent = -1;
+		this.scheduleLiveVolumeRetry();
 		return this.muted;
 	}
 
@@ -267,10 +272,12 @@ export class FfplayEngine {
 		].join(" ");
 
 		const processHandle = spawn("ffplay", args, {
-			stdio: ["pipe", "ignore", "ignore"],
+			stdio: ["ignore", "ignore", "ignore"],
 			env: childEnv,
 		});
 		this.process = processHandle;
+		this.pulseSinkInputId = null;
+		this.liveVolumeRetryAttempts = 0;
 		this.appliedVolumePercent = this.effectiveVolumePercent();
 
 		processHandle.on("exit", () => {
@@ -280,11 +287,13 @@ export class FfplayEngine {
 				if (this.process === processHandle) {
 					this.process = null;
 				}
+				this.pulseSinkInputId = null;
 				return;
 			}
 
 			if (this.process !== processHandle) return;
 			this.process = null;
+			this.pulseSinkInputId = null;
 
 			if (this.pausedAtSec !== null) return;
 			this.onEnded();
@@ -293,10 +302,18 @@ export class FfplayEngine {
 		processHandle.on("error", () => {
 			if (this.process !== processHandle) return;
 			this.process = null;
+			this.pulseSinkInputId = null;
 		});
 	}
 
 	private stopProcess(resetSong: boolean): void {
+		if (this.liveVolumeRetryTimer) {
+			clearTimeout(this.liveVolumeRetryTimer);
+			this.liveVolumeRetryTimer = null;
+		}
+		this.liveVolumeRetryAttempts = 0;
+		this.pulseSinkInputId = null;
+
 		if (this.scheduledStart) {
 			clearTimeout(this.scheduledStart);
 			this.scheduledStart = null;
@@ -330,24 +347,44 @@ export class FfplayEngine {
 		}
 		const targetPercent = this.effectiveVolumePercent();
 		if (targetPercent === this.appliedVolumePercent) {
+			this.liveVolumeRetryAttempts = 0;
 			return true;
 		}
+
+		const applyToSinkInput = (sinkInputId: string): boolean => {
+			const setVolumeResult = spawnSync(
+				"pactl",
+				["set-sink-input-volume", sinkInputId, `${String(targetPercent)}%`],
+				{
+					encoding: "utf8",
+				},
+			);
+			if (setVolumeResult.error || setVolumeResult.status !== 0) {
+				return false;
+			}
+			this.appliedVolumePercent = targetPercent;
+			this.liveVolumeRetryAttempts = 0;
+			return true;
+		};
+
+		const cachedSinkInputId = this.pulseSinkInputId;
+		if (cachedSinkInputId && applyToSinkInput(cachedSinkInputId)) {
+			return true;
+		}
+		if (cachedSinkInputId) {
+			this.pulseSinkInputId = null;
+		}
+
 		const sinkInputId = this.findPulseSinkInputIdByPid(pid);
 		if (!sinkInputId) {
 			return false;
 		}
-		const setVolumeResult = spawnSync(
-			"pactl",
-			["set-sink-input-volume", sinkInputId, `${String(targetPercent)}%`],
-			{
-				encoding: "utf8",
-			},
-		);
-		if (setVolumeResult.error || setVolumeResult.status !== 0) {
-			return false;
+		this.pulseSinkInputId = sinkInputId;
+		if (applyToSinkInput(sinkInputId)) {
+			return true;
 		}
-		this.appliedVolumePercent = targetPercent;
-		return true;
+		this.pulseSinkInputId = null;
+		return false;
 	}
 
 	private findPulseSinkInputIdByPid(pid: number): string | null {
@@ -373,5 +410,26 @@ export class FfplayEngine {
 			}
 		}
 		return null;
+	}
+
+	private scheduleLiveVolumeRetry(): void {
+		if (this.liveVolumeRetryTimer) {
+			return;
+		}
+		if (this.liveVolumeRetryAttempts >= 6) {
+			return;
+		}
+		this.liveVolumeRetryTimer = setTimeout(() => {
+			this.liveVolumeRetryTimer = null;
+			if (!this.process || this.pausedAtSec !== null) {
+				this.liveVolumeRetryAttempts = 0;
+				return;
+			}
+			this.liveVolumeRetryAttempts += 1;
+			if (this.tryApplyLiveVolume()) {
+				return;
+			}
+			this.scheduleLiveVolumeRetry();
+		}, 120);
 	}
 }
