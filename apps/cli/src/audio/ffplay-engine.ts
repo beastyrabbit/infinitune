@@ -121,7 +121,9 @@ export class FfplayEngine {
 		if (this.tryApplyLiveVolume()) {
 			return;
 		}
-		this.startAtOffset(this.currentTime());
+		// Keep the current stream alive: if live volume control isn't available,
+		// apply the new level on the next natural spawn (next track/seek/reload).
+		this.appliedVolumePercent = -1;
 	}
 
 	adjustVolume(delta: number): number {
@@ -141,7 +143,9 @@ export class FfplayEngine {
 		if (this.tryApplyLiveVolume()) {
 			return this.muted;
 		}
-		this.startAtOffset(this.currentTime());
+		// Keep the current stream alive: if live mute/unmute control isn't available,
+		// apply on the next natural spawn (next track/seek/reload).
+		this.appliedVolumePercent = -1;
 		return this.muted;
 	}
 
