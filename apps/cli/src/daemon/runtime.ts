@@ -718,7 +718,28 @@ export class DaemonRuntime {
 
 	private async ensureSocketPathReady(): Promise<void> {
 		const socketPath = this.runtimePaths.socketPath;
-		if (!fs.existsSync(socketPath)) return;
+		const pidPath = this.runtimePaths.pidPath;
+
+		const pidFromFile = (() => {
+			if (!fs.existsSync(pidPath)) return null;
+			try {
+				const raw = fs.readFileSync(pidPath, "utf8").trim();
+				const parsed = Number(raw);
+				if (!Number.isInteger(parsed) || parsed <= 0) return null;
+				return parsed;
+			} catch {
+				return null;
+			}
+		})();
+		const pidRunning =
+			pidFromFile !== null && this.isProcessRunning(pidFromFile);
+
+		if (!fs.existsSync(socketPath)) {
+			if (!pidRunning) return;
+			throw new Error(
+				`Daemon appears to be running (pid ${pidFromFile}) but socket is missing: ${socketPath}`,
+			);
+		}
 
 		const socketActive = await new Promise<boolean>((resolve) => {
 			let settled = false;
@@ -743,13 +764,41 @@ export class DaemonRuntime {
 		});
 
 		if (socketActive) {
+			if (pidRunning) {
+				throw new Error(
+					`Daemon already running (pid ${pidFromFile}, socket in use): ${socketPath}`,
+				);
+			}
 			throw new Error(`Daemon already running (socket in use): ${socketPath}`);
+		}
+
+		if (pidRunning) {
+			throw new Error(
+				`Daemon appears to be running (pid ${pidFromFile}) but socket is not accepting connections`,
+			);
 		}
 
 		try {
 			fs.unlinkSync(socketPath);
 		} catch {
 			// Best-effort stale socket cleanup.
+		}
+
+		if (fs.existsSync(pidPath)) {
+			try {
+				fs.unlinkSync(pidPath);
+			} catch {
+				// Best-effort stale pid cleanup.
+			}
+		}
+	}
+
+	private isProcessRunning(pid: number): boolean {
+		try {
+			process.kill(pid, 0);
+			return true;
+		} catch {
+			return false;
 		}
 	}
 
@@ -1150,10 +1199,17 @@ export class DaemonRuntime {
 		}
 	}
 
-	private waitUntilConnected(timeoutMs = 5000): Promise<void> {
+	private waitUntilConnected(timeoutMs = 4000): Promise<void> {
 		const ws = this.ws;
 		if (this.connected && ws && ws.readyState === WebSocket.OPEN) {
 			return Promise.resolve();
+		}
+		if (
+			!ws ||
+			ws.readyState === WebSocket.CLOSING ||
+			ws.readyState === WebSocket.CLOSED
+		) {
+			return Promise.reject(new Error("Room socket is not connected"));
 		}
 
 		return new Promise<void>((resolve, reject) => {

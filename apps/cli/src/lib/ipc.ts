@@ -65,7 +65,7 @@ export function createIpcServer(handler: IpcHandler): net.Server {
 							error: "Invalid JSON request",
 						})}\n`,
 					);
-					return;
+					break;
 				}
 
 				try {
@@ -80,7 +80,7 @@ export function createIpcServer(handler: IpcHandler): net.Server {
 					};
 					socket.end(`${JSON.stringify(response)}\n`);
 				}
-				return;
+				break;
 			}
 		});
 	});
@@ -131,7 +131,7 @@ export async function sendDaemonRequest(
 					continue;
 				}
 
-				if (resolved) return;
+				if (resolved) break;
 				resolved = true;
 				clearTimeout(timer);
 
@@ -143,7 +143,7 @@ export async function sendDaemonRequest(
 				} finally {
 					socket.end();
 				}
-				return;
+				break;
 			}
 		});
 
