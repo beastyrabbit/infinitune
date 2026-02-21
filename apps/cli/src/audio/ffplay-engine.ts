@@ -237,8 +237,19 @@ export class FfplayEngine {
 			this.url,
 		];
 
+		const childEnv: NodeJS.ProcessEnv = {
+			...process.env,
+			SDL_APP_NAME: "Infinitune CLI",
+			SDL_AUDIO_DEVICE_APP_NAME: "Infinitune CLI",
+		};
+		childEnv["PULSE_PROP_application.name"] = "Infinitune CLI";
+		childEnv["PULSE_PROP_media.name"] = "Infinitune Playback";
+		childEnv["PULSE_PROP_media.role"] = "music";
+		childEnv["PULSE_PROP_application.icon_name"] = "multimedia-player";
+
 		const processHandle = spawn("ffplay", args, {
 			stdio: ["ignore", "ignore", "ignore"],
+			env: childEnv,
 		});
 		this.process = processHandle;
 
