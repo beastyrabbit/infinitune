@@ -45,37 +45,42 @@ export function createIpcServer(handler: IpcHandler): net.Server {
 
 		socket.on("data", async (chunk) => {
 			buffer += chunk;
-			const newlineIndex = buffer.indexOf("\n");
-			if (newlineIndex === -1) return;
+			let newlineIndex = buffer.indexOf("\n");
+			while (newlineIndex !== -1) {
+				const line = buffer.slice(0, newlineIndex).trim();
+				buffer = buffer.slice(newlineIndex + 1);
+				if (!line) {
+					newlineIndex = buffer.indexOf("\n");
+					continue;
+				}
 
-			const line = buffer.slice(0, newlineIndex).trim();
-			buffer = "";
+				let request: IpcRequest;
+				try {
+					request = JSON.parse(line) as IpcRequest;
+				} catch {
+					socket.end(
+						`${JSON.stringify({
+							id: "unknown",
+							ok: false,
+							error: "Invalid JSON request",
+						})}\n`,
+					);
+					return;
+				}
 
-			let request: IpcRequest;
-			try {
-				request = JSON.parse(line) as IpcRequest;
-			} catch {
-				socket.end(
-					`${JSON.stringify({
-						id: "unknown",
+				try {
+					const data = await handler(request.action, request.payload);
+					const response: IpcResponse = { id: request.id, ok: true, data };
+					socket.end(`${JSON.stringify(response)}\n`);
+				} catch (error) {
+					const response: IpcResponse = {
+						id: request.id,
 						ok: false,
-						error: "Invalid JSON request",
-					})}\n`,
-				);
+						error: error instanceof Error ? error.message : String(error),
+					};
+					socket.end(`${JSON.stringify(response)}\n`);
+				}
 				return;
-			}
-
-			try {
-				const data = await handler(request.action, request.payload);
-				const response: IpcResponse = { id: request.id, ok: true, data };
-				socket.end(`${JSON.stringify(response)}\n`);
-			} catch (error) {
-				const response: IpcResponse = {
-					id: request.id,
-					ok: false,
-					error: error instanceof Error ? error.message : String(error),
-				};
-				socket.end(`${JSON.stringify(response)}\n`);
 			}
 		});
 	});
@@ -117,22 +122,28 @@ export async function sendDaemonRequest(
 
 		socket.on("data", (chunk) => {
 			buffer += chunk;
-			const newlineIndex = buffer.indexOf("\n");
-			if (newlineIndex === -1) return;
-			const line = buffer.slice(0, newlineIndex).trim();
-			if (!line) return;
+			let newlineIndex = buffer.indexOf("\n");
+			while (newlineIndex !== -1) {
+				const line = buffer.slice(0, newlineIndex).trim();
+				buffer = buffer.slice(newlineIndex + 1);
+				if (!line) {
+					newlineIndex = buffer.indexOf("\n");
+					continue;
+				}
 
-			if (resolved) return;
-			resolved = true;
-			clearTimeout(timer);
+				if (resolved) return;
+				resolved = true;
+				clearTimeout(timer);
 
-			try {
-				const response = JSON.parse(line) as IpcResponse;
-				resolve(response);
-			} catch (error) {
-				reject(error);
-			} finally {
-				socket.end();
+				try {
+					const response = JSON.parse(line) as IpcResponse;
+					resolve(response);
+				} catch (error) {
+					reject(error);
+				} finally {
+					socket.end();
+				}
+				return;
 			}
 		});
 

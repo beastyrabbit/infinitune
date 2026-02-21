@@ -699,7 +699,7 @@ export class DaemonRuntime {
 				this.httpServer = null;
 				reject(
 					new Error(
-						`Failed to bind daemon HTTP endpoint (${formatHttpOrigin(host, port)}): ${error.message}`,
+						`Failed to bind daemon HTTP endpoint (${formatHttpOrigin(host, port)}): ${error.message} [${error.code ?? "UNKNOWN"}]`,
 					),
 				);
 			};
