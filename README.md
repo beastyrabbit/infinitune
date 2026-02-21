@@ -143,6 +143,11 @@ pnpm infi song pick
 
 # Status
 pnpm infi status
+
+# Persist CLI defaults (server/device/step)
+pnpm infi config --server http://localhost:5175
+pnpm infi config --device-name "DESK SPEAKER"
+pnpm infi config
 ```
 
 Install a local command wrapper:

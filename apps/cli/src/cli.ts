@@ -3,6 +3,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { InfiConfig } from "./config";
 import { loadConfig, patchConfig } from "./config";
 import { runDaemonRuntime } from "./daemon/runtime";
 import { getNowPlaying, normalizeServerUrl } from "./lib/api";
@@ -38,6 +39,8 @@ Usage:
   infi room join --room <id>
   infi room pick
   infi song pick
+  infi config [--server <url>] [--device-name <name>] [--volume-step <n>]
+  infi setup [--server <url>]
 
   infi daemon start|stop|status
   infi service install|uninstall|restart
@@ -63,6 +66,15 @@ function toDisplayPercent(volume: number | undefined): string {
 
 function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function printConfig(config: InfiConfig): void {
+	console.log("Current infi config:");
+	console.log(`  serverUrl: ${config.serverUrl}`);
+	console.log(`  deviceName: ${config.deviceName}`);
+	console.log(`  volumeStep: ${config.volumeStep}`);
+	console.log(`  defaultRoomId: ${config.defaultRoomId ?? "-"}`);
+	console.log(`  defaultPlaylistKey: ${config.defaultPlaylistKey ?? "-"}`);
 }
 
 async function waitForDaemonReady(timeoutMs = 6000): Promise<boolean> {
@@ -395,6 +407,86 @@ async function cmdStatus(args: string[]): Promise<void> {
 	}
 }
 
+async function cmdConfig(args: string[], setupMode = false): Promise<void> {
+	const parsed = parseArgs(args);
+	const current = loadConfig();
+
+	const server = getFlagString(parsed, "server");
+	const deviceName = getFlagString(parsed, "device-name", "device");
+	const volumeStepRaw = getFlagString(parsed, "volume-step", "step");
+	const defaultRoomId = getFlagString(parsed, "default-room", "room");
+	const defaultPlaylistKey = getFlagString(
+		parsed,
+		"default-playlist-key",
+		"playlist-key",
+	);
+	const clearRoom = parsed.flags.has("clear-room");
+	const clearPlaylist = parsed.flags.has("clear-playlist");
+
+	const hasUpdates =
+		typeof server === "string" ||
+		typeof deviceName === "string" ||
+		typeof volumeStepRaw === "string" ||
+		typeof defaultRoomId === "string" ||
+		typeof defaultPlaylistKey === "string" ||
+		clearRoom ||
+		clearPlaylist;
+
+	if (!hasUpdates) {
+		if (setupMode) {
+			console.log("Usage: infi setup --server <url>");
+			console.log(
+				"Optional: --device-name <name> --volume-step <n> --default-room <id>",
+			);
+			return;
+		}
+		printConfig(current);
+		return;
+	}
+
+	const patch: Partial<InfiConfig> = {};
+
+	if (typeof server === "string") {
+		patch.serverUrl = normalizeServerUrl(server);
+	}
+	if (typeof deviceName === "string") {
+		const trimmed = deviceName.trim();
+		if (!trimmed) {
+			throw new Error("device-name cannot be empty");
+		}
+		patch.deviceName = trimmed;
+	}
+	if (typeof volumeStepRaw === "string") {
+		const value = Number(volumeStepRaw);
+		if (!Number.isFinite(value) || value <= 0 || value > 1) {
+			throw new Error("volume-step must be a number between 0 and 1");
+		}
+		patch.volumeStep = value;
+	}
+	if (typeof defaultRoomId === "string") {
+		patch.defaultRoomId = defaultRoomId.trim() || null;
+	}
+	if (typeof defaultPlaylistKey === "string") {
+		patch.defaultPlaylistKey = defaultPlaylistKey.trim() || null;
+	}
+	if (clearRoom) {
+		patch.defaultRoomId = null;
+	}
+	if (clearPlaylist) {
+		patch.defaultPlaylistKey = null;
+	}
+
+	const next = patchConfig(patch, current);
+	console.log("Updated infi config.");
+	printConfig(next);
+
+	if (typeof patch.serverUrl === "string" && (await isDaemonResponsive())) {
+		console.log(
+			"Daemon is running. Run `infi daemon stop` then `infi daemon start` to apply server changes.",
+		);
+	}
+}
+
 function writeExecutableScript(targetPath: string): void {
 	const script = `#!/usr/bin/env bash
 set -euo pipefail
@@ -511,6 +603,12 @@ async function main(): Promise<void> {
 			return;
 		case "song":
 			await cmdSong(rest);
+			return;
+		case "config":
+			await cmdConfig(rest);
+			return;
+		case "setup":
+			await cmdConfig(rest, true);
 			return;
 		case "status":
 			await cmdStatus(rest);
