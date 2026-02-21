@@ -274,6 +274,15 @@ export class DaemonRuntime {
 				await this.startLocalMode(localPayload);
 				return this.getStatus();
 			}
+			case "leaveRoom":
+				this.leaveRoomSession();
+				return this.getStatus();
+			case "leavePlaylist":
+				this.leavePlaylistSession();
+				return this.getStatus();
+			case "clearSession":
+				this.clearSession();
+				return this.getStatus();
 			case "configure": {
 				const nextServerUrl = asString(payload?.serverUrl);
 				const nextDeviceName = asString(payload?.deviceName);
@@ -1001,13 +1010,44 @@ export class DaemonRuntime {
 		if (this.mode === "local") {
 			this.ffplay.stop(true);
 			this.connected = false;
-			this.queue = [];
-			this.currentSong = null;
-			this.playback.currentSongId = null;
-			this.playback.currentTime = 0;
-			this.playback.duration = 0;
-			this.playback.isPlaying = false;
+			this.resetPlaybackState();
 		}
+	}
+
+	private resetPlaybackState(): void {
+		this.queue = [];
+		this.currentSong = null;
+		this.playback.currentSongId = null;
+		this.playback.currentTime = 0;
+		this.playback.duration = 0;
+		this.playback.isPlaying = false;
+		this.playback.volume = this.ffplay.getVolume();
+		this.playback.isMuted = this.ffplay.isMuted();
+	}
+
+	private leaveRoomSession(): void {
+		if (this.mode !== "room") return;
+		this.disconnect(true);
+		this.ffplay.stop(true);
+		this.resetPlaybackState();
+	}
+
+	private leavePlaylistSession(): void {
+		if (this.mode !== "local") return;
+		this.stopLocalMode();
+		this.playlistKey = null;
+	}
+
+	private clearSession(): void {
+		this.stopLocalMode();
+		this.disconnect(true);
+		this.ffplay.stop(true);
+		this.mode = "room";
+		this.localPlaylistId = null;
+		this.localPlaylistName = null;
+		this.playlistKey = null;
+		this.lastError = null;
+		this.resetPlaybackState();
 	}
 
 	private async refreshLocalQueue(throwOnError = false): Promise<void> {

@@ -21,6 +21,9 @@ infi \- control Infinitune daemon playback from the terminal
 .RI [ --volume-step " 0..1" ]
 .RI [ --daemon-host " HOST" ]
 .RI [ --daemon-port " 1..65535" ]
+.br
+.B infi
+.B clear
 .SH DESCRIPTION
 .B infi
 controls a background daemon that owns local audio playback.
@@ -74,6 +77,12 @@ Join an existing room by ID.
 .B room pick
 Interactive room picker.
 .TP
+.B room leave
+Leave the active room session and stop local room playback.
+.TP
+.B playlist leave
+Leave the active local playlist session and stop local playback.
+.TP
 .B status
 Show daemon status summary.
 .TP
@@ -96,6 +105,13 @@ for guided setup.
 .TP
 .B setup
 Alias for guided config-oriented setup.
+.TP
+.B clear
+Clear non-general config fields (
+.BR playbackMode ,
+.BR defaultRoomId ,
+.BR defaultPlaylistKey )
+and clear the active daemon session if running.
 .TP
 .B service install|uninstall|restart
 Manage a user-level systemd service for the daemon.

@@ -71,6 +71,10 @@ Playback Commands:
 Room Commands:
   infi room join --room <id>
   infi room pick
+  infi room leave
+
+Playlist Commands:
+  infi playlist leave
 
 Config Commands:
   infi config
@@ -81,6 +85,7 @@ Config Commands:
              [--daemon-host <host>] [--daemon-port <1..65535>]
              [--clear-room] [--clear-playlist]
   infi setup [--server <url>]
+  infi clear
 
 Daemon Commands:
   infi daemon start|stop|status|restart
@@ -645,6 +650,43 @@ async function cmdRoom(args: string[]): Promise<void> {
 	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
 
+	if (sub === "leave") {
+		if (!(await isDaemonResponsive())) {
+			console.log("Daemon is not running. No room to leave.");
+			return;
+		}
+		const statusResponse = await sendDaemonRequest("status");
+		const status = requireOk(statusResponse) as Record<string, unknown>;
+		const mode = typeof status.mode === "string" ? status.mode : "room";
+		if (mode !== "room") {
+			console.log("Daemon is not in room mode. No room session to leave.");
+			return;
+		}
+		const roomId =
+			typeof status.roomId === "string" && status.roomId.length > 0
+				? status.roomId
+				: null;
+		if (!roomId) {
+			console.log("No active room session.");
+			return;
+		}
+		const response = await sendDaemonRequest("leaveRoom");
+		requireOk(response);
+		const verifyResponse = await sendDaemonRequest("status");
+		const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
+		const remainingRoomId =
+			typeof verifyStatus.roomId === "string" && verifyStatus.roomId.length > 0
+				? verifyStatus.roomId
+				: null;
+		if (remainingRoomId) {
+			throw new Error(
+				`Daemon did not leave room session (still in ${remainingRoomId}). Run \`infi daemon restart\` and retry.`,
+			);
+		}
+		console.log(`Left room ${roomId}.`);
+		return;
+	}
+
 	await ensureDaemonRunning(serverUrl, deviceName, config);
 
 	switch (sub) {
@@ -690,6 +732,63 @@ async function cmdRoom(args: string[]): Promise<void> {
 		}
 		default:
 			throw new Error(`Unknown room subcommand: ${sub}`);
+	}
+}
+
+async function cmdPlaylist(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const sub = parsed.positionals[0] ?? "leave";
+	switch (sub) {
+		case "leave": {
+			if (!(await isDaemonResponsive())) {
+				console.log("Daemon is not running. No local playlist to leave.");
+				return;
+			}
+			const statusResponse = await sendDaemonRequest("status");
+			const status = requireOk(statusResponse) as Record<string, unknown>;
+			const mode = typeof status.mode === "string" ? status.mode : "room";
+			if (mode !== "local") {
+				console.log(
+					"Daemon is not in local mode. No playlist session to leave.",
+				);
+				return;
+			}
+			const playlistName =
+				typeof status.localPlaylistName === "string" &&
+				status.localPlaylistName.length > 0
+					? status.localPlaylistName
+					: null;
+			const playlistId =
+				typeof status.localPlaylistId === "string" &&
+				status.localPlaylistId.length > 0
+					? status.localPlaylistId
+					: null;
+			const response = await sendDaemonRequest("leavePlaylist");
+			requireOk(response);
+			const verifyResponse = await sendDaemonRequest("status");
+			const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
+			const verifyMode =
+				typeof verifyStatus.mode === "string" ? verifyStatus.mode : "room";
+			const remainingPlaylist =
+				typeof verifyStatus.localPlaylistName === "string" &&
+				verifyStatus.localPlaylistName.length > 0
+					? verifyStatus.localPlaylistName
+					: typeof verifyStatus.localPlaylistId === "string" &&
+							verifyStatus.localPlaylistId.length > 0
+						? verifyStatus.localPlaylistId
+						: null;
+			if (verifyMode === "local" && remainingPlaylist) {
+				throw new Error(
+					`Daemon did not leave local playlist (still using ${remainingPlaylist}). Run \`infi daemon restart\` and retry.`,
+				);
+			}
+			console.log(
+				`Left local playlist ${playlistName ?? playlistId ?? "(unknown)"}.`,
+			);
+			return;
+		}
+		default:
+			throw new Error(`Unknown playlist subcommand: ${sub}`);
 	}
 }
 
@@ -1100,6 +1199,60 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	}
 }
 
+async function cmdClear(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	if (parsed.positionals.length > 0 || parsed.flags.size > 0) {
+		throw new Error("Usage: infi clear");
+	}
+
+	const next = patchConfig({
+		playbackMode: "room",
+		defaultRoomId: null,
+		defaultPlaylistKey: null,
+	});
+	console.log("Cleared non-general config fields.");
+	printConfig(next);
+
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon is not running; runtime session already clear.");
+		return;
+	}
+
+	try {
+		const response = await sendDaemonRequest("clearSession");
+		requireOk(response);
+		const statusResponse = await sendDaemonRequest("status");
+		const status = requireOk(statusResponse) as Record<string, unknown>;
+		const roomId =
+			typeof status.roomId === "string" && status.roomId.length > 0
+				? status.roomId
+				: null;
+		const localPlaylist =
+			typeof status.localPlaylistName === "string" &&
+			status.localPlaylistName.length > 0
+				? status.localPlaylistName
+				: typeof status.localPlaylistId === "string" &&
+						status.localPlaylistId.length > 0
+					? status.localPlaylistId
+					: null;
+		if (roomId || localPlaylist) {
+			console.log(
+				`Warning: daemon session still active (${
+					roomId ? `room ${roomId}` : `playlist ${localPlaylist}`
+				}). Run \`infi daemon restart\` if needed.`,
+			);
+			return;
+		}
+		console.log("Cleared active daemon session.");
+	} catch (error) {
+		console.log(
+			`Warning: failed to clear daemon session (${
+				error instanceof Error ? error.message : String(error)
+			}). Run \`infi daemon restart\` if needed.`,
+		);
+	}
+}
+
 function writeExecutableScript(targetPath: string): void {
 	const script = `#!/usr/bin/env bash
 set -euo pipefail
@@ -1258,6 +1411,9 @@ async function main(): Promise<void> {
 		case "room":
 			await cmdRoom(rest);
 			return;
+		case "playlist":
+			await cmdPlaylist(rest);
+			return;
 		case "song":
 			await cmdSong(rest);
 			return;
@@ -1266,6 +1422,9 @@ async function main(): Promise<void> {
 			return;
 		case "setup":
 			await cmdConfig(rest, true);
+			return;
+		case "clear":
+			await cmdClear(rest);
 			return;
 		case "status":
 			await cmdStatus(rest);
