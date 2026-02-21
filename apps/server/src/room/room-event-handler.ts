@@ -7,6 +7,8 @@ import type { SongWire } from "../wire";
 import type { Room } from "./room";
 import type { RoomManager } from "./room-manager";
 
+const IDLE_ROOM_MANUAL_TOP_UP_COUNT = 5;
+
 // ─── Wire → Protocol conversion ─────────────────────────────────────
 
 /** Convert a SongWire (DB wire format) to the lightweight SongData protocol type. */
@@ -53,6 +55,43 @@ async function refreshRooms(playlistId: string, rooms: Room[]): Promise<void> {
 	}
 }
 
+async function primePlaylistForIdleRoomStart(
+	room: Room,
+	playlistId: string,
+	orderIndex: number,
+	promptEpoch: number,
+): Promise<void> {
+	try {
+		// Opening a room is an explicit "keep this playlist alive" signal.
+		await playlistService.heartbeat(playlistId);
+		await playlistService.updatePosition(playlistId, orderIndex);
+
+		const workQueue = await songService.getWorkQueue(playlistId);
+		const baseOrder = Math.ceil(workQueue.maxOrderIndex);
+
+		for (let i = 0; i < IDLE_ROOM_MANUAL_TOP_UP_COUNT; i++) {
+			await songService.createPending(playlistId, baseOrder + i + 1, {
+				promptEpoch,
+			});
+		}
+
+		logger.info(
+			{
+				roomId: room.id,
+				playlistId,
+				orderIndex,
+				addedSongs: IDLE_ROOM_MANUAL_TOP_UP_COUNT,
+			},
+			"Primed idle room playback and queued additional songs",
+		);
+	} catch (err) {
+		logger.error(
+			{ err, roomId: room.id, playlistId, orderIndex },
+			"Failed to prime idle room playback",
+		);
+	}
+}
+
 // ─── Room sync (playlist key → ID resolution) ───────────────────────
 
 /** Resolve a room's playlist key to an ID and sync its queue. */
@@ -62,13 +101,44 @@ export async function syncRoom(room: Room): Promise<void> {
 		const byKey = await playlistService.getByKey(room.playlistKey);
 		if (byKey) {
 			room.playlistId = byKey.id;
-			await refreshRooms(byKey.id, [room]);
+			const songs = await songService.listByPlaylist(byKey.id);
+			const updateResult = room.updateQueue(
+				songs.map(toSongData),
+				byKey.promptEpoch ?? 0,
+			);
+			if (
+				updateResult.seededFromIdle &&
+				typeof updateResult.seededSongOrderIndex === "number"
+			) {
+				await primePlaylistForIdleRoomStart(
+					room,
+					byKey.id,
+					updateResult.seededSongOrderIndex,
+					byKey.promptEpoch ?? 0,
+				);
+			}
 			return;
 		}
 
 		// Fallback for legacy rooms that still have an ID but key lookup fails.
 		if (room.playlistId) {
-			await refreshRooms(room.playlistId, [room]);
+			const playlist = await playlistService.getById(room.playlistId);
+			const songs = await songService.listByPlaylist(room.playlistId);
+			const updateResult = room.updateQueue(
+				songs.map(toSongData),
+				playlist?.promptEpoch ?? 0,
+			);
+			if (
+				updateResult.seededFromIdle &&
+				typeof updateResult.seededSongOrderIndex === "number"
+			) {
+				await primePlaylistForIdleRoomStart(
+					room,
+					room.playlistId,
+					updateResult.seededSongOrderIndex,
+					playlist?.promptEpoch ?? 0,
+				);
+			}
 			return;
 		}
 

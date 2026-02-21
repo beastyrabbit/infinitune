@@ -11,6 +11,13 @@ import type {
 import type { WebSocket } from "ws";
 import { logger } from "../logger";
 
+const IDLE_RESUME_SONGS_FROM_END = 10;
+
+type QueueUpdateResult = {
+	seededFromIdle: boolean;
+	seededSongOrderIndex?: number;
+};
+
 interface ConnectedDevice extends Device {
 	ws: WebSocket;
 	mode: DeviceMode;
@@ -111,7 +118,10 @@ export class Room {
 
 	// ─── Song Queue ─────────────────────────────────────────────────
 
-	updateQueue(songs: SongData[], playlistEpoch: number): void {
+	updateQueue(songs: SongData[], playlistEpoch: number): QueueUpdateResult {
+		const wasIdleBeforeUpdate =
+			this.playback.currentSongId === null && !this.playback.isPlaying;
+
 		this.songQueue = songs;
 		this.playlistEpoch = playlistEpoch;
 		this.broadcast({ type: "queue", songs });
@@ -130,16 +140,22 @@ export class Room {
 
 		// If we have no current song but there are ready songs, auto-start
 		if (!this.playback.currentSongId) {
-			const next = pickNextSong(songs, null, playlistEpoch);
+			const next = wasIdleBeforeUpdate
+				? this.pickIdleResumeSong(songs)
+				: pickNextSong(songs, null, playlistEpoch);
 			if (next?.audioUrl) {
 				this.advanceToSong(next);
-				return;
+				return {
+					seededFromIdle: wasIdleBeforeUpdate,
+					seededSongOrderIndex: next.orderIndex,
+				};
 			}
 		}
 
 		// Preload the next song for players
 		this.sendPreloadHint();
 		this.broadcastState();
+		return { seededFromIdle: false };
 	}
 
 	getQueue(): SongData[] {
@@ -377,7 +393,29 @@ export class Room {
 		}
 	}
 
+	private pickIdleResumeSong(songs: SongData[]): SongData | null {
+		const playable = songs
+			.filter((song) => Boolean(song.audioUrl))
+			.sort((a, b) => a.orderIndex - b.orderIndex);
+		if (playable.length === 0) {
+			return null;
+		}
+
+		const maxOrderIndex = playable[playable.length - 1]?.orderIndex ?? 0;
+		const targetOrderIndex = maxOrderIndex - IDLE_RESUME_SONGS_FROM_END;
+		const candidate = [...playable]
+			.reverse()
+			.find((song) => song.orderIndex <= targetOrderIndex);
+
+		return candidate ?? playable[0] ?? null;
+	}
+
 	private advanceToSong(song: SongData): void {
+		const audioUrl = song.audioUrl;
+		if (!audioUrl) {
+			return;
+		}
+
 		this.playback.currentSongId = song.id;
 		this.playback.currentTime = 0;
 		this.playback.duration = song.audioDuration ?? 0;
@@ -390,7 +428,7 @@ export class Room {
 		this.broadcastToPlayers({
 			type: "nextSong",
 			songId: song.id,
-			audioUrl: song.audioUrl!,
+			audioUrl,
 			startAt,
 		});
 

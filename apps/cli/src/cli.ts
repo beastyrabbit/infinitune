@@ -426,16 +426,20 @@ async function cmdSong(args: string[]): Promise<void> {
 		const statusResponse = await sendDaemonRequest("status");
 		const status = requireOk(statusResponse) as Record<string, unknown>;
 		const connected = Boolean(status.connected);
+		if (connected) {
+			console.log("No songs available to pick yet (queue is empty).");
+			return;
+		}
 		const roomId =
 			typeof status.roomId === "string" && status.roomId.length > 0
 				? status.roomId
 				: null;
-		const suffix = connected
-			? "Connected but queue is empty (no songs ready yet)."
-			: `Not connected to a room${
-					roomId ? ` (${roomId})` : ""
-				}. Run \`infi play\` or \`infi room join --room <id>\`.`;
-		throw new Error(`Cannot pick song: ${suffix}`);
+		console.log(
+			`Not connected to a room${
+				roomId ? ` (${roomId})` : ""
+			}. Run \`infi play\` or \`infi room join --room <id>\`.`,
+		);
+		return;
 	}
 	const songId = pickSongFromQueue(queue);
 	const selectResponse = await sendDaemonRequest("selectSong", { songId });
