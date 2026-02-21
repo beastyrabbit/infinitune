@@ -713,6 +713,15 @@ export class DaemonRuntime {
 				break;
 			case "nextSong": {
 				if (!this.serverUrl) return;
+				const snapshot = this.ffplay.getSnapshot();
+				if (
+					snapshot.songId === message.songId &&
+					typeof message.startAt !== "number"
+				) {
+					// Ignore duplicate "nextSong" for the currently loaded song when no
+					// synchronized start time was requested.
+					break;
+				}
 				const songUrl = resolveMediaUrl(this.serverUrl, message.audioUrl);
 				this.ffplay.loadSong(
 					message.songId,

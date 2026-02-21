@@ -253,6 +253,14 @@ export class FfplayEngine {
 		childEnv["PULSE_PROP_media.name"] = "Infinitune Playback";
 		childEnv["PULSE_PROP_media.role"] = "music";
 		childEnv["PULSE_PROP_application.icon_name"] = "multimedia-player";
+		// Keep a stable stream identity so Pulse/PipeWire can restore the same sink
+		// across per-song ffplay restarts.
+		childEnv.PULSE_PROP = [
+			"application.name=Infinitune CLI",
+			"media.name=Infinitune Playback",
+			"media.role=music",
+			"module-stream-restore.id=infinitune-cli-daemon",
+		].join(" ");
 
 		const processHandle = spawn("ffplay", args, {
 			stdio: ["pipe", "ignore", "ignore"],
