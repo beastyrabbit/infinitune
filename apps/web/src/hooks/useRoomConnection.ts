@@ -1,11 +1,13 @@
-import type {
-	ClientMessage,
-	CommandAction,
-	Device,
-	DeviceRole,
-	PlaybackState,
-	ServerMessage,
-	SongData,
+import {
+	type ClientMessage,
+	type CommandAction,
+	type Device,
+	type DeviceRole,
+	type PlaybackState,
+	ROOM_PROTOCOL_VERSION,
+	type ServerMessage,
+	ServerMessageSchema,
+	type SongData,
 } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ROOM_WS_URL } from "@/lib/endpoints";
@@ -92,15 +94,24 @@ export function useRoomConnection(
 	const pingOffsetsRef = useRef<number[]>([]);
 
 	const handleMessage = useCallback((event: MessageEvent) => {
-		let msg: ServerMessage;
+		let parsedRaw: unknown;
 		try {
-			msg = JSON.parse(event.data);
+			parsedRaw = JSON.parse(event.data);
 		} catch (err) {
 			console.error("[room-ws] Failed to parse server message:", err);
 			return;
 		}
+		const parsed = ServerMessageSchema.safeParse(parsedRaw);
+		if (!parsed.success) {
+			console.error("[room-ws] Invalid server message:", parsed.error.message);
+			return;
+		}
+		const msg: ServerMessage = parsed.data;
 
 		switch (msg.type) {
+			case "joinAck":
+				// Join acknowledged by room server; no-op for now.
+				break;
 			case "state":
 				setPlayback(msg.playback);
 				setCurrentSong(msg.currentSong);
@@ -158,6 +169,7 @@ export function useRoomConnection(
 				role: roleRef.current,
 				playlistKey: playlistKey || undefined,
 				roomName: roomName || undefined,
+				protocolVersion: ROOM_PROTOCOL_VERSION,
 			});
 
 			// Start time sync pings

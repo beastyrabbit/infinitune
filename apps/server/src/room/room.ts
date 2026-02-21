@@ -8,6 +8,7 @@ import type {
 	ServerMessage,
 	SongData,
 } from "@infinitune/shared/protocol";
+import { ROOM_PROTOCOL_VERSION } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger";
 
@@ -459,6 +460,7 @@ export class Room {
 			playback: { ...this.playback },
 			currentSong: this.getCurrentSong(),
 			devices: this.getDevices(),
+			protocolVersion: ROOM_PROTOCOL_VERSION,
 		};
 	}
 

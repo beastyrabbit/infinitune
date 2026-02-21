@@ -28,6 +28,10 @@ infi \- control Infinitune daemon playback from the terminal
 .br
 .B infi
 .B clear
+.br
+.B infi
+.B doctor
+.B room
 .SH DESCRIPTION
 .B infi
 controls a background daemon that owns local audio playback.
@@ -93,6 +97,10 @@ Leave the active local playlist session and stop local playback.
 .TP
 .B status
 Show daemon status summary.
+For room mode, includes connection diagnostics (state, join ack, protocol version, reconnect/disconnect info).
+.TP
+.B doctor room
+Run focused room diagnostics (daemon mode/server/session checks plus room and now-playing API checks).
 .TP
 .B daemon start|stop|status|restart
 Manage daemon process lifecycle.

@@ -1,6 +1,7 @@
 import {
 	type ClientMessage,
 	ClientMessageSchema,
+	ROOM_PROTOCOL_VERSION,
 } from "@infinitune/shared/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger";
@@ -58,6 +59,14 @@ function handleClientMessage(
 					roomId: msg.roomId,
 					deviceId: msg.deviceId,
 				});
+				ws.send(
+					JSON.stringify({
+						type: "joinAck",
+						roomId: msg.roomId,
+						deviceId: msg.deviceId,
+						protocolVersion: ROOM_PROTOCOL_VERSION,
+					}),
+				);
 				// Ensure queue/state is hydrated for both newly created and pre-existing rooms.
 				// Without this, rooms created via REST can stay unsynced until another playlist/song event happens.
 				void syncRoom(room);

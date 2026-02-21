@@ -8,7 +8,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { InfiConfig, PlaybackMode } from "./config";
 import { loadConfig, patchConfig } from "./config";
 import { runDaemonRuntime } from "./daemon/runtime";
-import { getNowPlaying, listPlaylists, normalizeServerUrl } from "./lib/api";
+import {
+	getNowPlaying,
+	listPlaylists,
+	listRooms,
+	normalizeServerUrl,
+} from "./lib/api";
 import { getFlagNumber, getFlagString, hasFlag, parseArgs } from "./lib/flags";
 import { pickFromFzf } from "./lib/fzf";
 import {
@@ -68,6 +73,7 @@ Playback Commands:
   infi mute
   infi song pick
   infi status
+  infi doctor room
 
 Room Commands:
   infi room join --room <id>
@@ -124,6 +130,13 @@ function asFiniteNumber(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value)
 		? value
 		: undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== "object") {
+		throw new Error("Daemon returned malformed response payload.");
+	}
+	return value as Record<string, unknown>;
 }
 
 function formatRuntimeClock(seconds: number): string {
@@ -192,6 +205,36 @@ function printSongRuntimeStatus(data: Record<string, unknown>): {
 	}
 
 	return { hasSongLine: Boolean(title) };
+}
+
+function printRoomConnectionDiagnostics(data: Record<string, unknown>): void {
+	const connectionState =
+		typeof data.connectionState === "string" ? data.connectionState : undefined;
+	if (connectionState) {
+		console.log(`Connection State: ${connectionState}`);
+	}
+
+	if (typeof data.joinAcknowledged === "boolean") {
+		console.log(`Join Acknowledged: ${data.joinAcknowledged ? "yes" : "no"}`);
+	}
+
+	if (typeof data.roomProtocolVersion === "number") {
+		console.log(`Room Protocol: v${String(data.roomProtocolVersion)}`);
+	}
+
+	if (
+		typeof data.reconnectAttempts === "number" &&
+		data.reconnectAttempts > 0
+	) {
+		console.log(`Reconnect Attempts: ${String(data.reconnectAttempts)}`);
+	}
+
+	if (
+		typeof data.lastDisconnectReason === "string" &&
+		data.lastDisconnectReason.length > 0
+	) {
+		console.log(`Last Disconnect: ${data.lastDisconnectReason}`);
+	}
 }
 
 function shellQuote(value: string): string {
@@ -476,7 +519,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				return;
 			}
 			const response = await sendDaemonRequest("status");
-			const data = requireOk(response) as Record<string, unknown>;
+			const data = asRecord(requireOk(response));
 			const mode =
 				typeof data.mode === "string" && data.mode.length > 0
 					? data.mode
@@ -489,6 +532,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			console.log(`Room: ${String(data.roomId ?? "-")}`);
 			if (mode === "room") {
 				console.log(`Device Sync Mode: ${roomDeviceMode}`);
+				printRoomConnectionDiagnostics(data);
 			}
 			if (mode === "local") {
 				console.log(
@@ -571,7 +615,6 @@ async function cmdPlay(args: string[]): Promise<void> {
 		patchConfig({
 			serverUrl,
 			deviceName,
-			playbackMode: "local",
 			defaultPlaylistKey: playlist.playlistKey ?? null,
 		});
 
@@ -604,7 +647,6 @@ async function cmdPlay(args: string[]): Promise<void> {
 	patchConfig({
 		serverUrl,
 		deviceName,
-		playbackMode: "room",
 		defaultRoomId: resolved.room.id,
 		defaultPlaylistKey: resolved.room.playlistKey,
 	});
@@ -731,7 +773,6 @@ async function cmdRoom(args: string[]): Promise<void> {
 			patchConfig({
 				serverUrl,
 				deviceName,
-				playbackMode: "room",
 				defaultRoomId: roomId,
 			});
 			console.log(`Joined room ${roomId}.`);
@@ -750,7 +791,6 @@ async function cmdRoom(args: string[]): Promise<void> {
 			patchConfig({
 				serverUrl,
 				deviceName,
-				playbackMode: "room",
 				defaultRoomId: room.id,
 				defaultPlaylistKey: room.playlistKey,
 			});
@@ -869,7 +909,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 	}
 
 	const daemonResponse = await sendDaemonRequest("status");
-	const daemonData = requireOk(daemonResponse) as Record<string, unknown>;
+	const daemonData = asRecord(requireOk(daemonResponse));
 	const mode =
 		typeof daemonData.mode === "string" && daemonData.mode.length > 0
 			? daemonData.mode
@@ -895,6 +935,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 	console.log(`Room: ${roomId ?? "-"}`);
 	if (mode === "room") {
 		console.log(`Device Sync Mode: ${roomDeviceMode ?? "-"}`);
+		printRoomConnectionDiagnostics(daemonData);
 	}
 	if (mode === "local") {
 		console.log(
@@ -952,6 +993,140 @@ async function cmdStatus(args: string[]): Promise<void> {
 			// Keep status output usable even if server query fails.
 		}
 	}
+}
+
+async function cmdDoctor(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const target = parsed.positionals[0] ?? "room";
+	if (target !== "room") {
+		throw new Error("Usage: infi doctor room [--server <url>]");
+	}
+
+	const config = loadConfig();
+	const serverUrl = resolveServerUrl(parsed);
+	console.log("Doctor: room");
+	console.log(`Config Server: ${config.serverUrl}`);
+	console.log(`Target Server: ${serverUrl}`);
+
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon: not running");
+		console.log("Result: FAIL (start daemon with `infi daemon start` first)");
+		return;
+	}
+
+	const daemonResponse = await sendDaemonRequest("status");
+	const daemonData = asRecord(requireOk(daemonResponse));
+	const mode =
+		typeof daemonData.mode === "string" && daemonData.mode.length > 0
+			? daemonData.mode
+			: "room";
+	const roomId =
+		typeof daemonData.roomId === "string" && daemonData.roomId.length > 0
+			? daemonData.roomId
+			: null;
+	const connected = Boolean(daemonData.connected);
+	const connectionState =
+		typeof daemonData.connectionState === "string"
+			? daemonData.connectionState
+			: "unknown";
+	const daemonServer =
+		typeof daemonData.serverUrl === "string" ? daemonData.serverUrl : null;
+
+	let issues = 0;
+	const warn = (text: string) => {
+		issues += 1;
+		console.log(`- WARN: ${text}`);
+	};
+	const ok = (text: string) => {
+		console.log(`- OK: ${text}`);
+	};
+
+	if (mode !== "room") {
+		warn(`daemon mode is "${mode}" (room checks are limited)`);
+	} else {
+		ok("daemon mode is room");
+	}
+
+	if (daemonServer && daemonServer !== serverUrl) {
+		warn(
+			`daemon server (${daemonServer}) differs from target server (${serverUrl})`,
+		);
+	} else if (daemonServer) {
+		ok(`daemon server matches target (${daemonServer})`);
+	} else {
+		warn("daemon has no server URL configured");
+	}
+
+	if (!roomId) {
+		warn("daemon is not joined to a room");
+	} else {
+		ok(`daemon room is ${roomId}`);
+	}
+
+	if (connected && connectionState === "connected") {
+		ok("room websocket is connected");
+	} else {
+		warn(`room websocket is ${connectionState}`);
+	}
+
+	if (mode === "room") {
+		if (typeof daemonData.joinAcknowledged === "boolean") {
+			if (daemonData.joinAcknowledged) {
+				ok("join acknowledgment received");
+			} else {
+				warn("join acknowledgment missing");
+			}
+		}
+		if (typeof daemonData.roomProtocolVersion === "number") {
+			ok(`room protocol version v${String(daemonData.roomProtocolVersion)}`);
+		}
+		if (
+			typeof daemonData.lastDisconnectReason === "string" &&
+			daemonData.lastDisconnectReason.length > 0
+		) {
+			warn(`last disconnect reason: ${daemonData.lastDisconnectReason}`);
+		}
+	}
+
+	if (roomId) {
+		try {
+			const rooms = await listRooms(serverUrl);
+			if (rooms.some((room) => room.id === roomId)) {
+				ok("room exists on target server");
+			} else {
+				warn(`room ${roomId} is missing from target server`);
+			}
+		} catch (error) {
+			warn(
+				`unable to list rooms on target server (${
+					error instanceof Error ? error.message : String(error)
+				})`,
+			);
+		}
+
+		try {
+			const nowPlaying = await getNowPlaying(serverUrl, roomId);
+			if (typeof nowPlaying.class === "string") {
+				ok(`now-playing endpoint responds (${nowPlaying.class})`);
+			} else {
+				ok("now-playing endpoint responds");
+			}
+		} catch (error) {
+			warn(
+				`now-playing endpoint failed (${
+					error instanceof Error ? error.message : String(error)
+				})`,
+			);
+		}
+	}
+
+	if (issues === 0) {
+		console.log("Result: PASS");
+		return;
+	}
+	console.log(
+		`Result: WARN (${String(issues)} issue${issues === 1 ? "" : "s"})`,
+	);
 }
 
 async function promptWithDefault(
@@ -1466,6 +1641,9 @@ async function main(): Promise<void> {
 			return;
 		case "status":
 			await cmdStatus(rest);
+			return;
+		case "doctor":
+			await cmdDoctor(rest);
 			return;
 		case "service":
 			await cmdService(rest);
