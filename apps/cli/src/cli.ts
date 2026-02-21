@@ -42,7 +42,7 @@ Usage:
   infi config [--server <url>] [--device-name <name>] [--volume-step <n>]
   infi setup [--server <url>]
 
-  infi daemon start|stop|status
+  infi daemon start|stop|status|restart
   infi service install|uninstall|restart
   infi install-cli
 `);
@@ -68,6 +68,23 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function normalizeServerSetting(value: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		throw new Error("server cannot be empty");
+	}
+	if (/^https?:\/\//i.test(trimmed)) {
+		return normalizeServerUrl(trimmed);
+	}
+	return normalizeServerUrl(`http://${trimmed}`);
+}
+
+function resolveServerUrl(parsed: ReturnType<typeof parseArgs>): string {
+	const config = loadConfig();
+	const raw = getFlagString(parsed, "server") ?? config.serverUrl;
+	return normalizeServerSetting(raw);
+}
+
 function printConfig(config: InfiConfig): void {
 	console.log("Current infi config:");
 	console.log(`  serverUrl: ${config.serverUrl}`);
@@ -81,6 +98,15 @@ async function waitForDaemonReady(timeoutMs = 6000): Promise<boolean> {
 	const startedAt = Date.now();
 	while (Date.now() - startedAt < timeoutMs) {
 		if (await isDaemonResponsive()) return true;
+		await sleep(200);
+	}
+	return false;
+}
+
+async function waitForDaemonStopped(timeoutMs = 6000): Promise<boolean> {
+	const startedAt = Date.now();
+	while (Date.now() - startedAt < timeoutMs) {
+		if (!(await isDaemonResponsive())) return true;
 		await sleep(200);
 	}
 	return false;
@@ -134,9 +160,8 @@ async function ensureDaemonRunning(
 async function cmdDaemon(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0] ?? "status";
+	const serverUrl = resolveServerUrl(parsed);
 	const config = loadConfig();
-	const serverUrl =
-		getFlagString(parsed, "server") ?? normalizeServerUrl(config.serverUrl);
 	const roomId = getFlagString(parsed, "room");
 	const playlistKey = getFlagString(parsed, "playlist-key");
 	const roomName = getFlagString(parsed, "room-name");
@@ -154,6 +179,10 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			return;
 		}
 		case "start": {
+			if (await isDaemonResponsive()) {
+				console.log("Daemon already running.");
+				return;
+			}
 			await startDaemonProcess({
 				serverUrl,
 				roomId,
@@ -162,6 +191,36 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				deviceName,
 			});
 			console.log("Daemon started.");
+			if (roomId) {
+				const response = await sendDaemonRequest("joinRoom", {
+					serverUrl,
+					roomId,
+					playlistKey,
+					roomName,
+					deviceName,
+				});
+				requireOk(response);
+				console.log(`Joined room ${roomId}.`);
+			}
+			return;
+		}
+		case "restart": {
+			if (await isDaemonResponsive()) {
+				const shutdownResponse = await sendDaemonRequest("shutdown");
+				requireOk(shutdownResponse);
+				const stopped = await waitForDaemonStopped();
+				if (!stopped) {
+					throw new Error("Timed out waiting for daemon to stop.");
+				}
+			}
+			await startDaemonProcess({
+				serverUrl,
+				roomId,
+				playlistKey,
+				roomName,
+				deviceName,
+			});
+			console.log("Daemon restarted.");
 			if (roomId) {
 				const response = await sendDaemonRequest("joinRoom", {
 					serverUrl,
@@ -196,6 +255,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			console.log(`Connected: ${data.connected ? "yes" : "no"}`);
 			console.log(`Room: ${String(data.roomId ?? "-")}`);
 			console.log(`Server: ${String(data.serverUrl ?? "-")}`);
+			console.log(`Config Server: ${config.serverUrl}`);
 			const playback = data.playback as Record<string, unknown> | undefined;
 			if (playback) {
 				console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
@@ -215,9 +275,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 async function cmdPlay(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const config = loadConfig();
-	const serverUrl = normalizeServerUrl(
-		getFlagString(parsed, "server") ?? config.serverUrl,
-	);
+	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
 
 	const resolved = await resolveRoom(serverUrl, {
@@ -293,9 +351,7 @@ async function cmdRoom(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0] ?? "pick";
 	const config = loadConfig();
-	const serverUrl = normalizeServerUrl(
-		getFlagString(parsed, "server") ?? config.serverUrl,
-	);
+	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
 
 	await ensureDaemonRunning(serverUrl, deviceName);
@@ -363,9 +419,7 @@ async function cmdSong(args: string[]): Promise<void> {
 async function cmdStatus(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const config = loadConfig();
-	const serverUrl = normalizeServerUrl(
-		getFlagString(parsed, "server") ?? config.serverUrl,
-	);
+	const serverUrl = resolveServerUrl(parsed);
 
 	if (!(await isDaemonResponsive())) {
 		console.log("Daemon: not running");
@@ -381,6 +435,7 @@ async function cmdStatus(args: string[]): Promise<void> {
 	console.log(`Connected: ${daemonData.connected ? "yes" : "no"}`);
 	console.log(`Room: ${roomId ?? "-"}`);
 	console.log(`Server: ${String(daemonData.serverUrl ?? serverUrl)}`);
+	console.log(`Config Server: ${config.serverUrl}`);
 
 	const playback = daemonData.playback as Record<string, unknown> | undefined;
 	if (playback) {
@@ -447,7 +502,7 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	const patch: Partial<InfiConfig> = {};
 
 	if (typeof server === "string") {
-		patch.serverUrl = normalizeServerUrl(server);
+		patch.serverUrl = normalizeServerSetting(server);
 	}
 	if (typeof deviceName === "string") {
 		const trimmed = deviceName.trim();
@@ -482,7 +537,7 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 
 	if (typeof patch.serverUrl === "string" && (await isDaemonResponsive())) {
 		console.log(
-			"Daemon is running. Run `infi daemon stop` then `infi daemon start` to apply server changes.",
+			"Daemon is running. Run `infi daemon restart` to apply server changes.",
 		);
 	}
 }
@@ -511,13 +566,10 @@ function systemctlUser(args: string[]): void {
 async function cmdService(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0] ?? "install";
-	const config = loadConfig();
 	const unitName = "infinitune-daemon.service";
 	const unitDir = getSystemdUserDir();
 	const unitPath = path.join(unitDir, unitName);
-	const serverUrl = normalizeServerUrl(
-		getFlagString(parsed, "server") ?? config.serverUrl,
-	);
+	const serverUrl = resolveServerUrl(parsed);
 
 	switch (sub) {
 		case "install": {
