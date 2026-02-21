@@ -256,14 +256,26 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			console.log(`Room: ${String(data.roomId ?? "-")}`);
 			console.log(`Server: ${String(data.serverUrl ?? "-")}`);
 			console.log(`Config Server: ${config.serverUrl}`);
+			console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
 			const playback = data.playback as Record<string, unknown> | undefined;
+			const engine = data.engine as Record<string, unknown> | undefined;
 			if (playback) {
 				console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
 				console.log(
-					`Volume: ${toDisplayPercent(
+					`Room Volume: ${toDisplayPercent(
 						typeof playback.volume === "number" ? playback.volume : undefined,
 					)}`,
 				);
+			}
+			if (engine) {
+				console.log(
+					`Local Volume: ${toDisplayPercent(
+						typeof engine.volume === "number" ? engine.volume : undefined,
+					)}`,
+				);
+			}
+			if (typeof data.lastError === "string" && data.lastError.length > 0) {
+				console.log(`Last Error: ${data.lastError}`);
 			}
 			return;
 		}
@@ -410,6 +422,21 @@ async function cmdSong(args: string[]): Promise<void> {
 		artistName?: string;
 		status: string;
 	}>;
+	if (queue.length === 0) {
+		const statusResponse = await sendDaemonRequest("status");
+		const status = requireOk(statusResponse) as Record<string, unknown>;
+		const connected = Boolean(status.connected);
+		const roomId =
+			typeof status.roomId === "string" && status.roomId.length > 0
+				? status.roomId
+				: null;
+		const suffix = connected
+			? "Connected but queue is empty (no songs ready yet)."
+			: `Not connected to a room${
+					roomId ? ` (${roomId})` : ""
+				}. Run \`infi play\` or \`infi room join --room <id>\`.`;
+		throw new Error(`Cannot pick song: ${suffix}`);
+	}
 	const songId = pickSongFromQueue(queue);
 	const selectResponse = await sendDaemonRequest("selectSong", { songId });
 	requireOk(selectResponse);
@@ -436,15 +463,30 @@ async function cmdStatus(args: string[]): Promise<void> {
 	console.log(`Room: ${roomId ?? "-"}`);
 	console.log(`Server: ${String(daemonData.serverUrl ?? serverUrl)}`);
 	console.log(`Config Server: ${config.serverUrl}`);
+	console.log(`Queue Length: ${String(daemonData.queueLength ?? "0")}`);
 
 	const playback = daemonData.playback as Record<string, unknown> | undefined;
+	const engine = daemonData.engine as Record<string, unknown> | undefined;
 	if (playback) {
 		console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
 		console.log(
-			`Volume: ${toDisplayPercent(
+			`Room Volume: ${toDisplayPercent(
 				typeof playback.volume === "number" ? playback.volume : undefined,
 			)}`,
 		);
+	}
+	if (engine) {
+		console.log(
+			`Local Volume: ${toDisplayPercent(
+				typeof engine.volume === "number" ? engine.volume : undefined,
+			)}`,
+		);
+	}
+	if (
+		typeof daemonData.lastError === "string" &&
+		daemonData.lastError.length > 0
+	) {
+		console.log(`Last Error: ${daemonData.lastError}`);
 	}
 
 	if (roomId) {

@@ -245,9 +245,8 @@ export class DaemonRuntime {
 
 		ws.on("open", () => {
 			if (this.ws !== ws) return;
-			this.connected = true;
+			this.connected = false;
 			this.lastError = null;
-			this.resolveConnectionWaiters();
 			const join: ClientMessage = {
 				type: "join",
 				roomId,
@@ -331,6 +330,10 @@ export class DaemonRuntime {
 		const message = parsed.data;
 		switch (message.type) {
 			case "state":
+				if (!this.connected) {
+					this.connected = true;
+					this.resolveConnectionWaiters();
+				}
 				this.playback = message.playback;
 				this.currentSong = message.currentSong;
 				break;
@@ -366,6 +369,9 @@ export class DaemonRuntime {
 			}
 			case "error":
 				this.lastError = message.message;
+				if (!this.connected) {
+					this.rejectConnectionWaiters(new Error(message.message));
+				}
 				break;
 		}
 	}
