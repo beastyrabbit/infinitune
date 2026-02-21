@@ -147,7 +147,13 @@ pnpm infi status
 # Persist CLI defaults (server/device/step)
 pnpm infi config --server http://localhost:5175
 pnpm infi config --device-name "DESK SPEAKER"
+pnpm infi config --daemon-host 127.0.0.1 --daemon-port 17653
 pnpm infi config
+
+# Daemon HTTP endpoints (for Waybar/custom scripts)
+curl -s http://127.0.0.1:17653/status | jq
+curl -s http://127.0.0.1:17653/queue | jq
+curl -s http://127.0.0.1:17653/waybar | jq
 ```
 
 Install a local command wrapper:

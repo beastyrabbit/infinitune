@@ -19,6 +19,8 @@ infi \- control Infinitune daemon playback from the terminal
 .RI [ --server " URL" ]
 .RI [ --device-name " NAME" ]
 .RI [ --volume-step " 0..1" ]
+.RI [ --daemon-host " HOST" ]
+.RI [ --daemon-port " 1..65535" ]
 .SH DESCRIPTION
 .B infi
 controls a background daemon that owns local audio playback.
@@ -77,6 +79,14 @@ Show daemon status summary.
 .TP
 .B daemon start|stop|status|restart
 Manage daemon process lifecycle.
+Daemon also exposes local HTTP endpoints for external status consumers:
+.br
+.I /status
+, 
+.I /queue
+, and
+.I /waybar
+.
 .TP
 .B config
 Show or update CLI config.
@@ -126,6 +136,14 @@ Important keys:
 .IP \(bu 2
 .B volumeStep
 \- volume increment/decrement step
+.IP \(bu 2
+.B daemonHttpHost
+\- daemon HTTP bind host (default:
+.BR 127.0.0.1 )
+.IP \(bu 2
+.B daemonHttpPort
+\- daemon HTTP bind port (default:
+.BR 17653 )
 .SH EXAMPLES
 .TP
 Guided setup:
@@ -140,6 +158,9 @@ Set default room mode and room:
 .B pnpm infi config --mode room --default-room my-room-id
 .br
 .B pnpm infi play
+.TP
+Query daemon JSON endpoint for Waybar:
+.B curl -s http://127.0.0.1:17653/waybar
 .TP
 Install wrapper and man page:
 .B pnpm infi install-cli

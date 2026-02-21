@@ -78,11 +78,13 @@ Config Commands:
   infi config [--server <url>] [--device-name <name>] [--volume-step <0..1>]
              [--mode room|local] [--local] [--room-mode]
              [--default-room <id>] [--default-playlist-key <key>]
+             [--daemon-host <host>] [--daemon-port <1..65535>]
              [--clear-room] [--clear-playlist]
   infi setup [--server <url>]
 
 Daemon Commands:
   infi daemon start|stop|status|restart
+  Daemon HTTP endpoints: /status /queue /waybar
 
 Service Commands (systemd user unit):
   infi service install|uninstall|restart
@@ -201,6 +203,28 @@ function normalizeServerSetting(value: string): string {
 	return normalizeServerUrl(`http://${trimmed}`);
 }
 
+function normalizeDaemonHostSetting(value: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		throw new Error("daemon-host cannot be empty");
+	}
+	return trimmed;
+}
+
+function normalizeDaemonPortSetting(value: string): number {
+	const port = Number(value);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) {
+		throw new Error("daemon-port must be an integer between 1 and 65535");
+	}
+	return port;
+}
+
+function formatDaemonHttpUrl(host: string, port: number): string {
+	const normalizedHost =
+		host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+	return `http://${normalizedHost}:${String(port)}`;
+}
+
 function resolveServerUrl(parsed: ReturnType<typeof parseArgs>): string {
 	const config = loadConfig();
 	const raw = getFlagString(parsed, "server") ?? config.serverUrl;
@@ -215,6 +239,11 @@ function printConfig(config: InfiConfig): void {
 	console.log(`  volumeStep: ${config.volumeStep}`);
 	console.log(`  defaultRoomId: ${config.defaultRoomId ?? "-"}`);
 	console.log(`  defaultPlaylistKey: ${config.defaultPlaylistKey ?? "-"}`);
+	console.log(`  daemonHttpHost: ${config.daemonHttpHost}`);
+	console.log(`  daemonHttpPort: ${config.daemonHttpPort}`);
+	console.log(
+		`  daemonHttpUrl: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
+	);
 }
 
 function parsePlaybackMode(
@@ -260,6 +289,8 @@ async function startDaemonProcess(flags: {
 	playlistKey?: string;
 	roomName?: string;
 	deviceName?: string;
+	daemonHttpHost?: string;
+	daemonHttpPort?: number;
 }): Promise<void> {
 	if (await isDaemonResponsive()) return;
 
@@ -274,6 +305,10 @@ async function startDaemonProcess(flags: {
 	if (flags.playlistKey) args.push("--playlist-key", flags.playlistKey);
 	if (flags.roomName) args.push("--room-name", flags.roomName);
 	if (flags.deviceName) args.push("--device-name", flags.deviceName);
+	if (flags.daemonHttpHost) args.push("--daemon-host", flags.daemonHttpHost);
+	if (typeof flags.daemonHttpPort === "number") {
+		args.push("--daemon-port", String(flags.daemonHttpPort));
+	}
 
 	const child = spawn(process.execPath, args, {
 		detached: true,
@@ -294,9 +329,15 @@ async function startDaemonProcess(flags: {
 async function ensureDaemonRunning(
 	serverUrl: string,
 	deviceName: string,
+	config: InfiConfig,
 ): Promise<void> {
 	if (await isDaemonResponsive()) return;
-	await startDaemonProcess({ serverUrl, deviceName });
+	await startDaemonProcess({
+		serverUrl,
+		deviceName,
+		daemonHttpHost: config.daemonHttpHost,
+		daemonHttpPort: config.daemonHttpPort,
+	});
 }
 
 async function cmdDaemon(args: string[]): Promise<void> {
@@ -308,6 +349,16 @@ async function cmdDaemon(args: string[]): Promise<void> {
 	const playlistKey = getFlagString(parsed, "playlist-key");
 	const roomName = getFlagString(parsed, "room-name");
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
+	const daemonHttpHostRaw = getFlagString(parsed, "daemon-host", "http-host");
+	const daemonHttpPortRaw = getFlagString(parsed, "daemon-port", "http-port");
+	const daemonHttpHost =
+		typeof daemonHttpHostRaw === "string"
+			? normalizeDaemonHostSetting(daemonHttpHostRaw)
+			: config.daemonHttpHost;
+	const daemonHttpPort =
+		typeof daemonHttpPortRaw === "string"
+			? normalizeDaemonPortSetting(daemonHttpPortRaw)
+			: config.daemonHttpPort;
 
 	switch (sub) {
 		case "run": {
@@ -317,6 +368,8 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				daemonHttpHost,
+				daemonHttpPort,
 			});
 			return;
 		}
@@ -331,6 +384,8 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				daemonHttpHost,
+				daemonHttpPort,
 			});
 			console.log("Daemon started.");
 			if (roomId) {
@@ -361,6 +416,8 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				daemonHttpHost,
+				daemonHttpPort,
 			});
 			console.log("Daemon restarted.");
 			if (roomId) {
@@ -408,6 +465,14 @@ async function cmdDaemon(args: string[]): Promise<void> {
 			}
 			console.log(`Server: ${String(data.serverUrl ?? "-")}`);
 			console.log(`Config Server: ${config.serverUrl}`);
+			const daemonHttpUrl =
+				typeof data.daemonHttpUrl === "string"
+					? data.daemonHttpUrl
+					: formatDaemonHttpUrl(daemonHttpHost, daemonHttpPort);
+			console.log(`Daemon HTTP: ${daemonHttpUrl}`);
+			console.log(
+				`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
+			);
 			console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
 			const playback = data.playback as Record<string, unknown> | undefined;
 			const engine = data.engine as Record<string, unknown> | undefined;
@@ -450,7 +515,7 @@ async function cmdPlay(args: string[]): Promise<void> {
 		throw new Error("--room cannot be used with local playback.");
 	}
 
-	await ensureDaemonRunning(serverUrl, deviceName);
+	await ensureDaemonRunning(serverUrl, deviceName, config);
 
 	if (playbackMode === "local") {
 		const playlist = await resolvePlaylist(serverUrl, {
@@ -559,7 +624,7 @@ async function cmdRoom(args: string[]): Promise<void> {
 	const serverUrl = resolveServerUrl(parsed);
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
 
-	await ensureDaemonRunning(serverUrl, deviceName);
+	await ensureDaemonRunning(serverUrl, deviceName, config);
 
 	switch (sub) {
 		case "join": {
@@ -684,6 +749,14 @@ async function cmdStatus(args: string[]): Promise<void> {
 	}
 	console.log(`Server: ${String(daemonData.serverUrl ?? serverUrl)}`);
 	console.log(`Config Server: ${config.serverUrl}`);
+	const daemonHttpUrl =
+		typeof daemonData.daemonHttpUrl === "string"
+			? daemonData.daemonHttpUrl
+			: formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort);
+	console.log(`Daemon HTTP: ${daemonHttpUrl}`);
+	console.log(
+		`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
+	);
 	console.log(`Queue Length: ${String(daemonData.queueLength ?? "0")}`);
 
 	const playback = daemonData.playback as Record<string, unknown> | undefined;
@@ -829,6 +902,20 @@ async function runConfigWizard(
 		}
 		patch.deviceName = deviceInput.trim();
 
+		const daemonHostInput = await promptWithDefault(
+			rl,
+			"Daemon HTTP Host",
+			current.daemonHttpHost,
+		);
+		patch.daemonHttpHost = normalizeDaemonHostSetting(daemonHostInput);
+
+		const daemonPortInput = await promptWithDefault(
+			rl,
+			"Daemon HTTP Port",
+			String(current.daemonHttpPort),
+		);
+		patch.daemonHttpPort = normalizeDaemonPortSetting(daemonPortInput);
+
 		const volumeInput = await promptWithDefault(
 			rl,
 			"Volume Step (0..1)",
@@ -863,6 +950,8 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	const deviceName = getFlagString(parsed, "device-name", "device");
 	const volumeStepRaw = getFlagString(parsed, "volume-step", "step");
 	const playbackModeRaw = getFlagString(parsed, "mode");
+	const daemonHttpHostRaw = getFlagString(parsed, "daemon-host", "http-host");
+	const daemonHttpPortRaw = getFlagString(parsed, "daemon-port", "http-port");
 	const defaultRoomId = getFlagString(parsed, "default-room", "room");
 	const defaultPlaylistKey = getFlagString(
 		parsed,
@@ -880,6 +969,8 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		typeof deviceName === "string" ||
 		typeof volumeStepRaw === "string" ||
 		typeof playbackModeRaw === "string" ||
+		typeof daemonHttpHostRaw === "string" ||
+		typeof daemonHttpPortRaw === "string" ||
 		localFlag ||
 		roomModeFlag ||
 		typeof defaultRoomId === "string" ||
@@ -891,7 +982,7 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		if (setupMode) {
 			console.log("Usage: infi setup --server <url>");
 			console.log(
-				"Optional: --device-name <name> --volume-step <n> --mode room|local",
+				"Optional: --device-name <name> --volume-step <n> --mode room|local --daemon-host <host> --daemon-port <port>",
 			);
 			return;
 		}
@@ -926,6 +1017,12 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 			current.playbackMode,
 		);
 	}
+	if (typeof daemonHttpHostRaw === "string") {
+		patch.daemonHttpHost = normalizeDaemonHostSetting(daemonHttpHostRaw);
+	}
+	if (typeof daemonHttpPortRaw === "string") {
+		patch.daemonHttpPort = normalizeDaemonPortSetting(daemonHttpPortRaw);
+	}
 	if (localFlag) {
 		patch.playbackMode = "local";
 	}
@@ -959,6 +1056,12 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		}
 		if (typeof patch.playbackMode === "string") {
 			daemonPatch.playbackMode = patch.playbackMode;
+		}
+		if (typeof patch.daemonHttpHost === "string") {
+			daemonPatch.daemonHttpHost = patch.daemonHttpHost;
+		}
+		if (typeof patch.daemonHttpPort === "number") {
+			daemonPatch.daemonHttpPort = patch.daemonHttpPort;
 		}
 		if (Object.keys(daemonPatch).length > 0) {
 			try {

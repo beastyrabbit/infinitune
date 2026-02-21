@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { getConfigRoot } from "./lib/paths";
 
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 
 export type PlaybackMode = "room" | "local";
 
@@ -15,6 +15,8 @@ export interface InfiConfig {
 	defaultRoomId: string | null;
 	defaultPlaylistKey: string | null;
 	volumeStep: number;
+	daemonHttpHost: string;
+	daemonHttpPort: number;
 }
 
 const DEFAULT_SERVER_URL =
@@ -35,6 +37,8 @@ function defaultConfig(): InfiConfig {
 		defaultRoomId: null,
 		defaultPlaylistKey: null,
 		volumeStep: 0.05,
+		daemonHttpHost: "127.0.0.1",
+		daemonHttpPort: 17653,
 	};
 }
 
@@ -63,6 +67,20 @@ function sanitize(raw: Partial<InfiConfig> | null | undefined): InfiConfig {
 			? raw.volumeStep
 			: defaults.volumeStep;
 
+	const daemonHttpHost =
+		typeof raw.daemonHttpHost === "string" &&
+		raw.daemonHttpHost.trim().length > 0
+			? raw.daemonHttpHost.trim()
+			: defaults.daemonHttpHost;
+
+	const daemonHttpPort =
+		typeof raw.daemonHttpPort === "number" &&
+		Number.isInteger(raw.daemonHttpPort) &&
+		raw.daemonHttpPort >= 1 &&
+		raw.daemonHttpPort <= 65535
+			? raw.daemonHttpPort
+			: defaults.daemonHttpPort;
+
 	return {
 		version: CONFIG_VERSION,
 		serverUrl,
@@ -75,6 +93,8 @@ function sanitize(raw: Partial<InfiConfig> | null | undefined): InfiConfig {
 				? raw.defaultPlaylistKey
 				: null,
 		volumeStep,
+		daemonHttpHost,
+		daemonHttpPort,
 	};
 }
 

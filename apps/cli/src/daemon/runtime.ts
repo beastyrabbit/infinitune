@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
+import {
+	createServer,
+	type Server as HttpServer,
+	type IncomingMessage,
+	type ServerResponse,
+} from "node:http";
 import type { Server as NetServer } from "node:net";
 import {
 	type ClientMessage,
@@ -53,6 +59,33 @@ function asNumber(value: unknown): number | undefined {
 	return value;
 }
 
+function asInteger(value: unknown): number | undefined {
+	const num = asNumber(value);
+	if (num === undefined || !Number.isInteger(num)) return undefined;
+	return num;
+}
+
+function isValidTcpPort(value: number): boolean {
+	return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function formatRuntimeClock(seconds: number): string {
+	const total = Math.max(0, Math.floor(seconds));
+	const hours = Math.floor(total / 3600);
+	const minutes = Math.floor((total % 3600) / 60);
+	const secs = total % 60;
+	if (hours > 0) {
+		return `${String(hours)}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+	}
+	return `${String(minutes)}:${String(secs).padStart(2, "0")}`;
+}
+
+function formatHttpOrigin(host: string, port: number): string {
+	const normalizedHost =
+		host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+	return `http://${normalizedHost}:${String(port)}`;
+}
+
 function toSongData(song: Song): SongData {
 	return {
 		id: song.id,
@@ -101,6 +134,8 @@ export type DaemonRuntimeOptions = {
 	playlistKey?: string;
 	roomName?: string;
 	deviceName: string;
+	daemonHttpHost?: string;
+	daemonHttpPort?: number;
 };
 
 export class DaemonRuntime {
@@ -108,6 +143,7 @@ export class DaemonRuntime {
 	private readonly deviceId = `infi-${randomUUID().slice(0, 8)}`;
 	private readonly ffplay: FfplayEngine;
 	private readonly ipcServer: NetServer;
+	private httpServer: HttpServer | null = null;
 	private ws: WebSocket | null = null;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private syncTimer: ReturnType<typeof setInterval> | null = null;
@@ -125,6 +161,8 @@ export class DaemonRuntime {
 	private playlistKey: string | null;
 	private roomName: string | null;
 	private deviceName: string;
+	private daemonHttpHost: string;
+	private daemonHttpPort: number;
 	private mode: PlaybackMode = "room";
 	private localPlaylistId: string | null = null;
 	private localPlaylistName: string | null = null;
@@ -142,6 +180,12 @@ export class DaemonRuntime {
 		this.playlistKey = options.playlistKey ?? null;
 		this.roomName = options.roomName ?? null;
 		this.deviceName = options.deviceName;
+		this.daemonHttpHost = options.daemonHttpHost?.trim().length
+			? options.daemonHttpHost.trim()
+			: "127.0.0.1";
+		this.daemonHttpPort = isValidTcpPort(options.daemonHttpPort ?? -1)
+			? (options.daemonHttpPort as number)
+			: 17653;
 		this.ffplay = new FfplayEngine(() => {
 			if (this.mode === "local") {
 				void this.handleLocalSongEnded();
@@ -165,6 +209,7 @@ export class DaemonRuntime {
 				resolve();
 			});
 		});
+		await this.startHttpServer();
 
 		this.syncTimer = setInterval(() => {
 			this.sendSyncPulse();
@@ -235,21 +280,54 @@ export class DaemonRuntime {
 				const nextServerUrl = asString(payload?.serverUrl);
 				const nextDeviceName = asString(payload?.deviceName);
 				const nextModeRaw = asString(payload?.playbackMode);
+				const nextDaemonHttpHost = asString(payload?.daemonHttpHost);
+				const daemonHttpPortRaw = payload?.daemonHttpPort;
+				const nextDaemonHttpPort =
+					daemonHttpPortRaw === undefined
+						? undefined
+						: asInteger(daemonHttpPortRaw);
 				const nextMode =
 					nextModeRaw === "local" || nextModeRaw === "room"
 						? nextModeRaw
 						: undefined;
+				if (
+					daemonHttpPortRaw !== undefined &&
+					nextDaemonHttpPort === undefined
+				) {
+					throw new Error(
+						"daemonHttpPort must be an integer between 1 and 65535",
+					);
+				}
+				if (
+					typeof nextDaemonHttpPort === "number" &&
+					!isValidTcpPort(nextDaemonHttpPort)
+				) {
+					throw new Error(
+						"daemonHttpPort must be an integer between 1 and 65535",
+					);
+				}
 				const shouldReconnect =
 					(typeof nextServerUrl === "string" &&
 						nextServerUrl !== this.serverUrl) ||
 					(typeof nextDeviceName === "string" &&
 						nextDeviceName !== this.deviceName);
+				const shouldRestartHttp =
+					(typeof nextDaemonHttpHost === "string" &&
+						nextDaemonHttpHost !== this.daemonHttpHost) ||
+					(typeof nextDaemonHttpPort === "number" &&
+						nextDaemonHttpPort !== this.daemonHttpPort);
 
 				if (typeof nextServerUrl === "string") {
 					this.serverUrl = nextServerUrl;
 				}
 				if (typeof nextDeviceName === "string") {
 					this.deviceName = nextDeviceName;
+				}
+				if (typeof nextDaemonHttpHost === "string") {
+					this.daemonHttpHost = nextDaemonHttpHost;
+				}
+				if (typeof nextDaemonHttpPort === "number") {
+					this.daemonHttpPort = nextDaemonHttpPort;
 				}
 
 				if (nextMode === "room" && this.mode !== "room") {
@@ -274,6 +352,9 @@ export class DaemonRuntime {
 					if (this.mode === "local" && this.localPlaylistId && this.serverUrl) {
 						await this.refreshLocalQueue();
 					}
+				}
+				if (shouldRestartHttp) {
+					await this.restartHttpServer();
 				}
 
 				return this.getStatus();
@@ -603,8 +684,198 @@ export class DaemonRuntime {
 			playback: this.playback,
 			currentSong: this.currentSong,
 			queueLength: this.queue.length,
+			daemonHttpHost: this.daemonHttpHost,
+			daemonHttpPort: this.daemonHttpPort,
+			daemonHttpUrl: formatHttpOrigin(this.daemonHttpHost, this.daemonHttpPort),
 			engine: this.ffplay.getSnapshot(),
 			lastError: this.lastError,
+		};
+	}
+
+	private async startHttpServer(): Promise<void> {
+		const host = this.daemonHttpHost;
+		const port = this.daemonHttpPort;
+		await new Promise<void>((resolve, reject) => {
+			const server = createServer(this.handleHttpRequest);
+			let settled = false;
+			const onError = (error: NodeJS.ErrnoException) => {
+				if (settled) return;
+				settled = true;
+				server.removeListener("listening", onListening);
+				this.httpServer = null;
+				reject(
+					new Error(
+						`Failed to bind daemon HTTP endpoint (${formatHttpOrigin(host, port)}): ${error.message}`,
+					),
+				);
+			};
+			const onListening = () => {
+				if (settled) return;
+				settled = true;
+				server.removeListener("error", onError);
+				this.httpServer = server;
+				resolve();
+			};
+			server.once("error", onError);
+			server.once("listening", onListening);
+			server.listen(port, host);
+		});
+	}
+
+	private async stopHttpServer(): Promise<void> {
+		const server = this.httpServer;
+		if (!server) return;
+		this.httpServer = null;
+		await new Promise<void>((resolve) => {
+			server.close(() => resolve());
+		});
+	}
+
+	private async restartHttpServer(): Promise<void> {
+		await this.stopHttpServer();
+		try {
+			await this.startHttpServer();
+			this.lastError = null;
+		} catch (error) {
+			this.lastError = error instanceof Error ? error.message : String(error);
+			throw error;
+		}
+	}
+
+	private readonly handleHttpRequest = (
+		req: IncomingMessage,
+		res: ServerResponse,
+	): void => {
+		const method = req.method ?? "GET";
+		let pathname = "/";
+		try {
+			pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+		} catch {
+			this.writeJson(res, 400, { error: "Invalid request URL" });
+			return;
+		}
+
+		if (method !== "GET") {
+			this.writeJson(res, 405, { error: "Method not allowed" });
+			return;
+		}
+
+		switch (pathname) {
+			case "/":
+			case "/health":
+				this.writeJson(res, 200, {
+					ok: true,
+					pid: process.pid,
+					mode: this.mode,
+				});
+				return;
+			case "/status":
+				this.writeJson(res, 200, this.getStatus());
+				return;
+			case "/queue":
+				this.writeJson(res, 200, this.queue);
+				return;
+			case "/waybar":
+				this.writeJson(res, 200, this.getWaybarPayload());
+				return;
+			default:
+				this.writeJson(res, 404, { error: "Not found" });
+				return;
+		}
+	};
+
+	private writeJson(
+		res: ServerResponse,
+		statusCode: number,
+		payload: unknown,
+	): void {
+		res.statusCode = statusCode;
+		res.setHeader("Content-Type", "application/json; charset=utf-8");
+		res.setHeader("Cache-Control", "no-store");
+		res.end(`${JSON.stringify(payload)}\n`);
+	}
+
+	private getWaybarPayload(): Record<string, unknown> {
+		const playback = this.playback;
+		const currentSong = this.currentSong;
+		const title =
+			typeof currentSong?.title === "string" &&
+			currentSong.title.trim().length > 0
+				? currentSong.title.trim()
+				: null;
+		const artist =
+			typeof currentSong?.artistName === "string" &&
+			currentSong.artistName.trim().length > 0
+				? currentSong.artistName.trim()
+				: null;
+		const songId = currentSong?.id ?? playback.currentSongId ?? null;
+		const runtime = Math.max(0, playback.currentTime || 0);
+		const duration =
+			typeof playback.duration === "number" && playback.duration > 0
+				? playback.duration
+				: typeof currentSong?.audioDuration === "number" &&
+						currentSong.audioDuration > 0
+					? currentSong.audioDuration
+					: 0;
+
+		const state = this.connected
+			? playback.isPlaying
+				? "playing"
+				: songId
+					? "paused"
+					: "idle"
+			: "disconnected";
+		const scope =
+			this.mode === "local"
+				? (this.localPlaylistName ?? this.localPlaylistId ?? "local")
+				: (this.roomId ?? "room");
+		const runtimeLabel =
+			duration > 0
+				? `${formatRuntimeClock(runtime)} / ${formatRuntimeClock(duration)}`
+				: formatRuntimeClock(runtime);
+		const text = title
+			? `${state}: ${title}`
+			: this.connected
+				? `${this.mode}: idle`
+				: `${this.mode}: offline`;
+		const tooltip = [
+			`State: ${state}`,
+			`Mode: ${this.mode}`,
+			`Scope: ${scope}`,
+			title ? `Song: ${title}${artist ? ` - ${artist}` : ""}` : "Song: -",
+			songId ? `Song ID: ${songId}` : "Song ID: -",
+			`Runtime: ${runtimeLabel}`,
+			`Queue: ${String(this.queue.length)}`,
+			`Volume: ${Math.round((playback.volume || 0) * 100)}%`,
+		].join("\n");
+		const percentage =
+			duration > 0
+				? Math.round(Math.max(0, Math.min(1, runtime / duration)) * 100)
+				: 0;
+
+		return {
+			text,
+			tooltip,
+			class: [
+				"infi",
+				`mode-${this.mode}`,
+				`state-${state}`,
+				this.connected ? "connected" : "disconnected",
+			].join(" "),
+			alt: state,
+			percentage,
+			mode: this.mode,
+			connected: this.connected,
+			roomId: this.roomId,
+			localPlaylistId: this.localPlaylistId,
+			localPlaylistName: this.localPlaylistName,
+			songId,
+			title,
+			artist,
+			queueLength: this.queue.length,
+			runtime,
+			duration,
+			daemonHttpUrl: formatHttpOrigin(this.daemonHttpHost, this.daemonHttpPort),
 		};
 	}
 
@@ -905,6 +1176,7 @@ export class DaemonRuntime {
 		this.stopLocalMode();
 		this.disconnect(true);
 		this.ffplay.destroy();
+		await this.stopHttpServer();
 
 		await new Promise<void>((resolve) => {
 			this.ipcServer.close(() => resolve());
