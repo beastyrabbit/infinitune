@@ -362,6 +362,9 @@ export class DaemonRuntime {
 					this.playLocal();
 				} else {
 					this.sendCommand("play");
+					// Apply play locally immediately to avoid perceived command lag.
+					this.ffplay.play();
+					this.playback.isPlaying = true;
 				}
 				return { ok: true };
 			case "pause":
@@ -370,6 +373,9 @@ export class DaemonRuntime {
 					this.playback.isPlaying = false;
 				} else {
 					this.sendCommand("pause");
+					// Stop local audio immediately while room state catches up.
+					this.ffplay.pause();
+					this.playback.isPlaying = false;
 				}
 				return { ok: true };
 			case "toggle":
