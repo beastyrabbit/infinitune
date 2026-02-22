@@ -21,14 +21,14 @@ async function resolveUserActor(c: Context): Promise<UserActor | null> {
 	if (!token) return null;
 
 	const identity = await verifyShooIdToken(token);
-	await userService.upsertFromShoo(identity);
+	const user = await userService.upsertFromShoo(identity);
 
 	return {
 		kind: "user",
-		userId: identity.userId,
-		email: identity.email,
-		name: identity.name,
-		picture: identity.picture,
+		userId: user.id,
+		email: user.email ?? undefined,
+		name: user.displayName ?? undefined,
+		picture: user.picture ?? undefined,
 	};
 }
 

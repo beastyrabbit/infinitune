@@ -43,11 +43,14 @@ async function ensurePlaylistSession(
 	const playlist = await playlistService.getById(playlistId);
 	if (!playlist) return null;
 
-	const room = roomManager.createRoom(
-		playlist.id,
-		playlist.name,
-		playlist.playlistKey ?? playlist.id,
-	);
+	const existingRoom = roomManager.getRoomsByPlaylistId(playlist.id)[0];
+	const room =
+		existingRoom ??
+		roomManager.createRoom(
+			playlist.id,
+			playlist.name,
+			playlist.playlistKey ?? playlist.id,
+		);
 	room.playlistId = playlist.id;
 	await syncRoom(room);
 

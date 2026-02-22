@@ -164,6 +164,45 @@ describe("control routes", () => {
 		);
 	});
 
+	it("reuses an existing room already mapped to the target playlist", async () => {
+		vi.mocked(authActor.requireUserActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		vi.mocked(playlistService.getById).mockImplementation(
+			async (playlistId) => {
+				if (playlistId === "pl-1") return makePlaylist("pl-1", "user-1");
+				return null;
+			},
+		);
+
+		const roomManager = new RoomManager();
+		const legacyRoom = roomManager.createRoom(
+			"legacy-room-1",
+			"Legacy Room",
+			"legacy-key",
+		);
+		legacyRoom.playlistId = "pl-1";
+		const handleLegacy = vi.spyOn(legacyRoom, "handleCommand");
+		const app = createApp(roomManager);
+
+		const response = await postHouseCommand(app, {
+			action: "pause",
+			playlistIds: ["pl-1"],
+		});
+
+		expect(response.status).toBe(200);
+		const payload = HouseCommandResponseSchema.parse(await response.json());
+		expect(payload.affectedRoomIds).toEqual(["legacy-room-1"]);
+		expect(handleLegacy).toHaveBeenCalledWith(
+			"user-1",
+			"pause",
+			undefined,
+			undefined,
+		);
+		expect(roomManager.getRoom("pl-1")).toBeUndefined();
+	});
+
 	it("returns only accessible sessions for house snapshot endpoint", async () => {
 		vi.mocked(authActor.requireUserActor).mockResolvedValue({
 			kind: "user",

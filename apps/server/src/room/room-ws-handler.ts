@@ -54,6 +54,7 @@ function handleClientMessage(
 				roomManager.createRoom(sessionId, roomName, msg.playlistKey);
 				const newRoom = roomManager.getRoom(sessionId);
 				if (newRoom) {
+					newRoom.playlistId = msg.playlistId ?? sessionId;
 					syncRoom(newRoom);
 				}
 			}
