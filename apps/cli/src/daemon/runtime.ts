@@ -416,12 +416,21 @@ export class DaemonRuntime {
 					this.connected = false;
 				}
 
+				let roomChangedByRegistration = false;
 				if (shouldRefreshRegistration) {
+					const previousRoomId = this.roomId;
 					await this.refreshDeviceRegistration(false);
+					roomChangedByRegistration = previousRoomId !== this.roomId;
 					this.restartDeviceRegistrationTimer();
 				}
 
-				if (shouldReconnect) {
+				const shouldConnectAfterRegistration =
+					this.mode === "room" &&
+					Boolean(this.serverUrl && this.roomId) &&
+					shouldRefreshRegistration &&
+					(roomChangedByRegistration || !this.connected);
+
+				if (shouldReconnect || shouldConnectAfterRegistration) {
 					if (this.mode === "room" && this.roomId && this.serverUrl) {
 						this.connect();
 					}
@@ -648,10 +657,13 @@ export class DaemonRuntime {
 				return;
 			}
 
+			// Keep a deterministic key so join can auto-create session rooms
+			// even after server restarts (rooms are in-memory).
+			this.playlistKey = assignedPlaylistId;
+
 			if (this.roomId !== assignedPlaylistId) {
 				this.roomId = assignedPlaylistId;
 				this.roomName = `Playlist ${assignedPlaylistId}`;
-				this.playlistKey = null;
 				if (connectOnAssignment) {
 					this.connect();
 				}

@@ -508,7 +508,10 @@ export const useSendPlaylistCommand = createMutation<{
 	async (args) => {
 		OkResponseSchema.parse(await api.post<unknown>("/api/v1/commands", args));
 	},
-	undefined,
+	[
+		["playlists", "session"],
+		["house", "sessions"],
+	],
 	{ silent: true },
 );
 
@@ -525,7 +528,10 @@ export const useSendHouseCommand = createMutation<
 		HouseCommandResponseSchema.parse(
 			await api.post<unknown>("/api/v1/house/commands", args),
 		),
-	undefined,
+	[
+		["playlists", "session"],
+		["house", "sessions"],
+	],
 	{ silent: true },
 );
 
