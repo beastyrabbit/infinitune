@@ -19,6 +19,10 @@ export const CreatePlaylistSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).optional(),
 	lmCfgScale: z.number().min(0).max(20).optional(),
 	inferMethod: z.string().optional(),
+	ownerUserId: z.string().optional(),
+	isTemporary: z.boolean().optional(),
+	expiresAt: z.number().optional(),
+	description: z.string().max(4000).optional(),
 });
 
 /** Schema for updating playlist status */

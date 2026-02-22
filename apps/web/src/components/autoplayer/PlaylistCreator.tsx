@@ -43,7 +43,7 @@ interface PlaylistCreatorProps {
 	onOpenLibrary?: () => void;
 	onOpenOneshot?: () => void;
 	onOpenPlaylists?: () => void;
-	onOpenRooms?: () => void;
+	onOpenHouse?: () => void;
 	onCreatePlaylistInRoom?: (data: {
 		name: string;
 		prompt: string;
@@ -75,7 +75,7 @@ export function PlaylistCreator({
 	onOpenLibrary,
 	onOpenOneshot,
 	onOpenPlaylists,
-	onOpenRooms,
+	onOpenHouse,
 	onCreatePlaylistInRoom,
 }: PlaylistCreatorProps) {
 	const [prompt, setPrompt] = useState("");
@@ -280,14 +280,14 @@ export function PlaylistCreator({
 							</span>
 						</div>
 						<div className="flex items-center gap-3">
-							{onOpenRooms && (
+							{onOpenHouse && (
 								<button
 									type="button"
 									className="flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500"
-									onClick={onOpenRooms}
+									onClick={onOpenHouse}
 								>
 									<Radio className="h-4 w-4" />
-									[ROOMS]
+									[HOUSE]
 								</button>
 							)}
 							{onOpenOneshot && (

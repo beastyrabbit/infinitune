@@ -155,6 +155,11 @@ export interface Playlist {
 	managerEpoch: number | null;
 	managerUpdatedAt: number | null;
 	isStarred: boolean;
+	ownerUserId: string | null;
+	isTemporary: boolean;
+	expiresAt: number | null;
+	description: string | null;
+	descriptionUpdatedAt: number | null;
 }
 
 export interface WorkQueue {

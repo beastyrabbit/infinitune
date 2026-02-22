@@ -237,16 +237,31 @@ export class Room {
 			switch (action) {
 				case "play":
 				case "pause":
+				case "stop":
 				case "toggle":
 				case "setVolume":
 				case "toggleMute":
 					this.setDeviceMode(targetDeviceId, "individual");
-					this.sendTo(targetDeviceId, {
-						type: "execute",
-						action,
-						payload,
-						scope: "device",
-					});
+					if (action === "stop") {
+						this.sendTo(targetDeviceId, {
+							type: "execute",
+							action: "pause",
+							scope: "device",
+						});
+						this.sendTo(targetDeviceId, {
+							type: "execute",
+							action: "seek",
+							payload: { time: 0 },
+							scope: "device",
+						});
+					} else {
+						this.sendTo(targetDeviceId, {
+							type: "execute",
+							action,
+							payload,
+							scope: "device",
+						});
+					}
 					this.broadcastState(); // update controllers about mode change
 					break;
 			}
@@ -257,12 +272,21 @@ export class Room {
 		switch (action) {
 			case "play":
 			case "pause":
+			case "stop":
 			case "toggle": {
 				if (action === "play") this.playback.isPlaying = true;
 				else if (action === "pause") this.playback.isPlaying = false;
-				else this.playback.isPlaying = !this.playback.isPlaying;
+				else if (action === "stop") {
+					this.playback.isPlaying = false;
+					this.playback.currentTime = 0;
+				} else this.playback.isPlaying = !this.playback.isPlaying;
 				this.syncPriorityUntil = Date.now() + 500;
-				this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
+				if (action === "stop") {
+					this.broadcastExecute("pause");
+					this.broadcastExecute("seek", { time: 0 }, false);
+				} else {
+					this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
+				}
 				break;
 			}
 			case "skip":

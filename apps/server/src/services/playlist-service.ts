@@ -1,7 +1,7 @@
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import type { PlaylistStatus } from "@infinitune/shared/types";
 import { validatePlaylistTransition } from "@infinitune/shared/validation/song-status";
-import { and, desc, eq, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import type { Playlist } from "../db/schema";
 import { playlists } from "../db/schema";
@@ -83,6 +83,10 @@ export async function create(data: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	ownerUserId?: string;
+	isTemporary?: boolean;
+	expiresAt?: number;
+	description?: string;
 }) {
 	const [row] = await db
 		.insert(playlists)
@@ -105,6 +109,11 @@ export async function create(data: {
 			lmTemperature: data.lmTemperature,
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
+			ownerUserId: data.ownerUserId,
+			isTemporary: data.isTemporary ?? false,
+			expiresAt: data.expiresAt,
+			description: data.description,
+			descriptionUpdatedAt: data.description ? Date.now() : null,
 			managerBrief: null,
 			managerPlan: null,
 			managerEpoch: null,
@@ -329,4 +338,28 @@ export async function heartbeat(id: string) {
 			to: "active",
 		});
 	}
+}
+
+export async function deleteExpiredTemporaryPlaylists(
+	now = Date.now(),
+): Promise<number> {
+	const expired = await db
+		.select({ id: playlists.id })
+		.from(playlists)
+		.where(
+			and(
+				eq(playlists.isTemporary, true),
+				lte(playlists.expiresAt, now),
+				ne(playlists.status, "active"),
+			),
+		);
+
+	if (expired.length === 0) return 0;
+
+	for (const playlist of expired) {
+		await db.delete(playlists).where(eq(playlists.id, playlist.id));
+		emit("playlist.deleted", { playlistId: playlist.id });
+	}
+
+	return expired.length;
 }

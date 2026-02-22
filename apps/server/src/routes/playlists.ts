@@ -6,6 +6,7 @@ import {
 	UpdatePlaylistStatusSchema,
 } from "@infinitune/shared/validation/playlist-schemas";
 import { Hono } from "hono";
+import { getRequestActor } from "../auth/actor";
 import * as playlistService from "../services/playlist-service";
 import { playlistToWire } from "../wire";
 
@@ -54,7 +55,26 @@ app.post("/", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	return c.json(await playlistService.create(result.data));
+	const actor = await getRequestActor(c);
+	const createPayload = { ...result.data };
+
+	if (createPayload.ownerUserId && actor.kind !== "user") {
+		return c.json({ error: "ownerUserId requires authenticated user" }, 401);
+	}
+
+	if (actor.kind === "user") {
+		createPayload.ownerUserId = actor.userId;
+		if (createPayload.isTemporary === undefined) {
+			createPayload.isTemporary = false;
+		}
+	} else {
+		createPayload.ownerUserId = undefined;
+		createPayload.isTemporary = createPayload.isTemporary ?? true;
+		createPayload.expiresAt =
+			createPayload.expiresAt ?? Date.now() + 24 * 60 * 60 * 1000;
+	}
+
+	return c.json(await playlistService.create(createPayload));
 });
 
 // PATCH /api/playlists/:id/params

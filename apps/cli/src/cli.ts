@@ -9,10 +9,10 @@ import type { InfiConfig, PlaybackMode } from "./config";
 import { loadConfig, patchConfig } from "./config";
 import { runDaemonRuntime } from "./daemon/runtime";
 import {
-	getNowPlaying,
+	getPlaylistSession,
 	listPlaylists,
-	listRooms,
 	normalizeServerUrl,
+	sendHouseCommand,
 } from "./lib/api";
 import { getFlagNumber, getFlagString, hasFlag, parseArgs } from "./lib/flags";
 import { pickFromFzf } from "./lib/fzf";
@@ -32,6 +32,11 @@ import {
 	TSX_LOADER_PATH,
 } from "./lib/paths";
 import {
+	isConnectedFlag,
+	isStaleRoomPlaybackError,
+	playInRoomSession,
+} from "./lib/room-playback";
+import {
 	pickExistingRoom,
 	pickSongFromQueue,
 	resolvePlaylist,
@@ -44,7 +49,7 @@ Infinitune CLI controls a background daemon that owns playback.
 Most commands talk to that daemon over IPC.
 
 Modes:
-  room   Join/sync a shared room via server WebSocket (multi-device control).
+  room   Join/sync a playlist session via server WebSocket (multi-device control).
   local  Play songs directly from a playlist on this machine (no room needed).
 
 Common Workflows:
@@ -75,8 +80,12 @@ Playback Commands:
   infi status
   infi doctor room
 
+House Commands:
+  infi house play|pause|stop|skip|mute [--playlist <playlist-id>] [--device-token <token>]
+  infi house volume <0..1> [--playlist <playlist-id>] [--device-token <token>]
+
 Room Commands:
-  infi room join --room <id>
+  infi room join --room <playlist-id>
   infi room pick
   infi room leave
 
@@ -89,6 +98,7 @@ Config Commands:
   infi config [--server <url>] [--device-name <name>] [--volume-step <0..1>]
              [--mode room|local] [--local] [--room-mode]
              [--default-room <id>] [--default-playlist-key <key>]
+             [--device-token <token>] [--clear-token]
              [--daemon-host <host>] [--daemon-port <1..65535>]
              [--clear-room] [--clear-playlist]
   infi setup [--server <url>]
@@ -299,6 +309,16 @@ function resolveServerUrl(parsed: ReturnType<typeof parseArgs>): string {
 	return normalizeServerSetting(raw);
 }
 
+function redactToken(token: string | null): string {
+	if (!token) return "-";
+	if (token.length <= 12) return token;
+	return `${token.slice(0, 8)}...${token.slice(-4)}`;
+}
+
+function toErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 function printConfig(config: InfiConfig): void {
 	console.log("Current infi config:");
 	console.log(`  serverUrl: ${config.serverUrl}`);
@@ -307,6 +327,7 @@ function printConfig(config: InfiConfig): void {
 	console.log(`  volumeStep: ${config.volumeStep}`);
 	console.log(`  defaultRoomId: ${config.defaultRoomId ?? "-"}`);
 	console.log(`  defaultPlaylistKey: ${config.defaultPlaylistKey ?? "-"}`);
+	console.log(`  deviceToken: ${redactToken(config.deviceToken)}`);
 	console.log(`  daemonHttpHost: ${config.daemonHttpHost}`);
 	console.log(`  daemonHttpPort: ${config.daemonHttpPort}`);
 	console.log(
@@ -357,6 +378,7 @@ async function startDaemonProcess(flags: {
 	playlistKey?: string;
 	roomName?: string;
 	deviceName?: string;
+	deviceToken?: string;
 	daemonHttpHost?: string;
 	daemonHttpPort?: number;
 }): Promise<void> {
@@ -373,6 +395,7 @@ async function startDaemonProcess(flags: {
 	if (flags.playlistKey) args.push("--playlist-key", flags.playlistKey);
 	if (flags.roomName) args.push("--room-name", flags.roomName);
 	if (flags.deviceName) args.push("--device-name", flags.deviceName);
+	if (flags.deviceToken) args.push("--device-token", flags.deviceToken);
 	if (flags.daemonHttpHost) args.push("--daemon-host", flags.daemonHttpHost);
 	if (typeof flags.daemonHttpPort === "number") {
 		args.push("--daemon-port", String(flags.daemonHttpPort));
@@ -405,6 +428,7 @@ async function ensureDaemonRunning(
 	await startDaemonProcess({
 		serverUrl,
 		deviceName,
+		deviceToken: config.deviceToken ?? undefined,
 		daemonHttpHost: config.daemonHttpHost,
 		daemonHttpPort: config.daemonHttpPort,
 	});
@@ -419,6 +443,10 @@ async function cmdDaemon(args: string[]): Promise<void> {
 	const playlistKey = getFlagString(parsed, "playlist-key");
 	const roomName = getFlagString(parsed, "room-name");
 	const deviceName = getFlagString(parsed, "device-name") ?? config.deviceName;
+	const deviceToken =
+		getFlagString(parsed, "device-token", "token") ??
+		config.deviceToken ??
+		undefined;
 	const daemonHttpHostRaw = getFlagString(parsed, "daemon-host", "http-host");
 	const daemonHttpPortRaw = getFlagString(parsed, "daemon-port", "http-port");
 	const daemonHttpHost =
@@ -438,6 +466,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				deviceToken,
 				daemonHttpHost,
 				daemonHttpPort,
 			});
@@ -454,6 +483,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				deviceToken,
 				daemonHttpHost,
 				daemonHttpPort,
 			});
@@ -486,6 +516,7 @@ async function cmdDaemon(args: string[]): Promise<void> {
 				playlistKey,
 				roomName,
 				deviceName,
+				deviceToken,
 				daemonHttpHost,
 				daemonHttpPort,
 			});
@@ -526,10 +557,26 @@ async function cmdDaemon(args: string[]): Promise<void> {
 					: "room";
 			const roomDeviceMode =
 				typeof data.roomDeviceMode === "string" ? data.roomDeviceMode : "-";
+			const roomName =
+				typeof data.roomName === "string" ? data.roomName : undefined;
 			console.log(`Daemon: running (pid ${String(data.pid ?? "?")})`);
 			console.log(`Mode: ${mode}`);
 			console.log(`Connected: ${data.connected ? "yes" : "no"}`);
-			console.log(`Room: ${String(data.roomId ?? "-")}`);
+			console.log(
+				`Room: ${
+					typeof data.roomId === "string" && data.roomId.length > 0
+						? `${data.roomId}${roomName ? ` (${roomName})` : ""}`
+						: "-"
+				}`,
+			);
+			console.log(
+				`Assigned Playlist: ${String(data.assignedPlaylistId ?? "-")}`,
+			);
+			console.log(
+				`Device Token: ${
+					data.deviceTokenConfigured ? "configured" : "not set"
+				}`,
+			);
 			if (mode === "room") {
 				console.log(`Device Sync Mode: ${roomDeviceMode}`);
 				printRoomConnectionDiagnostics(data);
@@ -624,25 +671,89 @@ async function cmdPlay(args: string[]): Promise<void> {
 		return;
 	}
 
+	const explicitRoomId = getFlagString(parsed, "room");
+	const explicitPlaylistKey = getFlagString(parsed, "playlist-key");
+	if (!explicitRoomId && !explicitPlaylistKey) {
+		const statusResponse = await sendDaemonRequest("status");
+		const status = asRecord(requireOk(statusResponse));
+		const daemonMode = typeof status.mode === "string" ? status.mode : "room";
+		const joinedRoomId =
+			typeof status.roomId === "string" && status.roomId.length > 0
+				? status.roomId
+				: null;
+		const joinedRoomName =
+			typeof status.roomName === "string" && status.roomName.length > 0
+				? status.roomName
+				: null;
+		const joinedPlaylistKey =
+			typeof status.playlistKey === "string" && status.playlistKey.length > 0
+				? status.playlistKey
+				: null;
+		const isConnected = isConnectedFlag(status.connected);
+		const assignedPlaylistId =
+			typeof status.assignedPlaylistId === "string" &&
+			status.assignedPlaylistId.length > 0
+				? status.assignedPlaylistId
+				: null;
+
+		if (daemonMode === "room" && joinedRoomId) {
+			try {
+				await playInRoomSession(sendDaemonRequest, {
+					serverUrl,
+					roomId: joinedRoomId,
+					playlistKey: joinedPlaylistKey ?? undefined,
+					roomName: joinedRoomName ?? undefined,
+					expectedPlaylistKey: joinedPlaylistKey ?? undefined,
+					deviceName,
+					connected: isConnected,
+				});
+				console.log(`Playing in room ${joinedRoomId}.`);
+				return;
+			} catch (error) {
+				if (!isStaleRoomPlaybackError(error)) {
+					throw error;
+				}
+				console.warn(
+					`Warning: previous room session ${joinedRoomId} is stale (${toErrorMessage(error)}). Resolving current playlist session...`,
+				);
+			}
+		}
+
+		if (daemonMode === "room" && assignedPlaylistId) {
+			await playInRoomSession(sendDaemonRequest, {
+				serverUrl,
+				roomId: assignedPlaylistId,
+				expectedPlaylistKey: assignedPlaylistId,
+				deviceName,
+				connected: false,
+			});
+			patchConfig({
+				serverUrl,
+				deviceName,
+				defaultRoomId: assignedPlaylistId,
+			});
+			console.log(`Playing assigned playlist session ${assignedPlaylistId}.`);
+			return;
+		}
+	}
+
 	const resolved = await resolveRoom(serverUrl, {
-		explicitRoomId: getFlagString(parsed, "room"),
-		explicitPlaylistKey: getFlagString(parsed, "playlist-key"),
+		explicitRoomId,
+		explicitPlaylistKey,
 		defaultRoomId: config.defaultRoomId,
 		defaultPlaylistKey: config.defaultPlaylistKey,
 		interactivePlaylist: true,
 	});
 
-	const joinResponse = await sendDaemonRequest("joinRoom", {
+	await playInRoomSession(sendDaemonRequest, {
 		serverUrl,
 		roomId: resolved.room.id,
 		playlistKey: resolved.room.playlistKey,
 		roomName: resolved.room.name,
+		expectedPlaylistKey: resolved.room.playlistKey ?? undefined,
 		deviceName,
+		connected: false,
 	});
-	requireOk(joinResponse);
-
-	const playResponse = await sendDaemonRequest("play");
-	requireOk(playResponse);
 
 	patchConfig({
 		serverUrl,
@@ -692,6 +803,85 @@ async function cmdMute(): Promise<void> {
 	console.log("Toggled mute.");
 }
 
+function printHouseSubcommandHelp(): void {
+	console.log("House commands:");
+	console.log(
+		"  infi house play|pause|stop|skip|mute [--playlist <playlist-id>] [--device-token <token>]",
+	);
+	console.log(
+		"  infi house volume <0..1> [--playlist <playlist-id>] [--device-token <token>]",
+	);
+}
+
+async function cmdHouse(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const sub = parsed.positionals[0];
+	if (!sub || sub === "help" || sub === "--help") {
+		printHouseSubcommandHelp();
+		return;
+	}
+
+	const config = loadConfig();
+	const serverUrl = resolveServerUrl(parsed);
+	const playlistId = getFlagString(parsed, "playlist");
+	const deviceToken =
+		getFlagString(parsed, "device-token", "token") ?? config.deviceToken;
+	if (!deviceToken) {
+		throw new Error(
+			"House commands require a device token. Set one with `infi config --device-token <token>`.",
+		);
+	}
+
+	let action: "play" | "pause" | "stop" | "skip" | "toggleMute" | "setVolume";
+	let payload: Record<string, unknown> | undefined;
+
+	switch (sub) {
+		case "play":
+		case "pause":
+		case "stop":
+		case "skip":
+			action = sub;
+			break;
+		case "mute":
+			action = "toggleMute";
+			break;
+		case "volume": {
+			const rawValue = parsed.positionals[1] ?? getFlagString(parsed, "value");
+			if (!rawValue) {
+				throw new Error("Usage: infi house volume <0..1> [--playlist <id>]");
+			}
+			const volume = Number(rawValue);
+			if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+				throw new Error("volume must be a number between 0 and 1");
+			}
+			action = "setVolume";
+			payload = { volume };
+			break;
+		}
+		default:
+			throw new Error(`Unknown house subcommand: ${sub}`);
+	}
+
+	const response = await sendHouseCommand(
+		serverUrl,
+		{
+			action,
+			payload,
+			playlistIds: playlistId ? [playlistId] : undefined,
+		},
+		{ deviceToken },
+	);
+
+	console.log(
+		`House command ${action} applied to ${response.affectedPlaylistIds.length} playlist session(s).`,
+	);
+	if (response.skippedPlaylistIds.length > 0) {
+		console.log(
+			`Skipped ${response.skippedPlaylistIds.length} playlist(s): ${response.skippedPlaylistIds.join(", ")}`,
+		);
+	}
+}
+
 async function cmdThumb(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const direction = parsed.positionals[0];
@@ -713,8 +903,8 @@ async function cmdThumb(args: string[]): Promise<void> {
 }
 
 function printRoomSubcommandHelp(): void {
-	console.log("Room commands:");
-	console.log("  infi room join --room <id>");
+	console.log("Room commands (playlist sessions):");
+	console.log("  infi room join --room <playlist-id>");
 	console.log("  infi room pick");
 	console.log("  infi room leave");
 	console.log("  infi room help");
@@ -774,7 +964,7 @@ async function cmdRoom(args: string[]): Promise<void> {
 		case "join": {
 			const roomId = getFlagString(parsed, "room");
 			if (!roomId) {
-				throw new Error("Usage: infi room join --room <id>");
+				throw new Error("Usage: infi room join --room <playlist-id>");
 			}
 			const response = await sendDaemonRequest("joinRoom", {
 				serverUrl,
@@ -888,7 +1078,7 @@ async function cmdSong(args: string[]): Promise<void> {
 	if (queue.length === 0) {
 		const statusResponse = await sendDaemonRequest("status");
 		const status = requireOk(statusResponse) as Record<string, unknown>;
-		const connected = Boolean(status.connected);
+		const connected = isConnectedFlag(status.connected);
 		if (connected) {
 			console.log("No songs available to pick yet (queue is empty).");
 			return;
@@ -932,6 +1122,16 @@ async function cmdStatus(args: string[]): Promise<void> {
 			: undefined;
 	const roomId =
 		typeof daemonData.roomId === "string" ? daemonData.roomId : undefined;
+	const roomName =
+		typeof daemonData.roomName === "string" ? daemonData.roomName : undefined;
+	const assignedPlaylistId =
+		typeof daemonData.assignedPlaylistId === "string"
+			? daemonData.assignedPlaylistId
+			: undefined;
+	const deviceTokenConfigured =
+		typeof daemonData.deviceTokenConfigured === "boolean"
+			? daemonData.deviceTokenConfigured
+			: false;
 	const localPlaylistName =
 		typeof daemonData.localPlaylistName === "string"
 			? daemonData.localPlaylistName
@@ -944,7 +1144,13 @@ async function cmdStatus(args: string[]): Promise<void> {
 	console.log(`Daemon: running (pid ${String(daemonData.pid ?? "?")})`);
 	console.log(`Mode: ${mode}`);
 	console.log(`Connected: ${daemonData.connected ? "yes" : "no"}`);
-	console.log(`Room: ${roomId ?? "-"}`);
+	console.log(
+		`Room: ${roomId ? `${roomId}${roomName ? ` (${roomName})` : ""}` : "-"}`,
+	);
+	console.log(`Assigned Playlist: ${assignedPlaylistId ?? "-"}`);
+	console.log(
+		`Device Token: ${deviceTokenConfigured ? "configured" : "not set"}`,
+	);
 	if (mode === "room") {
 		console.log(`Device Sync Mode: ${roomDeviceMode ?? "-"}`);
 		printRoomConnectionDiagnostics(daemonData);
@@ -994,15 +1200,19 @@ async function cmdStatus(args: string[]): Promise<void> {
 
 	if (mode === "room" && roomId && !songStatus.hasSongLine) {
 		try {
-			const nowPlaying = await getNowPlaying(serverUrl, roomId);
-			if (nowPlaying.song?.title) {
-				console.log(`Now Playing: ${nowPlaying.song.title}`);
-				if (nowPlaying.song.artistName) {
-					console.log(`Artist: ${nowPlaying.song.artistName}`);
+			const session = await getPlaylistSession(serverUrl, roomId, {
+				deviceToken: config.deviceToken ?? undefined,
+			});
+			if (session.currentSong?.title) {
+				console.log(`Now Playing: ${session.currentSong.title}`);
+				if (session.currentSong.artistName) {
+					console.log(`Artist: ${session.currentSong.artistName}`);
 				}
 			}
-		} catch {
-			// Keep status output usable even if server query fails.
+		} catch (error) {
+			console.warn(
+				`Warning: failed to query room session ${roomId}: ${toErrorMessage(error)}`,
+			);
 		}
 	}
 }
@@ -1102,30 +1312,32 @@ async function cmdDoctor(args: string[]): Promise<void> {
 
 	if (roomId) {
 		try {
-			const rooms = await listRooms(serverUrl);
-			if (rooms.some((room) => room.id === roomId)) {
-				ok("room exists on target server");
-			} else {
-				warn(`room ${roomId} is missing from target server`);
-			}
+			await getPlaylistSession(serverUrl, roomId, {
+				deviceToken: config.deviceToken ?? undefined,
+			});
+			ok("playlist session exists on target server");
 		} catch (error) {
 			warn(
-				`unable to list rooms on target server (${
+				`unable to resolve playlist session on target server (${
 					error instanceof Error ? error.message : String(error)
 				})`,
 			);
 		}
 
 		try {
-			const nowPlaying = await getNowPlaying(serverUrl, roomId);
-			if (typeof nowPlaying.class === "string") {
-				ok(`now-playing endpoint responds (${nowPlaying.class})`);
+			const session = await getPlaylistSession(serverUrl, roomId, {
+				deviceToken: config.deviceToken ?? undefined,
+			});
+			if (session.currentSong?.title) {
+				ok(
+					`playlist session responds (now playing: ${session.currentSong.title})`,
+				);
 			} else {
-				ok("now-playing endpoint responds");
+				ok("playlist session responds");
 			}
 		} catch (error) {
 			warn(
-				`now-playing endpoint failed (${
+				`playlist session endpoint failed (${
 					error instanceof Error ? error.message : String(error)
 				})`,
 			);
@@ -1289,6 +1501,7 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 
 	const server = getFlagString(parsed, "server");
 	const deviceName = getFlagString(parsed, "device-name", "device");
+	const deviceTokenRaw = getFlagString(parsed, "device-token", "token");
 	const volumeStepRaw = getFlagString(parsed, "volume-step", "step");
 	const playbackModeRaw = getFlagString(parsed, "mode");
 	const daemonHttpHostRaw = getFlagString(parsed, "daemon-host", "http-host");
@@ -1303,11 +1516,13 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	const roomModeFlag = hasFlag(parsed, "room-mode");
 	const clearRoom = parsed.flags.has("clear-room");
 	const clearPlaylist = parsed.flags.has("clear-playlist");
+	const clearToken = parsed.flags.has("clear-token");
 
 	const hasUpdates =
 		interactive ||
 		typeof server === "string" ||
 		typeof deviceName === "string" ||
+		typeof deviceTokenRaw === "string" ||
 		typeof volumeStepRaw === "string" ||
 		typeof playbackModeRaw === "string" ||
 		typeof daemonHttpHostRaw === "string" ||
@@ -1317,13 +1532,14 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		typeof defaultRoomId === "string" ||
 		typeof defaultPlaylistKey === "string" ||
 		clearRoom ||
-		clearPlaylist;
+		clearPlaylist ||
+		clearToken;
 
 	if (!hasUpdates) {
 		if (setupMode) {
 			console.log("Usage: infi setup --server <url>");
 			console.log(
-				"Optional: --device-name <name> --volume-step <n> --mode room|local --daemon-host <host> --daemon-port <port>",
+				"Optional: --device-name <name> --device-token <token> --volume-step <n> --mode room|local --daemon-host <host> --daemon-port <port>",
 			);
 			return;
 		}
@@ -1344,6 +1560,13 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 			throw new Error("device-name cannot be empty");
 		}
 		patch.deviceName = trimmed;
+	}
+	if (typeof deviceTokenRaw === "string") {
+		const trimmed = deviceTokenRaw.trim();
+		if (!trimmed) {
+			throw new Error("device-token cannot be empty");
+		}
+		patch.deviceToken = trimmed;
 	}
 	if (typeof volumeStepRaw === "string") {
 		const value = Number(volumeStepRaw);
@@ -1382,6 +1605,9 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	if (clearPlaylist) {
 		patch.defaultPlaylistKey = null;
 	}
+	if (clearToken) {
+		patch.deviceToken = null;
+	}
 
 	const next = patchConfig(patch, current);
 	console.log("Updated infi config.");
@@ -1394,6 +1620,9 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		}
 		if (typeof patch.deviceName === "string") {
 			daemonPatch.deviceName = patch.deviceName;
+		}
+		if ("deviceToken" in patch) {
+			daemonPatch.deviceToken = patch.deviceToken;
 		}
 		if (typeof patch.playbackMode === "string") {
 			daemonPatch.playbackMode = patch.playbackMode;
@@ -1502,10 +1731,16 @@ async function cmdService(args: string[]): Promise<void> {
 	const unitDir = getSystemdUserDir();
 	const unitPath = path.join(unitDir, unitName);
 	const serverUrl = resolveServerUrl(parsed);
+	const config = loadConfig();
+	const deviceToken =
+		getFlagString(parsed, "device-token", "token") ?? config.deviceToken;
 
 	switch (sub) {
 		case "install": {
 			fs.mkdirSync(unitDir, { recursive: true });
+			const tokenArg = deviceToken
+				? ` --device-token ${systemdQuote(deviceToken)}`
+				: "";
 			const unitFile = `[Unit]
 Description=Infinitune Terminal Daemon
 After=network-online.target
@@ -1513,7 +1748,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=${systemdQuote(REPO_ROOT)}
-ExecStart=${systemdQuote(process.execPath)} --import ${systemdQuote(TSX_LOADER_PATH)} ${systemdQuote(CLI_ENTRY_PATH)} daemon run --server ${systemdQuote(serverUrl)}
+ExecStart=${systemdQuote(process.execPath)} --import ${systemdQuote(TSX_LOADER_PATH)} ${systemdQuote(CLI_ENTRY_PATH)} daemon run --server ${systemdQuote(serverUrl)}${tokenArg}
 Restart=on-failure
 RestartSec=2
 
@@ -1632,6 +1867,9 @@ async function main(): Promise<void> {
 			return;
 		case "mute":
 			await cmdMute();
+			return;
+		case "house":
+			await cmdHouse(rest);
 			return;
 		case "room":
 			await cmdRoom(rest);

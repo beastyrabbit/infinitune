@@ -30,7 +30,7 @@ function MiniPlayerPage() {
 		return (
 			<div className="h-screen bg-black text-white flex items-center justify-center">
 				<div className="text-center">
-					<h1 className="text-2xl font-black uppercase mb-2">No Room</h1>
+					<h1 className="text-2xl font-black uppercase mb-2">No Session</h1>
 					<p className="text-white/50 text-sm">
 						Add <code className="text-red-400">?room=your-room-id</code> to the
 						URL
@@ -39,7 +39,7 @@ function MiniPlayerPage() {
 						href="/rooms"
 						className="mt-4 inline-block text-sm font-bold uppercase border border-white/30 px-4 py-2 hover:bg-white hover:text-black transition-colors"
 					>
-						Browse Rooms
+						Open House Manager
 					</a>
 				</div>
 			</div>

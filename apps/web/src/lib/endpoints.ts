@@ -43,8 +43,8 @@ export const API_URL: string = resolveApiUrl();
 /** WebSocket URL for the event invalidation bridge (/ws). */
 export const EVENT_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws`;
 
-/** WebSocket URL for the room protocol (/ws/room). */
-export const ROOM_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws/room`;
+/** WebSocket URL for the playlist-session protocol (/ws/playlist). */
+export const ROOM_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws/playlist`;
 
 /**
  * Resolves media URLs from API payloads.

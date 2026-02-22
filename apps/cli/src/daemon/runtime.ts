@@ -23,6 +23,7 @@ import {
 	heartbeatPlaylist,
 	listSongsByPlaylist,
 	rateSong,
+	registerDevice,
 	resolveMediaUrl,
 	toRoomWsUrl,
 	updatePlaylistPosition,
@@ -47,6 +48,7 @@ const INITIAL_PLAYBACK: PlaybackState = {
 const LOCAL_QUEUE_REFRESH_MS = 4_000;
 const LOCAL_HEARTBEAT_MS = 30_000;
 const LOCAL_START_SONGS_FROM_END = 10;
+const DEVICE_REGISTRATION_REFRESH_MS = 10_000;
 
 type PlaybackMode = "room" | "local";
 type ConnectionState =
@@ -142,6 +144,7 @@ export type DaemonRuntimeOptions = {
 	playlistKey?: string;
 	roomName?: string;
 	deviceName: string;
+	deviceToken?: string;
 	daemonHttpHost?: string;
 	daemonHttpPort?: number;
 };
@@ -157,6 +160,7 @@ export class DaemonRuntime {
 	private syncTimer: ReturnType<typeof setInterval> | null = null;
 	private localRefreshTimer: ReturnType<typeof setInterval> | null = null;
 	private localHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+	private deviceRegistrationTimer: ReturnType<typeof setInterval> | null = null;
 	private shouldRun = true;
 	private connectionWaiters = new Set<{
 		resolve: () => void;
@@ -169,6 +173,8 @@ export class DaemonRuntime {
 	private playlistKey: string | null;
 	private roomName: string | null;
 	private deviceName: string;
+	private deviceToken: string | null;
+	private assignedPlaylistId: string | null = null;
 	private daemonHttpHost: string;
 	private daemonHttpPort: number;
 	private mode: PlaybackMode = "room";
@@ -196,6 +202,7 @@ export class DaemonRuntime {
 		this.playlistKey = options.playlistKey ?? null;
 		this.roomName = options.roomName ?? null;
 		this.deviceName = options.deviceName;
+		this.deviceToken = options.deviceToken ?? null;
 		this.daemonHttpHost = options.daemonHttpHost?.trim().length
 			? options.daemonHttpHost.trim()
 			: "127.0.0.1";
@@ -235,6 +242,11 @@ export class DaemonRuntime {
 		process.on("SIGTERM", () => {
 			void this.shutdown(0);
 		});
+
+		if (this.serverUrl && this.deviceToken) {
+			await this.refreshDeviceRegistration(false);
+		}
+		this.restartDeviceRegistrationTimer();
 
 		if (this.serverUrl && this.roomId) {
 			this.connect();
@@ -302,6 +314,17 @@ export class DaemonRuntime {
 			case "configure": {
 				const nextServerUrl = asString(payload?.serverUrl);
 				const nextDeviceName = asString(payload?.deviceName);
+				const rawDeviceToken = payload?.deviceToken;
+				const hasDeviceTokenUpdate = Object.hasOwn(
+					payload ?? {},
+					"deviceToken",
+				);
+				const nextDeviceToken =
+					rawDeviceToken === null
+						? null
+						: typeof rawDeviceToken === "string"
+							? rawDeviceToken.trim()
+							: undefined;
 				const nextModeRaw = asString(payload?.playbackMode);
 				const nextDaemonHttpHost = asString(payload?.daemonHttpHost);
 				const daemonHttpPortRaw = payload?.daemonHttpPort;
@@ -329,11 +352,27 @@ export class DaemonRuntime {
 						"daemonHttpPort must be an integer between 1 and 65535",
 					);
 				}
+				if (
+					hasDeviceTokenUpdate &&
+					rawDeviceToken !== null &&
+					(typeof rawDeviceToken !== "string" ||
+						nextDeviceToken === undefined ||
+						nextDeviceToken === null ||
+						nextDeviceToken.length === 0)
+				) {
+					throw new Error(
+						"deviceToken must be a non-empty string or null to clear it",
+					);
+				}
 				const shouldReconnect =
 					(typeof nextServerUrl === "string" &&
 						nextServerUrl !== this.serverUrl) ||
 					(typeof nextDeviceName === "string" &&
 						nextDeviceName !== this.deviceName);
+				const shouldRefreshRegistration =
+					shouldReconnect ||
+					(hasDeviceTokenUpdate &&
+						(nextDeviceToken ?? null) !== this.deviceToken);
 				const shouldRestartHttp =
 					(typeof nextDaemonHttpHost === "string" &&
 						nextDaemonHttpHost !== this.daemonHttpHost) ||
@@ -345,6 +384,15 @@ export class DaemonRuntime {
 				}
 				if (typeof nextDeviceName === "string") {
 					this.deviceName = nextDeviceName;
+				}
+				if (hasDeviceTokenUpdate) {
+					this.deviceToken =
+						nextDeviceToken && nextDeviceToken.length > 0
+							? nextDeviceToken
+							: null;
+					if (!this.deviceToken) {
+						this.assignedPlaylistId = null;
+					}
 				}
 				if (typeof nextDaemonHttpHost === "string") {
 					this.daemonHttpHost = nextDaemonHttpHost;
@@ -368,7 +416,21 @@ export class DaemonRuntime {
 					this.connected = false;
 				}
 
-				if (shouldReconnect) {
+				let roomChangedByRegistration = false;
+				if (shouldRefreshRegistration) {
+					const previousRoomId = this.roomId;
+					await this.refreshDeviceRegistration(false);
+					roomChangedByRegistration = previousRoomId !== this.roomId;
+					this.restartDeviceRegistrationTimer();
+				}
+
+				const shouldConnectAfterRegistration =
+					this.mode === "room" &&
+					Boolean(this.serverUrl && this.roomId) &&
+					shouldRefreshRegistration &&
+					(roomChangedByRegistration || !this.connected);
+
+				if (shouldReconnect || shouldConnectAfterRegistration) {
 					if (this.mode === "room" && this.roomId && this.serverUrl) {
 						this.connect();
 					}
@@ -540,6 +602,80 @@ export class DaemonRuntime {
 		}
 	};
 
+	private restartDeviceRegistrationTimer(): void {
+		if (this.deviceRegistrationTimer) {
+			clearInterval(this.deviceRegistrationTimer);
+			this.deviceRegistrationTimer = null;
+		}
+		if (!this.serverUrl || !this.deviceToken) return;
+		this.deviceRegistrationTimer = setInterval(() => {
+			void this.refreshDeviceRegistration();
+		}, DEVICE_REGISTRATION_REFRESH_MS);
+		this.deviceRegistrationTimer.unref?.();
+	}
+
+	private async refreshDeviceRegistration(
+		connectOnAssignment = true,
+	): Promise<void> {
+		if (!this.serverUrl || !this.deviceToken) return;
+		try {
+			const registration = await registerDevice(
+				this.serverUrl,
+				this.deviceToken,
+				{
+					name: this.deviceName,
+					daemonVersion: process.env.npm_package_version ?? "dev",
+					capabilities: {
+						wsRoomProtocolVersion: ROOM_PROTOCOL_VERSION,
+						playbackModes: ["room", "local"],
+						commands: [
+							"play",
+							"pause",
+							"stop",
+							"toggle",
+							"skip",
+							"seek",
+							"setVolume",
+							"toggleMute",
+							"rate",
+							"selectSong",
+						],
+					},
+				},
+			);
+			this.lastError = null;
+			this.assignedPlaylistId = registration.assignedPlaylistId;
+			if (this.mode !== "room") return;
+
+			const assignedPlaylistId = registration.assignedPlaylistId;
+			if (!assignedPlaylistId) {
+				this.roomName = null;
+				this.playlistKey = null;
+				if (this.roomId) {
+					this.leaveRoomSession();
+				}
+				return;
+			}
+
+			// Keep a deterministic key so join can auto-create session rooms
+			// even after server restarts (rooms are in-memory).
+			this.playlistKey = assignedPlaylistId;
+
+			if (this.roomId !== assignedPlaylistId) {
+				this.roomId = assignedPlaylistId;
+				this.roomName = `Playlist ${assignedPlaylistId}`;
+				if (connectOnAssignment) {
+					this.connect();
+				}
+			}
+		} catch (error) {
+			this.lastError =
+				error instanceof Error
+					? error.message
+					: String(error ?? "Unknown error");
+		}
+	}
+
 	private connect(): void {
 		if (this.mode !== "room") return;
 		if (!this.serverUrl || !this.roomId) return;
@@ -566,6 +702,7 @@ export class DaemonRuntime {
 			const join: ClientMessage = {
 				type: "join",
 				roomId,
+				playlistId: roomId,
 				deviceId: this.deviceId,
 				deviceName: this.deviceName,
 				role: "player",
@@ -841,7 +978,10 @@ export class DaemonRuntime {
 			deviceName: this.deviceName,
 			serverUrl: this.serverUrl,
 			roomId: this.roomId,
+			roomName: this.roomName,
 			roomDeviceMode: this.roomDeviceMode,
+			deviceTokenConfigured: Boolean(this.deviceToken),
+			assignedPlaylistId: this.assignedPlaylistId,
 			joinAcknowledged: this.joinAcknowledged,
 			roomProtocolVersion: this.roomProtocolVersion,
 			reconnectAttempts: this.reconnectAttempts,
@@ -1473,6 +1613,10 @@ export class DaemonRuntime {
 		if (this.syncTimer) {
 			clearInterval(this.syncTimer);
 			this.syncTimer = null;
+		}
+		if (this.deviceRegistrationTimer) {
+			clearInterval(this.deviceRegistrationTimer);
+			this.deviceRegistrationTimer = null;
 		}
 		this.stopLocalMode();
 		this.disconnect(true);

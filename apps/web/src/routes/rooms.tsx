@@ -1,19 +1,22 @@
-import type { RoomInfo } from "@infinitune/shared/protocol";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeft,
-	Headphones,
-	Monitor,
-	Plus,
-	Radio,
-	Sliders,
-	Trash2,
+	Check,
+	Copy,
+	House,
+	Pause,
+	Play,
+	RefreshCw,
+	SkipForward,
+	Square,
 	Volume2,
-	X,
+	VolumeX,
+	WandSparkles,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -21,451 +24,677 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { usePlaylistsAll } from "@/integrations/api/hooks";
-
-import { API_URL as ROOM_SERVER_URL } from "@/lib/endpoints";
+import {
+	clearStoredShooIdToken,
+	getStoredShooIdToken,
+	setStoredShooIdToken,
+} from "@/integrations/api/client";
+import {
+	useAssignDeviceToPlaylist,
+	useControlAuthSession,
+	useDeviceAssignments,
+	useIssueDeviceToken,
+	useOwnedDevices,
+	usePlaylistSessionInfo,
+	usePlaylistsAll,
+	useSendHouseCommand,
+	useSendPlaylistCommand,
+	useUnassignDeviceFromPlaylist,
+} from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/rooms")({
-	component: RoomsPage,
+	component: HousePage,
 });
 
-function RoomsPage() {
+function clampVolume(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+function formatLastSeen(timestamp: number | null | undefined): string {
+	if (!timestamp) return "never";
+	const deltaMs = Date.now() - timestamp;
+	if (deltaMs < 60_000) return "just now";
+	if (deltaMs < 3_600_000) {
+		return `${Math.floor(deltaMs / 60_000)}m ago`;
+	}
+	if (deltaMs < 86_400_000) {
+		return `${Math.floor(deltaMs / 3_600_000)}h ago`;
+	}
+	return `${Math.floor(deltaMs / 86_400_000)}d ago`;
+}
+
+function HousePage() {
 	const navigate = useNavigate();
-	const [rooms, setRooms] = useState<RoomInfo[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [serverDown, setServerDown] = useState(false);
-	const [creating, setCreating] = useState(false);
-	const [newRoomName, setNewRoomName] = useState("");
-	const [selectedPlaylistKey, setSelectedPlaylistKey] = useState("");
-	const [confirmDeleteRoom, setConfirmDeleteRoom] = useState<string | null>(
-		null,
+	const [tokenInput, setTokenInput] = useState(
+		() => getStoredShooIdToken() ?? "",
 	);
-	const [deviceNameInput, setDeviceNameInput] = useState(() => {
-		if (typeof window !== "undefined") {
-			return localStorage.getItem("infinitune-device-name") ?? "";
-		}
-		return "";
-	});
-	const formId = useId();
+	const [hasStoredToken, setHasStoredToken] = useState(() =>
+		Boolean(getStoredShooIdToken()),
+	);
+	const [newDeviceName, setNewDeviceName] = useState("Living Room Speaker");
+	const [issuedToken, setIssuedToken] = useState<string | null>(null);
+	const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>("");
+	const [commandTarget, setCommandTarget] = useState<"playlist" | "device">(
+		"playlist",
+	);
+	const [houseScope, setHouseScope] = useState<"all" | "selected">("all");
+	const [targetDeviceId, setTargetDeviceId] = useState<string>("");
+	const [assignmentDraft, setAssignmentDraft] = useState<
+		Record<string, string>
+	>({});
 
-	// Persist device name to localStorage
+	const authSession = useControlAuthSession();
+	const playlists = usePlaylistsAll() ?? [];
+	const canManageDevices = Boolean(
+		authSession?.authenticated || hasStoredToken,
+	);
+	const devices = useOwnedDevices(canManageDevices) ?? [];
+	const assignments = useDeviceAssignments(canManageDevices) ?? [];
+
+	const sendCommand = useSendPlaylistCommand();
+	const sendHouseCommand = useSendHouseCommand();
+	const issueDeviceToken = useIssueDeviceToken();
+	const assignDeviceToPlaylist = useAssignDeviceToPlaylist();
+	const unassignDeviceFromPlaylist = useUnassignDeviceFromPlaylist();
+
+	const sortedPlaylists = useMemo(
+		() => [...playlists].sort((a, b) => b.createdAt - a.createdAt),
+		[playlists],
+	);
+
 	useEffect(() => {
-		if (deviceNameInput.trim()) {
-			localStorage.setItem("infinitune-device-name", deviceNameInput.trim());
-		}
-	}, [deviceNameInput]);
+		if (selectedPlaylistId) return;
+		const active = sortedPlaylists.find(
+			(playlist) => playlist.status === "active",
+		);
+		setSelectedPlaylistId(active?.id ?? sortedPlaylists[0]?.id ?? "");
+	}, [selectedPlaylistId, sortedPlaylists]);
 
-	const rawPlaylists = usePlaylistsAll() ?? [];
-	const playlists = [...rawPlaylists].sort((a, b) => b.createdAt - a.createdAt);
+	const selectedSession = usePlaylistSessionInfo(selectedPlaylistId || null);
 
-	const fetchRooms = useCallback(async () => {
-		try {
-			const res = await fetch(`${ROOM_SERVER_URL}/api/v1/rooms`);
-			if (res.ok) {
-				const data = await res.json();
-				setRooms(data);
-				setServerDown(false);
+	const assignmentByDeviceId = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const assignment of assignments) {
+			if (assignment.isActive) {
+				map.set(assignment.deviceId, assignment.playlistId);
 			}
-		} catch {
-			setRooms([]);
-			setServerDown(true);
-		} finally {
-			setLoading(false);
 		}
-	}, []);
+		return map;
+	}, [assignments]);
 
 	useEffect(() => {
-		fetchRooms();
-		const interval = setInterval(fetchRooms, 5000);
-		return () => clearInterval(interval);
-	}, [fetchRooms]);
+		if (devices.length === 0) return;
+		setAssignmentDraft((prev) => {
+			const next = { ...prev };
+			for (const device of devices) {
+				if (next[device.id]) continue;
+				next[device.id] = assignmentByDeviceId.get(device.id) ?? "";
+			}
+			return next;
+		});
+	}, [devices, assignmentByDeviceId]);
 
-	const handleCreate = async () => {
-		if (!newRoomName.trim() || !selectedPlaylistKey) return;
-		const id = `${newRoomName
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-|-$/g, "")
-			.slice(0, 24)}-${Date.now().toString(36).slice(-4)}`;
-
-		try {
-			await fetch(`${ROOM_SERVER_URL}/api/v1/rooms`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					id,
-					name: newRoomName.trim(),
-					playlistKey: selectedPlaylistKey,
-				}),
-			});
-			setNewRoomName("");
-			setSelectedPlaylistKey("");
-			setCreating(false);
-			fetchRooms();
-		} catch (err) {
-			console.error("Failed to create room:", err);
-		}
+	const runCommand = async (
+		action: "play" | "pause" | "stop" | "skip" | "setVolume" | "toggleMute",
+		payload?: Record<string, unknown>,
+	) => {
+		if (!selectedPlaylistId) return;
+		await sendCommand({
+			playlistId: selectedPlaylistId,
+			action,
+			payload,
+			targetDeviceId:
+				commandTarget === "device" && targetDeviceId
+					? targetDeviceId
+					: undefined,
+		});
 	};
 
-	const handleDeleteRoom = async (roomId: string) => {
-		try {
-			await fetch(`${ROOM_SERVER_URL}/api/v1/rooms/${roomId}`, {
-				method: "DELETE",
-			});
-			setConfirmDeleteRoom(null);
-			fetchRooms();
-		} catch (err) {
-			console.error("Failed to delete room:", err);
-		}
+	const runHouseCommand = async (
+		action: "play" | "pause" | "stop" | "skip" | "setVolume" | "toggleMute",
+		payload?: Record<string, unknown>,
+	) => {
+		await sendHouseCommand({
+			action,
+			payload,
+			playlistIds:
+				houseScope === "selected" && selectedPlaylistId
+					? [selectedPlaylistId]
+					: undefined,
+		});
 	};
+
+	const currentVolume = selectedSession?.playback.volume ?? 0.8;
+	const selectedPlaylist = sortedPlaylists.find(
+		(p) => p.id === selectedPlaylistId,
+	);
+	const commandsDisabled =
+		!canManageDevices ||
+		!selectedPlaylistId ||
+		(commandTarget === "device" && !targetDeviceId);
+	const houseCommandsDisabled =
+		!canManageDevices || (houseScope === "selected" && !selectedPlaylistId);
 
 	return (
-		<div className="font-mono min-h-screen bg-gray-950 text-white">
-			{/* HEADER — matches autoplayer */}
-			<header className="border-b-4 border-white/20 bg-black">
-				<div className="flex items-center justify-between px-4 py-3">
-					<div className="flex items-center gap-4">
-						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-							INFINITUNE
+		<div
+			className="min-h-screen text-stone-100"
+			style={{
+				fontFamily:
+					"'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace",
+				backgroundColor: "#070b12",
+				backgroundImage:
+					"radial-gradient(circle at 20% 15%, rgba(87, 123, 255, 0.22), transparent 38%), radial-gradient(circle at 82% 22%, rgba(255, 138, 76, 0.2), transparent 36%), radial-gradient(circle at 50% 78%, rgba(44, 209, 167, 0.16), transparent 38%)",
+			}}
+		>
+			<div className="mx-auto max-w-7xl px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+				<header className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-white/15 bg-black/35 px-4 py-3 backdrop-blur-sm">
+					<div className="flex items-center gap-3">
+						<House className="h-5 w-5 text-cyan-300" />
+						<h1 className="text-2xl font-black uppercase tracking-[0.18em] sm:text-3xl">
+							House Control
 						</h1>
-						<Badge className="rounded-none border-2 border-white/40 bg-transparent font-mono text-xs text-white/60">
-							ROOMS
+						<Badge className="rounded-none border border-cyan-400/50 bg-cyan-400/10 text-[10px] uppercase tracking-[0.16em] text-cyan-200">
+							playlist sessions
 						</Badge>
 					</div>
-					<div className="flex items-center gap-4">
-						<span className="hidden sm:inline text-xs uppercase tracking-widest text-white/30">
-							{serverDown ? (
-								<span className="text-red-500 animate-pulse">
-									SERVER OFFLINE
-								</span>
-							) : (
-								<>
-									ACTIVE:{rooms.length} | DEVICES:
-									{rooms.reduce((sum, r) => sum + r.deviceCount, 0)}
-								</>
-							)}
-						</span>
-						<Link
-							to="/autoplayer"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
-						>
-							<ArrowLeft className="h-3.5 w-3.5" />
-							[PLAYER]
-						</Link>
-					</div>
-				</div>
-			</header>
-
-			{/* CONTENT */}
-			<div className="max-w-3xl mx-auto px-4 py-8">
-				{/* Device name input */}
-				<div className="border-2 border-white/10 bg-black px-4 py-3 mb-6">
-					<label
-						htmlFor={`${formId}-dn`}
-						className="text-[10px] font-black uppercase tracking-widest text-white/40 block mb-1.5"
+					<Link
+						to="/autoplayer"
+						className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.16em] text-white/70 hover:text-white"
 					>
-						YOUR DEVICE NAME
-					</label>
-					<input
-						id={`${formId}-dn`}
-						type="text"
-						value={deviceNameInput}
-						onChange={(e) => setDeviceNameInput(e.target.value)}
-						placeholder="e.g. LIVING ROOM SPEAKER"
-						className="w-full bg-white/5 border-2 border-white/15 px-3 py-2 text-sm font-mono font-bold uppercase placeholder:text-white/20 focus:outline-none focus:border-red-500 transition-colors"
-					/>
-				</div>
+						<ArrowLeft className="h-3.5 w-3.5" />
+						Back To Player
+					</Link>
+				</header>
 
-				{/* Server status warning */}
-				{serverDown && !loading && (
-					<div className="border-2 border-red-500/40 bg-red-500/5 px-4 py-3 mb-6 flex items-center gap-3">
-						<div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-						<span className="text-xs uppercase tracking-wider text-red-400 font-bold">
-							Room server unreachable — run{" "}
-							<code className="text-red-300 bg-red-500/10 px-1">
-								pnpm room-server
-							</code>
-						</span>
-					</div>
-				)}
-
-				{/* Room list */}
-				{loading ? (
-					<div className="border-2 border-dashed border-white/10 p-12 text-center">
-						<div className="inline-block h-3 w-3 bg-white/30 animate-pulse" />
-						<p className="text-white/30 text-xs uppercase tracking-widest mt-3">
-							Connecting to room server...
-						</p>
-					</div>
-				) : rooms.length === 0 && !serverDown ? (
-					<div className="border-2 border-dashed border-white/10 p-12 text-center">
-						<Radio className="h-8 w-8 text-white/10 mx-auto mb-3" />
-						<p className="text-white/30 text-xs uppercase tracking-widest mb-1">
-							No active rooms
-						</p>
-						<p className="text-white/20 text-xs">
-							Create a room to start multi-device playback
-						</p>
-					</div>
-				) : (
-					<div className="space-y-3 mb-8">
-						{rooms.map((room) => (
-							<div
-								key={room.id}
-								className="border-2 border-white/10 bg-black hover:border-white/20 transition-colors group"
-							>
-								{/* Room header */}
-								<div className="px-4 py-3 border-b border-white/5">
-									<div className="flex items-center justify-between">
-										<div className="flex items-center gap-3 min-w-0">
-											<div className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
-											<h3 className="font-black uppercase text-lg tracking-tight truncate">
-												{room.name}
-											</h3>
-										</div>
-										<div className="flex items-center gap-3 text-xs text-white/40 flex-shrink-0">
-											<span className="flex items-center gap-1">
-												<Monitor size={10} />
-												{room.deviceCount}
-											</span>
-											{confirmDeleteRoom === room.id ? (
-												<div className="flex items-center gap-1">
-													<button
-														type="button"
-														className="px-2 py-0.5 text-[10px] font-black uppercase bg-red-500 text-white hover:bg-red-400 transition-colors"
-														onClick={() => handleDeleteRoom(room.id)}
-													>
-														DELETE
-													</button>
-													<button
-														type="button"
-														className="px-2 py-0.5 text-[10px] font-black uppercase text-white/40 hover:text-white/60 transition-colors"
-														onClick={() => setConfirmDeleteRoom(null)}
-													>
-														CANCEL
-													</button>
-												</div>
-											) : (
-												<button
-													type="button"
-													className="text-white/15 hover:text-red-500 transition-colors"
-													onClick={() => setConfirmDeleteRoom(room.id)}
-													title="Delete room"
-												>
-													<Trash2 className="h-3.5 w-3.5" />
-												</button>
-											)}
-										</div>
-									</div>
-									{room.currentSong?.title && (
-										<div className="mt-1.5 flex items-center gap-2">
-											<span className="text-red-400 text-xs font-bold uppercase truncate">
-												♪ {room.currentSong.title}
-											</span>
-											{room.currentSong.artistName && (
-												<span className="text-white/30 text-xs truncate">
-													— {room.currentSong.artistName}
-												</span>
-											)}
-										</div>
-									)}
-								</div>
-
-								{/* Room actions */}
-								<div className="px-4 py-2.5 space-y-2">
-									{/* Full GUI row */}
-									<div className="flex items-center gap-2">
-										<span className="text-[10px] font-black uppercase tracking-widest text-white/25 w-10 flex-shrink-0">
-											FULL
-										</span>
-										<Button
-											variant="outline"
-											onClick={() =>
-												navigate({
-													to: "/autoplayer",
-													search: {
-														room: room.id,
-														role: "controller",
-														pl: room.playlistKey,
-														name: room.name,
-														dn: deviceNameInput.trim() || undefined,
-													},
-												})
-											}
-											className="h-8 rounded-none border-2 border-white/20 bg-white/5 text-xs font-bold uppercase text-white/70 hover:bg-white hover:text-black hover:border-white gap-1.5"
-										>
-											<Sliders className="h-3 w-3" />
-											Controller
-										</Button>
-										<Button
-											variant="outline"
-											onClick={() =>
-												navigate({
-													to: "/autoplayer",
-													search: {
-														room: room.id,
-														role: "player",
-														pl: room.playlistKey,
-														name: room.name,
-														dn: deviceNameInput.trim() || undefined,
-													},
-												})
-											}
-											className="h-8 rounded-none border-2 border-red-500/30 bg-red-500/5 text-xs font-bold uppercase text-red-400 hover:bg-red-500 hover:text-white hover:border-red-500 gap-1.5"
-										>
-											<Volume2 className="h-3 w-3" />
-											Player
-										</Button>
-									</div>
-									{/* Mini row */}
-									<div className="flex items-center gap-2">
-										<span className="text-[10px] font-black uppercase tracking-widest text-white/25 w-10 flex-shrink-0">
-											MINI
-										</span>
-										<Button
-											variant="outline"
-											onClick={() =>
-												navigate({
-													to: "/autoplayer/mini",
-													search: {
-														room: room.id,
-														role: "controller",
-														pl: room.playlistKey,
-														name: room.name,
-														dn: deviceNameInput.trim() || undefined,
-													},
-												})
-											}
-											className="h-7 rounded-none border border-white/15 bg-white/5 text-[10px] font-bold uppercase text-white/50 hover:bg-white/10 hover:text-white/70 gap-1"
-										>
-											<Sliders className="h-2.5 w-2.5" />
-											Controller
-										</Button>
-										<Button
-											variant="outline"
-											onClick={() =>
-												navigate({
-													to: "/autoplayer/mini",
-													search: {
-														room: room.id,
-														role: "player",
-														pl: room.playlistKey,
-														name: room.name,
-														dn: deviceNameInput.trim() || undefined,
-													},
-												})
-											}
-											className="h-7 rounded-none border border-red-500/20 bg-red-500/5 text-[10px] font-bold uppercase text-red-400/60 hover:bg-red-500/10 hover:text-red-400 gap-1"
-										>
-											<Volume2 className="h-2.5 w-2.5" />
-											Player
-										</Button>
-									</div>
-								</div>
+				<div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+					<section className="space-y-6">
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-3 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-cyan-200">
+									Auth + Session
+								</h2>
+								<span className="text-[11px] uppercase tracking-[0.14em] text-white/55">
+									{authSession?.authenticated ? "authenticated" : "guest mode"}
+								</span>
 							</div>
-						))}
-					</div>
-				)}
-
-				{/* Create room */}
-				{creating ? (
-					<div className="border-2 border-white/20 bg-black">
-						<div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between">
-							<h3 className="text-xs font-black uppercase tracking-widest text-white/60">
-								New Room
-							</h3>
-							<button
-								type="button"
-								onClick={() => setCreating(false)}
-								className="text-white/30 hover:text-white"
-							>
-								<X className="h-3.5 w-3.5" />
-							</button>
-						</div>
-						<div className="p-4 space-y-3">
-							<div>
-								<label
-									htmlFor={`${formId}-name`}
-									className="text-xs uppercase tracking-widest text-white/40 font-bold block mb-1.5"
-								>
-									Room Name
-								</label>
-								<input
-									id={`${formId}-name`}
-									type="text"
-									value={newRoomName}
-									onChange={(e) => setNewRoomName(e.target.value)}
-									placeholder="e.g. Living Room"
-									className="w-full bg-white/5 border-2 border-white/15 px-3 py-2 text-sm font-mono placeholder:text-white/20 focus:outline-none focus:border-red-500 transition-colors"
-									onKeyDown={(e) => {
-										if (e.key === "Enter") handleCreate();
-									}}
+							<p className="mb-3 text-xs text-white/60">
+								Paste a Shoo ID token to unlock device management and
+								owner-scoped playlist controls.
+							</p>
+							<div className="flex flex-col gap-2 sm:flex-row">
+								<Input
+									value={tokenInput}
+									onChange={(event) => setTokenInput(event.target.value)}
+									placeholder="Shoo ID token"
+									className="rounded-none border-white/20 bg-black/45 font-mono text-xs"
 								/>
-							</div>
-							<div>
-								{/* biome-ignore lint/a11y/noLabelWithoutControl: radix select handles focus */}
-								<label className="text-xs uppercase tracking-widest text-white/40 font-bold block mb-1.5">
-									Playlist
-								</label>
-								<Select
-									value={selectedPlaylistKey}
-									onValueChange={setSelectedPlaylistKey}
+								<Button
+									onClick={() => {
+										const trimmed = tokenInput.trim();
+										if (!trimmed) return;
+										setStoredShooIdToken(trimmed);
+										setHasStoredToken(true);
+									}}
+									className="rounded-none border border-emerald-400/50 bg-emerald-500/15 px-4 text-xs font-black uppercase tracking-[0.14em] text-emerald-200 hover:bg-emerald-500/30"
 								>
-									<SelectTrigger className="w-full h-10 rounded-none border-2 border-white/15 bg-white/5 font-mono text-sm font-bold uppercase text-white hover:border-white/30 focus:border-red-500 focus:ring-0">
-										<SelectValue placeholder="SELECT A PLAYLIST..." />
+									Save Token
+								</Button>
+								<Button
+									onClick={() => {
+										clearStoredShooIdToken();
+										setTokenInput("");
+										setHasStoredToken(false);
+									}}
+									variant="outline"
+									className="rounded-none border-white/20 bg-white/5 px-4 text-xs font-black uppercase tracking-[0.14em] text-white/75"
+								>
+									Clear
+								</Button>
+							</div>
+						</div>
+
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-4 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-violet-200">
+									House Broadcast Controls
+								</h2>
+								<Badge className="rounded-none border border-violet-300/45 bg-violet-400/10 text-[10px] uppercase tracking-[0.14em] text-violet-100">
+									api-first
+								</Badge>
+							</div>
+							<p className="mb-3 text-xs text-white/60">
+								Send one command to every accessible playlist session. Use
+								&quot;Selected Playlist&quot; scope for zone-level automations.
+							</p>
+							<div className="mb-3 max-w-xs">
+								<p className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+									Broadcast Scope
+								</p>
+								<Select
+									value={houseScope}
+									onValueChange={(value) =>
+										setHouseScope(value === "selected" ? "selected" : "all")
+									}
+								>
+									<SelectTrigger className="h-9 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+										<SelectValue />
 									</SelectTrigger>
-									<SelectContent className="rounded-none border-2 border-white/20 bg-gray-950 font-mono max-h-60">
-										{playlists.map((p) => (
-											<SelectItem
-												key={p.id}
-												value={p.playlistKey ?? p.id}
-												className="font-mono text-xs font-bold uppercase text-white/80 focus:bg-white/10 focus:text-white rounded-none cursor-pointer"
-											>
-												<span
-													className={
-														p.status === "active"
-															? "text-green-500"
-															: "text-white/30"
-													}
-												>
-													{p.status === "active" ? "●" : "○"}
-												</span>{" "}
-												{p.name} — {p.prompt.slice(0, 40)}
-											</SelectItem>
-										))}
+									<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+										<SelectItem value="all">All Active Sessions</SelectItem>
+										<SelectItem value="selected">Selected Playlist</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
-							<div className="flex gap-2 pt-1">
+							<div className="flex flex-wrap gap-2">
 								<Button
-									variant="outline"
-									onClick={handleCreate}
-									disabled={!newRoomName.trim() || !selectedPlaylistKey}
-									className="h-9 rounded-none border-2 border-red-500 bg-red-500/10 text-xs font-bold uppercase text-red-400 hover:bg-red-500 hover:text-white disabled:opacity-30 gap-1.5"
+									onClick={() => runHouseCommand("play")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-emerald-300/50 bg-emerald-500/15 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 hover:bg-emerald-500/30"
 								>
-									<Headphones className="h-3 w-3" />
-									Create Room
+									<Play className="mr-1 h-3.5 w-3.5" />
+									Start
 								</Button>
 								<Button
-									variant="outline"
-									onClick={() => setCreating(false)}
-									className="h-9 rounded-none border-2 border-white/20 bg-white/5 text-xs font-bold uppercase text-white/50 hover:bg-white hover:text-black"
+									onClick={() => runHouseCommand("pause")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-amber-300/50 bg-amber-500/15 text-xs font-black uppercase tracking-[0.12em] text-amber-100 hover:bg-amber-500/30"
 								>
-									Cancel
+									<Pause className="mr-1 h-3.5 w-3.5" />
+									Pause
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("stop")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-rose-300/50 bg-rose-500/15 text-xs font-black uppercase tracking-[0.12em] text-rose-100 hover:bg-rose-500/30"
+								>
+									<Square className="mr-1 h-3.5 w-3.5" />
+									Stop
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("toggleMute")}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									<VolumeX className="mr-1 h-3.5 w-3.5" />
+									Mute
+								</Button>
+								<Button
+									onClick={() =>
+										runHouseCommand("setVolume", {
+											volume: clampVolume(currentVolume - 0.05),
+										})
+									}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL-
+								</Button>
+								<Button
+									onClick={() =>
+										runHouseCommand("setVolume", {
+											volume: clampVolume(currentVolume + 0.05),
+										})
+									}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL+
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("skip")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-cyan-300/50 bg-cyan-500/15 text-xs font-black uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/30"
+								>
+									<SkipForward className="mr-1 h-3.5 w-3.5" />
+									Skip
 								</Button>
 							</div>
 						</div>
+
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-4 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-orange-200">
+									Playlist Session Controls
+								</h2>
+								<div className="text-[11px] uppercase tracking-[0.14em] text-white/55">
+									{selectedSession?.devices.length ?? 0} connected devices
+								</div>
+							</div>
+
+							<div className="grid gap-3 md:grid-cols-2">
+								<div>
+									<p className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+										Session Playlist
+									</p>
+									<Select
+										value={selectedPlaylistId || "__none"}
+										onValueChange={(value) =>
+											setSelectedPlaylistId(value === "__none" ? "" : value)
+										}
+									>
+										<SelectTrigger className="h-10 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+											<SelectValue placeholder="Select playlist" />
+										</SelectTrigger>
+										<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+											<SelectItem value="__none">
+												No playlist selected
+											</SelectItem>
+											{sortedPlaylists.map((playlist) => (
+												<SelectItem key={playlist.id} value={playlist.id}>
+													{playlist.name} ({playlist.status})
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div>
+									<p className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+										Command Scope
+									</p>
+									<Select
+										value={commandTarget}
+										onValueChange={(value) =>
+											setCommandTarget(
+												value === "device" ? "device" : "playlist",
+											)
+										}
+									>
+										<SelectTrigger className="h-10 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+											<SelectItem value="playlist">Global Playlist</SelectItem>
+											<SelectItem value="device">Single Device</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+
+							{commandTarget === "device" && (
+								<div className="mt-3">
+									<p className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+										Target Device
+									</p>
+									<Select
+										value={targetDeviceId || "__none"}
+										onValueChange={(value) =>
+											setTargetDeviceId(value === "__none" ? "" : value)
+										}
+									>
+										<SelectTrigger className="h-10 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+											<SelectValue placeholder="Select device" />
+										</SelectTrigger>
+										<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+											<SelectItem value="__none">No target device</SelectItem>
+											{(selectedSession?.devices ?? []).map((device) => (
+												<SelectItem key={device.id} value={device.id}>
+													{device.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							)}
+
+							<div className="mt-4 flex flex-wrap gap-2">
+								<Button
+									onClick={() => runCommand("play")}
+									disabled={commandsDisabled}
+									className="rounded-none border border-emerald-300/50 bg-emerald-500/15 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 hover:bg-emerald-500/30"
+								>
+									<Play className="mr-1 h-3.5 w-3.5" />
+									Start
+								</Button>
+								<Button
+									onClick={() => runCommand("pause")}
+									disabled={commandsDisabled}
+									className="rounded-none border border-amber-300/50 bg-amber-500/15 text-xs font-black uppercase tracking-[0.12em] text-amber-100 hover:bg-amber-500/30"
+								>
+									<Pause className="mr-1 h-3.5 w-3.5" />
+									Pause
+								</Button>
+								<Button
+									onClick={() => runCommand("stop")}
+									disabled={commandsDisabled}
+									className="rounded-none border border-rose-300/50 bg-rose-500/15 text-xs font-black uppercase tracking-[0.12em] text-rose-100 hover:bg-rose-500/30"
+								>
+									<Square className="mr-1 h-3.5 w-3.5" />
+									Stop
+								</Button>
+								<Button
+									onClick={() => runCommand("skip")}
+									disabled={commandsDisabled}
+									className="rounded-none border border-cyan-300/50 bg-cyan-500/15 text-xs font-black uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/30"
+								>
+									<SkipForward className="mr-1 h-3.5 w-3.5" />
+									Skip
+								</Button>
+								<Button
+									onClick={() => runCommand("toggleMute")}
+									disabled={commandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									<VolumeX className="mr-1 h-3.5 w-3.5" />
+									Mute
+								</Button>
+								<Button
+									onClick={() =>
+										runCommand("setVolume", {
+											volume: clampVolume(currentVolume - 0.05),
+										})
+									}
+									disabled={commandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL-
+								</Button>
+								<Button
+									onClick={() =>
+										runCommand("setVolume", {
+											volume: clampVolume(currentVolume + 0.05),
+										})
+									}
+									disabled={commandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL+
+								</Button>
+							</div>
+
+							<div className="mt-4 border border-white/15 bg-black/35 px-3 py-2 text-xs text-white/70">
+								<div className="mb-1 uppercase tracking-[0.13em] text-white/50">
+									Now Playing
+								</div>
+								<div className="font-bold text-white/90">
+									{selectedSession?.currentSong?.title ?? "Nothing queued"}
+								</div>
+								<div className="text-white/55">
+									{selectedSession?.currentSong?.artistName ?? "-"}
+								</div>
+								<div className="mt-1 uppercase tracking-[0.1em] text-white/45">
+									Playlist: {selectedPlaylist?.name ?? "-"}
+								</div>
+							</div>
+						</div>
+					</section>
+
+					<section className="space-y-6">
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-3 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-lime-200">
+									Device Tokens
+								</h2>
+								<WandSparkles className="h-4 w-4 text-lime-300" />
+							</div>
+							<p className="mb-3 text-xs text-white/60">
+								Generate a token once, paste it into the daemon config, then
+								assign the device to any playlist session.
+							</p>
+							<div className="flex gap-2">
+								<Input
+									value={newDeviceName}
+									onChange={(event) => setNewDeviceName(event.target.value)}
+									placeholder="Device name"
+									className="rounded-none border-white/20 bg-black/45 text-xs"
+								/>
+								<Button
+									onClick={async () => {
+										if (!newDeviceName.trim()) return;
+										const issued = await issueDeviceToken({
+											name: newDeviceName.trim(),
+										});
+										setIssuedToken(issued.token);
+									}}
+									disabled={!canManageDevices || !newDeviceName.trim()}
+									className="rounded-none border border-lime-300/50 bg-lime-500/15 px-3 text-xs font-black uppercase tracking-[0.14em] text-lime-100 hover:bg-lime-500/30"
+								>
+									Issue
+								</Button>
+							</div>
+							{issuedToken && (
+								<div className="mt-3 border border-lime-300/30 bg-lime-500/10 p-2 text-xs text-lime-100">
+									<div className="mb-1 uppercase tracking-[0.12em] text-lime-200">
+										New token (shown once)
+									</div>
+									<div className="break-all font-bold">{issuedToken}</div>
+									<Button
+										onClick={async () => {
+											try {
+												await navigator.clipboard.writeText(issuedToken);
+											} catch {
+												// Clipboard support is optional.
+											}
+										}}
+										variant="outline"
+										className="mt-2 h-7 rounded-none border-lime-200/40 bg-lime-500/20 text-[10px] font-black uppercase tracking-[0.12em] text-lime-50"
+									>
+										<Copy className="mr-1 h-3 w-3" />
+										Copy
+									</Button>
+								</div>
+							)}
+						</div>
+
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-3 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-fuchsia-200">
+									Registered Devices
+								</h2>
+								<span className="text-[11px] uppercase tracking-[0.14em] text-white/55">
+									{devices.length} total
+								</span>
+							</div>
+							<div className="space-y-2">
+								{devices.map((device) => {
+									const activePlaylistId =
+										assignmentByDeviceId.get(device.id) ?? "";
+									const draft = assignmentDraft[device.id] ?? activePlaylistId;
+									const isAssigned = Boolean(activePlaylistId);
+									return (
+										<div
+											key={device.id}
+											className="border border-white/12 bg-black/30 p-3"
+										>
+											<div className="mb-2 flex items-center justify-between">
+												<div>
+													<div className="text-xs font-black uppercase tracking-[0.12em] text-white/90">
+														{device.name}
+													</div>
+													<div className="text-[10px] uppercase tracking-[0.12em] text-white/50">
+														last seen {formatLastSeen(device.lastSeenAt)}
+													</div>
+												</div>
+												<Badge className="rounded-none border border-white/20 bg-white/5 text-[10px] uppercase tracking-[0.1em] text-white/70">
+													{device.status}
+												</Badge>
+											</div>
+
+											<Select
+												value={draft || "__none"}
+												onValueChange={(value) =>
+													setAssignmentDraft((prev) => ({
+														...prev,
+														[device.id]: value === "__none" ? "" : value,
+													}))
+												}
+											>
+												<SelectTrigger className="h-9 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+													<SelectValue placeholder="Select playlist" />
+												</SelectTrigger>
+												<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+													<SelectItem value="__none">Unassigned</SelectItem>
+													{sortedPlaylists.map((playlist) => (
+														<SelectItem key={playlist.id} value={playlist.id}>
+															{playlist.name}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+
+											<div className="mt-2 flex flex-wrap gap-2">
+												<Button
+													onClick={async () => {
+														if (!draft) return;
+														await assignDeviceToPlaylist({
+															playlistId: draft,
+															deviceId: device.id,
+														});
+													}}
+													disabled={!canManageDevices || !draft}
+													className="h-7 rounded-none border border-cyan-300/50 bg-cyan-500/15 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/30"
+												>
+													<Check className="mr-1 h-3 w-3" />
+													Assign
+												</Button>
+												<Button
+													onClick={async () => {
+														if (!activePlaylistId) return;
+														await unassignDeviceFromPlaylist({
+															playlistId: activePlaylistId,
+															deviceId: device.id,
+														});
+													}}
+													disabled={!canManageDevices || !isAssigned}
+													variant="outline"
+													className="h-7 rounded-none border-white/20 bg-white/5 px-2 text-[10px] font-black uppercase tracking-[0.12em] text-white/75"
+												>
+													Unassign
+												</Button>
+											</div>
+										</div>
+									);
+								})}
+								{devices.length === 0 && (
+									<div className="border border-dashed border-white/20 bg-black/25 px-3 py-6 text-center text-xs uppercase tracking-[0.14em] text-white/45">
+										No devices registered yet
+									</div>
+								)}
+							</div>
+						</div>
+					</section>
+				</div>
+
+				<div className="mt-6 flex items-center justify-between border border-white/12 bg-black/30 px-4 py-3 text-[11px] uppercase tracking-[0.14em] text-white/55">
+					<div className="inline-flex items-center gap-2">
+						<Volume2 className="h-3.5 w-3.5 text-white/45" />
+						Device daemon setup:{" "}
+						<code className="text-white/80">url + device token</code>
 					</div>
-				) : (
 					<Button
+						onClick={() => navigate({ to: "/autoplayer" })}
 						variant="outline"
-						onClick={() => setCreating(true)}
-						className="h-11 rounded-none border-2 border-dashed border-white/15 bg-transparent text-xs font-bold uppercase text-white/40 hover:bg-white/5 hover:border-white/30 hover:text-white/60 w-full gap-2"
+						className="h-7 rounded-none border-white/20 bg-white/5 px-2 text-[10px] font-black uppercase tracking-[0.12em]"
 					>
-						<Plus className="h-4 w-4" />
-						Create Room
+						<RefreshCw className="mr-1 h-3 w-3" />
+						Return To Player
 					</Button>
-				)}
+				</div>
 			</div>
 		</div>
 	);
