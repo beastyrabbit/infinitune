@@ -14,6 +14,16 @@ let testSqlite: InstanceType<typeof Database>;
 let testDb: ReturnType<typeof drizzle<typeof schema>>;
 
 const SCHEMA_SQL = `
+	CREATE TABLE users (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		shoo_subject TEXT NOT NULL UNIQUE,
+		display_name TEXT,
+		email TEXT,
+		picture TEXT,
+		last_seen_at INTEGER
+	);
+
 	CREATE TABLE playlists (
 		id TEXT PRIMARY KEY,
 		created_at INTEGER NOT NULL,
@@ -42,8 +52,13 @@ const SCHEMA_SQL = `
 		manager_plan TEXT,
 		manager_epoch INTEGER,
 		manager_updated_at INTEGER,
-		is_starred INTEGER DEFAULT 0
-		);
+		is_starred INTEGER DEFAULT 0,
+		owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		is_temporary INTEGER NOT NULL DEFAULT 0,
+		expires_at INTEGER,
+		description TEXT,
+		description_updated_at INTEGER
+	);
 
 	CREATE TABLE songs (
 		id TEXT PRIMARY KEY,
@@ -102,6 +117,28 @@ const SCHEMA_SQL = `
 		created_at INTEGER NOT NULL,
 		key TEXT NOT NULL UNIQUE,
 		value TEXT NOT NULL
+	);
+
+	CREATE TABLE devices (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		name TEXT NOT NULL,
+		token_hash TEXT NOT NULL UNIQUE,
+		status TEXT NOT NULL DEFAULT 'active',
+		last_seen_at INTEGER,
+		capabilities TEXT,
+		daemon_version TEXT
+	);
+
+	CREATE TABLE playlist_device_assignments (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+		device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+		assigned_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+		assigned_at INTEGER NOT NULL,
+		is_active INTEGER NOT NULL DEFAULT 1
 	);
 `;
 

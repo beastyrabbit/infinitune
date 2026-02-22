@@ -6,10 +6,26 @@
  * WebSocket events from the API server auto-invalidate relevant query keys.
  */
 
+import {
+	type AuthSession,
+	AuthSessionSchema,
+	type CommandAction,
+	type DeviceRecord,
+	DeviceRecordSchema,
+	type IssueDeviceTokenResponse,
+	IssueDeviceTokenResponseSchema,
+	type PlaylistDeviceAssignment,
+	PlaylistDeviceAssignmentSchema,
+	type PlaylistDeviceAssignmentsResponse,
+	PlaylistDeviceAssignmentsResponseSchema,
+	type PlaylistSessionInfo,
+	PlaylistSessionInfoSchema,
+} from "@infinitune/shared/protocol";
 import type { Playlist, Song } from "@infinitune/shared/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
+import z from "zod";
 import { resolveApiMediaUrl } from "@/lib/endpoints";
 import { api } from "./client";
 
@@ -336,6 +352,160 @@ export function useCodexTextModels(
 export const useSetSetting = createMutation<{ key: string; value: string }>(
 	(args) => api.post("/api/settings", args),
 	[["settings"]],
+);
+
+// ─── Control Plane ────────────────────────────────────────────────────
+
+const OkResponseSchema = z.object({
+	ok: z.boolean(),
+});
+
+export function useControlAuthSession(): AuthSession | undefined {
+	const { data } = useQuery({
+		queryKey: ["control", "auth", "session"],
+		queryFn: async () =>
+			AuthSessionSchema.parse(await api.get<unknown>("/api/v1/auth/session")),
+	});
+	return data;
+}
+
+export function usePlaylistSessionInfo(
+	playlistId: string | null,
+): PlaylistSessionInfo | undefined {
+	const { data } = useQuery({
+		queryKey: ["playlists", "session", playlistId],
+		queryFn: async () =>
+			PlaylistSessionInfoSchema.parse(
+				await api.get<unknown>(
+					`/api/v1/playlists/${encodeURIComponent(playlistId ?? "")}/session`,
+				),
+			),
+		enabled: !!playlistId,
+	});
+	return playlistId ? data : undefined;
+}
+
+export function useOwnedDevices(enabled = true): DeviceRecord[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["devices", "owned"],
+		queryFn: async () =>
+			z
+				.array(DeviceRecordSchema)
+				.parse(await api.get<unknown>("/api/v1/devices")),
+		enabled,
+	});
+	return data;
+}
+
+export function useDeviceAssignments(
+	enabled = true,
+): PlaylistDeviceAssignment[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["devices", "assignments"],
+		queryFn: async () =>
+			z
+				.array(PlaylistDeviceAssignmentSchema)
+				.parse(await api.get<unknown>("/api/v1/devices/assignments")),
+		enabled,
+	});
+	return data;
+}
+
+export function usePlaylistDeviceAssignments(
+	playlistId: string | null,
+): PlaylistDeviceAssignmentsResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["playlists", "devices", playlistId],
+		queryFn: async () =>
+			PlaylistDeviceAssignmentsResponseSchema.parse(
+				await api.get<unknown>(
+					`/api/v1/playlists/${encodeURIComponent(playlistId ?? "")}/devices`,
+				),
+			),
+		enabled: !!playlistId,
+	});
+	return playlistId ? data : undefined;
+}
+
+export const useIssueDeviceToken = createMutation<
+	{ name: string },
+	IssueDeviceTokenResponse
+>(
+	async (args) =>
+		IssueDeviceTokenResponseSchema.parse(
+			await api.post<unknown>("/api/v1/devices", args),
+		),
+	[
+		["devices", "owned"],
+		["devices", "assignments"],
+	],
+);
+
+export const useRenameOwnedDevice = createMutation<
+	{ deviceId: string; name: string },
+	DeviceRecord
+>(
+	async (args) =>
+		DeviceRecordSchema.parse(
+			await api.patch<unknown>(`/api/v1/devices/${args.deviceId}`, {
+				name: args.name,
+			}),
+		),
+	[["devices", "owned"]],
+);
+
+export const useRevokeOwnedDeviceToken = createMutation<
+	{ deviceId: string },
+	DeviceRecord
+>(
+	async (args) =>
+		DeviceRecordSchema.parse(
+			await api.post<unknown>(`/api/v1/devices/${args.deviceId}/revoke-token`),
+		),
+	[
+		["devices", "owned"],
+		["devices", "assignments"],
+	],
+);
+
+export const useAssignDeviceToPlaylist = createMutation<
+	{ playlistId: string; deviceId: string },
+	PlaylistDeviceAssignment
+>(
+	async (args) =>
+		PlaylistDeviceAssignmentSchema.parse(
+			await api.post<unknown>(
+				`/api/v1/playlists/${args.playlistId}/devices/${args.deviceId}/assign`,
+			),
+		),
+	[["devices", "assignments"], ["devices", "owned"], ["playlists"]],
+);
+
+export const useUnassignDeviceFromPlaylist = createMutation<{
+	playlistId: string;
+	deviceId: string;
+}>(
+	async (args) => {
+		OkResponseSchema.parse(
+			await api.post<unknown>(
+				`/api/v1/playlists/${args.playlistId}/devices/${args.deviceId}/unassign`,
+			),
+		);
+	},
+	[["devices", "assignments"], ["devices", "owned"], ["playlists"]],
+);
+
+export const useSendPlaylistCommand = createMutation<{
+	playlistId: string;
+	action: CommandAction;
+	payload?: Record<string, unknown>;
+	targetDeviceId?: string;
+}>(
+	async (args) => {
+		OkResponseSchema.parse(await api.post<unknown>("/api/v1/commands", args));
+	},
+	undefined,
+	{ silent: true },
 );
 
 // ─── Playlists ───────────────────────────────────────────────────────

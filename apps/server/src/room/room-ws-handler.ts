@@ -31,6 +31,17 @@ function handleClientMessage(
 ): void {
 	switch (msg.type) {
 		case "join": {
+			const sessionId = msg.playlistId ?? msg.roomId;
+			if (!sessionId) {
+				ws.send(
+					JSON.stringify({
+						type: "error",
+						message: "join requires playlistId or roomId",
+					}),
+				);
+				break;
+			}
+
 			// Leave previous room if any
 			const prev = wsRoomMap.get(ws);
 			if (prev) {
@@ -38,17 +49,17 @@ function handleClientMessage(
 			}
 
 			// Auto-create room if it doesn't exist and playlistKey is provided
-			if (!roomManager.getRoom(msg.roomId) && msg.playlistKey) {
-				const roomName = msg.roomName || msg.roomId;
-				roomManager.createRoom(msg.roomId, roomName, msg.playlistKey);
-				const newRoom = roomManager.getRoom(msg.roomId);
+			if (!roomManager.getRoom(sessionId) && msg.playlistKey) {
+				const roomName = msg.roomName || sessionId;
+				roomManager.createRoom(sessionId, roomName, msg.playlistKey);
+				const newRoom = roomManager.getRoom(sessionId);
 				if (newRoom) {
 					syncRoom(newRoom);
 				}
 			}
 
 			const room = roomManager.joinRoom(
-				msg.roomId,
+				sessionId,
 				msg.deviceId,
 				msg.deviceName,
 				msg.role,
@@ -56,13 +67,14 @@ function handleClientMessage(
 			);
 			if (room) {
 				wsRoomMap.set(ws, {
-					roomId: msg.roomId,
+					roomId: sessionId,
 					deviceId: msg.deviceId,
 				});
 				ws.send(
 					JSON.stringify({
 						type: "joinAck",
-						roomId: msg.roomId,
+						roomId: sessionId,
+						playlistId: sessionId,
 						deviceId: msg.deviceId,
 						protocolVersion: ROOM_PROTOCOL_VERSION,
 					}),
@@ -74,7 +86,7 @@ function handleClientMessage(
 				ws.send(
 					JSON.stringify({
 						type: "error",
-						message: `Room "${msg.roomId}" not found. Provide playlistKey to auto-create.`,
+						message: `Session "${sessionId}" not found. Provide playlistKey to auto-create.`,
 					}),
 				);
 			}
@@ -128,7 +140,7 @@ function handleClientMessage(
 
 /**
  * Handle a new WebSocket connection on the room path.
- * Called by the unified server for connections to `/ws/room`.
+ * Called by the unified server for connections to `/ws/playlist`.
  */
 export function handleRoomConnection(
 	ws: WebSocket,

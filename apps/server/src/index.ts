@@ -19,10 +19,12 @@ import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
 import autoplayerRoutes from "./routes/autoplayer";
+import { createControlRoutes } from "./routes/control";
 import playlistsRoutes from "./routes/playlists";
 import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
 import songsRoutes from "./routes/songs/index";
+import * as playlistService from "./services/playlist-service";
 import {
 	getQueues,
 	getWorkerStats,
@@ -35,6 +37,9 @@ const PORT = Number(process.env.API_PORT ?? 5175);
 const REQUEST_LOG_SLOW_MS = Number(process.env.REQUEST_LOG_SLOW_MS ?? 1500);
 const REQUEST_LOG_SUMMARY_INTERVAL_MS = Number(
 	process.env.REQUEST_LOG_SUMMARY_INTERVAL_MS ?? 30000,
+);
+const TEMP_PLAYLIST_CLEANUP_INTERVAL_MS = Number(
+	process.env.TEMP_PLAYLIST_CLEANUP_INTERVAL_MS ?? 15 * 60 * 1000,
 );
 
 type NoisyRequestPattern = {
@@ -181,7 +186,7 @@ app.use(
 	cors({
 		origin: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173").split(","),
 		allowMethods: ["GET", "POST", "PATCH", "DELETE", "PUT"],
-		allowHeaders: ["Content-Type"],
+		allowHeaders: ["Content-Type", "Authorization", "x-device-token"],
 	}),
 );
 
@@ -271,6 +276,8 @@ app.get("/api/worker/status", (c) => {
 app.route("/api/settings", settingsRoutes);
 app.route("/api/playlists", playlistsRoutes);
 app.route("/api/songs", songsRoutes);
+app.route("/api/v1", createControlRoutes(roomManager));
+// Legacy compatibility endpoints (`/rooms`, `/now-playing`) while clients migrate.
 app.route("/api/v1", createRoomRoutes(roomManager));
 
 // ─── Autoplayer routes (models, test-connection, legacy audio redirect) ──
@@ -323,7 +330,7 @@ const server = serve(
 	{ fetch: app.fetch, port: PORT },
 	(info: { port: number }) => {
 		logger.info(
-			{ port: info.port, rest: `/api/`, ws: `/ws`, room: `/ws/room` },
+			{ port: info.port, rest: `/api/`, ws: `/ws`, playlist: `/ws/playlist` },
 			`Server listening on http://localhost:${info.port}`,
 		);
 	},
@@ -333,14 +340,14 @@ injectWebSocket(server);
 
 // ─── Room WebSocket server ───────────────────────────────────────────
 // Room connections use a separate path-based WebSocket server on the same port.
-// The `ws` library handles upgrade for `/ws/room` while Hono handles `/ws`.
+// The `ws` library handles upgrade for `/ws/playlist` while Hono handles `/ws`.
 const roomWss = new WebSocketServer({ noServer: true });
 
 roomWss.on("connection", (ws) => {
 	handleRoomConnection(ws, roomManager);
 });
 
-// Intercept HTTP upgrade requests: route /ws/room to `ws` library,
+// Intercept HTTP upgrade requests: route /ws/playlist to `ws` library,
 // let everything else fall through to Hono's upgradeWebSocket.
 const httpServer = server as import("node:http").Server;
 const originalListeners = httpServer.listeners("upgrade").slice();
@@ -349,7 +356,7 @@ httpServer.removeAllListeners("upgrade");
 httpServer.on("upgrade", (request, socket, head) => {
 	const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
 
-	if (url.pathname === "/ws/room") {
+	if (url.pathname === "/ws/playlist") {
 		roomWss.handleUpgrade(request, socket, head, (ws) => {
 			roomWss.emit("connection", ws, request);
 		});
@@ -372,10 +379,28 @@ startWorker().catch((err) => {
 	logger.error({ err }, "Worker failed to start");
 });
 
+// ─── Temporary playlist cleanup ─────────────────────────────────────
+const tempPlaylistCleanupTimer =
+	TEMP_PLAYLIST_CLEANUP_INTERVAL_MS > 0
+		? setInterval(async () => {
+				try {
+					const removed =
+						await playlistService.deleteExpiredTemporaryPlaylists();
+					if (removed > 0) {
+						logger.info({ removed }, "Deleted expired temporary playlists");
+					}
+				} catch (err) {
+					logger.error({ err }, "Temporary playlist cleanup failed");
+				}
+			}, TEMP_PLAYLIST_CLEANUP_INTERVAL_MS)
+		: null;
+tempPlaylistCleanupTimer?.unref?.();
+
 // ─── Graceful shutdown ───────────────────────────────────────────────
 async function shutdown() {
 	logger.info("Shutting down...");
 	if (noisyRequestSummaryTimer) clearInterval(noisyRequestSummaryTimer);
+	if (tempPlaylistCleanupTimer) clearInterval(tempPlaylistCleanupTimer);
 	flushNoisyRequestSummary("shutdown");
 	stopWorkerDiagnostics();
 	try {

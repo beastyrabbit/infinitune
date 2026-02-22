@@ -1,8 +1,9 @@
 import {
-	type NowPlayingResponse,
-	NowPlayingResponseSchema,
-	type RoomInfo,
-	RoomInfoSchema,
+	type CommandAction,
+	type DeviceRegisterResponse,
+	DeviceRegisterResponseSchema,
+	type PlaylistSessionInfo,
+	PlaylistSessionInfoSchema,
 } from "@infinitune/shared/protocol";
 import type { Playlist, Song, SongStatus } from "@infinitune/shared/types";
 import z from "zod";
@@ -14,10 +15,10 @@ export function normalizeServerUrl(serverUrl: string): string {
 export function toRoomWsUrl(serverUrl: string): string {
 	const base = normalizeServerUrl(serverUrl);
 	if (base.startsWith("https://")) {
-		return `wss://${base.slice("https://".length)}/ws/room`;
+		return `wss://${base.slice("https://".length)}/ws/playlist`;
 	}
 	if (base.startsWith("http://")) {
-		return `ws://${base.slice("http://".length)}/ws/room`;
+		return `ws://${base.slice("http://".length)}/ws/playlist`;
 	}
 	throw new Error(`Unsupported server URL: ${serverUrl}`);
 }
@@ -56,12 +57,6 @@ const SongSchema = z
 
 const OkResponseSchema = z.object({
 	ok: z.boolean(),
-});
-
-const RoomCreateResponseSchema = z.object({
-	id: z.string(),
-	name: z.string(),
-	playlistKey: z.string(),
 });
 
 async function requestJson<T>(
@@ -220,28 +215,75 @@ export function rateSong(
 	);
 }
 
-export function listRooms(serverUrl: string): Promise<RoomInfo[]> {
-	return requestJson(serverUrl, "/api/v1/rooms", z.array(RoomInfoSchema));
+type AuthHeaders = {
+	idToken?: string;
+	deviceToken?: string;
+};
+
+function resolveAuthHeaders(headers?: AuthHeaders): Record<string, string> {
+	const resolved: Record<string, string> = {};
+	if (headers?.idToken) {
+		resolved.Authorization = `Bearer ${headers.idToken}`;
+	}
+	if (headers?.deviceToken) {
+		resolved["x-device-token"] = headers.deviceToken;
+	}
+	return resolved;
 }
 
-export function createRoom(
+export function getPlaylistSession(
 	serverUrl: string,
-	payload: { id: string; name: string; playlistKey: string },
-): Promise<{ id: string; name: string; playlistKey: string }> {
-	return requestJson(serverUrl, "/api/v1/rooms", RoomCreateResponseSchema, {
-		method: "POST",
-		body: JSON.stringify(payload),
-	});
-}
-
-export function getNowPlaying(
-	serverUrl: string,
-	roomId: string,
-): Promise<NowPlayingResponse> {
-	const encoded = encodeURIComponent(roomId);
+	playlistId: string,
+	headers?: AuthHeaders,
+): Promise<PlaylistSessionInfo> {
+	const encoded = encodeURIComponent(playlistId);
 	return requestJson(
 		serverUrl,
-		`/api/v1/now-playing?room=${encoded}`,
-		NowPlayingResponseSchema,
+		`/api/v1/playlists/${encoded}/session`,
+		PlaylistSessionInfoSchema,
+		{
+			method: "GET",
+			headers: resolveAuthHeaders(headers),
+		},
 	);
+}
+
+export function registerDevice(
+	serverUrl: string,
+	deviceToken: string,
+	payload?: {
+		name?: string;
+		daemonVersion?: string;
+		capabilities?: Record<string, unknown>;
+	},
+): Promise<DeviceRegisterResponse> {
+	return requestJson(
+		serverUrl,
+		"/api/v1/devices/register",
+		DeviceRegisterResponseSchema,
+		{
+			method: "POST",
+			headers: {
+				"x-device-token": deviceToken,
+			},
+			body: JSON.stringify(payload ?? {}),
+		},
+	);
+}
+
+export function sendPlaylistCommand(
+	serverUrl: string,
+	payload: {
+		playlistId: string;
+		action: CommandAction;
+		payload?: Record<string, unknown>;
+		targetDeviceId?: string;
+	},
+	headers?: AuthHeaders,
+): Promise<{ ok: boolean }> {
+	return requestJson(serverUrl, "/api/v1/commands", OkResponseSchema, {
+		method: "POST",
+		headers: resolveAuthHeaders(headers),
+		body: JSON.stringify(payload),
+	});
 }

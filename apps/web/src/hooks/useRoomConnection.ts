@@ -164,6 +164,7 @@ export function useRoomConnection(
 			send({
 				type: "join",
 				roomId: currentRoomId,
+				playlistId: currentRoomId,
 				deviceId: deviceIdRef.current,
 				deviceName,
 				role: roleRef.current,

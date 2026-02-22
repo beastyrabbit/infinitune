@@ -39,7 +39,6 @@ import {
 	useUpdatePersonaExtract,
 	useUpdatePlaylistStatus,
 } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
 import { computePipelineTruth } from "@/lib/pipeline-truth";
 import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
 import {
@@ -215,7 +214,7 @@ function AutoplayerPage() {
 	const settings = useSettings();
 	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
 
-	/** Shared playlist creation: generates key, calls API mutation, returns the key. */
+	/** Shared playlist creation: generates key, calls API mutation, returns route state. */
 	const doCreatePlaylist = useCallback(
 		async (data: {
 			name: string;
@@ -231,9 +230,9 @@ function AutoplayerPage() {
 			lmTemperature?: number;
 			lmCfgScale?: number;
 			inferMethod?: string;
-		}): Promise<string> => {
+		}): Promise<{ key: string; playlistId: string; playlistName: string }> => {
 			const key = generatePlaylistKey();
-			await createPlaylist({
+			const created = await createPlaylist({
 				name: data.name,
 				prompt: data.prompt,
 				llmProvider: data.provider,
@@ -249,47 +248,35 @@ function AutoplayerPage() {
 				lmCfgScale: data.lmCfgScale,
 				inferMethod: data.inferMethod,
 			});
-			return key;
+			return {
+				key,
+				playlistId: created.id,
+				playlistName: created.name,
+			};
 		},
 		[createPlaylist],
 	);
 
 	const handleCreatePlaylist = useCallback(
 		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
-			const key = await doCreatePlaylist(data);
-			navigate({ to: "/autoplayer", search: { pl: key } });
+			const created = await doCreatePlaylist(data);
+			navigate({ to: "/autoplayer", search: { pl: created.key } });
 		},
 		[doCreatePlaylist, navigate],
 	);
 
 	const handleCreatePlaylistInRoom = useCallback(
 		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
-			const key = await doCreatePlaylist(data);
-
-			// Create a room on the room server
-			const roomId = data.name
-				.toLowerCase()
-				.replace(/[^a-z0-9]+/g, "-")
-				.replace(/^-|-$/g, "")
-				.slice(0, 30);
-			const roomServerUrl = API_URL;
-			try {
-				await fetch(`${roomServerUrl}/api/v1/rooms`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						id: roomId,
-						name: data.name,
-						playlistKey: key,
-					}),
-				});
-			} catch {
-				// Room server might not be running -- still navigate
-			}
+			const created = await doCreatePlaylist(data);
 
 			navigate({
 				to: "/autoplayer",
-				search: { pl: key, room: roomId, role: "player", name: data.name },
+				search: {
+					pl: created.key,
+					room: created.playlistId,
+					role: "player",
+					name: created.playlistName,
+				},
 			});
 		},
 		[doCreatePlaylist, navigate],
@@ -609,7 +596,7 @@ function AutoplayerPage() {
 				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
 				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
 				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
-				onOpenRooms={() => navigate({ to: "/rooms" })}
+				onOpenHouse={() => navigate({ to: "/rooms" })}
 				onOpenPlaylists={() => navigate({ to: "/autoplayer/playlists" })}
 			/>
 		);
@@ -687,7 +674,7 @@ function AutoplayerPage() {
 							onClick={() => navigate({ to: "/rooms" })}
 						>
 							<Radio className="h-3.5 w-3.5" />
-							[ROOMS]
+							[HOUSE]
 						</button>
 						<button
 							type="button"
