@@ -12,6 +12,8 @@ import {
 	type CommandAction,
 	type DeviceRecord,
 	DeviceRecordSchema,
+	type HouseCommandResponse,
+	HouseCommandResponseSchema,
 	type IssueDeviceTokenResponse,
 	IssueDeviceTokenResponseSchema,
 	type PlaylistDeviceAssignment,
@@ -504,6 +506,23 @@ export const useSendPlaylistCommand = createMutation<{
 	async (args) => {
 		OkResponseSchema.parse(await api.post<unknown>("/api/v1/commands", args));
 	},
+	undefined,
+	{ silent: true },
+);
+
+export const useSendHouseCommand = createMutation<
+	{
+		action: CommandAction;
+		payload?: Record<string, unknown>;
+		targetDeviceId?: string;
+		playlistIds?: string[];
+	},
+	HouseCommandResponse
+>(
+	async (args) =>
+		HouseCommandResponseSchema.parse(
+			await api.post<unknown>("/api/v1/house/commands", args),
+		),
 	undefined,
 	{ silent: true },
 );

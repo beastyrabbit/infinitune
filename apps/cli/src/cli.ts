@@ -12,6 +12,7 @@ import {
 	getPlaylistSession,
 	listPlaylists,
 	normalizeServerUrl,
+	sendHouseCommand,
 } from "./lib/api";
 import { getFlagNumber, getFlagString, hasFlag, parseArgs } from "./lib/flags";
 import { pickFromFzf } from "./lib/fzf";
@@ -74,7 +75,11 @@ Playback Commands:
   infi status
   infi doctor room
 
-  Room Commands:
+House Commands:
+  infi house play|pause|stop|skip|mute [--playlist <playlist-id>] [--device-token <token>]
+  infi house volume <0..1> [--playlist <playlist-id>] [--device-token <token>]
+
+Room Commands:
   infi room join --room <playlist-id>
   infi room pick
   infi room leave
@@ -765,6 +770,85 @@ async function cmdMute(): Promise<void> {
 	const response = await sendDaemonRequest("toggleMute");
 	requireOk(response);
 	console.log("Toggled mute.");
+}
+
+function printHouseSubcommandHelp(): void {
+	console.log("House commands:");
+	console.log(
+		"  infi house play|pause|stop|skip|mute [--playlist <playlist-id>] [--device-token <token>]",
+	);
+	console.log(
+		"  infi house volume <0..1> [--playlist <playlist-id>] [--device-token <token>]",
+	);
+}
+
+async function cmdHouse(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const sub = parsed.positionals[0];
+	if (!sub || sub === "help" || sub === "--help") {
+		printHouseSubcommandHelp();
+		return;
+	}
+
+	const config = loadConfig();
+	const serverUrl = resolveServerUrl(parsed);
+	const playlistId = getFlagString(parsed, "playlist");
+	const deviceToken =
+		getFlagString(parsed, "device-token", "token") ?? config.deviceToken;
+	if (!deviceToken) {
+		throw new Error(
+			"House commands require a device token. Set one with `infi config --device-token <token>`.",
+		);
+	}
+
+	let action: "play" | "pause" | "stop" | "skip" | "toggleMute" | "setVolume";
+	let payload: Record<string, unknown> | undefined;
+
+	switch (sub) {
+		case "play":
+		case "pause":
+		case "stop":
+		case "skip":
+			action = sub;
+			break;
+		case "mute":
+			action = "toggleMute";
+			break;
+		case "volume": {
+			const rawValue = parsed.positionals[1] ?? getFlagString(parsed, "value");
+			if (!rawValue) {
+				throw new Error("Usage: infi house volume <0..1> [--playlist <id>]");
+			}
+			const volume = Number(rawValue);
+			if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+				throw new Error("volume must be a number between 0 and 1");
+			}
+			action = "setVolume";
+			payload = { volume };
+			break;
+		}
+		default:
+			throw new Error(`Unknown house subcommand: ${sub}`);
+	}
+
+	const response = await sendHouseCommand(
+		serverUrl,
+		{
+			action,
+			payload,
+			playlistIds: playlistId ? [playlistId] : undefined,
+		},
+		{ deviceToken },
+	);
+
+	console.log(
+		`House command ${action} applied to ${response.affectedPlaylistIds.length} playlist session(s).`,
+	);
+	if (response.skippedPlaylistIds.length > 0) {
+		console.log(
+			`Skipped ${response.skippedPlaylistIds.length} playlist(s): ${response.skippedPlaylistIds.join(", ")}`,
+		);
+	}
 }
 
 async function cmdThumb(args: string[]): Promise<void> {
@@ -1750,6 +1834,9 @@ async function main(): Promise<void> {
 			return;
 		case "mute":
 			await cmdMute();
+			return;
+		case "house":
+			await cmdHouse(rest);
 			return;
 		case "room":
 			await cmdRoom(rest);

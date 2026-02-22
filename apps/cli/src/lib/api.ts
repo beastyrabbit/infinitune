@@ -2,6 +2,8 @@ import {
 	type CommandAction,
 	type DeviceRegisterResponse,
 	DeviceRegisterResponseSchema,
+	type HouseCommandResponse,
+	HouseCommandResponseSchema,
 	type PlaylistSessionInfo,
 	PlaylistSessionInfoSchema,
 } from "@infinitune/shared/protocol";
@@ -286,4 +288,26 @@ export function sendPlaylistCommand(
 		headers: resolveAuthHeaders(headers),
 		body: JSON.stringify(payload),
 	});
+}
+
+export function sendHouseCommand(
+	serverUrl: string,
+	payload: {
+		action: CommandAction;
+		payload?: Record<string, unknown>;
+		targetDeviceId?: string;
+		playlistIds?: string[];
+	},
+	headers?: AuthHeaders,
+): Promise<HouseCommandResponse> {
+	return requestJson(
+		serverUrl,
+		"/api/v1/house/commands",
+		HouseCommandResponseSchema,
+		{
+			method: "POST",
+			headers: resolveAuthHeaders(headers),
+			body: JSON.stringify(payload),
+		},
+	);
 }

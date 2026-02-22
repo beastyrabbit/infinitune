@@ -37,6 +37,7 @@ import {
 	useOwnedDevices,
 	usePlaylistSessionInfo,
 	usePlaylistsAll,
+	useSendHouseCommand,
 	useSendPlaylistCommand,
 	useUnassignDeviceFromPlaylist,
 } from "@/integrations/api/hooks";
@@ -76,6 +77,7 @@ function HousePage() {
 	const [commandTarget, setCommandTarget] = useState<"playlist" | "device">(
 		"playlist",
 	);
+	const [houseScope, setHouseScope] = useState<"all" | "selected">("all");
 	const [targetDeviceId, setTargetDeviceId] = useState<string>("");
 	const [assignmentDraft, setAssignmentDraft] = useState<
 		Record<string, string>
@@ -90,6 +92,7 @@ function HousePage() {
 	const assignments = useDeviceAssignments(canManageDevices) ?? [];
 
 	const sendCommand = useSendPlaylistCommand();
+	const sendHouseCommand = useSendHouseCommand();
 	const issueDeviceToken = useIssueDeviceToken();
 	const assignDeviceToPlaylist = useAssignDeviceToPlaylist();
 	const unassignDeviceFromPlaylist = useUnassignDeviceFromPlaylist();
@@ -147,6 +150,20 @@ function HousePage() {
 		});
 	};
 
+	const runHouseCommand = async (
+		action: "play" | "pause" | "stop" | "skip" | "setVolume" | "toggleMute",
+		payload?: Record<string, unknown>,
+	) => {
+		await sendHouseCommand({
+			action,
+			payload,
+			playlistIds:
+				houseScope === "selected" && selectedPlaylistId
+					? [selectedPlaylistId]
+					: undefined,
+		});
+	};
+
 	const currentVolume = selectedSession?.playback.volume ?? 0.8;
 	const selectedPlaylist = sortedPlaylists.find(
 		(p) => p.id === selectedPlaylistId,
@@ -155,6 +172,8 @@ function HousePage() {
 		!canManageDevices ||
 		!selectedPlaylistId ||
 		(commandTarget === "device" && !targetDeviceId);
+	const houseCommandsDisabled =
+		!canManageDevices || (houseScope === "selected" && !selectedPlaylistId);
 
 	return (
 		<div
@@ -230,6 +249,107 @@ function HousePage() {
 									className="rounded-none border-white/20 bg-white/5 px-4 text-xs font-black uppercase tracking-[0.14em] text-white/75"
 								>
 									Clear
+								</Button>
+							</div>
+						</div>
+
+						<div className="border border-white/15 bg-black/35 p-4 backdrop-blur-sm">
+							<div className="mb-4 flex items-center justify-between">
+								<h2 className="text-xs font-black uppercase tracking-[0.16em] text-violet-200">
+									House Broadcast Controls
+								</h2>
+								<Badge className="rounded-none border border-violet-300/45 bg-violet-400/10 text-[10px] uppercase tracking-[0.14em] text-violet-100">
+									api-first
+								</Badge>
+							</div>
+							<p className="mb-3 text-xs text-white/60">
+								Send one command to every accessible playlist session. Use
+								&quot;Selected Playlist&quot; scope for zone-level automations.
+							</p>
+							<div className="mb-3 max-w-xs">
+								<p className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-white/55">
+									Broadcast Scope
+								</p>
+								<Select
+									value={houseScope}
+									onValueChange={(value) =>
+										setHouseScope(value === "selected" ? "selected" : "all")
+									}
+								>
+									<SelectTrigger className="h-9 rounded-none border-white/20 bg-black/45 text-xs font-bold uppercase tracking-[0.06em]">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent className="rounded-none border-white/20 bg-[#101826] font-mono">
+										<SelectItem value="all">All Active Sessions</SelectItem>
+										<SelectItem value="selected">Selected Playlist</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="flex flex-wrap gap-2">
+								<Button
+									onClick={() => runHouseCommand("play")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-emerald-300/50 bg-emerald-500/15 text-xs font-black uppercase tracking-[0.12em] text-emerald-100 hover:bg-emerald-500/30"
+								>
+									<Play className="mr-1 h-3.5 w-3.5" />
+									Start
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("pause")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-amber-300/50 bg-amber-500/15 text-xs font-black uppercase tracking-[0.12em] text-amber-100 hover:bg-amber-500/30"
+								>
+									<Pause className="mr-1 h-3.5 w-3.5" />
+									Pause
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("stop")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-rose-300/50 bg-rose-500/15 text-xs font-black uppercase tracking-[0.12em] text-rose-100 hover:bg-rose-500/30"
+								>
+									<Square className="mr-1 h-3.5 w-3.5" />
+									Stop
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("toggleMute")}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									<VolumeX className="mr-1 h-3.5 w-3.5" />
+									Mute
+								</Button>
+								<Button
+									onClick={() =>
+										runHouseCommand("setVolume", {
+											volume: clampVolume(currentVolume - 0.05),
+										})
+									}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL-
+								</Button>
+								<Button
+									onClick={() =>
+										runHouseCommand("setVolume", {
+											volume: clampVolume(currentVolume + 0.05),
+										})
+									}
+									disabled={houseCommandsDisabled}
+									variant="outline"
+									className="rounded-none border-white/25 bg-white/5 text-xs font-black uppercase tracking-[0.12em]"
+								>
+									VOL+
+								</Button>
+								<Button
+									onClick={() => runHouseCommand("skip")}
+									disabled={houseCommandsDisabled}
+									className="rounded-none border border-cyan-300/50 bg-cyan-500/15 text-xs font-black uppercase tracking-[0.12em] text-cyan-100 hover:bg-cyan-500/30"
+								>
+									<SkipForward className="mr-1 h-3.5 w-3.5" />
+									Skip
 								</Button>
 							</div>
 						</div>

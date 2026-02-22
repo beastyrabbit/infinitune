@@ -311,6 +311,22 @@ export type PlaylistCommandRequest = z.infer<
 	typeof PlaylistCommandRequestSchema
 >;
 
+export const HouseCommandRequestSchema = z.object({
+	action: CommandActionSchema,
+	payload: z.record(z.string(), z.unknown()).optional(),
+	targetDeviceId: z.string().optional(),
+	playlistIds: z.array(z.string()).optional(),
+});
+export type HouseCommandRequest = z.infer<typeof HouseCommandRequestSchema>;
+
+export const HouseCommandResponseSchema = z.object({
+	ok: z.boolean(),
+	affectedPlaylistIds: z.array(z.string()),
+	affectedRoomIds: z.array(z.string()),
+	skippedPlaylistIds: z.array(z.string()),
+});
+export type HouseCommandResponse = z.infer<typeof HouseCommandResponseSchema>;
+
 export const PlaylistDeviceAssignmentSchema = z.object({
 	playlistId: z.string(),
 	deviceId: z.string(),

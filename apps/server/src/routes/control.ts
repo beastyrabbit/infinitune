@@ -3,6 +3,8 @@ import {
 	DeviceRecordSchema,
 	DeviceRegisterRequestSchema,
 	DeviceRegisterResponseSchema,
+	HouseCommandRequestSchema,
+	HouseCommandResponseSchema,
 	IssueDeviceTokenRequestSchema,
 	IssueDeviceTokenResponseSchema,
 	PlaylistCommandRequestSchema,
@@ -167,6 +169,79 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 		);
 
 		return c.json({ ok: true });
+	});
+
+	app.post("/house/commands", async (c) => {
+		const body = await c.req.json().catch(() => ({}));
+		const parsed = HouseCommandRequestSchema.safeParse(body);
+		if (!parsed.success) {
+			return c.json({ error: parsed.error.message }, 400);
+		}
+
+		const userActor = await requireUserActor(c);
+		const deviceToken = c.req.header("x-device-token");
+		const deviceActor = deviceToken
+			? await deviceService.authenticateDeviceToken(deviceToken)
+			: null;
+		if (!userActor && !deviceActor) {
+			return c.json(
+				{ error: "Unauthorized: requires Shoo user token or x-device-token" },
+				401,
+			);
+		}
+
+		const actorId = userActor?.userId ?? deviceActor?.id ?? "api";
+		const candidatePlaylistIds = (
+			parsed.data.playlistIds && parsed.data.playlistIds.length > 0
+				? parsed.data.playlistIds
+				: roomManager
+						.getAllRooms()
+						.map((room) => room.playlistId)
+						.filter(
+							(playlistId): playlistId is string =>
+								typeof playlistId === "string" && playlistId.length > 0,
+						)
+		).filter((playlistId, index, all) => all.indexOf(playlistId) === index);
+
+		const affectedPlaylistIds: string[] = [];
+		const affectedRoomIds: string[] = [];
+		const skippedPlaylistIds: string[] = [];
+
+		for (const playlistId of candidatePlaylistIds) {
+			const session = await ensurePlaylistSession(roomManager, playlistId);
+			if (!session) {
+				skippedPlaylistIds.push(playlistId);
+				continue;
+			}
+			if (
+				!canAccessOwnedResource(
+					session.playlist.ownerUserId,
+					userActor?.userId,
+					deviceActor?.ownerUserId,
+				)
+			) {
+				skippedPlaylistIds.push(playlistId);
+				continue;
+			}
+
+			session.room.handleCommand(
+				actorId,
+				parsed.data.action,
+				parsed.data.payload,
+				parsed.data.targetDeviceId,
+			);
+			affectedPlaylistIds.push(session.playlist.id);
+			affectedRoomIds.push(session.room.id);
+		}
+
+		return c.json(
+			HouseCommandResponseSchema.parse({
+				ok: true,
+				affectedPlaylistIds,
+				affectedRoomIds,
+				skippedPlaylistIds,
+			}),
+		);
 	});
 
 	app.get("/devices", async (c) => {
