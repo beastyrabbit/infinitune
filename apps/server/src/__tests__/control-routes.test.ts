@@ -12,6 +12,8 @@ vi.mock("../auth/actor", () => ({
 
 vi.mock("../services/device-service", () => ({
 	authenticateDeviceToken: vi.fn(),
+	getDeviceById: vi.fn(),
+	unassignDeviceFromPlaylist: vi.fn(),
 }));
 
 vi.mock("../services/playlist-service", () => ({
@@ -23,6 +25,7 @@ vi.mock("../room/room-event-handler", () => ({
 }));
 
 import * as authActor from "../auth/actor";
+import { syncRoom } from "../room/room-event-handler";
 import { RoomManager } from "../room/room-manager";
 import { createControlRoutes } from "../routes/control";
 import * as deviceService from "../services/device-service";
@@ -63,6 +66,10 @@ describe("control routes", () => {
 		vi.clearAllMocks();
 		vi.mocked(authActor.requireUserActor).mockResolvedValue(null);
 		vi.mocked(deviceService.authenticateDeviceToken).mockResolvedValue(null);
+		vi.mocked(deviceService.getDeviceById).mockResolvedValue(null);
+		vi.mocked(deviceService.unassignDeviceFromPlaylist).mockResolvedValue(
+			undefined,
+		);
 		vi.mocked(playlistService.getById).mockResolvedValue(null);
 	});
 
@@ -235,5 +242,56 @@ describe("control routes", () => {
 		expect(payload.sessions).toHaveLength(1);
 		expect(payload.sessions[0]?.playlistId).toBe("pl-1");
 		expect(payload.sessions[0]?.roomId).toBe("pl-1");
+	});
+
+	it("does not materialize/sync playlist session before authorization", async () => {
+		vi.mocked(authActor.requireUserActor).mockResolvedValue(null);
+		vi.mocked(deviceService.authenticateDeviceToken).mockResolvedValue(null);
+		vi.mocked(playlistService.getById).mockResolvedValue(
+			makePlaylist("pl-private", "owner-1"),
+		);
+
+		const roomManager = new RoomManager();
+		const app = createApp(roomManager);
+
+		const response = await app.request(
+			"http://localhost/api/v1/playlists/pl-private/session",
+			{
+				method: "GET",
+			},
+		);
+
+		expect(response.status).toBe(403);
+		expect(vi.mocked(syncRoom)).not.toHaveBeenCalled();
+		expect(roomManager.getRoom("pl-private")).toBeUndefined();
+	});
+
+	it("forbids unassign when device is owned by another user", async () => {
+		vi.mocked(authActor.requireUserActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		vi.mocked(playlistService.getById).mockResolvedValue(
+			makePlaylist("pl-1", null),
+		);
+		vi.mocked(deviceService.getDeviceById).mockResolvedValue({
+			id: "dev-2",
+			ownerUserId: "user-2",
+		} as never);
+
+		const roomManager = new RoomManager();
+		const app = createApp(roomManager);
+
+		const response = await app.request(
+			"http://localhost/api/v1/playlists/pl-1/devices/dev-2/unassign",
+			{
+				method: "POST",
+			},
+		);
+
+		expect(response.status).toBe(403);
+		expect(
+			vi.mocked(deviceService.unassignDeviceFromPlaylist),
+		).not.toHaveBeenCalled();
 	});
 });

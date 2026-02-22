@@ -672,6 +672,15 @@ async function cmdPlay(args: string[]): Promise<void> {
 			typeof status.roomId === "string" && status.roomId.length > 0
 				? status.roomId
 				: null;
+		const joinedRoomName =
+			typeof status.roomName === "string" && status.roomName.length > 0
+				? status.roomName
+				: null;
+		const joinedPlaylistKey =
+			typeof status.playlistKey === "string" && status.playlistKey.length > 0
+				? status.playlistKey
+				: null;
+		const isConnected = Boolean(status.connected);
 		const assignedPlaylistId =
 			typeof status.assignedPlaylistId === "string" &&
 			status.assignedPlaylistId.length > 0
@@ -679,6 +688,16 @@ async function cmdPlay(args: string[]): Promise<void> {
 				: null;
 
 		if (daemonMode === "room" && joinedRoomId) {
+			if (!isConnected) {
+				const joinResponse = await sendDaemonRequest("joinRoom", {
+					serverUrl,
+					roomId: joinedRoomId,
+					playlistKey: joinedPlaylistKey ?? undefined,
+					roomName: joinedRoomName ?? undefined,
+					deviceName,
+				});
+				requireOk(joinResponse);
+			}
 			const playResponse = await sendDaemonRequest("play");
 			requireOk(playResponse);
 			console.log(`Playing in room ${joinedRoomId}.`);

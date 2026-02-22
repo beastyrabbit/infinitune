@@ -16,6 +16,7 @@ import {
 import { Hono } from "hono";
 import z from "zod";
 import { getRequestActor, requireUserActor } from "../auth/actor";
+import type { Playlist } from "../db/schema";
 import { syncRoom } from "../room/room-event-handler";
 import type { RoomManager } from "../room/room-manager";
 import * as deviceService from "../services/device-service";
@@ -39,8 +40,10 @@ function canAccessOwnedResource(
 async function ensurePlaylistSession(
 	roomManager: RoomManager,
 	playlistId: string,
+	playlistOverride?: Playlist,
 ) {
-	const playlist = await playlistService.getById(playlistId);
+	const playlist =
+		playlistOverride ?? (await playlistService.getById(playlistId));
 	if (!playlist) return null;
 
 	const existingRoom = roomManager.getRoomsByPlaylistId(playlist.id)[0];
@@ -98,8 +101,8 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 
 	app.get("/playlists/:playlistId/session", async (c) => {
 		const playlistId = c.req.param("playlistId");
-		const session = await ensurePlaylistSession(roomManager, playlistId);
-		if (!session) return c.json({ error: "Playlist not found" }, 404);
+		const playlist = await playlistService.getById(playlistId);
+		if (!playlist) return c.json({ error: "Playlist not found" }, 404);
 
 		const actor = await requireUserActor(c);
 		const deviceToken = c.req.header("x-device-token");
@@ -108,13 +111,19 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 			: null;
 		if (
 			!canAccessOwnedResource(
-				session.playlist.ownerUserId,
+				playlist.ownerUserId,
 				actor?.userId,
 				deviceActor?.ownerUserId,
 			)
 		) {
 			return c.json({ error: "Forbidden" }, 403);
 		}
+		const session = await ensurePlaylistSession(
+			roomManager,
+			playlistId,
+			playlist,
+		);
+		if (!session) return c.json({ error: "Playlist not found" }, 404);
 
 		return c.json(
 			PlaylistSessionInfoSchema.parse({
@@ -511,6 +520,11 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 			if (permission.error === "not_found") {
 				return c.json({ error: "Playlist not found" }, 404);
 			}
+			return c.json({ error: "Forbidden" }, 403);
+		}
+		const device = await deviceService.getDeviceById(c.req.param("deviceId"));
+		if (!device) return c.json({ error: "Device not found" }, 404);
+		if (device.ownerUserId && device.ownerUserId !== actor.userId) {
 			return c.json({ error: "Forbidden" }, 403);
 		}
 
