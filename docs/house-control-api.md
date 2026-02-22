@@ -52,6 +52,7 @@ Use one of:
 
 ## Sessions and Devices
 
+- `GET /api/v1/house/sessions` (returns all accessible active sessions)
 - `GET /api/v1/playlists/:playlistId/session`
 - `GET /api/v1/devices`
 - `POST /api/v1/devices` (issue token)

@@ -14,6 +14,8 @@ import {
 	DeviceRecordSchema,
 	type HouseCommandResponse,
 	HouseCommandResponseSchema,
+	type HouseSessionsResponse,
+	HouseSessionsResponseSchema,
 	type IssueDeviceTokenResponse,
 	IssueDeviceTokenResponseSchema,
 	type PlaylistDeviceAssignment,
@@ -526,6 +528,20 @@ export const useSendHouseCommand = createMutation<
 	undefined,
 	{ silent: true },
 );
+
+export function useHouseSessions(
+	enabled = true,
+): HouseSessionsResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["house", "sessions"],
+		queryFn: async () =>
+			HouseSessionsResponseSchema.parse(
+				await api.get<unknown>("/api/v1/house/sessions"),
+			),
+		enabled,
+	});
+	return data;
+}
 
 // ─── Playlists ───────────────────────────────────────────────────────
 

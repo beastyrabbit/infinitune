@@ -4,6 +4,8 @@ import {
 	DeviceRegisterResponseSchema,
 	type HouseCommandResponse,
 	HouseCommandResponseSchema,
+	type HouseSessionsResponse,
+	HouseSessionsResponseSchema,
 	type PlaylistSessionInfo,
 	PlaylistSessionInfoSchema,
 } from "@infinitune/shared/protocol";
@@ -308,6 +310,21 @@ export function sendHouseCommand(
 			method: "POST",
 			headers: resolveAuthHeaders(headers),
 			body: JSON.stringify(payload),
+		},
+	);
+}
+
+export function getHouseSessions(
+	serverUrl: string,
+	headers?: AuthHeaders,
+): Promise<HouseSessionsResponse> {
+	return requestJson(
+		serverUrl,
+		"/api/v1/house/sessions",
+		HouseSessionsResponseSchema,
+		{
+			method: "GET",
+			headers: resolveAuthHeaders(headers),
 		},
 	);
 }

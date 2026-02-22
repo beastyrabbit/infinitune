@@ -327,6 +327,16 @@ export const HouseCommandResponseSchema = z.object({
 });
 export type HouseCommandResponse = z.infer<typeof HouseCommandResponseSchema>;
 
+export const HouseSessionSchema = PlaylistSessionInfoSchema.extend({
+	roomId: z.string(),
+});
+export type HouseSession = z.infer<typeof HouseSessionSchema>;
+
+export const HouseSessionsResponseSchema = z.object({
+	sessions: z.array(HouseSessionSchema),
+});
+export type HouseSessionsResponse = z.infer<typeof HouseSessionsResponseSchema>;
+
 export const PlaylistDeviceAssignmentSchema = z.object({
 	playlistId: z.string(),
 	deviceId: z.string(),

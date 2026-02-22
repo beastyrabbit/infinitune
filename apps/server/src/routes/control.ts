@@ -5,6 +5,7 @@ import {
 	DeviceRegisterResponseSchema,
 	HouseCommandRequestSchema,
 	HouseCommandResponseSchema,
+	HouseSessionsResponseSchema,
 	IssueDeviceTokenRequestSchema,
 	IssueDeviceTokenResponseSchema,
 	PlaylistCommandRequestSchema,
@@ -240,6 +241,61 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 				affectedPlaylistIds,
 				affectedRoomIds,
 				skippedPlaylistIds,
+			}),
+		);
+	});
+
+	app.get("/house/sessions", async (c) => {
+		const userActor = await requireUserActor(c);
+		const deviceToken = c.req.header("x-device-token");
+		const deviceActor = deviceToken
+			? await deviceService.authenticateDeviceToken(deviceToken)
+			: null;
+		if (!userActor && !deviceActor) {
+			return c.json(
+				{ error: "Unauthorized: requires Shoo user token or x-device-token" },
+				401,
+			);
+		}
+
+		const candidatePlaylistIds = roomManager
+			.getAllRooms()
+			.map((room) => room.playlistId)
+			.filter(
+				(playlistId): playlistId is string =>
+					typeof playlistId === "string" && playlistId.length > 0,
+			)
+			.filter((playlistId, index, all) => all.indexOf(playlistId) === index);
+
+		const sessions = [];
+		for (const playlistId of candidatePlaylistIds) {
+			const session = await ensurePlaylistSession(roomManager, playlistId);
+			if (!session) continue;
+			if (
+				!canAccessOwnedResource(
+					session.playlist.ownerUserId,
+					userActor?.userId,
+					deviceActor?.ownerUserId,
+				)
+			) {
+				continue;
+			}
+
+			sessions.push({
+				roomId: session.room.id,
+				playlistId: session.playlist.id,
+				playlistKey: session.playlist.playlistKey ?? null,
+				playlistName: session.playlist.name,
+				playback: session.room.playback,
+				currentSong: session.room.getCurrentSong(),
+				devices: session.room.getDevices(),
+				queue: session.room.getQueue(),
+			});
+		}
+
+		return c.json(
+			HouseSessionsResponseSchema.parse({
+				sessions,
 			}),
 		);
 	});
