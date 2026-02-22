@@ -28,6 +28,7 @@ import * as authActor from "../auth/actor";
 import { syncRoom } from "../room/room-event-handler";
 import { RoomManager } from "../room/room-manager";
 import { createControlRoutes } from "../routes/control";
+import type { DeviceWithCapabilities } from "../services/device-service";
 import * as deviceService from "../services/device-service";
 import * as playlistService from "../services/playlist-service";
 
@@ -38,6 +39,23 @@ function makePlaylist(id: string, ownerUserId: string | null) {
 		playlistKey: id,
 		ownerUserId,
 	} as never;
+}
+
+function makeDevice(
+	id: string,
+	ownerUserId: string | null,
+): DeviceWithCapabilities {
+	return {
+		id,
+		createdAt: Date.now(),
+		ownerUserId,
+		name: `Device ${id}`,
+		tokenHash: `hash-${id}`,
+		status: "active",
+		lastSeenAt: Date.now(),
+		capabilities: undefined,
+		daemonVersion: null,
+	};
 }
 
 function createApp(roomManager: RoomManager): Hono {
@@ -129,10 +147,9 @@ describe("control routes", () => {
 	});
 
 	it("accepts device-token auth and uses device actor as command initiator", async () => {
-		vi.mocked(deviceService.authenticateDeviceToken).mockResolvedValue({
-			id: "dev-1",
-			ownerUserId: "user-1",
-		} as never);
+		vi.mocked(deviceService.authenticateDeviceToken).mockResolvedValue(
+			makeDevice("dev-1", "user-1"),
+		);
 		vi.mocked(playlistService.getById).mockImplementation(
 			async (playlistId) => {
 				if (playlistId === "pl-1") return makePlaylist("pl-1", "user-1");
@@ -263,7 +280,7 @@ describe("control routes", () => {
 
 		expect(response.status).toBe(403);
 		expect(vi.mocked(syncRoom)).not.toHaveBeenCalled();
-		expect(roomManager.getRoom("pl-private")).toBeUndefined();
+		expect(roomManager.getRoomsByPlaylistId("pl-private")).toHaveLength(0);
 	});
 
 	it("forbids unassign when device is owned by another user", async () => {
@@ -274,10 +291,9 @@ describe("control routes", () => {
 		vi.mocked(playlistService.getById).mockResolvedValue(
 			makePlaylist("pl-1", null),
 		);
-		vi.mocked(deviceService.getDeviceById).mockResolvedValue({
-			id: "dev-2",
-			ownerUserId: "user-2",
-		} as never);
+		vi.mocked(deviceService.getDeviceById).mockResolvedValue(
+			makeDevice("dev-2", "user-2"),
+		);
 
 		const roomManager = new RoomManager();
 		const app = createApp(roomManager);
@@ -293,5 +309,60 @@ describe("control routes", () => {
 		expect(
 			vi.mocked(deviceService.unassignDeviceFromPlaylist),
 		).not.toHaveBeenCalled();
+	});
+
+	it("returns 404 when unassign target device does not exist", async () => {
+		vi.mocked(authActor.requireUserActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		vi.mocked(playlistService.getById).mockResolvedValue(
+			makePlaylist("pl-1", null),
+		);
+		vi.mocked(deviceService.getDeviceById).mockResolvedValue(null);
+
+		const roomManager = new RoomManager();
+		const app = createApp(roomManager);
+
+		const response = await app.request(
+			"http://localhost/api/v1/playlists/pl-1/devices/dev-missing/unassign",
+			{
+				method: "POST",
+			},
+		);
+
+		expect(response.status).toBe(404);
+		expect(
+			vi.mocked(deviceService.unassignDeviceFromPlaylist),
+		).not.toHaveBeenCalled();
+	});
+
+	it("unassigns a device when owned by the requesting user", async () => {
+		vi.mocked(authActor.requireUserActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		vi.mocked(playlistService.getById).mockResolvedValue(
+			makePlaylist("pl-1", null),
+		);
+		vi.mocked(deviceService.getDeviceById).mockResolvedValue(
+			makeDevice("dev-2", "user-1"),
+		);
+
+		const roomManager = new RoomManager();
+		const app = createApp(roomManager);
+
+		const response = await app.request(
+			"http://localhost/api/v1/playlists/pl-1/devices/dev-2/unassign",
+			{
+				method: "POST",
+			},
+		);
+
+		expect(response.status).toBe(200);
+		expect(
+			vi.mocked(deviceService.unassignDeviceFromPlaylist),
+		).toHaveBeenCalledWith("pl-1", "dev-2");
+		expect(vi.mocked(syncRoom)).toHaveBeenCalledTimes(1);
 	});
 });

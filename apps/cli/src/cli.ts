@@ -32,6 +32,11 @@ import {
 	TSX_LOADER_PATH,
 } from "./lib/paths";
 import {
+	isConnectedFlag,
+	isStaleRoomPlaybackError,
+	playInRoomSession,
+} from "./lib/room-playback";
+import {
 	pickExistingRoom,
 	pickSongFromQueue,
 	resolvePlaylist,
@@ -308,6 +313,10 @@ function redactToken(token: string | null): string {
 	if (!token) return "-";
 	if (token.length <= 12) return token;
 	return `${token.slice(0, 8)}...${token.slice(-4)}`;
+}
+
+function toErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 function printConfig(config: InfiConfig): void {
@@ -680,7 +689,7 @@ async function cmdPlay(args: string[]): Promise<void> {
 			typeof status.playlistKey === "string" && status.playlistKey.length > 0
 				? status.playlistKey
 				: null;
-		const isConnected = Boolean(status.connected);
+		const isConnected = isConnectedFlag(status.connected);
 		const assignedPlaylistId =
 			typeof status.assignedPlaylistId === "string" &&
 			status.assignedPlaylistId.length > 0
@@ -688,31 +697,36 @@ async function cmdPlay(args: string[]): Promise<void> {
 				: null;
 
 		if (daemonMode === "room" && joinedRoomId) {
-			if (!isConnected) {
-				const joinResponse = await sendDaemonRequest("joinRoom", {
+			try {
+				await playInRoomSession(sendDaemonRequest, {
 					serverUrl,
 					roomId: joinedRoomId,
 					playlistKey: joinedPlaylistKey ?? undefined,
 					roomName: joinedRoomName ?? undefined,
+					expectedPlaylistKey: joinedPlaylistKey ?? undefined,
 					deviceName,
+					connected: isConnected,
 				});
-				requireOk(joinResponse);
+				console.log(`Playing in room ${joinedRoomId}.`);
+				return;
+			} catch (error) {
+				if (!isStaleRoomPlaybackError(error)) {
+					throw error;
+				}
+				console.warn(
+					`Warning: previous room session ${joinedRoomId} is stale (${toErrorMessage(error)}). Resolving current playlist session...`,
+				);
 			}
-			const playResponse = await sendDaemonRequest("play");
-			requireOk(playResponse);
-			console.log(`Playing in room ${joinedRoomId}.`);
-			return;
 		}
 
 		if (daemonMode === "room" && assignedPlaylistId) {
-			const joinResponse = await sendDaemonRequest("joinRoom", {
+			await playInRoomSession(sendDaemonRequest, {
 				serverUrl,
 				roomId: assignedPlaylistId,
+				expectedPlaylistKey: assignedPlaylistId,
 				deviceName,
+				connected: false,
 			});
-			requireOk(joinResponse);
-			const playResponse = await sendDaemonRequest("play");
-			requireOk(playResponse);
 			patchConfig({
 				serverUrl,
 				deviceName,
@@ -731,17 +745,15 @@ async function cmdPlay(args: string[]): Promise<void> {
 		interactivePlaylist: true,
 	});
 
-	const joinResponse = await sendDaemonRequest("joinRoom", {
+	await playInRoomSession(sendDaemonRequest, {
 		serverUrl,
 		roomId: resolved.room.id,
 		playlistKey: resolved.room.playlistKey,
 		roomName: resolved.room.name,
+		expectedPlaylistKey: resolved.room.playlistKey ?? undefined,
 		deviceName,
+		connected: false,
 	});
-	requireOk(joinResponse);
-
-	const playResponse = await sendDaemonRequest("play");
-	requireOk(playResponse);
 
 	patchConfig({
 		serverUrl,
@@ -1066,7 +1078,7 @@ async function cmdSong(args: string[]): Promise<void> {
 	if (queue.length === 0) {
 		const statusResponse = await sendDaemonRequest("status");
 		const status = requireOk(statusResponse) as Record<string, unknown>;
-		const connected = Boolean(status.connected);
+		const connected = isConnectedFlag(status.connected);
 		if (connected) {
 			console.log("No songs available to pick yet (queue is empty).");
 			return;
@@ -1197,8 +1209,10 @@ async function cmdStatus(args: string[]): Promise<void> {
 					console.log(`Artist: ${session.currentSong.artistName}`);
 				}
 			}
-		} catch {
-			// Keep status output usable even if server query fails.
+		} catch (error) {
+			console.warn(
+				`Warning: failed to query room session ${roomId}: ${toErrorMessage(error)}`,
+			);
 		}
 	}
 }
