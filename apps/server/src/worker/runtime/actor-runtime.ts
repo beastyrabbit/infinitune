@@ -105,10 +105,11 @@ export function createWorkerRuntime(
 		fromCallback<InternalRuntimeEvent>(({ receive }) => {
 			let inFlight = Promise.resolve();
 
-			const trackEvent = (type: string): void => {
+			const trackEvent = (type: string): (() => void) => {
 				snapshot.eventsHandled += 1;
 				snapshot.lastEvent = type;
 				snapshot.lastEventAt = Date.now();
+				return () => {};
 			};
 
 			const runSafe = async (description: string, fn: () => Promise<void>) => {
@@ -123,7 +124,7 @@ export function createWorkerRuntime(
 			};
 
 			receive((event) => {
-				trackEvent(event.type);
+				const completeEventTracking = trackEvent(event.type);
 				inFlight = inFlight.then(() =>
 					runSafe(event.type, async () => {
 						switch (event.type) {
@@ -210,6 +211,7 @@ export function createWorkerRuntime(
 						}
 					}),
 				);
+				inFlight = inFlight.finally(() => completeEventTracking());
 			});
 		}),
 		{

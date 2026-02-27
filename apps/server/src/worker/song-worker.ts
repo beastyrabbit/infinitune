@@ -421,13 +421,10 @@ export class SongWorker {
 					stop: () => actorRef.stop(),
 					sendCancel: () => actorRef.send({ type: "CANCEL" }),
 				});
-				if (existing && existing.id !== actorId) {
+				if (existing) {
 					existing.sendCancel();
 					queueMicrotask(() => {
-						const current = runningSongActors.get(this.songId);
-						if (current && current.id === actorId) {
-							existing.stop();
-						}
+						existing.stop();
 					});
 				}
 
