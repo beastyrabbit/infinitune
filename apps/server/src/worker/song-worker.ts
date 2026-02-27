@@ -410,6 +410,10 @@ export class SongWorker {
 				const actorRef = createActor(machine, {
 					inspect: getWorkerInspectObserver(),
 				});
+				const existing = runningSongActors.get(this.songId);
+				if (existing) {
+					existing.stop();
+				}
 				runningSongActors.set(this.songId, {
 					stop: () => actorRef.stop(),
 					sendCancel: () => actorRef.send({ type: "CANCEL" }),
