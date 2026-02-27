@@ -472,10 +472,12 @@ export class SongWorker {
 				outcome = "cancelled";
 			}
 		} finally {
-			const control = runningSongActors.get(this.songId);
-			if (control) {
-				control.stop();
-				runningSongActors.delete(this.songId);
+			if (actorId) {
+				const control = runningSongActors.get(this.songId);
+				if (control?.id === actorId) {
+					control.stop();
+					runningSongActors.delete(this.songId);
+				}
 			}
 		}
 
