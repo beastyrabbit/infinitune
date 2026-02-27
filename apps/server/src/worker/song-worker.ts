@@ -97,6 +97,7 @@ function pickManagerSlot(
 
 const managerRefreshInFlight = new Map<string, Promise<void>>();
 type SongActorHandle = {
+	id: string;
 	stop: () => void;
 	sendCancel: () => void;
 };
@@ -403,6 +404,7 @@ export class SongWorker {
 	/** Fire-and-forget entry point. Returns when song is ready/errored/cancelled. */
 	async run(): Promise<void> {
 		const machine = this.buildSongMachine();
+		let actorId: string | undefined;
 		let outcome: SongMachineOutcome = "completed";
 
 		try {
@@ -410,14 +412,24 @@ export class SongWorker {
 				const actorRef = createActor(machine, {
 					inspect: getWorkerInspectObserver(),
 				});
+				actorId = `${this.songId}-${Date.now()}-${Math.random()
+					.toString(36)
+					.slice(2, 8)}`;
 				const existing = runningSongActors.get(this.songId);
-				if (existing) {
-					existing.stop();
-				}
 				runningSongActors.set(this.songId, {
+					id: actorId,
 					stop: () => actorRef.stop(),
 					sendCancel: () => actorRef.send({ type: "CANCEL" }),
 				});
+				if (existing && existing.id !== actorId) {
+					existing.sendCancel();
+					queueMicrotask(() => {
+						const current = runningSongActors.get(this.songId);
+						if (current && current.id === actorId) {
+							existing.stop();
+						}
+					});
+				}
 
 				actorRef.subscribe({
 					next: (snapshot) => {
