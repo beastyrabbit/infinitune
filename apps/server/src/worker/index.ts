@@ -3,9 +3,10 @@ import {
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
 import { sqlite } from "../db/index";
+import type { EventMap } from "../events/event-bus";
 import { on } from "../events/event-bus";
 import { batchPollAce, pollAce } from "../external/ace";
-import { generatePersonaExtract, type RecentSong } from "../external/llm";
+import type { RecentSong } from "../external/llm";
 import { logger, playlistLogger, songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as settingsService from "../services/settings-service";
@@ -14,21 +15,45 @@ import type { PlaylistWire, SongWire } from "../wire";
 import type { QueueStatus } from "./endpoint-queue";
 import { calculatePriority, PERSONA_PRIORITY } from "./priority";
 import { EndpointQueues } from "./queues";
+import { createWorkerRuntime } from "./runtime/actor-runtime";
+import {
+	clearWorkerInspectionLog,
+	getWorkerInspectionLog,
+} from "./runtime/inspection";
+import { createPlaylistActor } from "./runtime/playlist-actor";
+import { ProviderRegistry } from "./runtime/provider-registry";
+import { createSongActor } from "./runtime/song-actor";
+import type { WorkerRuntimeEvent } from "./runtime/types";
 import { SongWorker, type SongWorkerContext } from "./song-worker";
 
 const AUDIO_POLL_INTERVAL = 2_000; // 2 seconds (ACE needs frequent polling)
 const HEARTBEAT_STALE_MS = 90_000; // 90 seconds = 3 missed 30s heartbeats
-const WORKER_DIAGNOSTICS_ENABLED =
-	process.env.NODE_ENV !== "test" && process.env.WORKER_DIAGNOSTICS !== "0";
-const WORKER_DIAGNOSTICS_INTERVAL_MS = Number(
-	process.env.WORKER_DIAGNOSTICS_INTERVAL_MS ?? 30_000,
+function parsePositiveIntervalMs(
+	value: string | undefined,
+	defaultValue: number,
+	minimumValue: number,
+): number | undefined {
+	const parsed = Number(value ?? defaultValue);
+	if (!Number.isFinite(parsed) || parsed < minimumValue) return undefined;
+	return Math.trunc(parsed);
+}
+
+const WORKER_DIAGNOSTICS_INTERVAL_MS = parsePositiveIntervalMs(
+	process.env.WORKER_DIAGNOSTICS_INTERVAL_MS,
+	30_000,
+	5_000,
 );
+const WORKER_DIAGNOSTICS_ENABLED =
+	process.env.NODE_ENV !== "test" &&
+	process.env.WORKER_DIAGNOSTICS !== "0" &&
+	WORKER_DIAGNOSTICS_INTERVAL_MS !== undefined;
 const WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS = Number(
 	process.env.WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS ?? 240_000,
 );
 const WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD = Number(
 	process.env.WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD ?? 1,
 );
+const STALE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 // ─── State ───────────────────────────────────────────────────────────
 
@@ -48,7 +73,14 @@ const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const bufferLocks = new Map<string, boolean>();
 
 let queues: EndpointQueues;
-let diagnosticsTimer: ReturnType<typeof setInterval> | null = null;
+let workerRuntime: ReturnType<typeof createWorkerRuntime> | null = null;
+const providerRegistry = new ProviderRegistry();
+const busUnsubs = new Set<() => void>();
+type PlaylistActorHandle = ReturnType<typeof createPlaylistActor>;
+type SongActorHandle = ReturnType<typeof createSongActor>;
+
+const playlistActors = new Map<string, PlaylistActorHandle>();
+const songActors = new Map<string, SongActorHandle>();
 
 // ─── Persona scan state ─────────────────────────────────────────────
 
@@ -56,6 +88,182 @@ const personaPending = new Set<string>();
 let lastPersonaScanAt = 0;
 const PERSONA_SCAN_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 let forcePersonaScan = false;
+
+// ─── Actor orchestration ────────────────────────────────────────────
+
+function routeSongEventToActor(
+	event:
+		| {
+				type: "song.created";
+				songId: string;
+				playlistId: string;
+				status: string;
+		  }
+		| {
+				type: "song.status_changed";
+				songId: string;
+				playlistId: string;
+				from: string;
+				to: string;
+		  },
+) {
+	let actor = songActors.get(event.songId);
+	const shouldStop =
+		event.type === "song.status_changed" &&
+		(event.to === "ready" || event.to === "error" || event.to === "played");
+
+	if (!actor) {
+		actor = createSongActor({
+			songId: event.songId,
+			handlers: {
+				handleSongCreated,
+				handleSongStatusChanged,
+				cancelSong: async (songId) => {
+					cancelSongWorker(songId);
+				},
+				onStopped: () => {
+					songActors.delete(event.songId);
+				},
+			},
+		});
+		songActors.set(event.songId, actor);
+		actor.ref.start();
+	}
+
+	if (event.type === "song.created") {
+		actor.ref.send({
+			type: "song.created",
+			songId: event.songId,
+			playlistId: event.playlistId,
+			status: event.status,
+		});
+		return;
+	}
+
+	actor.ref.send({
+		type: "song.status_changed",
+		songId: event.songId,
+		playlistId: event.playlistId,
+		from: event.from,
+		to: event.to,
+	});
+
+	if (shouldStop) {
+		actor.ref.send({ type: "song.actor.stop", songId: event.songId });
+	}
+}
+
+function routePlaylistEventToActor(
+	event:
+		| { type: "playlist.created"; playlistId: string }
+		| { type: "playlist.steered"; playlistId: string; newEpoch: number }
+		| { type: "playlist.heartbeat"; playlistId: string }
+		| { type: "playlist.updated"; playlistId: string }
+		| { type: "playlist.deleted"; playlistId: string }
+		| {
+				type: "playlist.status_changed";
+				playlistId: string;
+				from: string;
+				to: string;
+		  },
+) {
+	let actor = playlistActors.get(event.playlistId);
+	if (!actor) {
+		actor = createPlaylistActor({
+			playlistId: event.playlistId,
+			handlers: {
+				handlePlaylistCreated,
+				handlePlaylistSteered,
+				handlePlaylistHeartbeat,
+				handlePlaylistUpdated,
+				handlePlaylistDeleted,
+				handlePlaylistStatusChanged,
+				cancelPlaylistSongs: async (playlistId) => {
+					cancelPlaylistWorkers(playlistId);
+				},
+				onStopped: () => {
+					playlistActors.delete(event.playlistId);
+				},
+			},
+		});
+		playlistActors.set(event.playlistId, actor);
+		actor.ref.start();
+	}
+
+	if (event.type === "playlist.created") {
+		actor.ref.send({
+			type: "playlist.created",
+			playlistId: event.playlistId,
+		});
+		return;
+	}
+
+	if (event.type === "playlist.steered") {
+		actor.ref.send({
+			type: "playlist.steered",
+			playlistId: event.playlistId,
+			newEpoch: event.newEpoch,
+		});
+		return;
+	}
+
+	if (event.type === "playlist.heartbeat") {
+		actor.ref.send({
+			type: "playlist.heartbeat",
+			playlistId: event.playlistId,
+		});
+		return;
+	}
+
+	if (event.type === "playlist.updated") {
+		actor.ref.send({
+			type: "playlist.updated",
+			playlistId: event.playlistId,
+		});
+		return;
+	}
+
+	if (event.type === "playlist.deleted") {
+		actor.ref.send({
+			type: "playlist.deleted",
+			playlistId: event.playlistId,
+		});
+		actor.ref.send({
+			type: "playlist.actor.stop",
+			playlistId: event.playlistId,
+		});
+		return;
+	}
+
+	actor.ref.send({
+		type: "playlist.status_changed",
+		playlistId: event.playlistId,
+		from: event.from,
+		to: event.to,
+	});
+
+	const shouldStop = event.to === "closed";
+
+	if (shouldStop) {
+		actor.ref.send({
+			type: "playlist.actor.stop",
+			playlistId: event.playlistId,
+		});
+	}
+}
+
+function stopAllActors() {
+	for (const playlistId of playlistActors.keys()) {
+		const actor = playlistActors.get(playlistId);
+		actor?.ref.send({ type: "playlist.actor.stop", playlistId });
+	}
+	for (const songId of songActors.keys()) {
+		const actor = songActors.get(songId);
+		actor?.ref.send({ type: "song.actor.stop", songId });
+	}
+	playlistActors.clear();
+	songActors.clear();
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -369,34 +577,203 @@ async function logWorkerDiagnosticsSnapshot(
 	}
 }
 
-function startWorkerDiagnostics() {
-	if (!WORKER_DIAGNOSTICS_ENABLED) return;
-	if (
-		!Number.isFinite(WORKER_DIAGNOSTICS_INTERVAL_MS) ||
-		WORKER_DIAGNOSTICS_INTERVAL_MS < 5_000
-	) {
-		logger.warn(
-			{ intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS },
-			"Worker diagnostics disabled due to invalid interval",
-		);
-		return;
+function getRuntimeQueueSnapshot() {
+	if (!queues) {
+		return {
+			llm: { pending: 0, active: 0, errors: 0 },
+			image: { pending: 0, active: 0, errors: 0 },
+			audio: { pending: 0, active: 0, errors: 0 },
+		};
 	}
-	if (diagnosticsTimer) clearInterval(diagnosticsTimer);
 
-	logger.info(
-		{
-			intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS,
-			oldItemWarnMs: WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS,
-			lowReadyThreshold: WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD,
+	const now = Date.now();
+	const full = queues.getFullStatus();
+	return {
+		llm: {
+			pending: full.llm.pending,
+			active: full.llm.active,
+			errors: full.llm.errors,
+			oldestActiveAgeMs:
+				full.llm.activeItems.length > 0
+					? safeMs(
+							now -
+								Math.min(...full.llm.activeItems.map((item) => item.startedAt)),
+						)
+					: undefined,
+			oldestPendingAgeMs:
+				full.llm.pendingItems.length > 0
+					? safeMs(
+							now -
+								Math.min(
+									...full.llm.pendingItems.map((item) => item.waitingSince),
+								),
+						)
+					: undefined,
 		},
-		"Worker diagnostics enabled",
-	);
-	void logWorkerDiagnosticsSnapshot("startup");
+		image: {
+			pending: full.image.pending,
+			active: full.image.active,
+			errors: full.image.errors,
+			oldestActiveAgeMs:
+				full.image.activeItems.length > 0
+					? safeMs(
+							now -
+								Math.min(
+									...full.image.activeItems.map((item) => item.startedAt),
+								),
+						)
+					: undefined,
+			oldestPendingAgeMs:
+				full.image.pendingItems.length > 0
+					? safeMs(
+							now -
+								Math.min(
+									...full.image.pendingItems.map((item) => item.waitingSince),
+								),
+						)
+					: undefined,
+		},
+		audio: {
+			pending: full.audio.pending,
+			active: full.audio.active,
+			errors: full.audio.errors,
+			oldestActiveAgeMs:
+				full.audio.activeItems.length > 0
+					? safeMs(
+							now -
+								Math.min(
+									...full.audio.activeItems.map((item) => item.startedAt),
+								),
+						)
+					: undefined,
+			oldestPendingAgeMs:
+				full.audio.pendingItems.length > 0
+					? safeMs(
+							now -
+								Math.min(
+									...full.audio.pendingItems.map((item) => item.waitingSince),
+								),
+						)
+					: undefined,
+		},
+	};
+}
 
-	diagnosticsTimer = setInterval(() => {
-		void logWorkerDiagnosticsSnapshot("interval");
-	}, WORKER_DIAGNOSTICS_INTERVAL_MS);
-	diagnosticsTimer.unref?.();
+function getWorkerRuntime() {
+	if (workerRuntime) return workerRuntime;
+	workerRuntime = createWorkerRuntime({
+		handlers: {
+			handleSongCreated: async (event) => {
+				await Promise.resolve(
+					routeSongEventToActor({ type: "song.created", ...event }),
+				);
+			},
+			handleSongStatusChanged: async (event) => {
+				await Promise.resolve(
+					routeSongEventToActor({ type: "song.status_changed", ...event }),
+				);
+			},
+			handlePlaylistCreated: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({ type: "playlist.created", ...event }),
+				);
+			},
+			handlePlaylistSteered: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({ type: "playlist.steered", ...event }),
+				);
+			},
+			handlePlaylistHeartbeat: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({ type: "playlist.heartbeat", ...event }),
+				);
+			},
+			handlePlaylistUpdated: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({ type: "playlist.updated", ...event }),
+				);
+			},
+			handlePlaylistDeleted: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({ type: "playlist.deleted", ...event }),
+				);
+			},
+			handlePlaylistStatusChanged: async (event) => {
+				await Promise.resolve(
+					routePlaylistEventToActor({
+						type: "playlist.status_changed",
+						...event,
+					}),
+				);
+			},
+			handleSettingsChanged,
+			reconcileAceState,
+			startupSweep,
+			tickAudioPolls: async () => {
+				if (!queues) return;
+				await queues.audio.tickPolls();
+			},
+			staleSongCleanup,
+			logWorkerDiagnostics: async (reason) => {
+				await logWorkerDiagnosticsSnapshot(reason);
+			},
+		},
+		enableDiagnostics: WORKER_DIAGNOSTICS_ENABLED,
+		diagnosticsIntervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS,
+		audioPollIntervalMs: AUDIO_POLL_INTERVAL,
+		staleCleanupIntervalMs: STALE_CLEANUP_INTERVAL_MS,
+		getQueueSnapshot: getRuntimeQueueSnapshot,
+	});
+	return workerRuntime;
+}
+
+function subscribeRuntimeEventBus() {
+	if (busUnsubs.size > 0) return;
+
+	const subscribe = <K extends keyof EventMap>(
+		event: K,
+		transform: (data: EventMap[K]) => WorkerRuntimeEvent,
+	) => {
+		const unsub = on(event, (data) => {
+			if (!workerRuntime) return;
+			workerRuntime.send(transform(data as EventMap[K]));
+		});
+		busUnsubs.add(unsub);
+	};
+
+	subscribe("song.created", (data) => ({ type: "song.created", ...data }));
+	subscribe("song.status_changed", (data) => ({
+		type: "song.status_changed",
+		...data,
+	}));
+	subscribe("playlist.created", (data) => ({
+		type: "playlist.created",
+		...data,
+	}));
+	subscribe("playlist.steered", (data) => ({
+		type: "playlist.steered",
+		...data,
+	}));
+	subscribe("playlist.heartbeat", (data) => ({
+		type: "playlist.heartbeat",
+		...data,
+	}));
+	subscribe("playlist.updated", (data) => ({
+		type: "playlist.updated",
+		...data,
+	}));
+	subscribe("playlist.deleted", (data) => ({
+		type: "playlist.deleted",
+		...data,
+	}));
+	subscribe("playlist.status_changed", (data) => ({
+		type: "playlist.status_changed",
+		...data,
+	}));
+	subscribe("settings.changed", (data) => ({
+		type: "settings.changed",
+		...data,
+	}));
 }
 
 /** Create a SongWorker for a song and register it */
@@ -430,6 +807,7 @@ async function spawnSongWorker(
 		},
 		getCurrentEpoch: () => playlistEpochs.get(playlistId) ?? 0,
 		getSettings,
+		capabilities: providerRegistry.textCapability,
 	};
 
 	const worker = new SongWorker(song, ctx);
@@ -458,11 +836,26 @@ function cancelPlaylistWorkers(playlistId: string): void {
 	const songIds = playlistSongs.get(playlistId);
 	if (songIds) {
 		for (const songId of songIds) {
-			const worker = songWorkers.get(songId);
-			if (worker) worker.cancel();
+			cancelSongWorker(songId);
 		}
 	}
 	playlistSongs.delete(playlistId);
+}
+
+function cancelSongWorker(songId: string): void {
+	const worker = songWorkers.get(songId);
+	if (!worker) return;
+
+	worker.cancel();
+
+	songWorkers.delete(songId);
+
+	for (const [playlistId, songSet] of playlistSongs.entries()) {
+		if (songSet.delete(songId) && songSet.size === 0) {
+			playlistSongs.delete(playlistId);
+			break;
+		}
+	}
 }
 
 // ─── Heartbeat management ───────────────────────────────────────────
@@ -579,7 +972,7 @@ async function runPersonaScan(
 				priority: PERSONA_PRIORITY,
 				endpoint: pProvider,
 				execute: async (signal) => {
-					return await generatePersonaExtract({
+					return await providerRegistry.textCapability.generatePersona({
 						song: {
 							title: song.title,
 							artistName: song.artistName ?? "",
@@ -589,8 +982,8 @@ async function runPersonaScan(
 							energy: song.energy ?? undefined,
 							era: song.era ?? undefined,
 							vocalStyle: song.vocalStyle ?? undefined,
-							instruments: song.instruments,
-							themes: song.themes,
+							instruments: song.instruments ?? undefined,
+							themes: song.themes ?? undefined,
 							description: song.description ?? undefined,
 							lyrics: song.lyrics?.slice(0, 500) ?? undefined,
 						},
@@ -859,6 +1252,7 @@ async function handleSettingsChanged(_data: { key: string }) {
 	try {
 		const settings = await getSettings();
 		queues.refreshAll(settings);
+		providerRegistry.refresh(settings);
 	} catch (err) {
 		logger.error({ err }, "Failed to refresh settings");
 	}
@@ -1035,41 +1429,35 @@ export async function startWorker(): Promise<void> {
 	try {
 		const settings = await getSettings();
 		queues.refreshAll(settings);
+		providerRegistry.refresh(settings);
 	} catch (err) {
 		logger.warn({ err }, "Could not load initial settings, using defaults");
 	}
 
-	// Reconcile any songs stuck in audio pipeline against ACE's actual state
-	await reconcileAceState();
-
-	// Register event handlers
-	on("song.created", handleSongCreated);
-	on("song.status_changed", handleSongStatusChanged);
-	on("playlist.created", handlePlaylistCreated);
-	on("playlist.steered", handlePlaylistSteered);
-	on("playlist.heartbeat", handlePlaylistHeartbeat);
-	on("playlist.updated", handlePlaylistUpdated);
-	on("playlist.deleted", handlePlaylistDeleted);
-	on("playlist.status_changed", handlePlaylistStatusChanged);
-	on("settings.changed", handleSettingsChanged);
-
-	// Audio poll timer — ACE needs frequent polling for status checks
-	setInterval(async () => {
-		try {
-			await queues.audio.tickPolls();
-		} catch (err) {
-			logger.error({ err }, "Audio poll error");
-		}
-	}, AUDIO_POLL_INTERVAL);
-
-	// Stale song cleanup — periodic safety net (every 5 minutes)
-	setInterval(staleSongCleanup, 5 * 60 * 1000);
-
-	// Run startup sweep to catch up on any pending work
-	await startupSweep();
-	startWorkerDiagnostics();
+	subscribeRuntimeEventBus();
+	const runtime = getWorkerRuntime();
+	await runtime.start();
 
 	logger.info("Worker started, listening on event bus");
+
+	if (WORKER_DIAGNOSTICS_ENABLED) {
+		logger.info(
+			{
+				intervalMs: WORKER_DIAGNOSTICS_INTERVAL_MS,
+				oldItemWarnMs: WORKER_DIAGNOSTICS_OLD_ITEM_WARN_MS,
+				lowReadyThreshold: WORKER_DIAGNOSTICS_LOW_READY_THRESHOLD,
+			},
+			"Worker diagnostics enabled",
+		);
+	} else if (process.env.NODE_ENV !== "test") {
+		logger.warn(
+			{
+				intervalMs: process.env.WORKER_DIAGNOSTICS_INTERVAL_MS,
+				enabled: process.env.WORKER_DIAGNOSTICS,
+			},
+			"Worker diagnostics disabled",
+		);
+	}
 }
 
 /** Expose queues for status API */
@@ -1079,17 +1467,85 @@ export function getQueues(): EndpointQueues {
 
 /** Expose worker counts for status API */
 export function getWorkerStats() {
+	const snapshot = workerRuntime?.getSnapshot();
 	return {
-		songWorkerCount: songWorkers.size,
-		trackedPlaylists: [...playlistEpochs.keys()],
+		songWorkerCount: Math.max(
+			songWorkers.size,
+			snapshot?.songActors.length ?? songActors.size,
+		),
+		trackedPlaylists:
+			snapshot?.playlistActors ??
+			Array.from(new Set([...playlistActors.keys(), ...playlistEpochs.keys()])),
+		actorRuntime: {
+			playlists: Array.from(playlistActors.entries()).map(
+				([playlistId, actor]) => {
+					const { playlistId: _actorPlaylistId, ...snapshot } =
+						actor.getSnapshot();
+					return {
+						playlistId,
+						...snapshot,
+					};
+				},
+			),
+			songs: Array.from(songActors.entries()).map(([songId, actor]) => {
+				const { songId: _actorSongId, ...snapshot } = actor.getSnapshot();
+				return {
+					songId,
+					...snapshot,
+				};
+			}),
+		},
+	};
+}
+
+export function getWorkerActorGraph() {
+	return {
+		playlists: Array.from(playlistActors.entries()).map(
+			([playlistId, actor]) => {
+				const { playlistId: _actorPlaylistId, ...snapshot } =
+					actor.getSnapshot();
+				return {
+					playlistId,
+					status: snapshot.status,
+					eventsHandled: snapshot.eventsHandled,
+					lastEvent: snapshot.lastEvent,
+					lastEventAt: snapshot.lastEventAt,
+				};
+			},
+		),
+		songs: Array.from(songActors.entries()).map(([songId, actor]) => {
+			const { songId: _actorSongId, ...snapshot } = actor.getSnapshot();
+			return {
+				songId,
+				status: snapshot.status,
+				eventsHandled: snapshot.eventsHandled,
+				lastEvent: snapshot.lastEvent,
+				lastEventAt: snapshot.lastEventAt,
+			};
+		}),
 	};
 }
 
 /** Stop diagnostics timers (used by graceful shutdown). */
 export function stopWorkerDiagnostics() {
-	if (!diagnosticsTimer) return;
-	clearInterval(diagnosticsTimer);
-	diagnosticsTimer = null;
+	for (const timer of heartbeatTimers.values()) {
+		clearTimeout(timer);
+	}
+	heartbeatTimers.clear();
+	bufferLocks.clear();
+	playlistSongs.clear();
+	songWorkers.clear();
+	playlistEpochs.clear();
+	for (const unsub of busUnsubs) unsub();
+	busUnsubs.clear();
+	stopAllActors();
+	workerRuntime?.stop();
+	workerRuntime = null;
+	clearWorkerInspectionLog();
+}
+
+export function getWorkerInspect(limit?: number) {
+	return getWorkerInspectionLog(limit);
 }
 
 /** @internal — exported for unit tests only */
@@ -1111,9 +1567,12 @@ export const _test = {
 		playlistEpochs.set(playlistId, epoch);
 	},
 	reset() {
+		stopWorkerDiagnostics();
 		songWorkers.clear();
 		playlistSongs.clear();
 		playlistEpochs.clear();
+		playlistActors.clear();
+		songActors.clear();
 		for (const t of heartbeatTimers.values()) clearTimeout(t);
 		heartbeatTimers.clear();
 		bufferLocks.clear();
