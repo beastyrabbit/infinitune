@@ -416,6 +416,7 @@ export class SongWorker {
 					.toString(36)
 					.slice(2, 8)}`;
 				const existing = runningSongActors.get(this.songId);
+				const existingActorId = existing?.id;
 				runningSongActors.set(this.songId, {
 					id: actorId,
 					stop: () => actorRef.stop(),
@@ -424,7 +425,10 @@ export class SongWorker {
 				if (existing) {
 					existing.sendCancel();
 					queueMicrotask(() => {
-						existing.stop();
+						const current = runningSongActors.get(this.songId);
+						if (!current || current.id !== existingActorId) {
+							existing.stop();
+						}
 					});
 				}
 
