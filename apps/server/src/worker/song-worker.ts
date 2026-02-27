@@ -2,12 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
+import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { saveCover } from "../covers";
-import { submitToAce } from "../external/ace";
-import { generateCover } from "../external/cover";
 import {
 	generatePlaylistManagerPlan,
-	generateSongMetadata,
 	type ManagerRatingSignal,
 	type PromptDistance,
 	type RecentSong,
@@ -21,6 +19,8 @@ import * as songService from "../services/song-service";
 import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
+import { getWorkerInspectObserver } from "./runtime/inspection";
+import type { ProviderCapability } from "./runtime/types";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -42,7 +42,16 @@ export interface SongWorkerContext {
 		textModel: string;
 		imageProvider: string;
 		imageModel?: string;
+		personaProvider: string;
+		personaModel: string;
 	}>;
+	capabilities: ProviderCapability;
+}
+
+type SongMachineOutcome = "completed" | "errored" | "cancelled";
+
+interface SongMachineContext {
+	outcome?: SongMachineOutcome;
 }
 
 // ─── Duplicate Detection ─────────────────────────────────────────────
@@ -87,6 +96,12 @@ function pickManagerSlot(
 }
 
 const managerRefreshInFlight = new Map<string, Promise<void>>();
+type SongActorHandle = {
+	stop: () => void;
+	sendCancel: () => void;
+};
+
+const runningSongActors = new Map<string, SongActorHandle>();
 
 function managerRefreshKey(playlistId: string, epoch: number): string {
 	return `${playlistId}:${epoch}`;
@@ -387,94 +402,284 @@ export class SongWorker {
 
 	/** Fire-and-forget entry point. Returns when song is ready/errored/cancelled. */
 	async run(): Promise<void> {
+		const machine = this.buildSongMachine();
+		let outcome: SongMachineOutcome = "completed";
+
 		try {
-			const initialStatus = this.song.status;
+			outcome = await new Promise<SongMachineOutcome>((resolve, reject) => {
+				const actorRef = createActor(machine, {
+					inspect: getWorkerInspectObserver(),
+				});
+				const existing = runningSongActors.get(this.songId);
+				if (existing) {
+					existing.stop();
+				}
+				runningSongActors.set(this.songId, {
+					stop: () => actorRef.stop(),
+					sendCancel: () => actorRef.send({ type: "CANCEL" }),
+				});
 
-			// Determine starting point based on current status (recovery)
-			switch (initialStatus) {
-				case "pending":
-					await this.generateMetadata();
-					if (this.aborted) return;
-					this.startCover(); // fire-and-forget
-					await this.submitAndPollAudio();
-					break;
+				actorRef.subscribe({
+					next: (snapshot) => {
+						if (snapshot.status !== "done") return;
 
-				case "generating_metadata":
-					// LLM work was lost (worker restart), revert and redo
-					await songService.revertTransient(this.songId);
-					await this.generateMetadata();
-					if (this.aborted) return;
-					this.startCover();
-					await this.submitAndPollAudio();
-					break;
+						const nextState = snapshot.value as
+							| "metadata"
+							| "audio"
+							| "completed"
+							| "errored"
+							| "cancelled";
+						if (
+							nextState === "completed" ||
+							nextState === "errored" ||
+							nextState === "cancelled"
+						) {
+							const context = snapshot.context as SongMachineContext;
+							if (context.outcome) resolve(context.outcome);
+							else if (nextState === "errored") resolve("errored");
+							else if (nextState === "cancelled") resolve("cancelled");
+							else resolve("completed");
+						}
+					},
+					error: (error) => {
+						this.lastError =
+							error instanceof Error ? error.message : String(error);
+						reject(error);
+					},
+				});
 
-				case "metadata_ready":
-					// Skip metadata, start from cover+audio
-					this.startCover();
-					await this.submitAndPollAudio();
-					break;
-
-				case "submitting_to_ace":
-					// ACE submission lost, revert and redo audio
-					await songService.revertTransient(this.songId);
-					this.startCover();
-					await this.submitAndPollAudio();
-					break;
-
-				case "generating_audio":
-					// Resume polling with existing aceTaskId
-					if (this.song.aceTaskId) {
-						await this.resumeAudioPoll();
-					} else {
-						// No taskId — revert and re-submit
-						await songService.revertTransient(this.songId);
-						await this.submitAndPollAudio();
-					}
-					break;
-
-				case "saving":
-					// Audio exists on ACE, re-poll to re-trigger save
-					await songService.updateStatus(this.songId, "generating_audio");
-					if (this.song.aceTaskId) {
-						await this.resumeAudioPoll();
-					} else {
-						await songService.revertTransient(this.songId);
-						await this.submitAndPollAudio();
-					}
-					break;
-
-				default:
-					// Song is in a terminal or non-actionable state
-					this._status = "completed";
-					return;
+				actorRef.start();
+			});
+		} catch (error) {
+			if (
+				!(error instanceof Error && error.message === "Cancelled") &&
+				!this.aborted
+			) {
+				outcome = "errored";
+			} else {
+				outcome = "cancelled";
 			}
+		} finally {
+			const control = runningSongActors.get(this.songId);
+			if (control) {
+				control.stop();
+				runningSongActors.delete(this.songId);
+			}
+		}
 
-			this._status = "completed";
-		} catch (error: unknown) {
-			if (this.aborted) {
-				this._status = "cancelled";
-				return;
-			}
-			this._status = "errored";
-			const msg = error instanceof Error ? error.message : String(error);
-			songLogger(this.songId).error({ error: msg }, "Song worker failed");
-			try {
-				await songService.markError(
-					this.songId,
-					msg || "Unexpected song worker failure",
-				);
-			} catch (markErr) {
-				songLogger(this.songId).error(
-					{ err: markErr },
-					"Also failed to mark error status",
-				);
-			}
+		this._status = outcome;
+
+		if (outcome === "errored") {
+			await this.handleErrorOutcome(
+				this.lastError ?? "Unexpected song worker failure",
+			);
 		}
 	}
 
 	cancel(): void {
 		this.aborted = true;
 		this.ctx.queues.cancelAllForSong(this.songId);
+		const control = runningSongActors.get(this.songId);
+		if (control) {
+			control.sendCancel();
+		}
+	}
+
+	private lastError: string | undefined;
+
+	private buildSongMachine() {
+		const initialState = this.getInitialMachineState();
+
+		return createMachine(
+			{
+				id: "song-worker",
+				initial: initialState,
+				context: {
+					outcome: undefined as SongMachineOutcome | undefined,
+				},
+				states: {
+					metadata: {
+						invoke: {
+							src: "runMetadata",
+							onDone: [
+								{ guard: () => this.aborted, target: "cancelled" },
+								{ target: "audio" },
+							],
+							onError: [
+								{
+									guard: () => this.aborted,
+									target: "cancelled",
+									actions: assign({
+										outcome: () => "cancelled",
+									}),
+								},
+								{
+									target: "errored",
+									actions: [
+										assign({
+											outcome: () => "errored",
+										}),
+									],
+								},
+							],
+						},
+						on: {
+							CANCEL: {
+								target: "cancelled",
+								actions: assign({ outcome: () => "cancelled" }),
+							},
+						},
+					},
+					audio: {
+						invoke: {
+							src: "runAudio",
+							onDone: [
+								{ guard: () => this.aborted, target: "cancelled" },
+								{ target: "completed" },
+							],
+							onError: [
+								{
+									guard: () => this.aborted,
+									target: "cancelled",
+									actions: assign({
+										outcome: () => "cancelled",
+									}),
+								},
+								{
+									target: "errored",
+									actions: [
+										assign({
+											outcome: () => "errored",
+										}),
+									],
+								},
+							],
+						},
+						on: {
+							CANCEL: {
+								target: "cancelled",
+								actions: assign({ outcome: () => "cancelled" }),
+							},
+						},
+					},
+					completed: {
+						type: "final",
+						entry: assign({ outcome: () => "completed" }),
+					},
+					errored: {
+						type: "final",
+						entry: assign({ outcome: () => "errored" }),
+					},
+					cancelled: {
+						type: "final",
+						entry: assign({ outcome: () => "cancelled" }),
+					},
+				},
+				on: {
+					CANCEL: ".cancelled",
+				},
+			},
+			{
+				actors: {
+					runMetadata: fromPromise(async () => {
+						await this.runMetadataStage();
+					}),
+					runAudio: fromPromise(async () => {
+						await this.runAudioStage();
+					}),
+				},
+			},
+		);
+	}
+
+	private getInitialMachineState(): "metadata" | "audio" | "completed" {
+		const { status } = this.song;
+		if (status === "pending" || status === "generating_metadata") {
+			return "metadata";
+		}
+		if (status === "metadata_ready") {
+			return "metadata";
+		}
+		if (
+			status === "submitting_to_ace" ||
+			status === "generating_audio" ||
+			status === "saving"
+		) {
+			return "audio";
+		}
+		return "completed";
+	}
+
+	private async runMetadataStage(): Promise<void> {
+		const status = this.song.status;
+		switch (status) {
+			case "pending":
+				await this.generateMetadata();
+				if (this.aborted) return;
+				this.startCover();
+				break;
+			case "generating_metadata":
+				await songService.revertTransient(this.songId);
+				await this.generateMetadata();
+				if (this.aborted) return;
+				this.startCover();
+				break;
+			case "metadata_ready":
+				this.startCover();
+				break;
+			default:
+				break;
+		}
+	}
+
+	private async runAudioStage(): Promise<void> {
+		switch (this.song.status) {
+			case "pending":
+			case "metadata_ready":
+				await this.submitAndPollAudio();
+				break;
+
+			case "submitting_to_ace":
+				await songService.revertTransient(this.songId);
+				this.startCover();
+				await this.submitAndPollAudio();
+				break;
+
+			case "generating_audio":
+				if (this.song.aceTaskId) {
+					await this.resumeAudioPoll();
+				} else {
+					await songService.revertTransient(this.songId);
+					await this.submitAndPollAudio();
+				}
+				break;
+
+			case "saving":
+				await songService.updateStatus(this.songId, "generating_audio");
+				if (this.song.aceTaskId) {
+					await this.resumeAudioPoll();
+				} else {
+					await songService.revertTransient(this.songId);
+					await this.submitAndPollAudio();
+				}
+				break;
+
+			default:
+				// Song is in terminal or non-actionable state.
+				break;
+		}
+	}
+
+	private async handleErrorOutcome(message: string): Promise<void> {
+		this.lastError = message;
+		try {
+			await songService.markError(this.songId, message);
+		} catch (markErr) {
+			songLogger(this.songId).error(
+				{ err: markErr },
+				"Also failed to mark error status",
+			);
+		}
 	}
 
 	// ─── Pipeline Steps ──────────────────────────────────────────────
@@ -548,7 +753,24 @@ export class SongWorker {
 						signal,
 					};
 
-					let result = await generateSongMetadata(genOptions);
+					let result = (await this.ctx.capabilities.generateMetadata({
+						prompt: genOptions.prompt,
+						provider: effectiveProvider,
+						model: effectiveModel,
+						lyricsLanguage: genOptions.lyricsLanguage,
+						managerBrief: genOptions.managerBrief,
+						managerSlot: genOptions.managerSlot,
+						managerTransitionPolicy: genOptions.managerTransitionPolicy,
+						targetBpm: genOptions.targetBpm,
+						targetKey: genOptions.targetKey,
+						timeSignature: genOptions.timeSignature,
+						audioDuration: genOptions.audioDuration,
+						recentSongs: this.ctx.recentSongs,
+						recentDescriptions: this.ctx.recentDescriptions,
+						isInterrupt: genOptions.isInterrupt,
+						promptDistance: genOptions.promptDistance,
+						signal: genOptions.signal,
+					})) as SongMetadata;
 
 					// Hard dedup: if title or artist matches a recent song, retry once
 					if (isDuplicate(result, this.ctx.recentSongs)) {
@@ -556,7 +778,24 @@ export class SongWorker {
 							{ title: result.title },
 							"Duplicate detected, retrying",
 						);
-						result = await generateSongMetadata(genOptions);
+						result = (await this.ctx.capabilities.generateMetadata({
+							prompt: genOptions.prompt,
+							provider: effectiveProvider,
+							model: effectiveModel,
+							lyricsLanguage: genOptions.lyricsLanguage,
+							managerBrief: genOptions.managerBrief,
+							managerSlot: genOptions.managerSlot,
+							managerTransitionPolicy: genOptions.managerTransitionPolicy,
+							targetBpm: genOptions.targetBpm,
+							targetKey: genOptions.targetKey,
+							timeSignature: genOptions.timeSignature,
+							audioDuration: genOptions.audioDuration,
+							recentSongs: this.ctx.recentSongs,
+							recentDescriptions: this.ctx.recentDescriptions,
+							isInterrupt: genOptions.isInterrupt,
+							promptDistance: genOptions.promptDistance,
+							signal: genOptions.signal,
+						})) as SongMetadata;
 						if (isDuplicate(result, this.ctx.recentSongs)) {
 							songLogger(this.songId).warn(
 								{ title: result.title },
@@ -643,12 +882,15 @@ export class SongWorker {
 					priority,
 					endpoint: imageProvider,
 					execute: async (signal) => {
-						const result = await generateCover({
+						const result = (await this.ctx.capabilities.generateCover({
 							coverPrompt,
 							provider: imageProvider,
 							model: imageModel,
 							signal,
-						});
+						})) as {
+							imageBase64: string;
+							format?: string;
+						};
 						if (!result) throw new Error("No cover generated");
 						return { imageBase64: result.imageBase64 };
 					},
@@ -715,7 +957,7 @@ export class SongWorker {
 					priority: this.getPriority(),
 					endpoint: "ace-step",
 					execute: async (signal) => {
-						const result = await submitToAce({
+						const result = await this.ctx.capabilities.submitAudio({
 							lyrics: this.song.lyrics || "",
 							caption: this.song.caption || "",
 							vocalStyle: this.song.vocalStyle ?? undefined,

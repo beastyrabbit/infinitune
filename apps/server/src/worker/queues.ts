@@ -1,12 +1,11 @@
 import type { AcePollResult } from "../external/ace";
 import { CODEX_LLM_CONCURRENCY } from "../external/codex-config";
-import { AudioQueue } from "./audio-queue";
 import type {
 	EndpointType,
 	IEndpointQueue,
 	QueueStatus,
 } from "./endpoint-queue";
-import { RequestResponseQueue } from "./request-response-queue";
+import { AudioQueue, RequestResponseQueue } from "./runtime/queue-actors";
 
 // ─── Concurrency defaults by provider ────────────────────────────────
 const LLM_CONCURRENCY: Record<string, number> = {

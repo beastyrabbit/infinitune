@@ -27,6 +27,8 @@ import songsRoutes from "./routes/songs/index";
 import * as playlistService from "./services/playlist-service";
 import {
 	getQueues,
+	getWorkerActorGraph,
+	getWorkerInspect,
 	getWorkerStats,
 	startWorker,
 	stopWorkerDiagnostics,
@@ -247,27 +249,54 @@ app.use("*", async (c, next) => {
 app.get("/health", (c) => {
 	const queues = getQueues().getFullStatus();
 	const worker = getWorkerStats();
+	const actorGraph = getWorkerActorGraph();
 	return c.json({
 		ok: true,
 		wsClients: getClientCount(),
 		rooms: roomManager.listRooms().length,
 		queues,
 		worker,
+		actorGraph,
 	});
 });
 
 // ─── Worker status (used by frontend queue dashboard) ────────────────
-app.get("/api/worker/status", (c) => {
+app.get("/api/worker/status", async (c) => {
 	const queues = getQueues().getFullStatus();
 	const worker = getWorkerStats();
+	const actorGraph = getWorkerActorGraph();
+	const activePlaylists = await playlistService.listActive();
+	const playlistNameById = new Map(
+		activePlaylists.map((playlist) => [playlist.id, playlist.name]),
+	);
+
 	return c.json({
 		queues,
 		songWorkers: worker.songWorkerCount,
+		actorGraph,
 		playlists: worker.trackedPlaylists.map((id) => ({
 			id,
-			name: id,
+			name: playlistNameById.get(id) ?? id,
 			activeSongWorkers: 0,
 		})),
+		uptime: process.uptime(),
+	});
+});
+
+app.get("/api/worker/inspect", async (c) => {
+	const limitQuery = c.req.query("limit");
+	const limit = limitQuery ? Number.parseInt(limitQuery, 10) : undefined;
+	const resolved =
+		typeof limit === "number" && Number.isFinite(limit) && limit > 0
+			? limit
+			: undefined;
+	return c.json(getWorkerInspect(resolved));
+});
+
+app.get("/api/worker/actors", (c) => {
+	const actorGraph = getWorkerActorGraph();
+	return c.json({
+		actorGraph,
 		uptime: process.uptime(),
 	});
 });

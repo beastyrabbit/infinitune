@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import {
 	type EndpointStatus,
+	useWorkerInspect,
 	useWorkerStatus,
 	type WorkerStatus,
 } from "@/hooks/useWorkerStatus";
@@ -41,6 +42,7 @@ interface SongInfo {
 	orderIndex: number;
 	promptEpoch: number;
 	isInterrupt: boolean;
+	playlistId: string;
 }
 
 interface QueueSnapshot {
@@ -195,6 +197,276 @@ function Sparkline({
 					strokeLinecap="round"
 				/>
 			</svg>
+		</div>
+	);
+}
+
+function getActorStateLabel(status: string): string {
+	return status === "running" ? "RUNNING" : "STOPPED";
+}
+
+function getActorStateClass(status: string): string {
+	return status === "running" ? "text-green-400" : "text-white/30";
+}
+
+function getActorStateDot(status: string): string {
+	return status === "running" ? "bg-green-400" : "bg-white/30";
+}
+
+function summarizeInspectEvent(event: unknown): {
+	eventType: string;
+	context: string;
+} {
+	if (event === null || event === undefined) {
+		return {
+			eventType: "UNKNOWN",
+			context: "No event payload",
+		};
+	}
+
+	if (typeof event !== "object") {
+		return {
+			eventType: "RAW",
+			context: String(event),
+		};
+	}
+
+	const payload = event as Record<string, unknown>;
+	const type =
+		typeof payload.type === "string"
+			? payload.type
+			: typeof payload.event === "object" &&
+					payload.event !== null &&
+					typeof (payload.event as Record<string, unknown>).type === "string"
+				? `event:${String((payload.event as Record<string, unknown>).type)}`
+				: "EVENT";
+
+	let context = "No context";
+	if (typeof payload.actorRef === "string") {
+		context = payload.actorRef;
+	} else if (
+		typeof payload.actor === "object" &&
+		payload.actor &&
+		typeof (payload.actor as Record<string, unknown>).id === "string"
+	) {
+		context = (payload.actor as Record<string, unknown>).id as string;
+	}
+
+	return { eventType: type, context };
+}
+
+function WorkerInspectPanel({
+	inspect,
+	error,
+}: {
+	inspect: {
+		enabled: boolean;
+		maxEvents: number;
+		events: { at: number; event: unknown }[];
+	} | null;
+	error: string | null;
+}) {
+	if (error) {
+		return (
+			<div className="border border-red-500/40 bg-red-950/30 p-3">
+				<div className="text-[10px] font-black uppercase tracking-widest text-red-400">
+					INSPECTOR ERROR
+				</div>
+				<div className="text-[10px] text-red-300 mt-1">{error}</div>
+			</div>
+		);
+	}
+
+	if (!inspect) {
+		return (
+			<div className="border border-white/15 bg-black/40 p-3 text-[10px] text-white/40">
+				Loading inspector...
+			</div>
+		);
+	}
+
+	if (!inspect.enabled) {
+		return (
+			<div className="border border-white/15 bg-black/40 p-3">
+				<div className="text-[10px] font-black uppercase tracking-widest text-white/60">
+					XSTATE INSPECT DISABLED
+				</div>
+				<div className="text-[10px] text-white/40 mt-1">
+					Set XSTATE_INSPECT_ENABLED=1 to stream runtime events.
+				</div>
+			</div>
+		);
+	}
+
+	const recentEvents = [...inspect.events].reverse().slice(0, 40);
+	return (
+		<div className="border-2 border-white/15 bg-black/40">
+			<div className="px-4 py-2 border-b border-white/10 flex justify-between items-center">
+				<div className="text-[10px] text-white/30 font-black uppercase tracking-widest">
+					XSTATE INSPECTOR
+				</div>
+				<div className="text-[10px] text-white/40">
+					{recentEvents.length}/{inspect.maxEvents}
+				</div>
+			</div>
+			<div className="border-b border-white/10 px-4 py-2 text-[9px] text-white/40">
+				Recent actor/runtime events
+			</div>
+			<div className="p-3">
+				<div className="max-h-56 overflow-auto border border-white/10">
+					{recentEvents.length === 0 ? (
+						<div className="p-2 text-[9px] text-white/20 uppercase tracking-widest">
+							No events yet
+						</div>
+					) : (
+						<div className="text-[10px]">
+							{recentEvents.map((row) => {
+								const info = summarizeInspectEvent(row.event);
+								return (
+									<div
+										key={`${row.at}-${info.context}`}
+										className="border-b border-white/5 px-2 py-2 space-y-1"
+									>
+										<div className="text-white/80 font-black uppercase">
+											{new Date(row.at).toLocaleTimeString()} · {info.eventType}
+										</div>
+										<div className="text-white/40 font-mono text-[9px]">
+											{info.context}
+										</div>
+										<pre className="text-[8px] text-white/30 font-mono overflow-x-auto">
+											{JSON.stringify(row.event)}
+										</pre>
+									</div>
+								);
+							})}
+						</div>
+					)}
+				</div>
+				<div className="text-[9px] text-white/30 mt-2 uppercase tracking-widest">
+					Buffer: {inspect.maxEvents} max events
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function ActorRuntimePanel({
+	actorGraph,
+	songMap,
+}: {
+	actorGraph: NonNullable<WorkerStatus["actorGraph"]>;
+	songMap: Map<string, SongInfo>;
+}) {
+	const playlistsRunning = actorGraph.playlists.filter(
+		(item) => item.status === "running",
+	).length;
+	const songsRunning = actorGraph.songs.filter(
+		(item) => item.status === "running",
+	).length;
+
+	const sortedPlaylists = [...actorGraph.playlists].sort((a, b) =>
+		a.playlistId.localeCompare(b.playlistId),
+	);
+	const sortedSongs = [...actorGraph.songs].sort((a, b) =>
+		a.songId.localeCompare(b.songId),
+	);
+
+	return (
+		<div className="border-2 border-white/15 bg-black/40">
+			<div className="px-4 py-2 border-b border-white/10">
+				<div className="text-[10px] text-white/30 font-bold uppercase tracking-widest">
+					ACTOR RUNTIME
+				</div>
+			</div>
+			<div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-white/10">
+				<div className="p-3 space-y-2">
+					<div className="text-[10px] font-black uppercase tracking-widest text-white/60">
+						Playlist Actors ({actorGraph.playlists.length})
+					</div>
+					<div className="text-[9px] text-white/30">
+						RUNNING {playlistsRunning} / STOPPED{" "}
+						{actorGraph.playlists.length - playlistsRunning}
+					</div>
+					<div className="border border-white/10 p-2 max-h-48 overflow-auto space-y-1">
+						{sortedPlaylists.length === 0 ? (
+							<div className="text-[9px] text-white/20 uppercase tracking-widest">
+								No playlist actors
+							</div>
+						) : (
+							sortedPlaylists.map((item, index) => {
+								const isLast = index === sortedPlaylists.length - 1;
+								return (
+									<div key={item.playlistId} className="text-[10px]">
+										<div className="flex items-start gap-2">
+											<span className="text-white/20">├─</span>
+											<span
+												className={`h-2 w-2 rounded-full mt-1 shrink-0 ${getActorStateDot(item.status)} ${item.status === "running" ? "animate-pulse" : ""}`}
+											/>
+											<div className="min-w-0 flex-1">
+												<div className="font-black uppercase text-white/70 truncate">
+													playlist:{item.playlistId}
+												</div>
+												<div
+													className={`text-[9px] font-mono ${getActorStateClass(item.status)}`}
+												>
+													{isLast ? "└─ " : "├─ "}
+													{getActorStateLabel(item.status)}
+												</div>
+											</div>
+										</div>
+									</div>
+								);
+							})
+						)}
+					</div>
+				</div>
+
+				<div className="p-3 space-y-2">
+					<div className="text-[10px] font-black uppercase tracking-widest text-white/60">
+						Song Actors ({actorGraph.songs.length})
+					</div>
+					<div className="text-[9px] text-white/30">
+						RUNNING {songsRunning} / STOPPED{" "}
+						{actorGraph.songs.length - songsRunning}
+					</div>
+					<div className="border border-white/10 p-2 max-h-48 overflow-auto space-y-1">
+						{sortedSongs.length === 0 ? (
+							<div className="text-[9px] text-white/20 uppercase tracking-widest">
+								No song actors
+							</div>
+						) : (
+							sortedSongs.map((item, index) => {
+								const isLast = index === sortedSongs.length - 1;
+								const song = songMap.get(item.songId);
+								const label = song
+									? `${song.title} by ${song.artistName} · ${song.playlistId}`
+									: item.songId;
+								return (
+									<div key={item.songId} className="text-[10px]">
+										<div className="flex items-start gap-2">
+											<span className="text-white/20">├─</span>
+											<span
+												className={`h-2 w-2 rounded-full mt-1 shrink-0 ${getActorStateDot(item.status)} ${item.status === "running" ? "animate-pulse" : ""}`}
+											/>
+											<div className="min-w-0 flex-1">
+												<div className="font-black uppercase text-white/70 truncate">
+													{label}
+												</div>
+												<div
+													className={`text-[9px] font-mono truncate ${getActorStateClass(item.status)}`}
+												>
+													{isLast ? "└─ " : "├─ "}
+													{item.songId} • {getActorStateLabel(item.status)}
+												</div>
+											</div>
+										</div>
+									</div>
+								);
+							})
+						)}
+					</div>
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -764,6 +1036,7 @@ function QueuePage() {
 	usePlaylistHeartbeat(playlistByKey?.id ?? null);
 	const playlistSongs = useSongQueue(playlistByKey?.id ?? null);
 	const { status, error } = useWorkerStatus();
+	const { inspect, error: inspectError } = useWorkerInspect(200);
 	const [history, setHistory] = useState<QueueSnapshot[]>([]);
 
 	// Collect all unique song IDs from the worker status
@@ -773,6 +1046,9 @@ function QueuePage() {
 		for (const queue of Object.values(status.queues)) {
 			for (const item of queue.activeItems) ids.add(item.songId);
 			for (const item of queue.pendingItems) ids.add(item.songId);
+		}
+		if (status.actorGraph) {
+			for (const item of status.actorGraph.songs) ids.add(item.songId);
 		}
 		return [...ids];
 	}, [status]);
@@ -794,6 +1070,7 @@ function QueuePage() {
 				orderIndex: song.orderIndex,
 				promptEpoch: song.promptEpoch ?? 0,
 				isInterrupt: !!song.isInterrupt,
+				playlistId: song.playlistId,
 			});
 		}
 		return map;
@@ -905,6 +1182,13 @@ function QueuePage() {
 						<WorkerOverview status={status} />
 						<PipelineTruthPanel truth={pipelineTruth} />
 						<QueueMonitoringPanel history={history} />
+						{status.actorGraph && (
+							<ActorRuntimePanel
+								actorGraph={status.actorGraph}
+								songMap={songMap}
+							/>
+						)}
+						<WorkerInspectPanel inspect={inspect} error={inspectError} />
 
 						{/* Endpoint panels */}
 						<div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
