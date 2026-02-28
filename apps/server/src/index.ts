@@ -35,7 +35,12 @@ import {
 	triggerPersonaScan,
 } from "./worker/index";
 
-const PORT = Number(process.env.API_PORT ?? 5175);
+const parsePort = (value: string | undefined): number => {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 5175;
+};
+
+const PORT = parsePort(process.env.PORT ?? process.env.API_PORT);
 const REQUEST_LOG_SLOW_MS = Number(process.env.REQUEST_LOG_SLOW_MS ?? 1500);
 const REQUEST_LOG_SUMMARY_INTERVAL_MS = Number(
 	process.env.REQUEST_LOG_SUMMARY_INTERVAL_MS ?? 30000,
@@ -186,7 +191,13 @@ const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 app.use(
 	"*",
 	cors({
-		origin: (process.env.ALLOWED_ORIGINS ?? "http://localhost:5173").split(","),
+		origin: (
+			process.env.ALLOWED_ORIGINS ??
+			"http://localhost:5173,http://web.localhost:1355"
+		)
+			.split(",")
+			.map((origin) => origin.trim())
+			.filter(Boolean),
 		allowMethods: ["GET", "POST", "PATCH", "DELETE", "PUT"],
 		allowHeaders: ["Content-Type", "Authorization", "x-device-token"],
 	}),

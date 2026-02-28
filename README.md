@@ -207,9 +207,13 @@ pnpm install
 
 # Start everything (web + unified server)
 pnpm dev:all
+
+# Or run with Portless stable local domains
+pnpm dev:all:portless
 ```
 
-> The web dev server runs on `:5173`, the unified backend on `:5175`. Create an `apps/web/.env.local` with `VITE_API_URL=http://localhost:5175` for local dev.
+> Fallback mode: web runs on `:5173`, unified backend on `:5175` (`VITE_API_URL=http://localhost:5175`).
+> Portless mode: web at `http://web.localhost:1355`, backend API at `http://api.localhost:1355` with `VITE_API_URL` set automatically by scripts.
 
 ### Prerequisites
 

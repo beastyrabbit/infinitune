@@ -109,9 +109,7 @@ export function createWorkerRuntime(
 				snapshot.eventsHandled += 1;
 				snapshot.lastEvent = type;
 				snapshot.lastEventAt = Date.now();
-				return () => {
-					snapshot.lastEvent = type;
-				};
+				return () => {};
 			};
 
 			const runSafe = async (description: string, fn: () => Promise<void>) => {
@@ -126,7 +124,7 @@ export function createWorkerRuntime(
 			};
 
 			receive((event) => {
-				trackEvent(event.type);
+				const completeEventTracking = trackEvent(event.type);
 				inFlight = inFlight.then(() =>
 					runSafe(event.type, async () => {
 						switch (event.type) {
@@ -213,6 +211,7 @@ export function createWorkerRuntime(
 						}
 					}),
 				);
+				inFlight = inFlight.finally(() => completeEventTracking());
 			});
 		}),
 		{
