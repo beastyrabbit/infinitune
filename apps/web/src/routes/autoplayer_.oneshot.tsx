@@ -248,6 +248,10 @@ function OneshotPage() {
 				DEFAULT_ENHANCE_TIMEOUT_MS,
 			);
 			if (data.result) setPrompt(data.result);
+		} catch (error) {
+			if (!isTimeoutError(error)) {
+				return;
+			}
 		} finally {
 			setEnhancing(false);
 		}
