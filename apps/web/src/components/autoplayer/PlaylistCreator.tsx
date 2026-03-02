@@ -280,7 +280,10 @@ export function PlaylistCreator({
 				lmCfgScale,
 				inferMethod,
 			};
-		} catch {
+		} catch (error) {
+			if (!isTimeoutError(error)) {
+				throw error;
+			}
 			setLoadingState(">>> INITIALIZING <<<");
 			setStatusMessage(
 				"Session analysis timed out. Starting playlist with defaults.",
