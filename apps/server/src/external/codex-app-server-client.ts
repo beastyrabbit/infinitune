@@ -64,6 +64,21 @@ const MAX_PENDING_TURNS = (() => {
 	// allowing unbounded pending-turn growth.
 	return Math.max(300, CODEX_LLM_CONCURRENCY * 3);
 })();
+const NODE_IPV4_DNS_OPTION = "--dns-result-order=ipv4first";
+
+function getCodexSpawnEnv(): NodeJS.ProcessEnv {
+	const existingNodeOptions = process.env.NODE_OPTIONS?.trim() ?? "";
+	const nodeOptions = existingNodeOptions
+		? existingNodeOptions.includes(NODE_IPV4_DNS_OPTION)
+			? existingNodeOptions
+			: `${existingNodeOptions} ${NODE_IPV4_DNS_OPTION}`
+		: NODE_IPV4_DNS_OPTION;
+
+	return {
+		...process.env,
+		NODE_OPTIONS: nodeOptions,
+	};
+}
 
 function isNoisyRolloutWarning(message: string): boolean {
 	return (
@@ -126,6 +141,7 @@ export class CodexAppServerClient {
 
 	private spawnProcess(): void {
 		this.proc = spawn("codex", ["app-server"], {
+			env: getCodexSpawnEnv(),
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		this.stdoutBuffer = "";

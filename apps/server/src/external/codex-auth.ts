@@ -44,6 +44,21 @@ let stderrBuffer = "";
 const AUTH_URL_REGEX = /(https?:\/\/\S+)/i;
 const DEVICE_AUTH_URL_PATH = "/codex/device";
 const DEVICE_CODE_REGEX = /\b([A-Z0-9]{4,}-[A-Z0-9]{4,})\b/;
+const NODE_IPV4_DNS_OPTION = "--dns-result-order=ipv4first";
+
+function getCodexSpawnEnv(): NodeJS.ProcessEnv {
+	const existingNodeOptions = process.env.NODE_OPTIONS?.trim() ?? "";
+	const nodeOptions = existingNodeOptions
+		? existingNodeOptions.includes(NODE_IPV4_DNS_OPTION)
+			? existingNodeOptions
+			: `${existingNodeOptions} ${NODE_IPV4_DNS_OPTION}`
+		: NODE_IPV4_DNS_OPTION;
+
+	return {
+		...process.env,
+		NODE_OPTIONS: nodeOptions,
+	};
+}
 
 function stripAnsi(text: string): string {
 	const esc = String.fromCharCode(27);
@@ -157,6 +172,7 @@ export async function getCodexLoginStatus(): Promise<CodexLoginStatus> {
 			"codex",
 			["login", "status"],
 			{
+				env: getCodexSpawnEnv(),
 				timeout: 5_000,
 				maxBuffer: 64 * 1024,
 			},
@@ -220,6 +236,7 @@ export async function startCodexDeviceAuth(): Promise<CodexDeviceAuthSession> {
 		};
 
 		const proc = spawn("codex", ["login", "--device-auth"], {
+			env: getCodexSpawnEnv(),
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		activeProcess = proc;
