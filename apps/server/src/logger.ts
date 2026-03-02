@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import path from "node:path";
 import pino from "pino";
 
@@ -8,6 +9,21 @@ const isDev = process.env.NODE_ENV !== "production" && !isTest;
 const LOG_LEVEL = process.env.LOG_LEVEL ?? (isDev ? "debug" : "info");
 const FILE_LOGGING_ENABLED = !isTest && process.env.LOG_TO_FILE !== "0";
 const PRETTY_SINGLE_LINE = process.env.LOG_PRETTY_SINGLE_LINE !== "0";
+const parsePositiveInt = (
+	value: string | undefined,
+	fallback: number,
+): number => {
+	const parsed = Number.parseInt(value ?? "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+const LOG_FILE_MAX_LINES = parsePositiveInt(
+	process.env.LOG_FILE_MAX_LINES || "",
+	10000,
+);
+const LOG_FILE_TRIM_INTERVAL_MS = parsePositiveInt(
+	process.env.LOG_FILE_TRIM_INTERVAL_MS || "",
+	15000,
+);
 
 const LOGS_DIR = path.resolve(import.meta.dirname, "../../../data/logs/server");
 const LOG_SESSION_ID = new Date().toISOString().replace(/[:.]/g, "-");
@@ -17,6 +33,34 @@ const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 
 if (LOG_FILE_PATH) {
 	fs.mkdirSync(LOGS_DIR, { recursive: true });
+}
+
+async function trimLogFile() {
+	if (!LOG_FILE_PATH || LOG_FILE_MAX_LINES <= 0) return;
+	try {
+		const data = await fsPromises.readFile(LOG_FILE_PATH, "utf8");
+		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
+		if (lines.length <= LOG_FILE_MAX_LINES) return;
+
+		const trimmed = `${lines.slice(-LOG_FILE_MAX_LINES).join("\n")}\n`;
+		await fsPromises.writeFile(LOG_FILE_PATH, trimmed, "utf8");
+	} catch (error: unknown) {
+		if (
+			error instanceof Error &&
+			"code" in error &&
+			(error as { code?: string }).code === "ENOENT"
+		) {
+			return;
+		}
+		console.error("Failed to trim server log file", error);
+	}
+}
+
+if (LOG_FILE_PATH && LOG_FILE_TRIM_INTERVAL_MS > 0) {
+	const trimLogTimer = setInterval(() => {
+		void trimLogFile();
+	}, LOG_FILE_TRIM_INTERVAL_MS);
+	trimLogTimer.unref?.();
 }
 
 const transportTargets: pino.TransportTargetOptions[] = [];

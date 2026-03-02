@@ -20,6 +20,7 @@ import {
 	type PromptMode,
 	type PromptProfile,
 	refineSessionPrompt,
+	type SessionParams,
 	type SongMetadata,
 } from "../external/llm";
 import { getServiceUrls, getSetting } from "../external/service-urls";
@@ -241,11 +242,47 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 }
 
 const app = new Hono();
+const parsePositiveTimeout = (
+	value: string | undefined,
+	fallback: number,
+): number => {
+	const parsed = Number.parseInt(value ?? "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 const CODEX_AUTH_CACHE_FILE_PATH = path.resolve(
 	process.env.HOME || process.cwd(),
 	".codex",
 	"auth.json",
 );
+const ENHANCE_TIMEOUT_MS = parsePositiveTimeout(
+	process.env.AUTOPLAYER_ENHANCE_TIMEOUT_MS,
+	15_000,
+);
+const ENHANCE_SESSION_DEFAULTS: SessionParams = {
+	lyricsLanguage: "english",
+	targetBpm: 120,
+	targetKey: "C major",
+	timeSignature: "4/4",
+	audioDuration: 240,
+};
+
+function createTimeoutController(timeoutMs: number) {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => {
+		controller.abort(new DOMException("Request timed out", "AbortError"));
+	}, timeoutMs);
+	return {
+		controller,
+		clear: () => clearTimeout(timeout),
+	};
+}
+
+function isTimeoutError(error: unknown): boolean {
+	return (
+		error instanceof DOMException &&
+		(error.name === "AbortError" || error.name === "TimeoutError")
+	);
+}
 
 // ─── Legacy audio URL redirect ──────────────────────────────────────
 app.get("/audio/:id", (c) => {
@@ -643,12 +680,27 @@ app.post("/enhance-prompt", async (c) => {
 				400,
 			);
 		}
-		const result = await enhancePlaylistPrompt({
-			prompt,
-			provider,
-			model,
-		});
-		return c.json({ result });
+		const { controller, clear } = createTimeoutController(ENHANCE_TIMEOUT_MS);
+		try {
+			const result = await enhancePlaylistPrompt({
+				prompt,
+				provider,
+				model,
+				signal: controller.signal,
+			});
+			return c.json({ result });
+		} catch (error: unknown) {
+			if (!isTimeoutError(error)) {
+				throw error;
+			}
+			logger.warn(
+				{ err: error, provider, model },
+				"Enhance prompt request timed out; returning original prompt.",
+			);
+			return c.json({ result: prompt, timeout: true });
+		} finally {
+			clear();
+		}
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to enhance prompt");
 		return c.json(
@@ -742,12 +794,30 @@ app.post("/enhance-session", async (c) => {
 				400,
 			);
 		}
-		const params = await enhanceSessionParams({
-			prompt,
-			provider,
-			model,
-		});
-		return c.json(params);
+		const { controller, clear } = createTimeoutController(ENHANCE_TIMEOUT_MS);
+		try {
+			const params = await enhanceSessionParams({
+				prompt,
+				provider,
+				model,
+				signal: controller.signal,
+			});
+			return c.json(params);
+		} catch (error: unknown) {
+			if (!isTimeoutError(error)) {
+				throw error;
+			}
+			logger.warn(
+				{ err: error, provider, model },
+				"Enhance session params request timed out; using fallback values.",
+			);
+			return c.json({
+				...ENHANCE_SESSION_DEFAULTS,
+				timeout: true,
+			});
+		} finally {
+			clear();
+		}
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to enhance session params");
 		return c.json(
