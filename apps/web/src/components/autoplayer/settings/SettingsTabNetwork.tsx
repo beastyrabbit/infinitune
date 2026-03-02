@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { SettingsField, SettingsPanel } from "./SettingsPanel";
 import { TestButton, type TestStatus } from "./TestButton";
@@ -24,6 +25,7 @@ export interface NetworkTabProps {
 		message?: string;
 		error?: string;
 	} | null;
+	onUploadCodexAuthFile: (file: File) => Promise<void>;
 	onStartCodexAuth: () => void;
 	onCancelCodexAuth: () => void;
 	onTest: (provider: string) => void;
@@ -49,6 +51,7 @@ export function SettingsTabNetwork({
 	openrouterTest,
 	codexTest,
 	codexAuthSession,
+	onUploadCodexAuthFile,
 	onStartCodexAuth,
 	onCancelCodexAuth,
 	onTest,
@@ -71,6 +74,30 @@ export function SettingsTabNetwork({
 			await navigator.clipboard.writeText(codexAuthSession.userCode);
 		} catch {
 			// Ignore clipboard failures in this UI.
+		}
+	};
+	const [authUploadStatus, setAuthUploadStatus] = useState<{
+		state: "idle" | "uploading" | "success" | "error";
+		message?: string;
+	}>({ state: "idle" });
+	const codexAuthInputRef = useRef<HTMLInputElement>(null);
+	const handleUploadCodexAuthFile = async (file?: File) => {
+		if (!file) return;
+		setAuthUploadStatus({
+			state: "uploading",
+			message: "Uploading auth.json...",
+		});
+		try {
+			await onUploadCodexAuthFile(file);
+			setAuthUploadStatus({ state: "success", message: "AUTH.JSON uploaded." });
+			setTimeout(() => {
+				setAuthUploadStatus({ state: "idle" });
+			}, 3500);
+		} catch (error) {
+			setAuthUploadStatus({
+				state: "error",
+				message: error instanceof Error ? error.message : "Upload failed",
+			});
 		}
 	};
 
@@ -190,6 +217,58 @@ export function SettingsTabNetwork({
 						</a>
 					</SettingsField>
 				)}
+
+				<SettingsField label="Device Auth Fallback">
+					<div className="mb-2 text-[10px] font-bold uppercase text-white/40">
+						If the device flow is blocked, copy{" "}
+						<span className="text-yellow-300">~/.codex/auth.json</span> from a
+						machine where you logged in, then upload it here.
+					</div>
+					<div className="grid gap-2">
+						<input
+							ref={codexAuthInputRef}
+							type="file"
+							accept=".json,application/json"
+							className="hidden"
+							onChange={(e) => {
+								const file = e.target.files?.[0];
+								void handleUploadCodexAuthFile(file);
+								e.currentTarget.value = "";
+							}}
+						/>
+						<div className="flex gap-2">
+							<button
+								type="button"
+								className="h-10 px-3 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/80 hover:bg-white/10 disabled:opacity-30"
+								onClick={() => codexAuthInputRef.current?.click()}
+								disabled={authUploadStatus.state === "uploading"}
+							>
+								UPLOAD AUTH.JSON
+							</button>
+							<a
+								href="https://developers.openai.com/codex/auth/#fallback-authenticate-locally-and-copy-your-auth-cache"
+								target="_blank"
+								rel="noreferrer"
+								className="h-10 px-3 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-yellow-300 hover:bg-white/10 inline-flex items-center"
+							>
+								OPEN DOCS
+							</a>
+						</div>
+						{authUploadStatus.message && (
+							<div
+								className={`px-3 py-2 rounded-none border-4 border-white/20 font-mono text-xs font-bold uppercase ${
+									authUploadStatus.state === "success"
+										? "text-green-300 bg-green-950/40"
+										: authUploadStatus.state === "error"
+											? "text-red-300 bg-red-950/40"
+											: "text-yellow-300 bg-yellow-950/40"
+								}`}
+							>
+								{authUploadStatus.message}
+							</div>
+						)}
+					</div>
+				</SettingsField>
 
 				{codexAuthSession?.verificationUrl && !hasValidVerificationUrl && (
 					<SettingsField label="Verification URL">

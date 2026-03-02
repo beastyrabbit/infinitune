@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { Hono } from "hono";
 import { codexAppServerClient } from "../external/codex-app-server-client";
 import {
@@ -239,6 +241,11 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 }
 
 const app = new Hono();
+const CODEX_AUTH_CACHE_FILE_PATH = path.resolve(
+	process.env.HOME || process.cwd(),
+	".codex",
+	"auth.json",
+);
 
 // ─── Legacy audio URL redirect ──────────────────────────────────────
 app.get("/audio/:id", (c) => {
@@ -941,6 +948,72 @@ app.post("/codex-auth/cancel", async (c) => {
 					error instanceof Error
 						? error.message
 						: "Failed to cancel Codex device auth",
+			},
+			500,
+		);
+	}
+});
+
+// ─── POST /codex-auth/upload-cache ────────────────────────────────
+app.post("/codex-auth/upload-cache", async (c) => {
+	try {
+		const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
+		if (!contentType.includes("multipart/form-data")) {
+			return c.json(
+				{ error: "Expected multipart/form-data request with auth.json file" },
+				415,
+			);
+		}
+
+		const formData = await c.req.formData();
+		const upload = formData.get("authFile");
+		if (
+			!upload ||
+			typeof upload === "string" ||
+			typeof (upload as { text: () => Promise<string> }).text !== "function"
+		) {
+			return c.json(
+				{ error: "Missing auth.json upload under field name 'authFile'" },
+				400,
+			);
+		}
+
+		let rawAuthCache: string;
+		try {
+			rawAuthCache = await (upload as { text: () => Promise<string> }).text();
+		} catch {
+			return c.json({ error: "Unable to read uploaded auth file" }, 400);
+		}
+
+		let parsedCache: unknown;
+		try {
+			parsedCache = JSON.parse(rawAuthCache);
+		} catch {
+			return c.json({ error: "Uploaded file is not valid JSON" }, 400);
+		}
+		if (!parsedCache || typeof parsedCache !== "object") {
+			return c.json({ error: "auth.json must be a JSON object" }, 400);
+		}
+
+		await mkdir(path.dirname(CODEX_AUTH_CACHE_FILE_PATH), { recursive: true });
+		await writeFile(CODEX_AUTH_CACHE_FILE_PATH, rawAuthCache, "utf8");
+		await codexAppServerClient.dispose();
+		const loginStatus = await getCodexLoginStatus();
+
+		return c.json({
+			session: getCodexDeviceAuthStatus(),
+			loginStatus,
+			path: CODEX_AUTH_CACHE_FILE_PATH,
+			message: "Codex auth cache uploaded",
+		});
+	} catch (error: unknown) {
+		logger.warn({ err: error }, "Failed to upload Codex auth cache");
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to upload Codex auth cache",
 			},
 			500,
 		);

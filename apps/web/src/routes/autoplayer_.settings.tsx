@@ -275,6 +275,46 @@ function SettingsPage() {
 		}
 	}, []);
 
+	const uploadCodexAuthCache = useCallback(
+		async (file: File) => {
+			const formData = new FormData();
+			formData.append("authFile", file, "auth.json");
+
+			const res = await fetch(
+				`${API_URL}/api/autoplayer/codex-auth/upload-cache`,
+				{
+					method: "POST",
+					body: formData,
+				},
+			);
+			const data = (await res.json()) as {
+				session?: CodexAuthSession;
+				loginStatus?: { mode?: string };
+				error?: string;
+			};
+			if (!res.ok || data.error) {
+				throw new Error(data.error || "Failed to upload auth.json");
+			}
+
+			setCodexAuthSession(data.session ?? null);
+			if (data.loginStatus?.mode === "chatgpt") {
+				setCodexTest({
+					state: "ok",
+					message: "Authenticated with ChatGPT",
+				});
+				if (
+					textProvider === "openai-codex" ||
+					personaProvider === "openai-codex"
+				) {
+					void refetchCodexModels();
+				}
+			} else {
+				await refreshCodexAuthStatus();
+			}
+		},
+		[personaProvider, refreshCodexAuthStatus, refetchCodexModels, textProvider],
+	);
+
 	const cancelCodexAuth = useCallback(async () => {
 		try {
 			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/cancel`, {
@@ -460,6 +500,7 @@ function SettingsPage() {
 								codexTest={codexTest}
 								codexAuthSession={codexAuthSession}
 								onStartCodexAuth={startCodexAuth}
+								onUploadCodexAuthFile={uploadCodexAuthCache}
 								onCancelCodexAuth={cancelCodexAuth}
 								onTest={testConnection}
 							/>
