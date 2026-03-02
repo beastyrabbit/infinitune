@@ -71,12 +71,46 @@ export const Route = createFileRoute("/autoplayer_/oneshot")({
 const GENERATE_LABEL = "\u00BB\u00BB\u00BB GENERATE SONG \u00AB\u00AB\u00AB";
 const GENERATE_ANOTHER_LABEL =
 	"\u00BB\u00BB\u00BB GENERATE ANOTHER \u00AB\u00AB\u00AB";
+const DEFAULT_ENHANCE_TIMEOUT_MS = 15000;
 
 const LANGUAGES = [
 	{ value: "auto", label: "AUTO" },
 	{ value: "english", label: "ENGLISH" },
 	{ value: "german", label: "GERMAN" },
 ] as const;
+
+const createTimeoutController = (timeoutMs: number) => {
+	const controller = new AbortController();
+	const timeout = window.setTimeout(() => {
+		controller.abort("timeout");
+	}, timeoutMs);
+	return { controller, clear: () => window.clearTimeout(timeout) };
+};
+
+const postWithTimeout = async <T,>(
+	url: string,
+	payload: Record<string, unknown>,
+	timeoutMs: number,
+): Promise<T> => {
+	const { controller, clear } = createTimeoutController(timeoutMs);
+	try {
+		const res = await fetch(url, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+			signal: controller.signal,
+		});
+		if (!res.ok) {
+			throw new Error(`Request failed (${res.status})`);
+		}
+		return (await res.json()) as T;
+	} finally {
+		clear();
+	}
+};
+
+const isTimeoutError = (error: unknown) =>
+	error instanceof Error && error.name === "AbortError";
 
 // ─── Main Component ─────────────────────────────────────────────────
 
@@ -206,17 +240,18 @@ function OneshotPage() {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
 		setEnhancing(true);
 		try {
-			const res = await fetch("/api/autoplayer/enhance-prompt", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
-			});
-			if (res.ok) {
-				const data = await res.json();
-				if (data.result) setPrompt(data.result);
+			const data = await postWithTimeout<{
+				result?: string;
+			}>(
+				"/api/autoplayer/enhance-prompt",
+				{ prompt: prompt.trim(), provider, model },
+				DEFAULT_ENHANCE_TIMEOUT_MS,
+			);
+			if (data.result) setPrompt(data.result);
+		} catch (error) {
+			if (!isTimeoutError(error)) {
+				return;
 			}
-		} catch {
-			// User still has original prompt
 		} finally {
 			setEnhancing(false);
 		}
@@ -231,14 +266,15 @@ function OneshotPage() {
 			// Enhance playlist params
 			let playlistParams: Record<string, unknown> = {};
 			try {
-				const res = await fetch("/api/autoplayer/enhance-session", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
-				});
-				if (res.ok) playlistParams = await res.json();
-			} catch {
-				// Continue without enhanced params
+				playlistParams = await postWithTimeout<Record<string, unknown>>(
+					"/api/autoplayer/enhance-session",
+					{ prompt: prompt.trim(), provider, model },
+					DEFAULT_ENHANCE_TIMEOUT_MS,
+				);
+			} catch (error) {
+				if (!isTimeoutError(error)) {
+					throw error;
+				}
 			}
 
 			// Merge user overrides with AI params
@@ -275,6 +311,7 @@ function OneshotPage() {
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
 		} catch {
 			// Fallback
+		} finally {
 			setGenerating(false);
 		}
 	}, [

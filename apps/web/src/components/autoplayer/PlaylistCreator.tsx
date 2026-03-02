@@ -23,6 +23,15 @@ import {
 
 type PlaybackMode = "local" | "room";
 
+interface EnhancedSessionParams {
+	lyricsLanguage?: string;
+	targetBpm?: number;
+	targetKey?: string;
+	timeSignature?: string;
+	audioDuration?: number;
+	inferenceSteps?: number;
+}
+
 interface PlaylistCreatorProps {
 	onCreatePlaylist: (data: {
 		name: string;
@@ -61,6 +70,8 @@ interface PlaylistCreatorProps {
 	}) => void;
 }
 
+const DEFAULT_ENHANCE_TIMEOUT_MS = 15000;
+
 function slugify(text: string): string {
 	return text
 		.toLowerCase()
@@ -86,6 +97,7 @@ export function PlaylistCreator({
 	const [loading, setLoading] = useState(false);
 	const [enhancing, setEnhancing] = useState(false);
 	const [loadingState, setLoadingState] = useState("");
+	const [statusMessage, setStatusMessage] = useState("");
 	const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("local");
 	const [roomName, setRoomName] = useState("");
 	const [roomNameEdited, setRoomNameEdited] = useState(false);
@@ -151,23 +163,66 @@ export function PlaylistCreator({
 		}
 	}, [provider, model, textModels, codexTextModels]);
 
+	const createTimeoutController = (timeoutMs: number) => {
+		const controller = new AbortController();
+		const timeout = window.setTimeout(() => {
+			controller.abort("timeout");
+		}, timeoutMs);
+		return { controller, clear: () => window.clearTimeout(timeout) };
+	};
+
+	const postWithTimeout = async <T,>(
+		url: string,
+		payload: Record<string, unknown>,
+		timeoutMs: number,
+	): Promise<T> => {
+		const { controller, clear } = createTimeoutController(timeoutMs);
+		try {
+			const res = await fetch(url, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			});
+			if (!res.ok) {
+				throw new Error(`Request failed (${res.status})`);
+			}
+			return (await res.json()) as T;
+		} finally {
+			clear();
+		}
+	};
+
+	const isTimeoutError = (error: unknown) =>
+		error instanceof Error && error.name === "AbortError";
+
 	const handleEnhancePrompt = async () => {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
 		setEnhancing(true);
+		setStatusMessage("");
 		try {
-			const res = await fetch("/api/autoplayer/enhance-prompt", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
-			});
-			if (res.ok) {
-				const data = await res.json();
-				if (data.result) {
-					setPrompt(data.result);
-				}
+			const data = await postWithTimeout<{
+				result?: string;
+			}>(
+				"/api/autoplayer/enhance-prompt",
+				{
+					prompt: prompt.trim(),
+					provider,
+					model,
+				},
+				DEFAULT_ENHANCE_TIMEOUT_MS,
+			);
+			if (data.result) {
+				setPrompt(data.result);
+			} else {
+				setStatusMessage("Enhance request returned no changes.");
 			}
-		} catch {
-			// Silently fail — user still has original prompt
+		} catch (error) {
+			if (!isTimeoutError(error)) {
+				// Silently fail — user still has original prompt
+				return;
+			}
+			setStatusMessage("Enhance timed out; using the original prompt.");
 		} finally {
 			setEnhancing(false);
 		}
@@ -175,6 +230,7 @@ export function PlaylistCreator({
 
 	const preparePlaylistData = async () => {
 		setLoading(true);
+		setStatusMessage("");
 		setLoadingState(
 			playbackMode === "room"
 				? ">>> CREATING ROOM <<<"
@@ -191,18 +247,18 @@ export function PlaylistCreator({
 			? Number.parseFloat(settings.aceLmCfgScale)
 			: undefined;
 		const inferMethod = settings?.aceInferMethod || undefined;
+		let enhancedParams: EnhancedSessionParams = {};
 
 		try {
-			const res = await fetch("/api/autoplayer/enhance-session", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ prompt: prompt.trim(), provider, model }),
-			});
-
-			let enhancedParams: Record<string, unknown> = {};
-			if (res.ok) {
-				enhancedParams = await res.json();
-			}
+			enhancedParams = await postWithTimeout<EnhancedSessionParams>(
+				"/api/autoplayer/enhance-session",
+				{
+					prompt: prompt.trim(),
+					provider,
+					model,
+				},
+				DEFAULT_ENHANCE_TIMEOUT_MS,
+			);
 
 			setLoadingState(">>> INITIALIZING <<<");
 
@@ -224,7 +280,14 @@ export function PlaylistCreator({
 				lmCfgScale,
 				inferMethod,
 			};
-		} catch {
+		} catch (error) {
+			if (!isTimeoutError(error)) {
+				throw error;
+			}
+			setLoadingState(">>> INITIALIZING <<<");
+			setStatusMessage(
+				"Session analysis timed out. Starting playlist with defaults.",
+			);
 			return {
 				name: roomName.trim() || prompt.trim().slice(0, 50),
 				prompt: prompt.trim(),
@@ -241,12 +304,19 @@ export function PlaylistCreator({
 
 	const handleStart = async () => {
 		if (!prompt.trim() || !model.trim()) return;
-		const data = await preparePlaylistData();
-
-		if (playbackMode === "room" && onCreatePlaylistInRoom) {
-			onCreatePlaylistInRoom(data);
-		} else {
-			onCreatePlaylist(data);
+		setStatusMessage("");
+		try {
+			const data = await preparePlaylistData();
+			if (playbackMode === "room" && onCreatePlaylistInRoom) {
+				await onCreatePlaylistInRoom(data);
+			} else {
+				await onCreatePlaylist(data);
+			}
+		} catch {
+			setStatusMessage("Failed to start playlist. Please try again.");
+		} finally {
+			setLoading(false);
+			setLoadingState("");
 		}
 	};
 
@@ -526,6 +596,11 @@ export function PlaylistCreator({
 									? ">>> START IN ROOM <<<"
 									: ">>> START LISTENING <<<"}
 						</Button>
+						{statusMessage && (
+							<p className="text-center text-[10px] uppercase tracking-widest text-yellow-300 mt-2">
+								{statusMessage}
+							</p>
+						)}
 					</div>
 				</div>
 
