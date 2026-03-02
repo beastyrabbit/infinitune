@@ -45,7 +45,12 @@ const AUTH_URL_REGEX = /(https?:\/\/\S+)/i;
 const DEVICE_CODE_REGEX = /\b([A-Z0-9]{4,}-[A-Z0-9]{4,})\b/;
 
 function stripAnsi(text: string): string {
-	return text.replace(new RegExp("\\x1B\\[[0-9;]*m", "g"), "");
+	const esc = String.fromCharCode(27);
+	return text.replace(new RegExp(`${esc}\\[[0-9;]*m`, "g"), "");
+}
+
+function normalizeVerificationUrl(rawUrl: string): string {
+	return rawUrl.replace(/^[\s<([{"]+/, "").replace(/[)\]}",.>]+$/i, "");
 }
 
 function setSessionPatch(
@@ -67,7 +72,7 @@ function handleDeviceAuthLine(rawLine: string): void {
 
 	const urlMatch = line.match(AUTH_URL_REGEX);
 	if (urlMatch?.[1]) {
-		setSessionPatch({ verificationUrl: urlMatch[1] });
+		setSessionPatch({ verificationUrl: normalizeVerificationUrl(urlMatch[1]) });
 	}
 
 	const codeMatch = line.match(DEVICE_CODE_REGEX);

@@ -35,6 +35,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg tini && \
     rm -rf /var/lib/apt/lists/*
 
+RUN npm install -g @openai/codex@latest
+
 WORKDIR /app
 
 # Production node_modules (includes tsx)
@@ -65,6 +67,7 @@ RUN mkdir -p /app/data
 
 # Verify tsx binary exists (fail build early rather than at runtime)
 RUN test -x node_modules/.bin/tsx
+RUN test -x /usr/local/bin/codex
 
 EXPOSE 3000 5175
 
