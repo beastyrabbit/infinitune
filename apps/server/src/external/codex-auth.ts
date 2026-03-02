@@ -42,6 +42,7 @@ let stdoutBuffer = "";
 let stderrBuffer = "";
 
 const AUTH_URL_REGEX = /(https?:\/\/\S+)/i;
+const DEVICE_AUTH_URL_PATH = "/codex/device";
 const DEVICE_CODE_REGEX = /\b([A-Z0-9]{4,}-[A-Z0-9]{4,})\b/;
 
 function stripAnsi(text: string): string {
@@ -51,6 +52,23 @@ function stripAnsi(text: string): string {
 
 function normalizeVerificationUrl(rawUrl: string): string {
 	return rawUrl.replace(/^[\s<([{"]+/, "").replace(/[)\]}",.>]+$/i, "");
+}
+
+function parseVerificationUrl(rawUrl: string): string | null {
+	const trimmed = normalizeVerificationUrl(rawUrl);
+	try {
+		const parsed = new URL(trimmed);
+		if (
+			parsed.hostname === "auth.openai.com" &&
+			parsed.pathname === DEVICE_AUTH_URL_PATH
+		) {
+			return parsed.href;
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
 }
 
 function setSessionPatch(
@@ -71,8 +89,11 @@ function handleDeviceAuthLine(rawLine: string): void {
 	if (!line) return;
 
 	const urlMatch = line.match(AUTH_URL_REGEX);
-	if (urlMatch?.[1]) {
-		setSessionPatch({ verificationUrl: normalizeVerificationUrl(urlMatch[1]) });
+	const verificationUrl = urlMatch?.[1]
+		? parseVerificationUrl(urlMatch[1])
+		: null;
+	if (verificationUrl) {
+		setSessionPatch({ verificationUrl });
 	}
 
 	const codeMatch = line.match(DEVICE_CODE_REGEX);

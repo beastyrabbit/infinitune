@@ -31,6 +31,8 @@ export interface NetworkTabProps {
 
 const inputClass =
 	"h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white focus-visible:ring-0";
+const DEVICE_AUTH_VERIFICATION_URL_REGEX =
+	/^https?:\/\/auth\.openai\.com\/codex\/device/i;
 
 export function SettingsTabNetwork({
 	ollamaUrl,
@@ -59,6 +61,18 @@ export function SettingsTabNetwork({
 	const codexAwaitingBrowser =
 		codexAuthSession?.state === "pending" ||
 		codexAuthSession?.state === "awaiting_confirmation";
+	const hasValidVerificationUrl = Boolean(
+		codexAuthSession?.verificationUrl &&
+			DEVICE_AUTH_VERIFICATION_URL_REGEX.test(codexAuthSession.verificationUrl),
+	);
+	const handleCopyCodexCode = async () => {
+		if (!codexAuthSession?.userCode) return;
+		try {
+			await navigator.clipboard.writeText(codexAuthSession.userCode);
+		} catch {
+			// Ignore clipboard failures in this UI.
+		}
+	};
 
 	return (
 		<div className="space-y-8">
@@ -147,7 +161,24 @@ export function SettingsTabNetwork({
 					</div>
 				</SettingsField>
 
-				{codexAuthSession?.verificationUrl && (
+				{codexAuthSession?.userCode && (
+					<SettingsField label="One-Time Code">
+						<div className="flex gap-2">
+							<div className="h-10 flex-1 px-3 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-black leading-[30px] uppercase text-yellow-300 tracking-widest">
+								{codexAuthSession.userCode}
+							</div>
+							<button
+								type="button"
+								className="h-10 px-3 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/80 hover:bg-white/10"
+								onClick={handleCopyCodexCode}
+							>
+								COPY
+							</button>
+						</div>
+					</SettingsField>
+				)}
+
+				{hasValidVerificationUrl && codexAuthSession?.verificationUrl && (
 					<SettingsField label="Verification URL">
 						<a
 							href={codexAuthSession.verificationUrl}
@@ -160,10 +191,10 @@ export function SettingsTabNetwork({
 					</SettingsField>
 				)}
 
-				{codexAuthSession?.userCode && (
-					<SettingsField label="One-Time Code">
-						<div className="h-10 px-3 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-black leading-[30px] uppercase text-yellow-300 tracking-widest">
-							{codexAuthSession.userCode}
+				{codexAuthSession?.verificationUrl && !hasValidVerificationUrl && (
+					<SettingsField label="Verification URL">
+						<div className="h-10 px-3 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-yellow-200">
+							Waiting for a valid device-auth URL.
 						</div>
 					</SettingsField>
 				)}
