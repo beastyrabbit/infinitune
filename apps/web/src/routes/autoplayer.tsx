@@ -153,11 +153,18 @@ function AutoplayerPage() {
 	const deviceName = dn || `autoplayer-${roomRole}`;
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
+	const forceCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 	const [albumGenerating, setAlbumGenerating] = useState(false);
 	const [albumProgress, setAlbumProgress] = useState({ current: 0, total: 0 });
 	const albumAbortRef = useRef<AbortController | null>(null);
+
+	useEffect(() => {
+		return () => {
+			if (forceCloseTimerRef.current) clearTimeout(forceCloseTimerRef.current);
+		};
+	}, []);
 
 	// Look up playlist by key from URL
 	const playlistByKey = usePlaylistByKey(pl ?? null);
@@ -801,9 +808,14 @@ function AutoplayerPage() {
 									if (forceCloseArmed) {
 										handleForceClose();
 										setForceCloseArmed(false);
+										if (forceCloseTimerRef.current)
+											clearTimeout(forceCloseTimerRef.current);
 									} else {
 										setForceCloseArmed(true);
-										setTimeout(() => setForceCloseArmed(false), 2000);
+										forceCloseTimerRef.current = setTimeout(
+											() => setForceCloseArmed(false),
+											2000,
+										);
 									}
 								}}
 							>
@@ -815,7 +827,11 @@ function AutoplayerPage() {
 							open={mobileMenuOpen}
 							onOpenChange={(open) => {
 								setMobileMenuOpen(open);
-								if (!open) setForceCloseArmed(false);
+								if (!open) {
+									setForceCloseArmed(false);
+									if (forceCloseTimerRef.current)
+										clearTimeout(forceCloseTimerRef.current);
+								}
 							}}
 						>
 							<SheetTrigger asChild>
@@ -947,9 +963,14 @@ function AutoplayerPage() {
 												setMobileMenuOpen(false);
 												handleForceClose();
 												setForceCloseArmed(false);
+												if (forceCloseTimerRef.current)
+													clearTimeout(forceCloseTimerRef.current);
 											} else {
 												setForceCloseArmed(true);
-												setTimeout(() => setForceCloseArmed(false), 2000);
+												forceCloseTimerRef.current = setTimeout(
+													() => setForceCloseArmed(false),
+													2000,
+												);
 											}
 										}}
 									>
