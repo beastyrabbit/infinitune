@@ -929,13 +929,23 @@ function AutoplayerPage() {
 									</button>
 									<button
 										type="button"
-										className="text-left text-sm font-bold uppercase text-red-400 hover:text-red-500 py-2"
+										className={`text-left text-sm font-bold uppercase py-2 transition-colors ${
+											forceCloseArmed
+												? "text-red-500 animate-pulse"
+												: "text-red-400 hover:text-red-500"
+										}`}
 										onClick={() => {
-											setMobileMenuOpen(false);
-											handleForceClose();
+											if (forceCloseArmed) {
+												setMobileMenuOpen(false);
+												handleForceClose();
+												setForceCloseArmed(false);
+											} else {
+												setForceCloseArmed(true);
+												setTimeout(() => setForceCloseArmed(false), 2000);
+											}
 										}}
 									>
-										FORCE CLOSE
+										{forceCloseArmed ? "CONFIRM FORCE CLOSE" : "FORCE CLOSE"}
 									</button>
 								</nav>
 							</SheetContent>
