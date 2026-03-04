@@ -5,7 +5,8 @@
 import { API_URL } from "@/lib/endpoints";
 
 export const SHOO_ID_TOKEN_STORAGE_KEY = "infinitune-shoo-id-token";
-const AUTH_GATEWAY_HOST = "pangolin.heerlab.com";
+const AUTH_GATEWAY_HOST =
+	import.meta.env.VITE_AUTH_GATEWAY_HOST ?? "pangolin.heerlab.com";
 
 export function getStoredShooIdToken(): string | null {
 	if (typeof window === "undefined") return null;
@@ -34,7 +35,7 @@ async function extractErrorMessage(
 	fallback: string,
 ): Promise<string> {
 	// redirect: "manual" produces opaque redirect responses for cross-origin 3xx
-	if (res.type === "opaqueredirect" || (res.status === 0 && !res.ok)) {
+	if (res.type === "opaqueredirect") {
 		return `${fallback}: redirected to auth gateway (try refreshing the page)`;
 	}
 
@@ -99,7 +100,7 @@ function isNetworkError(error: unknown): boolean {
 export function isTimeoutError(error: unknown): boolean {
 	if (!(error instanceof Error) || error.name !== "AbortError") return false;
 	const reason = (error as DOMException & { reason?: unknown }).reason;
-	return reason === "timeout" || reason === undefined;
+	return reason === "timeout";
 }
 
 /** Extract a human-readable message from an error. */
