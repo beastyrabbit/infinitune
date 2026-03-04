@@ -16,6 +16,11 @@ import SparklesIcon from "@/components/ui/sparkles-icon";
 import { Textarea } from "@/components/ui/textarea";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import {
+	api,
+	getRequestErrorMessage,
+	isTimeoutError,
+} from "@/integrations/api/client";
+import {
 	useAutoplayerCodexModels,
 	useAutoplayerOllamaModels,
 	useSettings,
@@ -163,54 +168,18 @@ export function PlaylistCreator({
 		}
 	}, [provider, model, textModels, codexTextModels]);
 
-	const createTimeoutController = (timeoutMs: number) => {
-		const controller = new AbortController();
-		const timeout = window.setTimeout(() => {
-			controller.abort("timeout");
-		}, timeoutMs);
-		return { controller, clear: () => window.clearTimeout(timeout) };
-	};
-
-	const postWithTimeout = async <T,>(
-		url: string,
-		payload: Record<string, unknown>,
-		timeoutMs: number,
-	): Promise<T> => {
-		const { controller, clear } = createTimeoutController(timeoutMs);
-		try {
-			const res = await fetch(url, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-				signal: controller.signal,
-			});
-			if (!res.ok) {
-				throw new Error(`Request failed (${res.status})`);
-			}
-			return (await res.json()) as T;
-		} finally {
-			clear();
-		}
-	};
-
-	const isTimeoutError = (error: unknown) =>
-		error instanceof Error && error.name === "AbortError";
-
 	const handleEnhancePrompt = async () => {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
 		setEnhancing(true);
 		setStatusMessage("");
 		try {
-			const data = await postWithTimeout<{
+			const data = await api.post<{
 				result?: string;
 			}>(
 				"/api/autoplayer/enhance-prompt",
-				{
-					prompt: prompt.trim(),
-					provider,
-					model,
-				},
-				DEFAULT_ENHANCE_TIMEOUT_MS,
+				{ prompt: prompt.trim(), provider, model },
+				undefined,
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 			if (data.result) {
 				setPrompt(data.result);
@@ -219,7 +188,7 @@ export function PlaylistCreator({
 			}
 		} catch (error) {
 			if (!isTimeoutError(error)) {
-				// Silently fail — user still has original prompt
+				setStatusMessage(`Enhance failed: ${getRequestErrorMessage(error)}`);
 				return;
 			}
 			setStatusMessage("Enhance timed out; using the original prompt.");
@@ -250,14 +219,11 @@ export function PlaylistCreator({
 		let enhancedParams: EnhancedSessionParams = {};
 
 		try {
-			enhancedParams = await postWithTimeout<EnhancedSessionParams>(
+			enhancedParams = await api.post<EnhancedSessionParams>(
 				"/api/autoplayer/enhance-session",
-				{
-					prompt: prompt.trim(),
-					provider,
-					model,
-				},
-				DEFAULT_ENHANCE_TIMEOUT_MS,
+				{ prompt: prompt.trim(), provider, model },
+				undefined,
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 
 			setLoadingState(">>> INITIALIZING <<<");
@@ -281,12 +247,10 @@ export function PlaylistCreator({
 				inferMethod,
 			};
 		} catch (error) {
-			if (!isTimeoutError(error)) {
-				throw error;
-			}
+			const reason = getRequestErrorMessage(error);
 			setLoadingState(">>> INITIALIZING <<<");
 			setStatusMessage(
-				"Session analysis timed out. Starting playlist with defaults.",
+				`Session analysis failed: ${reason}. Starting with defaults.`,
 			);
 			return {
 				name: roomName.trim() || prompt.trim().slice(0, 50),
