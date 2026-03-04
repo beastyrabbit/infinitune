@@ -32,10 +32,10 @@ FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg tini && \
+    apt-get install -y --no-install-recommends ffmpeg tini ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @openai/codex@0.106.0
+RUN npm install -g @openai/codex@0.107.0
 
 WORKDIR /app
 
