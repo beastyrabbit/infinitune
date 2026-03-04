@@ -92,9 +92,11 @@ function isNetworkError(error: unknown): boolean {
 	);
 }
 
-/** Check whether an error is an AbortError (timeout). */
+/** Check whether an error is a timeout-triggered AbortError (not a caller abort). */
 export function isTimeoutError(error: unknown): boolean {
-	return error instanceof Error && error.name === "AbortError";
+	if (!(error instanceof Error) || error.name !== "AbortError") return false;
+	const reason = (error as DOMException & { reason?: unknown }).reason;
+	return reason === "timeout" || reason === undefined;
 }
 
 /** Extract a human-readable message from an error. */
@@ -118,7 +120,17 @@ async function fetchWithRetry(
 			}
 			// Exponential backoff with jitter: ~500ms, ~1000ms
 			const delay = (attempt + 1) * 500 + Math.random() * 200;
-			await new Promise((r) => setTimeout(r, delay));
+			await new Promise<void>((resolve) => {
+				const backoffTimer = setTimeout(resolve, delay);
+				init.signal?.addEventListener(
+					"abort",
+					() => {
+						clearTimeout(backoffTimer);
+						resolve();
+					},
+					{ once: true },
+				);
+			});
 		}
 	}
 	// Unreachable — the loop always returns or throws
@@ -162,6 +174,7 @@ async function get<T>(
 	options?: ApiRequestOptions,
 ): Promise<T> {
 	const retries = options?.retries ?? 2;
+	// Headers (including Authorization) are captured once before retries.
 	const { init: finalInit, cleanup } = applyTimeout(
 		{
 			...init,
