@@ -38,6 +38,11 @@ import { useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import {
+	api,
+	getRequestErrorMessage,
+	isTimeoutError,
+} from "@/integrations/api/client";
+import {
 	useAutoplayerCodexModels,
 	useAutoplayerOllamaModels,
 	useCreatePlaylist,
@@ -78,39 +83,6 @@ const LANGUAGES = [
 	{ value: "english", label: "ENGLISH" },
 	{ value: "german", label: "GERMAN" },
 ] as const;
-
-const createTimeoutController = (timeoutMs: number) => {
-	const controller = new AbortController();
-	const timeout = window.setTimeout(() => {
-		controller.abort("timeout");
-	}, timeoutMs);
-	return { controller, clear: () => window.clearTimeout(timeout) };
-};
-
-const postWithTimeout = async <T,>(
-	url: string,
-	payload: Record<string, unknown>,
-	timeoutMs: number,
-): Promise<T> => {
-	const { controller, clear } = createTimeoutController(timeoutMs);
-	try {
-		const res = await fetch(url, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-			signal: controller.signal,
-		});
-		if (!res.ok) {
-			throw new Error(`Request failed (${res.status})`);
-		}
-		return (await res.json()) as T;
-	} finally {
-		clear();
-	}
-};
-
-const isTimeoutError = (error: unknown) =>
-	error instanceof Error && error.name === "AbortError";
 
 // ─── Main Component ─────────────────────────────────────────────────
 
@@ -240,12 +212,13 @@ function OneshotPage() {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
 		setEnhancing(true);
 		try {
-			const data = await postWithTimeout<{
+			const data = await api.post<{
 				result?: string;
 			}>(
 				"/api/autoplayer/enhance-prompt",
 				{ prompt: prompt.trim(), provider, model },
-				DEFAULT_ENHANCE_TIMEOUT_MS,
+				undefined,
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
 			);
 			if (data.result) setPrompt(data.result);
 		} catch (error) {
@@ -266,15 +239,16 @@ function OneshotPage() {
 			// Enhance playlist params
 			let playlistParams: Record<string, unknown> = {};
 			try {
-				playlistParams = await postWithTimeout<Record<string, unknown>>(
+				playlistParams = await api.post<Record<string, unknown>>(
 					"/api/autoplayer/enhance-session",
 					{ prompt: prompt.trim(), provider, model },
-					DEFAULT_ENHANCE_TIMEOUT_MS,
+					undefined,
+					{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
 				);
 			} catch (error) {
-				if (!isTimeoutError(error)) {
-					throw error;
-				}
+				console.info(
+					`Oneshot enhance-session failed: ${getRequestErrorMessage(error)}`,
+				);
 			}
 
 			// Merge user overrides with AI params
