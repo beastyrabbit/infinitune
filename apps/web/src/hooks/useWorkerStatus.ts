@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/integrations/api/client";
 
-function formatQueryError(error: Error | null): string | null {
+function formatQueryError(
+	error: Error | null,
+	fallback = "Failed to fetch data",
+): string | null {
 	if (!error) return null;
-	return error.message;
+	return error.message || fallback;
 }
 
 export interface EndpointStatus {
@@ -73,7 +76,10 @@ export function useWorkerStatus(): {
 		staleTime: 2_000,
 	});
 
-	return { status: data ?? null, error: formatQueryError(error) };
+	return {
+		status: data ?? null,
+		error: formatQueryError(error, "Failed to fetch worker status"),
+	};
 }
 
 /** Fetches worker event inspector data via React Query. Polled every 3s (no WS invalidation). */
@@ -90,5 +96,8 @@ export function useWorkerInspect(limit = 100): {
 		staleTime: 1_000,
 	});
 
-	return { inspect: data ?? null, error: formatQueryError(error) };
+	return {
+		inspect: data ?? null,
+		error: formatQueryError(error, "Failed to fetch worker inspection log"),
+	};
 }

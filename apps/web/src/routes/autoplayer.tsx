@@ -163,6 +163,7 @@ function AutoplayerPage() {
 	useEffect(() => {
 		return () => {
 			if (forceCloseTimerRef.current) clearTimeout(forceCloseTimerRef.current);
+			albumAbortRef.current?.abort();
 		};
 	}, []);
 
