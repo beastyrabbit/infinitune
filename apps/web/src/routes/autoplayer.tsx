@@ -811,7 +811,13 @@ function AutoplayerPage() {
 							</button>
 						</nav>
 						{/* Mobile hamburger (< md) */}
-						<Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+						<Sheet
+							open={mobileMenuOpen}
+							onOpenChange={(open) => {
+								setMobileMenuOpen(open);
+								if (!open) setForceCloseArmed(false);
+							}}
+						>
 							<SheetTrigger asChild>
 								<button
 									type="button"

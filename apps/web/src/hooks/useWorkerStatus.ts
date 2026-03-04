@@ -69,7 +69,7 @@ export function useWorkerStatus(): {
 	const { data, error } = useQuery({
 		queryKey: ["worker", "status"],
 		queryFn: () => api.get<WorkerStatus>("/api/worker/status"),
-		refetchInterval: 10_000,
+		refetchInterval: 5_000,
 		staleTime: 2_000,
 	});
 
