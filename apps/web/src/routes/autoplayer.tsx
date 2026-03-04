@@ -75,6 +75,12 @@ interface GeneratedSongMetadata {
 	description: string;
 }
 
+function getEndpointDotClass(status?: EndpointStatus | null): string {
+	if (status?.errors && status.errors > 0) return "bg-red-500";
+	if (status?.active && status.active > 0) return "bg-green-500";
+	return "bg-white/30";
+}
+
 function EndpointDot({
 	label,
 	status,
@@ -82,14 +88,55 @@ function EndpointDot({
 	label: string;
 	status?: EndpointStatus | null;
 }) {
-	let dotClass = "bg-white/30"; // idle/grey
-	if (status?.active && status.active > 0) dotClass = "bg-green-500";
-	if (status?.errors && status.errors > 0) dotClass = "bg-red-500";
 	return (
 		<span className="flex items-center gap-1">
 			{label}:
-			<span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+			<span
+				className={`inline-block h-2 w-2 rounded-full ${getEndpointDotClass(status)}`}
+			/>
 		</span>
+	);
+}
+
+function getAlbumButtonStyle(generating: boolean, enabled: boolean): string {
+	if (generating)
+		return "border-purple-500 bg-purple-500/20 text-purple-300 animate-pulse";
+	if (enabled)
+		return "border-purple-500/60 bg-transparent text-purple-400 hover:bg-purple-500 hover:text-white";
+	return "border-white/20 bg-transparent text-white/30 cursor-not-allowed";
+}
+
+function getAlbumButtonLabel(
+	generating: boolean,
+	progress: { current: number; total: number },
+): string {
+	if (!generating) return "ADD ALBUM";
+	if (progress.current === 0) return "STARTING ALBUM...";
+	return `ALBUM ${progress.current}/${progress.total}`;
+}
+
+function AlbumButton({
+	generating,
+	enabled,
+	progress,
+	onClick,
+}: {
+	generating: boolean;
+	enabled: boolean;
+	progress: { current: number; total: number };
+	onClick: () => void;
+}) {
+	return (
+		<Button
+			className={`flex-1 h-10 rounded-none border-2 font-mono text-xs font-black uppercase transition-colors ${getAlbumButtonStyle(generating, enabled)}`}
+			disabled={!enabled}
+			onClick={onClick}
+		>
+			<Disc3
+				className={`h-3.5 w-3.5 mr-1.5 ${generating ? "animate-spin" : ""}`}
+			/>
+			{getAlbumButtonLabel(generating, progress)}
+		</Button>
 	);
 }
 
@@ -975,32 +1022,14 @@ function AutoplayerPage() {
 					/>
 					{/* Action buttons */}
 					<div className="flex gap-3 px-6 pb-6">
-						{(() => {
-							const albumEnabled =
-								!!currentSongId && !!currentSong?.title && !albumGenerating;
-							return (
-								<Button
-									className={`flex-1 h-10 rounded-none border-2 font-mono text-xs font-black uppercase transition-colors ${
-										albumGenerating
-											? "border-purple-500 bg-purple-500/20 text-purple-300 animate-pulse"
-											: albumEnabled
-												? "border-purple-500/60 bg-transparent text-purple-400 hover:bg-purple-500 hover:text-white"
-												: "border-white/20 bg-transparent text-white/30 cursor-not-allowed"
-									}`}
-									disabled={!albumEnabled}
-									onClick={handleAddAlbum}
-								>
-									<Disc3
-										className={`h-3.5 w-3.5 mr-1.5 ${albumGenerating ? "animate-spin" : ""}`}
-									/>
-									{albumGenerating
-										? albumProgress.current === 0
-											? "STARTING ALBUM..."
-											: `ALBUM ${albumProgress.current}/${albumProgress.total}`
-										: "ADD ALBUM"}
-								</Button>
-							);
-						})()}
+						<AlbumButton
+							generating={albumGenerating}
+							enabled={
+								!!currentSongId && !!currentSong?.title && !albumGenerating
+							}
+							progress={albumProgress}
+							onClick={handleAddAlbum}
+						/>
 						<Button
 							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
 							onClick={handleAddBatch}

@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/integrations/api/client";
 
+function formatQueryError(error: Error | null): string | null {
+	if (!error) return null;
+	return error.message;
+}
+
 export interface EndpointStatus {
 	type: string;
 	pending: number;
@@ -68,16 +73,10 @@ export function useWorkerStatus(): {
 		staleTime: 2_000,
 	});
 
-	return {
-		status: data ?? null,
-		error: error
-			? error instanceof Error
-				? error.message
-				: String(error)
-			: null,
-	};
+	return { status: data ?? null, error: formatQueryError(error) };
 }
 
+/** Fetches worker event inspector data via React Query. Polled every 3s (no WS invalidation). */
 export function useWorkerInspect(limit = 100): {
 	inspect: WorkerInspect | null;
 	error: string | null;
@@ -91,12 +90,5 @@ export function useWorkerInspect(limit = 100): {
 		staleTime: 1_000,
 	});
 
-	return {
-		inspect: data ?? null,
-		error: error
-			? error instanceof Error
-				? error.message
-				: String(error)
-			: null,
-	};
+	return { inspect: data ?? null, error: formatQueryError(error) };
 }
