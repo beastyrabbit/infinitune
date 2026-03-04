@@ -72,7 +72,7 @@ function buildHeaders(
 }
 
 export interface ApiRequestOptions {
-	/** Per-attempt timeout in ms (creates an AbortController internally) */
+	/** Total timeout in ms across all attempts (creates an AbortController internally) */
 	timeoutMs?: number;
 	/** Number of retries on transient network errors. GET defaults to 2, mutations default to 0.
 	 *  Only set retries > 0 on POST/PATCH/DELETE if the endpoint is idempotent. */
