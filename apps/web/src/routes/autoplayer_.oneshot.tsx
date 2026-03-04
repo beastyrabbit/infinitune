@@ -218,7 +218,7 @@ function OneshotPage() {
 				"/api/autoplayer/enhance-prompt",
 				{ prompt: prompt.trim(), provider, model },
 				undefined,
-				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 			if (data.result) setPrompt(data.result);
 		} catch (error) {
@@ -245,7 +245,7 @@ function OneshotPage() {
 					"/api/autoplayer/enhance-session",
 					{ prompt: prompt.trim(), provider, model },
 					undefined,
-					{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
+					{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 				);
 			} catch (error) {
 				console.warn(

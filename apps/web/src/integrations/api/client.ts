@@ -5,6 +5,7 @@
 import { API_URL } from "@/lib/endpoints";
 
 export const SHOO_ID_TOKEN_STORAGE_KEY = "infinitune-shoo-id-token";
+const AUTH_GATEWAY_HOST = "pangolin.heerlab.com";
 
 export function getStoredShooIdToken(): string | null {
 	if (typeof window === "undefined") return null;
@@ -47,7 +48,7 @@ async function extractErrorMessage(
 
 	if (res.status >= 300 && res.status < 400) {
 		const location = res.headers.get("location");
-		if (location?.includes("pangolin.heerlab.com/auth/resource")) {
+		if (location?.includes(`${AUTH_GATEWAY_HOST}/auth/resource`)) {
 			return `${fallback}: redirected to auth gateway (${location})`;
 		}
 		return `${fallback}: redirected (${res.status} ${res.statusText})`;
@@ -135,18 +136,23 @@ function applyTimeout(
 		options.timeoutMs,
 	);
 	// If caller already set a signal, chain them
+	let onExternalAbort: (() => void) | undefined;
 	if (init.signal) {
 		if (init.signal.aborted) {
 			controller.abort(init.signal.reason);
 		} else {
-			init.signal.addEventListener("abort", () =>
-				controller.abort(init.signal?.reason),
-			);
+			onExternalAbort = () => controller.abort(init.signal?.reason);
+			init.signal.addEventListener("abort", onExternalAbort);
 		}
 	}
 	return {
 		init: { ...init, signal: controller.signal },
-		cleanup: () => window.clearTimeout(timer),
+		cleanup: () => {
+			window.clearTimeout(timer);
+			if (onExternalAbort && init.signal) {
+				init.signal.removeEventListener("abort", onExternalAbort);
+			}
+		},
 	};
 }
 

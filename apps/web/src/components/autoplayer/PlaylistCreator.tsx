@@ -179,7 +179,7 @@ export function PlaylistCreator({
 				"/api/autoplayer/enhance-prompt",
 				{ prompt: prompt.trim(), provider, model },
 				undefined,
-				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 			if (data.result) {
 				setPrompt(data.result);
@@ -223,7 +223,7 @@ export function PlaylistCreator({
 				"/api/autoplayer/enhance-session",
 				{ prompt: prompt.trim(), provider, model },
 				undefined,
-				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
+				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 
 			setLoadingState(">>> INITIALIZING <<<");
