@@ -32,6 +32,11 @@ async function extractErrorMessage(
 	res: Response,
 	fallback: string,
 ): Promise<string> {
+	// redirect: "manual" produces opaque redirect responses for cross-origin 3xx
+	if (res.type === "opaqueredirect" || (res.status === 0 && !res.ok)) {
+		return `${fallback}: redirected to auth gateway (try refreshing the page)`;
+	}
+
 	try {
 		const body = (await res.json()) as Record<string, unknown>;
 		if (typeof body.error === "string") return body.error;
@@ -69,7 +74,8 @@ function buildHeaders(
 export interface ApiRequestOptions {
 	/** Per-attempt timeout in ms (creates an AbortController internally) */
 	timeoutMs?: number;
-	/** Number of retries on transient network errors. GET defaults to 2, mutations default to 0. */
+	/** Number of retries on transient network errors. GET defaults to 2, mutations default to 0.
+	 *  Only set retries > 0 on POST/PATCH/DELETE if the endpoint is idempotent. */
 	retries?: number;
 }
 
@@ -101,12 +107,10 @@ async function fetchWithRetry(
 	init: RequestInit,
 	retries: number,
 ): Promise<Response> {
-	let lastError: unknown;
 	for (let attempt = 0; attempt <= retries; attempt++) {
 		try {
 			return await fetch(url, init);
 		} catch (error) {
-			lastError = error;
 			// Only retry on transient network errors, not aborts/timeouts
 			if (!isNetworkError(error) || attempt === retries) {
 				throw error;
@@ -116,7 +120,8 @@ async function fetchWithRetry(
 			await new Promise((r) => setTimeout(r, delay));
 		}
 	}
-	throw lastError;
+	// Unreachable — the loop always returns or throws
+	throw new Error("fetchWithRetry: unexpected end of retry loop");
 }
 
 function applyTimeout(
@@ -131,9 +136,13 @@ function applyTimeout(
 	);
 	// If caller already set a signal, chain them
 	if (init.signal) {
-		init.signal.addEventListener("abort", () =>
-			controller.abort(init.signal?.reason),
-		);
+		if (init.signal.aborted) {
+			controller.abort(init.signal.reason);
+		} else {
+			init.signal.addEventListener("abort", () =>
+				controller.abort(init.signal?.reason),
+			);
+		}
 	}
 	return {
 		init: { ...init, signal: controller.signal },

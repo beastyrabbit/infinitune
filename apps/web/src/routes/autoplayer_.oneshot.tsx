@@ -223,7 +223,9 @@ function OneshotPage() {
 			if (data.result) setPrompt(data.result);
 		} catch (error) {
 			if (!isTimeoutError(error)) {
-				return;
+				console.warn(
+					`Oneshot enhance-prompt failed: ${getRequestErrorMessage(error)}`,
+				);
 			}
 		} finally {
 			setEnhancing(false);
@@ -246,7 +248,7 @@ function OneshotPage() {
 					{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS, retries: 2 },
 				);
 			} catch (error) {
-				console.info(
+				console.warn(
 					`Oneshot enhance-session failed: ${getRequestErrorMessage(error)}`,
 				);
 			}
