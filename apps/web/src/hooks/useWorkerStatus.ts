@@ -60,7 +60,7 @@ export interface WorkerInspect {
 
 /**
  * Fetches worker status via React Query, invalidated by WS events.
- * 10s refetchInterval as safety net fallback.
+ * 5s refetchInterval as safety net fallback.
  */
 export function useWorkerStatus(): {
 	status: WorkerStatus | null;

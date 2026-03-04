@@ -72,7 +72,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<head>
 				<HeadContent />
 			</head>
-			<body className="bg-gray-950 text-white overflow-x-hidden">
+			<body className="bg-gray-950 text-white overflow-x-clip">
 				<ApiProvider>{children}</ApiProvider>
 				<Toaster theme="dark" position="bottom-right" richColors />
 				<Scripts />

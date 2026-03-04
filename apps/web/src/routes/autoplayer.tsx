@@ -829,6 +829,7 @@ function AutoplayerPage() {
 							<SheetContent
 								side="right"
 								className="bg-gray-950 border-white/20 font-mono"
+								aria-describedby={undefined}
 							>
 								<SheetTitle className="text-white text-sm font-black uppercase tracking-wider px-6 pt-6">
 									NAVIGATION
