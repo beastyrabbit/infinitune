@@ -46,6 +46,9 @@ async function extractErrorMessage(
 		// Response body is not JSON
 	}
 
+	// The opaque-redirect check above handles the browser case (status 0).
+	// This block only fires in non-browser contexts (Node.js / undici)
+	// where redirect: "manual" exposes the actual 3xx status and Location header.
 	if (res.status >= 300 && res.status < 400) {
 		const location = res.headers.get("location");
 		if (location?.includes(`${AUTH_GATEWAY_HOST}/auth/resource`)) {
