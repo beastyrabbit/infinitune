@@ -68,11 +68,11 @@ function RootComponent() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en">
+		<html lang="en" className="dark">
 			<head>
 				<HeadContent />
 			</head>
-			<body>
+			<body className="bg-gray-950 text-white overflow-x-hidden">
 				<ApiProvider>{children}</ApiProvider>
 				<Toaster theme="dark" position="bottom-right" richColors />
 				<Scripts />

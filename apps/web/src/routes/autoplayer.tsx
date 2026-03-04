@@ -1,7 +1,7 @@
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
-import { Disc3, Minimize2, Plus, Radio, Zap } from "lucide-react";
+import { Disc3, Menu, Minimize2, Plus, Radio, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
 import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
@@ -16,6 +16,12 @@ import { TrackDetail } from "@/components/autoplayer/TrackDetail";
 import { UpNextBanner } from "@/components/autoplayer/UpNextBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+	Sheet,
+	SheetContent,
+	SheetTitle,
+	SheetTrigger,
+} from "@/components/ui/sheet";
 import VinylIcon from "@/components/ui/vinyl-icon";
 import { useAutoplayer } from "@/hooks/useAutoplayer";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
@@ -100,6 +106,7 @@ function AutoplayerPage() {
 	const deviceName = dn || `autoplayer-${roomRole}`;
 	const [detailSongId, setDetailSongId] = useState<string | null>(null);
 	const [forceCloseArmed, setForceCloseArmed] = useState(false);
+	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
 	const [albumGenerating, setAlbumGenerating] = useState(false);
 	const [albumProgress, setAlbumProgress] = useState({ current: 0, total: 0 });
@@ -647,100 +654,245 @@ function AutoplayerPage() {
 								<>MODE:AUTO | QUEUE:{songs?.length ?? 0}</>
 							)}
 						</span>
-						{isRoomMode && (
+						{/* Desktop nav (md+) */}
+						<nav className="hidden md:flex items-center gap-4">
+							{isRoomMode && (
+								<button
+									type="button"
+									className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500 flex items-center gap-1"
+									onClick={() =>
+										navigate({
+											to: "/autoplayer/mini",
+											search: {
+												room,
+												role: roomRole,
+												pl,
+												name,
+												dn,
+											},
+										})
+									}
+								>
+									<Minimize2 className="h-3.5 w-3.5" />
+									[MINI]
+								</button>
+							)}
 							<button
 								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500 flex items-center gap-1"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
+								onClick={() => navigate({ to: "/rooms" })}
+							>
+								<Radio className="h-3.5 w-3.5" />
+								[HOUSE]
+							</button>
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
+								onClick={() => {
+									stopPlayback();
+									navigate({
+										to: "/autoplayer/oneshot",
+										search: (prev) => prev,
+									});
+								}}
+							>
+								<Zap className="h-3.5 w-3.5" />
+								[ONESHOT]
+							</button>
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
+								onClick={() => {
+									stopPlayback();
+									navigate({
+										to: "/autoplayer/library",
+										search: (prev) => prev,
+									});
+								}}
+							>
+								[LIBRARY]
+							</button>
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500"
 								onClick={() =>
 									navigate({
-										to: "/autoplayer/mini",
-										search: {
-											room,
-											role: roomRole,
-											pl,
-											name,
-											dn,
-										},
+										to: "/autoplayer/queue",
+										search: (prev) => prev,
 									})
 								}
 							>
-								<Minimize2 className="h-3.5 w-3.5" />
-								[MINI]
+								[QUEUE]
 							</button>
-						)}
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
-							onClick={() => navigate({ to: "/rooms" })}
-						>
-							<Radio className="h-3.5 w-3.5" />
-							[HOUSE]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
-							onClick={() => {
-								stopPlayback();
-								navigate({ to: "/autoplayer/oneshot", search: (prev) => prev });
-							}}
-						>
-							<Zap className="h-3.5 w-3.5" />
-							[ONESHOT]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-							onClick={() => {
-								stopPlayback();
-								navigate({ to: "/autoplayer/library", search: (prev) => prev });
-							}}
-						>
-							[LIBRARY]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500"
-							onClick={() =>
-								navigate({ to: "/autoplayer/queue", search: (prev) => prev })
-							}
-						>
-							[QUEUE]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-							onClick={() =>
-								navigate({ to: "/autoplayer/settings", search: (prev) => prev })
-							}
-						>
-							[SETTINGS]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
-							onClick={handleClosePlaylist}
-						>
-							[CLOSE]
-						</button>
-						<button
-							type="button"
-							className={`font-mono text-sm font-bold uppercase transition-colors ${
-								forceCloseArmed
-									? "text-red-500 animate-pulse"
-									: "text-white/60 hover:text-red-500"
-							}`}
-							onClick={() => {
-								if (forceCloseArmed) {
-									handleForceClose();
-									setForceCloseArmed(false);
-								} else {
-									setForceCloseArmed(true);
-									setTimeout(() => setForceCloseArmed(false), 2000);
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
+								onClick={() =>
+									navigate({
+										to: "/autoplayer/settings",
+										search: (prev) => prev,
+									})
 								}
-							}}
-						>
-							{forceCloseArmed ? "[CONFIRM FORCE CLOSE]" : "[FORCE CLOSE]"}
-						</button>
+							>
+								[SETTINGS]
+							</button>
+							<button
+								type="button"
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
+								onClick={handleClosePlaylist}
+							>
+								[CLOSE]
+							</button>
+							<button
+								type="button"
+								className={`font-mono text-sm font-bold uppercase transition-colors ${
+									forceCloseArmed
+										? "text-red-500 animate-pulse"
+										: "text-white/60 hover:text-red-500"
+								}`}
+								onClick={() => {
+									if (forceCloseArmed) {
+										handleForceClose();
+										setForceCloseArmed(false);
+									} else {
+										setForceCloseArmed(true);
+										setTimeout(() => setForceCloseArmed(false), 2000);
+									}
+								}}
+							>
+								{forceCloseArmed ? "[CONFIRM FORCE CLOSE]" : "[FORCE CLOSE]"}
+							</button>
+						</nav>
+						{/* Mobile hamburger (< md) */}
+						<Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+							<SheetTrigger asChild>
+								<button
+									type="button"
+									className="md:hidden font-mono text-white/60 hover:text-white"
+								>
+									<Menu className="h-6 w-6" />
+								</button>
+							</SheetTrigger>
+							<SheetContent
+								side="right"
+								className="bg-gray-950 border-white/20 font-mono"
+							>
+								<SheetTitle className="text-white text-sm font-black uppercase tracking-wider px-6 pt-6">
+									NAVIGATION
+								</SheetTitle>
+								<nav className="flex flex-col gap-1 px-6 pt-4">
+									{isRoomMode && (
+										<button
+											type="button"
+											className="text-left text-sm font-bold uppercase text-white/60 hover:text-cyan-500 py-2 flex items-center gap-2"
+											onClick={() => {
+												setMobileMenuOpen(false);
+												navigate({
+													to: "/autoplayer/mini",
+													search: {
+														room,
+														role: roomRole,
+														pl,
+														name,
+														dn,
+													},
+												});
+											}}
+										>
+											<Minimize2 className="h-3.5 w-3.5" />
+											MINI
+										</button>
+									)}
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-green-500 py-2 flex items-center gap-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											navigate({ to: "/rooms" });
+										}}
+									>
+										<Radio className="h-3.5 w-3.5" />
+										HOUSE
+									</button>
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-yellow-500 py-2 flex items-center gap-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											stopPlayback();
+											navigate({
+												to: "/autoplayer/oneshot",
+												search: (prev) => prev,
+											});
+										}}
+									>
+										<Zap className="h-3.5 w-3.5" />
+										ONESHOT
+									</button>
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-blue-500 py-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											stopPlayback();
+											navigate({
+												to: "/autoplayer/library",
+												search: (prev) => prev,
+											});
+										}}
+									>
+										LIBRARY
+									</button>
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-cyan-500 py-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											navigate({
+												to: "/autoplayer/queue",
+												search: (prev) => prev,
+											});
+										}}
+									>
+										QUEUE
+									</button>
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-red-500 py-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											navigate({
+												to: "/autoplayer/settings",
+												search: (prev) => prev,
+											});
+										}}
+									>
+										SETTINGS
+									</button>
+									<div className="border-t border-white/10 my-2" />
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-yellow-500 py-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											handleClosePlaylist();
+										}}
+									>
+										CLOSE PLAYLIST
+									</button>
+									<button
+										type="button"
+										className="text-left text-sm font-bold uppercase text-red-400 hover:text-red-500 py-2"
+										onClick={() => {
+											setMobileMenuOpen(false);
+											handleForceClose();
+										}}
+									>
+										FORCE CLOSE
+									</button>
+								</nav>
+							</SheetContent>
+						</Sheet>
 					</div>
 				</div>
 			</header>
@@ -914,8 +1066,10 @@ function AutoplayerPage() {
 
 			{/* FOOTER */}
 			<footer className="bg-black px-4 py-2 border-t border-white/10">
-				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
-					<span>{"INFINITUNE V1.0 // INFINITE GENERATIVE MUSIC"}</span>
+				<div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/40 justify-between">
+					<span className="hidden sm:inline">
+						{"INFINITUNE V1.0 // INFINITE GENERATIVE MUSIC"}
+					</span>
 					<span className="flex items-center gap-3">
 						<EndpointDot label="LLM" status={workerStatus?.queues.llm} />
 						<EndpointDot label="IMG" status={workerStatus?.queues.image} />
