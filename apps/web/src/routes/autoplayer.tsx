@@ -821,6 +821,7 @@ function AutoplayerPage() {
 							<SheetTrigger asChild>
 								<button
 									type="button"
+									aria-label="Open navigation menu"
 									className="md:hidden font-mono text-white/60 hover:text-white"
 								>
 									<Menu className="h-6 w-6" />
