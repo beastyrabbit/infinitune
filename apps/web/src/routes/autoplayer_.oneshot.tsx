@@ -37,11 +37,7 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
-import {
-	api,
-	getRequestErrorMessage,
-	isTimeoutError,
-} from "@/integrations/api/client";
+import { api, getRequestErrorMessage } from "@/integrations/api/client";
 import {
 	useAutoplayerCodexModels,
 	useAutoplayerOllamaModels,
@@ -222,11 +218,9 @@ function OneshotPage() {
 			);
 			if (data.result) setPrompt(data.result);
 		} catch (error) {
-			if (!isTimeoutError(error)) {
-				console.warn(
-					`Oneshot enhance-prompt failed: ${getRequestErrorMessage(error)}`,
-				);
-			}
+			console.warn(
+				`Oneshot enhance-prompt failed: ${getRequestErrorMessage(error)}`,
+			);
 		} finally {
 			setEnhancing(false);
 		}
