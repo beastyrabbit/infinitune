@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { API_URL } from "@/lib/endpoints";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/integrations/api/client";
+
+function formatQueryError(
+	error: Error | null,
+	fallback = "Failed to fetch data",
+): string | null {
+	if (!error) return null;
+	return error.message || fallback;
+}
 
 export interface EndpointStatus {
 	type: string;
@@ -53,87 +61,43 @@ export interface WorkerInspect {
 	events: WorkerInspectEvent[];
 }
 
-const POLL_INTERVAL_MS = 2000;
-const INSPECT_POLL_INTERVAL_MS = 3000;
-
 /**
- * Polls the worker HTTP API every 2 seconds for queue status.
+ * Fetches worker status via React Query, invalidated by WS events.
+ * 5s refetchInterval as safety net fallback.
  */
 export function useWorkerStatus(): {
 	status: WorkerStatus | null;
 	error: string | null;
 } {
-	const [status, setStatus] = useState<WorkerStatus | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const { data, error } = useQuery({
+		queryKey: ["worker", "status"],
+		queryFn: () => api.get<WorkerStatus>("/api/worker/status"),
+		refetchInterval: 5_000,
+		staleTime: 2_000,
+	});
 
-	useEffect(() => {
-		const fetchStatus = async () => {
-			try {
-				const res = await fetch(`${API_URL}/api/worker/status`);
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				const data = await res.json();
-				setStatus(data);
-				setError(null);
-			} catch (e: unknown) {
-				setError(
-					e instanceof Error ? e.message : "Failed to fetch worker status",
-				);
-			}
-		};
-
-		fetchStatus();
-		intervalRef.current = setInterval(fetchStatus, POLL_INTERVAL_MS);
-
-		return () => {
-			if (intervalRef.current) {
-				clearInterval(intervalRef.current);
-				intervalRef.current = null;
-			}
-		};
-	}, []);
-
-	return { status, error };
+	return {
+		status: data ?? null,
+		error: formatQueryError(error, "Failed to fetch worker status"),
+	};
 }
 
+/** Fetches worker event inspector data via React Query. Polled every 3s (no WS invalidation). */
 export function useWorkerInspect(limit = 100): {
 	inspect: WorkerInspect | null;
 	error: string | null;
 } {
-	const [inspect, setInspect] = useState<WorkerInspect | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const requestedLimit = limit > 0 ? limit : 100;
+	const { data, error } = useQuery({
+		queryKey: ["worker", "inspect", requestedLimit],
+		queryFn: () =>
+			api.get<WorkerInspect>(`/api/worker/inspect?limit=${requestedLimit}`),
+		refetchInterval: 3_000,
+		staleTime: 1_000,
+	});
 
-	useEffect(() => {
-		const fetchInspect = async () => {
-			try {
-				const res = await fetch(
-					`${API_URL}/api/worker/inspect?limit=${requestedLimit}`,
-				);
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				const data = await res.json();
-				setInspect(data);
-				setError(null);
-			} catch (e: unknown) {
-				setError(
-					e instanceof Error
-						? e.message
-						: "Failed to fetch worker inspection log",
-				);
-			}
-		};
-
-		fetchInspect();
-		intervalRef.current = setInterval(fetchInspect, INSPECT_POLL_INTERVAL_MS);
-
-		return () => {
-			if (intervalRef.current) {
-				clearInterval(intervalRef.current);
-				intervalRef.current = null;
-			}
-		};
-	}, [requestedLimit]);
-
-	return { inspect, error };
+	return {
+		inspect: data ?? null,
+		error: formatQueryError(error, "Failed to fetch worker inspection log"),
+	};
 }

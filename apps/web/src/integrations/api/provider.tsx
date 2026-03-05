@@ -68,6 +68,9 @@ function useWsInvalidation() {
 					queryClient.invalidateQueries({
 						queryKey: ["songs", "all"],
 					});
+					queryClient.invalidateQueries({
+						queryKey: ["worker", "status"],
+					});
 				} else if (routingKey === "playlists") {
 					queryClient.invalidateQueries({
 						queryKey: ["playlists"],
