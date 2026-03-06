@@ -24,6 +24,29 @@ export interface CompletionStats {
 	totalCompleted: number;
 }
 
+export function computeCompletionStats(
+	history: number[],
+	totalCompleted: number,
+): CompletionStats {
+	if (history.length === 0) {
+		return { lastMs: null, avgMs: null, maxMs: null, totalCompleted };
+	}
+	return {
+		lastMs: history[history.length - 1],
+		avgMs: Math.round(history.reduce((a, b) => a + b, 0) / history.length),
+		maxMs: Math.max(...history),
+		totalCompleted,
+	};
+}
+
+/** Record a completion time and keep the history bounded to 20 entries */
+export function recordCompletion(history: number[], durationMs: number): void {
+	history.push(durationMs);
+	if (history.length > 20) {
+		history.shift();
+	}
+}
+
 export interface QueueStatus {
 	type: EndpointType;
 	pending: number;
@@ -131,24 +154,16 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 	}
 
 	getStatus(): QueueStatus {
-		const hist = this.completionHistory;
-		const completionStats: CompletionStats = {
-			lastMs: hist.length > 0 ? hist[hist.length - 1] : null,
-			avgMs:
-				hist.length > 0
-					? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length)
-					: null,
-			maxMs: hist.length > 0 ? Math.max(...hist) : null,
-			totalCompleted: this.totalCompleted,
-		};
-
 		return {
 			type: this.type,
 			pending: this.pending.length,
 			active: this.active.size,
 			errors: this.errorCount,
 			lastErrorMessage: this.lastErrorMessage,
-			completionStats,
+			completionStats: computeCompletionStats(
+				this.completionHistory,
+				this.totalCompleted,
+			),
 			activeItems: [...this.active.values()].map((a) => ({
 				songId: a.songId,
 				startedAt: a.startedAt,
@@ -230,10 +245,7 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 			.execute(abortController.signal)
 			.then((result) => {
 				const processingMs = Date.now() - startedAt;
-				this.completionHistory.push(processingMs);
-				if (this.completionHistory.length > 20) {
-					this.completionHistory.shift();
-				}
+				recordCompletion(this.completionHistory, processingMs);
 				this.totalCompleted++;
 				logger.debug(
 					{

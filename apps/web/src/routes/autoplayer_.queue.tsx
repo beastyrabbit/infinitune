@@ -8,6 +8,7 @@ import {
 	type EndpointStatus,
 	useWorkerInspect,
 	useWorkerStatus,
+	type WorkerInspect,
 	type WorkerStatus,
 } from "@/hooks/useWorkerStatus";
 import { useSongsBatch } from "@/integrations/api/hooks";
@@ -227,14 +228,17 @@ function summarizeInspectEvent(event: unknown): {
 	}
 
 	const payload = event as Record<string, unknown>;
-	const type =
-		typeof payload.type === "string"
-			? payload.type
-			: typeof payload.event === "object" &&
-					payload.event !== null &&
-					typeof (payload.event as Record<string, unknown>).type === "string"
-				? `event:${String((payload.event as Record<string, unknown>).type)}`
-				: "EVENT";
+
+	let type = "EVENT";
+	if (typeof payload.type === "string") {
+		type = payload.type;
+	} else if (
+		typeof payload.event === "object" &&
+		payload.event !== null &&
+		typeof (payload.event as Record<string, unknown>).type === "string"
+	) {
+		type = `event:${String((payload.event as Record<string, unknown>).type)}`;
+	}
 
 	let context = "No context";
 	if (typeof payload.actorRef === "string") {
@@ -254,11 +258,7 @@ function WorkerInspectPanel({
 	inspect,
 	error,
 }: {
-	inspect: {
-		enabled: boolean;
-		maxEvents: number;
-		events: { at: number; event: unknown }[];
-	} | null;
+	inspect: WorkerInspect | null;
 	error: string | null;
 }) {
 	if (error) {
@@ -315,11 +315,11 @@ function WorkerInspectPanel({
 						</div>
 					) : (
 						<div className="text-[11px]">
-							{recentEvents.map((row) => {
+							{recentEvents.map((row, i) => {
 								const info = summarizeInspectEvent(row.event);
 								return (
 									<div
-										key={`${row.at}-${info.context}`}
+										key={`${row.at}-${info.context}-${i}`}
 										className="border-b border-white/5 px-2 py-2 space-y-1"
 									>
 										<div className="text-white/80 font-black uppercase">
@@ -493,24 +493,25 @@ function SongCard({
 	const isPersona = priority !== undefined && priority >= 20000;
 	const isOldEpoch =
 		priority !== undefined && priority >= 5000 && priority < 10000;
-	const borderColor = isActive
-		? isPersona
-			? "border-pink-500/60"
-			: "border-green-500/60"
-		: isPersona
-			? "border-pink-500/20"
-			: isOldEpoch
-				? "border-orange-500/20"
-				: "border-white/10";
-	const bgColor = isActive
-		? isPersona
-			? "bg-pink-950/20"
-			: "bg-green-950/20"
-		: isPersona
-			? "bg-pink-950/10"
-			: isOldEpoch
-				? "bg-orange-950/10"
-				: "bg-white/[0.02]";
+
+	let borderColor: string;
+	let bgColor: string;
+	if (isActive && isPersona) {
+		borderColor = "border-pink-500/60";
+		bgColor = "bg-pink-950/20";
+	} else if (isActive) {
+		borderColor = "border-green-500/60";
+		bgColor = "bg-green-950/20";
+	} else if (isPersona) {
+		borderColor = "border-pink-500/20";
+		bgColor = "bg-pink-950/10";
+	} else if (isOldEpoch) {
+		borderColor = "border-orange-500/20";
+		bgColor = "bg-orange-950/10";
+	} else {
+		borderColor = "border-white/10";
+		bgColor = "bg-white/[0.02]";
+	}
 
 	const decoded = priority !== undefined ? decodePriority(priority) : null;
 
@@ -649,29 +650,26 @@ function EndpointPanel({
 	const hasActivity = status.active > 0;
 	const hasErrors = status.errors > 0;
 
-	const stateLabel = hasActivity
-		? "ACTIVE"
-		: hasErrors
-			? "ERROR"
-			: status.pending > 0
-				? "QUEUED"
-				: "IDLE";
-
-	const stateColor = hasActivity
-		? "text-green-400"
-		: hasErrors
-			? "text-red-400"
-			: status.pending > 0
-				? "text-yellow-500"
-				: "text-white/20";
-
-	const dotColor = hasActivity
-		? "bg-green-500"
-		: hasErrors
-			? "bg-red-500"
-			: status.pending > 0
-				? "bg-yellow-500"
-				: "bg-white/20";
+	let stateLabel: string;
+	let stateColor: string;
+	let dotColor: string;
+	if (hasActivity) {
+		stateLabel = "ACTIVE";
+		stateColor = "text-green-400";
+		dotColor = "bg-green-500";
+	} else if (hasErrors) {
+		stateLabel = "ERROR";
+		stateColor = "text-red-400";
+		dotColor = "bg-red-500";
+	} else if (status.pending > 0) {
+		stateLabel = "QUEUED";
+		stateColor = "text-yellow-500";
+		dotColor = "bg-yellow-500";
+	} else {
+		stateLabel = "IDLE";
+		stateColor = "text-white/20";
+		dotColor = "bg-white/20";
+	}
 
 	const isEmpty =
 		status.activeItems.length === 0 && status.pendingItems.length === 0;
@@ -1133,11 +1131,7 @@ function DeveloperToolsSection({
 }: {
 	actorGraph: WorkerStatus["actorGraph"];
 	songMap: Map<string, SongInfo>;
-	inspect: {
-		enabled: boolean;
-		maxEvents: number;
-		events: { at: number; event: unknown }[];
-	} | null;
+	inspect: WorkerInspect | null;
 	inspectError: string | null;
 }) {
 	const [open, setOpen] = useState(false);

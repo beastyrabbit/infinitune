@@ -1,11 +1,12 @@
 import { createActor, fromCallback } from "xstate";
 import { logger } from "../../logger";
-import type {
-	CompletionStats,
-	IEndpointQueue,
-	QueueRequest,
-	QueueResult,
-	QueueStatus,
+import {
+	computeCompletionStats,
+	type IEndpointQueue,
+	type QueueRequest,
+	type QueueResult,
+	type QueueStatus,
+	recordCompletion,
 } from "../endpoint-queue";
 import { getWorkerInspectObserver } from "./inspection";
 
@@ -20,21 +21,6 @@ interface InternalQueueActiveItem {
 	priority: number;
 	startedAt: number;
 	endpoint?: string;
-}
-
-function computeCompletionStats(
-	history: number[],
-	totalCompleted: number,
-): CompletionStats {
-	return {
-		lastMs: history.length > 0 ? history[history.length - 1] : null,
-		avgMs:
-			history.length > 0
-				? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
-				: null,
-		maxMs: history.length > 0 ? Math.max(...history) : null,
-		totalCompleted,
-	};
 }
 
 const compareQueueItems = <T>(
@@ -118,10 +104,7 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 					try {
 						const result = await item.execute(abortController.signal);
 						const processingMs = Date.now() - startedAt;
-						this.state.completionHistory.push(processingMs);
-						if (this.state.completionHistory.length > 20) {
-							this.state.completionHistory.shift();
-						}
+						recordCompletion(this.state.completionHistory, processingMs);
 						this.state.totalCompleted++;
 						logger.debug(
 							{
@@ -574,10 +557,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								"Audio queue task completed",
 							);
 							const completionMs = Date.now() - slot.submittedAt;
-							this.state.completionHistory.push(completionMs);
-							if (this.state.completionHistory.length > 20) {
-								this.state.completionHistory.shift();
-							}
+							recordCompletion(this.state.completionHistory, completionMs);
 							this.state.totalCompleted++;
 							slot.resolve({
 								result: {
@@ -656,12 +636,6 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 				receive((event) => {
 					switch (event.type) {
 						case "enqueue":
-							if (event.item) {
-								this.state.pending.push(event.item);
-								this.state.pending.sort(compareQueueItems);
-								drain();
-							}
-							break;
 						case "resume":
 							if (event.item) {
 								this.state.pending.push(event.item);
