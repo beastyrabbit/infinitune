@@ -36,7 +36,7 @@ function MiniPlayerPage() {
 						URL
 					</p>
 					<a
-						href="/rooms"
+						href="/house"
 						className="mt-4 inline-block text-sm font-bold uppercase border border-white/30 px-4 py-2 hover:bg-white hover:text-black transition-colors"
 					>
 						Open House Manager

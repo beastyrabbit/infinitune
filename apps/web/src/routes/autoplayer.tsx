@@ -658,7 +658,7 @@ function AutoplayerPage() {
 				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
 				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
 				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
-				onOpenHouse={() => navigate({ to: "/rooms" })}
+				onOpenHouse={() => navigate({ to: "/house" })}
 				onOpenPlaylists={() => navigate({ to: "/autoplayer/playlists" })}
 			/>
 		);
@@ -735,7 +735,7 @@ function AutoplayerPage() {
 							<button
 								type="button"
 								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
-								onClick={() => navigate({ to: "/rooms" })}
+								onClick={() => navigate({ to: "/house" })}
 							>
 								<Radio className="h-3.5 w-3.5" />
 								[HOUSE]
@@ -880,7 +880,7 @@ function AutoplayerPage() {
 										className="text-left text-sm font-bold uppercase text-white/60 hover:text-green-500 py-2 flex items-center gap-2"
 										onClick={() => {
 											setMobileMenuOpen(false);
-											navigate({ to: "/rooms" });
+											navigate({ to: "/house" });
 										}}
 									>
 										<Radio className="h-3.5 w-3.5" />
