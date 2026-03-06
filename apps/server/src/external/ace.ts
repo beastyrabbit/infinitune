@@ -85,6 +85,7 @@ export async function submitToAce(options: {
 	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
 
 	const thinking = aceThinking ?? false;
+	// -1 signals ACE-Step to auto-detect duration from lyrics
 	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
 
 	const payload: Record<string, unknown> = {
@@ -98,7 +99,7 @@ export async function submitToAce(options: {
 		batch_size: 1,
 		inference_steps: inferenceSteps ?? 8,
 		vocal_language: vocalLanguage || "en",
-		use_format: true,
+		use_format: thinking,
 		use_cot_caption: thinking,
 		use_cot_metas: thinking,
 		use_cot_language: thinking,
@@ -182,29 +183,31 @@ export async function batchPollAce(
 		} else if (task.status === 2) {
 			resultMap.set(id, { status: "failed", error: "Audio generation failed" });
 		} else if (task.status === 1) {
+			let resultItems: { file: string }[];
 			try {
-				const resultItems: { file: string }[] = JSON.parse(task.result ?? "[]");
-				if (resultItems.length > 0) {
-					const timeCosts = extractTimeCosts(task);
-					if (timeCosts) {
-						logger.info({ taskId: id, timeCosts }, "ACE time_costs breakdown");
-					}
-					resultMap.set(id, {
-						status: "succeeded",
-						audioPath: resultItems[0].file,
-						result: resultItems[0],
-						timeCosts,
-					});
-				} else {
-					resultMap.set(id, {
-						status: "failed",
-						error: "No audio files in result",
-					});
-				}
+				resultItems = JSON.parse(task.result ?? "[]");
 			} catch {
 				resultMap.set(id, {
 					status: "failed",
 					error: "Failed to parse result JSON",
+				});
+				continue;
+			}
+			if (resultItems.length > 0) {
+				const timeCosts = extractTimeCosts(task);
+				if (timeCosts) {
+					logger.info({ taskId: id, timeCosts }, "ACE time_costs breakdown");
+				}
+				resultMap.set(id, {
+					status: "succeeded",
+					audioPath: resultItems[0].file,
+					result: resultItems[0],
+					timeCosts,
+				});
+			} else {
+				resultMap.set(id, {
+					status: "failed",
+					error: "No audio files in result",
 				});
 			}
 		} else {

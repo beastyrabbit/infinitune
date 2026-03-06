@@ -2,6 +2,23 @@ import { logger } from "../logger";
 import { sqlite } from "./index";
 
 /**
+ * Idempotent ALTER TABLE ADD COLUMN — silently ignores "duplicate column" errors.
+ * Rethrows any other error.
+ */
+function addColumn(table: string, columnDef: string): void {
+	try {
+		sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			const colName = columnDef.split(/\s+/)[0];
+			logger.error({ err }, `Failed to add ${colName} column to ${table}`);
+			throw err;
+		}
+	}
+}
+
+/**
  * Auto-create tables on startup using raw SQL (no migration files needed).
  * Idempotent — safe to call on every startup.
  *
@@ -159,144 +176,23 @@ export function ensureSchema() {
 			ON playlist_device_assignments(is_active);
 	`);
 
-	// Additive column migrations (idempotent — ignores "duplicate column" errors)
-	try {
-		sqlite.exec(
-			"ALTER TABLE playlists ADD COLUMN is_starred INTEGER DEFAULT 0",
-		);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add is_starred column to playlists");
-			throw err;
-		}
-	}
-
+	// Additive column migrations (idempotent — ignores "duplicate column" errors).
 	// SQLite only supports one ADD COLUMN per ALTER TABLE statement.
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_brief TEXT");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add manager_brief column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_plan TEXT");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add manager_plan column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_epoch INTEGER");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add manager_epoch column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN manager_updated_at INTEGER");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error(
-				{ err },
-				"Failed to add manager_updated_at column to playlists",
-			);
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec(
-			"ALTER TABLE playlists ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL",
-		);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add owner_user_id column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec(
-			"ALTER TABLE playlists ADD COLUMN is_temporary INTEGER NOT NULL DEFAULT 0",
-		);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add is_temporary column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN expires_at INTEGER");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add expires_at column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN description TEXT");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add description column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec(
-			"ALTER TABLE playlists ADD COLUMN description_updated_at INTEGER",
-		);
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error(
-				{ err },
-				"Failed to add description_updated_at column to playlists",
-			);
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN ace_thinking INTEGER");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error({ err }, "Failed to add ace_thinking column to playlists");
-			throw err;
-		}
-	}
-
-	try {
-		sqlite.exec("ALTER TABLE playlists ADD COLUMN ace_auto_duration INTEGER");
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("duplicate column name")) {
-			logger.error(
-				{ err },
-				"Failed to add ace_auto_duration column to playlists",
-			);
-			throw err;
-		}
-	}
+	addColumn("playlists", "is_starred INTEGER DEFAULT 0");
+	addColumn("playlists", "manager_brief TEXT");
+	addColumn("playlists", "manager_plan TEXT");
+	addColumn("playlists", "manager_epoch INTEGER");
+	addColumn("playlists", "manager_updated_at INTEGER");
+	addColumn(
+		"playlists",
+		"owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL",
+	);
+	addColumn("playlists", "is_temporary INTEGER NOT NULL DEFAULT 0");
+	addColumn("playlists", "expires_at INTEGER");
+	addColumn("playlists", "description TEXT");
+	addColumn("playlists", "description_updated_at INTEGER");
+	addColumn("playlists", "ace_thinking INTEGER");
+	addColumn("playlists", "ace_auto_duration INTEGER");
 
 	sqlite.exec(`
 		CREATE INDEX IF NOT EXISTS playlists_by_owner_user_id ON playlists(owner_user_id);

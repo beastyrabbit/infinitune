@@ -54,6 +54,7 @@ export async function submitToAce(options: {
 	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
 
 	const thinking = aceThinking ?? false;
+	// -1 signals ACE-Step to auto-detect duration from lyrics
 	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
 
 	const payload: Record<string, unknown> = {
@@ -67,7 +68,7 @@ export async function submitToAce(options: {
 		batch_size: 1,
 		inference_steps: inferenceSteps ?? 8,
 		vocal_language: vocalLanguage || "en",
-		use_format: true,
+		use_format: thinking,
 		use_cot_caption: thinking,
 		use_cot_metas: thinking,
 		use_cot_language: thinking,
