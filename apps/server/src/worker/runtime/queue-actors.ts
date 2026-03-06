@@ -1,10 +1,12 @@
 import { createActor, fromCallback } from "xstate";
 import { logger } from "../../logger";
-import type {
-	IEndpointQueue,
-	QueueRequest,
-	QueueResult,
-	QueueStatus,
+import {
+	computeCompletionStats,
+	type IEndpointQueue,
+	type QueueRequest,
+	type QueueResult,
+	type QueueStatus,
+	recordCompletion,
 } from "../endpoint-queue";
 import { getWorkerInspectObserver } from "./inspection";
 
@@ -53,12 +55,16 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 		maxConcurrency: number;
 		errorCount: number;
 		lastErrorMessage?: string;
+		completionHistory: number[];
+		totalCompleted: number;
 	} = {
 		queueType: "unknown",
 		pending: [],
 		active: new Map(),
 		maxConcurrency: 1,
 		errorCount: 0,
+		completionHistory: [],
+		totalCompleted: 0,
 	};
 
 	constructor(type: "llm" | "image", maxConcurrency: number) {
@@ -98,6 +104,8 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 					try {
 						const result = await item.execute(abortController.signal);
 						const processingMs = Date.now() - startedAt;
+						recordCompletion(this.state.completionHistory, processingMs);
+						this.state.totalCompleted++;
 						logger.debug(
 							{
 								queueType: this.state.queueType,
@@ -278,6 +286,10 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 			active: this.state.active.size,
 			errors: this.state.errorCount,
 			lastErrorMessage: this.state.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.state.completionHistory,
+				this.state.totalCompleted,
+			),
 			activeItems: [...this.state.active.entries()].map(([songId, item]) => ({
 				songId,
 				startedAt: item.startedAt,
@@ -347,6 +359,8 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 		active: null as AudioActiveSlot | null,
 		errorCount: 0,
 		lastErrorMessage: undefined as string | undefined,
+		completionHistory: [] as number[],
+		totalCompleted: 0,
 	};
 	private readonly pollFn: (
 		taskId: string,
@@ -542,6 +556,9 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								"Audio queue task completed",
 							);
+							const completionMs = Date.now() - slot.submittedAt;
+							recordCompletion(this.state.completionHistory, completionMs);
+							this.state.totalCompleted++;
 							slot.resolve({
 								result: {
 									taskId: slot.taskId,
@@ -549,7 +566,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									audioPath: pollResult.audioPath,
 									submitProcessingMs: slot.submitProcessingMs,
 								},
-								processingMs: Date.now() - slot.submittedAt,
+								processingMs: completionMs,
 							});
 							clearSlot();
 						} else if (pollResult.status === "failed") {
@@ -619,12 +636,6 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 				receive((event) => {
 					switch (event.type) {
 						case "enqueue":
-							if (event.item) {
-								this.state.pending.push(event.item);
-								this.state.pending.sort(compareQueueItems);
-								drain();
-							}
-							break;
 						case "resume":
 							if (event.item) {
 								this.state.pending.push(event.item);
@@ -737,6 +748,10 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 			active: this.state.active ? 1 : 0,
 			errors: this.state.errorCount,
 			lastErrorMessage: this.state.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.state.completionHistory,
+				this.state.totalCompleted,
+			),
 			activeItems: this.state.active
 				? [
 						{

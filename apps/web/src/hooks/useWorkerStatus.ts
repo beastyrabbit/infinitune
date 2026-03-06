@@ -9,12 +9,20 @@ function formatQueryError(
 	return error.message || fallback;
 }
 
+export interface CompletionStats {
+	lastMs: number | null;
+	avgMs: number | null;
+	maxMs: number | null;
+	totalCompleted: number;
+}
+
 export interface EndpointStatus {
 	type: string;
 	pending: number;
 	active: number;
 	errors: number;
 	lastErrorMessage?: string;
+	completionStats?: CompletionStats;
 	activeItems: {
 		songId: string;
 		startedAt: number;

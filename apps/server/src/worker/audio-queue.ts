@@ -1,9 +1,11 @@
 import { logger } from "../logger";
-import type {
-	IEndpointQueue,
-	QueueRequest,
-	QueueResult,
-	QueueStatus,
+import {
+	computeCompletionStats,
+	type IEndpointQueue,
+	type QueueRequest,
+	type QueueResult,
+	type QueueStatus,
+	recordCompletion,
 } from "./endpoint-queue";
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -71,6 +73,8 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 
 	private errorCount = 0;
 	private lastErrorMessage?: string;
+	private completionHistory: number[] = [];
+	private totalCompleted = 0;
 
 	constructor(pollFn: AudioQueue["pollFn"]) {
 		this.pollFn = pollFn;
@@ -150,6 +154,8 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 
 			if (result.status === "succeeded") {
 				const processingMs = Date.now() - slot.submittedAt;
+				recordCompletion(this.completionHistory, processingMs);
+				this.totalCompleted++;
 				logger.debug(
 					{
 						queueType: "audio",
@@ -407,6 +413,10 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			active: activeItems.length,
 			errors: this.errorCount,
 			lastErrorMessage: this.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.completionHistory,
+				this.totalCompleted,
+			),
 			activeItems,
 			pendingItems: this.pending.map((p) => ({
 				songId: p.request.songId,

@@ -17,12 +17,43 @@ export interface QueueResult<T> {
 }
 
 // ─── Queue Status ────────────────────────────────────────────────────
+export interface CompletionStats {
+	lastMs: number | null;
+	avgMs: number | null;
+	maxMs: number | null;
+	totalCompleted: number;
+}
+
+export function computeCompletionStats(
+	history: number[],
+	totalCompleted: number,
+): CompletionStats {
+	if (history.length === 0) {
+		return { lastMs: null, avgMs: null, maxMs: null, totalCompleted };
+	}
+	return {
+		lastMs: history[history.length - 1],
+		avgMs: Math.round(history.reduce((a, b) => a + b, 0) / history.length),
+		maxMs: Math.max(...history),
+		totalCompleted,
+	};
+}
+
+/** Record a completion time and keep the history bounded to 20 entries */
+export function recordCompletion(history: number[], durationMs: number): void {
+	history.push(durationMs);
+	if (history.length > 20) {
+		history.shift();
+	}
+}
+
 export interface QueueStatus {
 	type: EndpointType;
 	pending: number;
 	active: number;
 	errors: number;
 	lastErrorMessage?: string;
+	completionStats: CompletionStats;
 	activeItems: {
 		songId: string;
 		startedAt: number;
@@ -74,6 +105,8 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 	private draining = false;
 	private errorCount = 0;
 	private lastErrorMessage?: string;
+	private completionHistory: number[] = [];
+	private totalCompleted = 0;
 
 	constructor(type: EndpointType, maxConcurrency: number) {
 		this.type = type;
@@ -127,6 +160,10 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 			active: this.active.size,
 			errors: this.errorCount,
 			lastErrorMessage: this.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.completionHistory,
+				this.totalCompleted,
+			),
 			activeItems: [...this.active.values()].map((a) => ({
 				songId: a.songId,
 				startedAt: a.startedAt,
@@ -208,6 +245,8 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 			.execute(abortController.signal)
 			.then((result) => {
 				const processingMs = Date.now() - startedAt;
+				recordCompletion(this.completionHistory, processingMs);
+				this.totalCompleted++;
 				logger.debug(
 					{
 						queueType: this.type,
