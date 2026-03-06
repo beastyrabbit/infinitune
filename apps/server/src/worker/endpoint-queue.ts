@@ -17,12 +17,20 @@ export interface QueueResult<T> {
 }
 
 // ─── Queue Status ────────────────────────────────────────────────────
+export interface CompletionStats {
+	lastMs: number | null;
+	avgMs: number | null;
+	maxMs: number | null;
+	totalCompleted: number;
+}
+
 export interface QueueStatus {
 	type: EndpointType;
 	pending: number;
 	active: number;
 	errors: number;
 	lastErrorMessage?: string;
+	completionStats: CompletionStats;
 	activeItems: {
 		songId: string;
 		startedAt: number;
@@ -74,6 +82,8 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 	private draining = false;
 	private errorCount = 0;
 	private lastErrorMessage?: string;
+	private completionHistory: number[] = [];
+	private totalCompleted = 0;
 
 	constructor(type: EndpointType, maxConcurrency: number) {
 		this.type = type;
@@ -121,12 +131,24 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 	}
 
 	getStatus(): QueueStatus {
+		const hist = this.completionHistory;
+		const completionStats: CompletionStats = {
+			lastMs: hist.length > 0 ? hist[hist.length - 1] : null,
+			avgMs:
+				hist.length > 0
+					? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length)
+					: null,
+			maxMs: hist.length > 0 ? Math.max(...hist) : null,
+			totalCompleted: this.totalCompleted,
+		};
+
 		return {
 			type: this.type,
 			pending: this.pending.length,
 			active: this.active.size,
 			errors: this.errorCount,
 			lastErrorMessage: this.lastErrorMessage,
+			completionStats,
 			activeItems: [...this.active.values()].map((a) => ({
 				songId: a.songId,
 				startedAt: a.startedAt,
@@ -208,6 +230,11 @@ export abstract class BaseEndpointQueue<T> implements IEndpointQueue<T> {
 			.execute(abortController.signal)
 			.then((result) => {
 				const processingMs = Date.now() - startedAt;
+				this.completionHistory.push(processingMs);
+				if (this.completionHistory.length > 20) {
+					this.completionHistory.shift();
+				}
+				this.totalCompleted++;
 				logger.debug(
 					{
 						queueType: this.type,

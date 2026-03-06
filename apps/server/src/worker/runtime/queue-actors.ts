@@ -1,6 +1,7 @@
 import { createActor, fromCallback } from "xstate";
 import { logger } from "../../logger";
 import type {
+	CompletionStats,
 	IEndpointQueue,
 	QueueRequest,
 	QueueResult,
@@ -19,6 +20,21 @@ interface InternalQueueActiveItem {
 	priority: number;
 	startedAt: number;
 	endpoint?: string;
+}
+
+function computeCompletionStats(
+	history: number[],
+	totalCompleted: number,
+): CompletionStats {
+	return {
+		lastMs: history.length > 0 ? history[history.length - 1] : null,
+		avgMs:
+			history.length > 0
+				? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
+				: null,
+		maxMs: history.length > 0 ? Math.max(...history) : null,
+		totalCompleted,
+	};
 }
 
 const compareQueueItems = <T>(
@@ -53,12 +69,16 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 		maxConcurrency: number;
 		errorCount: number;
 		lastErrorMessage?: string;
+		completionHistory: number[];
+		totalCompleted: number;
 	} = {
 		queueType: "unknown",
 		pending: [],
 		active: new Map(),
 		maxConcurrency: 1,
 		errorCount: 0,
+		completionHistory: [],
+		totalCompleted: 0,
 	};
 
 	constructor(type: "llm" | "image", maxConcurrency: number) {
@@ -98,6 +118,11 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 					try {
 						const result = await item.execute(abortController.signal);
 						const processingMs = Date.now() - startedAt;
+						this.state.completionHistory.push(processingMs);
+						if (this.state.completionHistory.length > 20) {
+							this.state.completionHistory.shift();
+						}
+						this.state.totalCompleted++;
 						logger.debug(
 							{
 								queueType: this.state.queueType,
@@ -278,6 +303,10 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 			active: this.state.active.size,
 			errors: this.state.errorCount,
 			lastErrorMessage: this.state.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.state.completionHistory,
+				this.state.totalCompleted,
+			),
 			activeItems: [...this.state.active.entries()].map(([songId, item]) => ({
 				songId,
 				startedAt: item.startedAt,
@@ -347,6 +376,8 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 		active: null as AudioActiveSlot | null,
 		errorCount: 0,
 		lastErrorMessage: undefined as string | undefined,
+		completionHistory: [] as number[],
+		totalCompleted: 0,
 	};
 	private readonly pollFn: (
 		taskId: string,
@@ -542,6 +573,12 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								"Audio queue task completed",
 							);
+							const completionMs = Date.now() - slot.submittedAt;
+							this.state.completionHistory.push(completionMs);
+							if (this.state.completionHistory.length > 20) {
+								this.state.completionHistory.shift();
+							}
+							this.state.totalCompleted++;
 							slot.resolve({
 								result: {
 									taskId: slot.taskId,
@@ -549,7 +586,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									audioPath: pollResult.audioPath,
 									submitProcessingMs: slot.submitProcessingMs,
 								},
-								processingMs: Date.now() - slot.submittedAt,
+								processingMs: completionMs,
 							});
 							clearSlot();
 						} else if (pollResult.status === "failed") {
@@ -737,6 +774,10 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 			active: this.state.active ? 1 : 0,
 			errors: this.state.errorCount,
 			lastErrorMessage: this.state.lastErrorMessage,
+			completionStats: computeCompletionStats(
+				this.state.completionHistory,
+				this.state.totalCompleted,
+			),
 			activeItems: this.state.active
 				? [
 						{

@@ -1,5 +1,6 @@
 import { logger } from "../logger";
 import type {
+	CompletionStats,
 	IEndpointQueue,
 	QueueRequest,
 	QueueResult,
@@ -71,6 +72,8 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 
 	private errorCount = 0;
 	private lastErrorMessage?: string;
+	private completionHistory: number[] = [];
+	private totalCompleted = 0;
 
 	constructor(pollFn: AudioQueue["pollFn"]) {
 		this.pollFn = pollFn;
@@ -150,6 +153,11 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 
 			if (result.status === "succeeded") {
 				const processingMs = Date.now() - slot.submittedAt;
+				this.completionHistory.push(processingMs);
+				if (this.completionHistory.length > 20) {
+					this.completionHistory.shift();
+				}
+				this.totalCompleted++;
 				logger.debug(
 					{
 						queueType: "audio",
@@ -401,12 +409,24 @@ export class AudioQueue implements IEndpointQueue<AudioResult> {
 			});
 		}
 
+		const hist = this.completionHistory;
+		const completionStats: CompletionStats = {
+			lastMs: hist.length > 0 ? hist[hist.length - 1] : null,
+			avgMs:
+				hist.length > 0
+					? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length)
+					: null,
+			maxMs: hist.length > 0 ? Math.max(...hist) : null,
+			totalCompleted: this.totalCompleted,
+		};
+
 		return {
 			type: "audio",
 			pending: this.pending.length,
 			active: activeItems.length,
 			errors: this.errorCount,
 			lastErrorMessage: this.lastErrorMessage,
+			completionStats,
 			activeItems,
 			pendingItems: this.pending.map((p) => ({
 				songId: p.request.songId,
