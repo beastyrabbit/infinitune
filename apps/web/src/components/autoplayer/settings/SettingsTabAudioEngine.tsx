@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsField, SettingsPanel } from "./SettingsPanel";
 
@@ -186,6 +187,20 @@ export function SettingsTabAudioEngine({
 					</div>
 				</SettingsField>
 			</SettingsPanel>
+
+			<Button
+				className="w-full h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/60 hover:bg-white/10 hover:text-white"
+				onClick={() => {
+					setAceThinking(false);
+					setAceAutoDuration(true);
+					setInferSteps("8");
+					setLmTemp("0.85");
+					setLmCfg("2.5");
+					setInferMethod("ode");
+				}}
+			>
+				RESET TO DEFAULTS
+			</Button>
 		</div>
 	);
 }
