@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import z from "zod";
 import { MiniPlayer } from "@/components/mini-player/MiniPlayer";
@@ -35,12 +35,12 @@ function MiniPlayerPage() {
 						Add <code className="text-red-400">?room=your-room-id</code> to the
 						URL
 					</p>
-					<a
-						href="/house"
+					<Link
+						to="/house"
 						className="mt-4 inline-block text-sm font-bold uppercase border border-white/30 px-4 py-2 hover:bg-white hover:text-black transition-colors"
 					>
 						Open House Manager
-					</a>
+					</Link>
 				</div>
 			</div>
 		);
