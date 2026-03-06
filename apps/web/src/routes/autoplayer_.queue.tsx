@@ -938,8 +938,8 @@ function ThroughputEndpoint({
 	active: number;
 }) {
 	const eta =
-		stats?.avgMs && pending > 0
-			? (pending * stats.avgMs) / Math.max(1, active)
+		stats?.avgMs && pending > 0 && active > 0
+			? (pending * stats.avgMs) / active
 			: null;
 
 	return (
