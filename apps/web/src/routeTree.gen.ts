@@ -9,8 +9,8 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as RoomsRouteImport } from './routes/rooms'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as HouseRouteImport } from './routes/house'
 import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
@@ -44,14 +44,14 @@ import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.aut
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
 import { Route as ApiAutoplayerAudioSongIdRouteImport } from './routes/api.autoplayer.audio.$songId'
 
-const RoomsRoute = RoomsRouteImport.update({
-  id: '/rooms',
-  path: '/rooms',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HouseRoute = HouseRouteImport.update({
+  id: '/house',
+  path: '/house',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerRoute = AutoplayerRouteImport.update({
@@ -232,8 +232,8 @@ const ApiAutoplayerAudioSongIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
+  '/house': typeof HouseRoute
   '/mcp': typeof McpRoute
-  '/rooms': typeof RoomsRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
@@ -268,8 +268,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
+  '/house': typeof HouseRoute
   '/mcp': typeof McpRoute
-  '/rooms': typeof RoomsRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
@@ -304,8 +304,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
+  '/house': typeof HouseRoute
   '/mcp': typeof McpRoute
-  '/rooms': typeof RoomsRoute
   '/autoplayer_/library': typeof AutoplayerLibraryRoute
   '/autoplayer_/mini': typeof AutoplayerMiniRoute
   '/autoplayer_/oneshot': typeof AutoplayerOneshotRoute
@@ -342,8 +342,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/autoplayer'
+    | '/house'
     | '/mcp'
-    | '/rooms'
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
@@ -378,8 +378,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/autoplayer'
+    | '/house'
     | '/mcp'
-    | '/rooms'
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
@@ -413,8 +413,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/autoplayer'
+    | '/house'
     | '/mcp'
-    | '/rooms'
     | '/autoplayer_/library'
     | '/autoplayer_/mini'
     | '/autoplayer_/oneshot'
@@ -450,8 +450,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AutoplayerRoute: typeof AutoplayerRoute
+  HouseRoute: typeof HouseRoute
   McpRoute: typeof McpRoute
-  RoomsRoute: typeof RoomsRoute
   AutoplayerLibraryRoute: typeof AutoplayerLibraryRoute
   AutoplayerMiniRoute: typeof AutoplayerMiniRoute
   AutoplayerOneshotRoute: typeof AutoplayerOneshotRoute
@@ -480,18 +480,18 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/rooms': {
-      id: '/rooms'
-      path: '/rooms'
-      fullPath: '/rooms'
-      preLoaderRoute: typeof RoomsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/mcp': {
       id: '/mcp'
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/house': {
+      id: '/house'
+      path: '/house'
+      fullPath: '/house'
+      preLoaderRoute: typeof HouseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer': {
@@ -745,8 +745,8 @@ const AutoplayerTestlabRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AutoplayerRoute: AutoplayerRoute,
+  HouseRoute: HouseRoute,
   McpRoute: McpRoute,
-  RoomsRoute: RoomsRoute,
   AutoplayerLibraryRoute: AutoplayerLibraryRoute,
   AutoplayerMiniRoute: AutoplayerMiniRoute,
   AutoplayerOneshotRoute: AutoplayerOneshotRoute,

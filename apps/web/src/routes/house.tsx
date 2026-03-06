@@ -42,7 +42,7 @@ import {
 	useUnassignDeviceFromPlaylist,
 } from "@/integrations/api/hooks";
 
-export const Route = createFileRoute("/rooms")({
+export const Route = createFileRoute("/house")({
 	component: HousePage,
 });
 
