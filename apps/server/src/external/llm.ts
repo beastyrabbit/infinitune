@@ -140,7 +140,7 @@ const FIELD_GUIDANCE_MUSIC_PARAMS = `- bpm: Beats per minute appropriate for the
 - language: Language of the lyrics. e.g. "English", "German", "Mixed (English/Spanish)"
 - description: Short 1-2 sentence music journalist description. Max 200 chars.`;
 
-const FIELD_GUIDANCE_JSON = `JSON OUTPUT: All newlines in lyrics must be escaped as \\n. Output must be valid JSON.`;
+const FIELD_GUIDANCE_JSON = `JSON OUTPUT: Output must be valid JSON. Use native characters (ä, ö, ü, ß, é, ñ, etc.) — never transliterate to ASCII.`;
 
 const FIELD_GUIDANCE_FULL = buildPromptSections([
 	{ name: "contract_intro", content: FIELD_GUIDANCE_INTRO },
@@ -342,7 +342,7 @@ function buildSongSystemPrompt(options: {
 		}),
 		{
 			name: "language_lock",
-			content: `LANGUAGE LOCK (hard): Write ALL lyrics only in ${options.languageLabel}. Ignore conflicting language hints from user prompt or manager guidance. Set the "language" field exactly to "${options.languageLabel}".`,
+			content: `LANGUAGE LOCK (hard): Write ALL lyrics only in ${options.languageLabel}. Use native characters (e.g. ä, ö, ü, ß for German) — never transliterate to ASCII (e.g. never write "spaet" instead of "spät"). Ignore conflicting language hints from user prompt or manager guidance. Set the "language" field exactly to "${options.languageLabel}".`,
 		},
 		{
 			name: "target_key",
