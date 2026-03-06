@@ -615,6 +615,8 @@ export const useCreatePlaylist = createMutation<
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceThinking?: boolean;
+		aceAutoDuration?: boolean;
 	},
 	Playlist
 >((args) => api.post<Playlist>("/api/playlists", args), [["playlists"]]);

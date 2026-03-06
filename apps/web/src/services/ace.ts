@@ -25,6 +25,8 @@ export async function submitToAce(options: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceThinking?: boolean;
+	aceAutoDuration?: boolean;
 	signal?: AbortSignal;
 }): Promise<AceSubmitResult> {
 	const {
@@ -41,6 +43,8 @@ export async function submitToAce(options: {
 		lmTemperature,
 		lmCfgScale,
 		inferMethod,
+		aceThinking,
+		aceAutoDuration,
 		signal,
 	} = options;
 
@@ -49,21 +53,25 @@ export async function submitToAce(options: {
 
 	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
 
+	const thinking = aceThinking ?? false;
+	// -1 signals ACE-Step to auto-detect duration from lyrics
+	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
+
 	const payload: Record<string, unknown> = {
 		prompt: fullPrompt,
 		lyrics,
 		bpm,
 		key_scale: keyScale,
 		time_signature: timeSignature,
-		audio_duration: audioDuration,
-		thinking: true,
+		audio_duration: effectiveDuration,
+		thinking,
 		batch_size: 1,
 		inference_steps: inferenceSteps ?? 8,
 		vocal_language: vocalLanguage || "en",
-		use_format: true,
-		use_cot_caption: true,
-		use_cot_metas: true,
-		use_cot_language: true,
+		use_format: thinking,
+		use_cot_caption: thinking,
+		use_cot_metas: thinking,
+		use_cot_language: thinking,
 		constrained_decoding: true,
 		lm_temperature: lmTemperature ?? 0.85,
 		lm_cfg_scale: lmCfgScale ?? 2.5,

@@ -992,6 +992,8 @@ export class SongWorker {
 							lmTemperature: this.ctx.playlist.lmTemperature ?? undefined,
 							lmCfgScale: this.ctx.playlist.lmCfgScale ?? undefined,
 							inferMethod: this.ctx.playlist.inferMethod ?? undefined,
+							aceThinking: this.ctx.playlist.aceThinking ?? undefined,
+							aceAutoDuration: this.ctx.playlist.aceAutoDuration ?? undefined,
 							signal,
 						});
 

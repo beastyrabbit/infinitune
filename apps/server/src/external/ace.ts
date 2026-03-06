@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { getServiceUrls } from "./service-urls";
 
 async function assertOk(response: Response, label: string): Promise<void> {
@@ -18,6 +19,7 @@ export interface AcePollResult {
 	audioPath?: string;
 	error?: string;
 	result?: unknown;
+	timeCosts?: Record<string, number>;
 }
 
 /** Raw task shape returned by the ACE-Step /query_result endpoint */
@@ -25,6 +27,19 @@ interface AceRawTask {
 	task_id: string;
 	status: number;
 	result?: string;
+	extra_outputs?: Record<string, unknown>;
+}
+
+function extractTimeCosts(
+	task: AceRawTask,
+): Record<string, number> | undefined {
+	const raw = task.extra_outputs?.time_costs;
+	if (!raw || typeof raw !== "object") return undefined;
+	const costs: Record<string, number> = {};
+	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (typeof value === "number") costs[key] = value;
+	}
+	return Object.keys(costs).length > 0 ? costs : undefined;
 }
 
 export async function submitToAce(options: {
@@ -41,6 +56,8 @@ export async function submitToAce(options: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceThinking?: boolean;
+	aceAutoDuration?: boolean;
 	signal?: AbortSignal;
 }): Promise<AceSubmitResult> {
 	const {
@@ -57,6 +74,8 @@ export async function submitToAce(options: {
 		lmTemperature,
 		lmCfgScale,
 		inferMethod,
+		aceThinking,
+		aceAutoDuration,
 		signal,
 	} = options;
 
@@ -65,21 +84,25 @@ export async function submitToAce(options: {
 
 	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
 
+	const thinking = aceThinking ?? false;
+	// -1 signals ACE-Step to auto-detect duration from lyrics
+	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
+
 	const payload: Record<string, unknown> = {
 		prompt: fullPrompt,
 		lyrics,
 		bpm,
 		key_scale: keyScale,
 		time_signature: timeSignature,
-		audio_duration: audioDuration,
-		thinking: true,
+		audio_duration: effectiveDuration,
+		thinking,
 		batch_size: 1,
 		inference_steps: inferenceSteps ?? 8,
 		vocal_language: vocalLanguage || "en",
-		use_format: true,
-		use_cot_caption: true,
-		use_cot_metas: true,
-		use_cot_language: true,
+		use_format: thinking,
+		use_cot_caption: thinking,
+		use_cot_metas: thinking,
+		use_cot_language: thinking,
 		constrained_decoding: true,
 		lm_temperature: lmTemperature ?? 0.85,
 		lm_cfg_scale: lmCfgScale ?? 2.5,
@@ -160,24 +183,31 @@ export async function batchPollAce(
 		} else if (task.status === 2) {
 			resultMap.set(id, { status: "failed", error: "Audio generation failed" });
 		} else if (task.status === 1) {
+			let resultItems: { file: string }[];
 			try {
-				const resultItems: { file: string }[] = JSON.parse(task.result ?? "[]");
-				if (resultItems.length > 0) {
-					resultMap.set(id, {
-						status: "succeeded",
-						audioPath: resultItems[0].file,
-						result: resultItems[0],
-					});
-				} else {
-					resultMap.set(id, {
-						status: "failed",
-						error: "No audio files in result",
-					});
-				}
+				resultItems = JSON.parse(task.result ?? "[]");
 			} catch {
 				resultMap.set(id, {
 					status: "failed",
 					error: "Failed to parse result JSON",
+				});
+				continue;
+			}
+			if (resultItems.length > 0) {
+				const timeCosts = extractTimeCosts(task);
+				if (timeCosts) {
+					logger.info({ taskId: id, timeCosts }, "ACE time_costs breakdown");
+				}
+				resultMap.set(id, {
+					status: "succeeded",
+					audioPath: resultItems[0].file,
+					result: resultItems[0],
+					timeCosts,
+				});
+			} else {
+				resultMap.set(id, {
+					status: "failed",
+					error: "No audio files in result",
 				});
 			}
 		} else {
@@ -233,10 +263,15 @@ export async function pollAce(
 		}
 
 		const firstResult = resultItems[0];
+		const timeCosts = extractTimeCosts(task);
+		if (timeCosts) {
+			logger.info({ taskId, timeCosts }, "ACE time_costs breakdown");
+		}
 		return {
 			status: "succeeded",
 			audioPath: firstResult.file,
 			result: firstResult,
+			timeCosts,
 		};
 	}
 

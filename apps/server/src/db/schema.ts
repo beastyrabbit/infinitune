@@ -72,6 +72,8 @@ export const playlists = sqliteTable(
 			.notNull()
 			.default(false),
 		expiresAt: integer("expires_at", { mode: "number" }),
+		aceThinking: integer("ace_thinking", { mode: "boolean" }),
+		aceAutoDuration: integer("ace_auto_duration", { mode: "boolean" }),
 		description: text("description"),
 		descriptionUpdatedAt: integer("description_updated_at", {
 			mode: "number",

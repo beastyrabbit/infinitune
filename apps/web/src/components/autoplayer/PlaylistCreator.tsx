@@ -52,6 +52,8 @@ interface PlaylistCreatorProps {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceThinking?: boolean;
+		aceAutoDuration?: boolean;
 	}) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
@@ -72,6 +74,8 @@ interface PlaylistCreatorProps {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceThinking?: boolean;
+		aceAutoDuration?: boolean;
 	}) => void;
 }
 
@@ -216,6 +220,8 @@ export function PlaylistCreator({
 			? Number.parseFloat(settings.aceLmCfgScale)
 			: undefined;
 		const inferMethod = settings?.aceInferMethod || undefined;
+		const aceThinking = settings?.aceThinking === "true";
+		const aceAutoDuration = settings?.aceAutoDuration !== "false";
 		let enhancedParams: EnhancedSessionParams = {};
 
 		try {
@@ -245,6 +251,8 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
+				aceThinking,
+				aceAutoDuration,
 			};
 		} catch (error) {
 			const reason = getRequestErrorMessage(error);
@@ -262,6 +270,8 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
+				aceThinking,
+				aceAutoDuration,
 			};
 		}
 	};

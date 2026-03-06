@@ -82,6 +82,8 @@ function SettingsPage() {
 	const [lmTemp, setLmTemp] = useState("0.85");
 	const [lmCfg, setLmCfg] = useState("2.5");
 	const [inferMethod, setInferMethod] = useState("ode");
+	const [aceThinking, setAceThinking] = useState(false);
+	const [aceAutoDuration, setAceAutoDuration] = useState(true);
 
 	// Service URLs
 	const [ollamaUrl, setOllamaUrl] = useState("http://192.168.10.120:11434");
@@ -197,11 +199,15 @@ function SettingsPage() {
 			setInferMethod(
 				activePlaylist.inferMethod || settings.aceInferMethod || "ode",
 			);
+			setAceThinking(activePlaylist.aceThinking ?? false);
+			setAceAutoDuration(activePlaylist.aceAutoDuration ?? true);
 		} else {
 			setInferSteps(settings.aceInferenceSteps || "8");
 			setLmTemp(settings.aceLmTemperature || "0.85");
 			setLmCfg(settings.aceLmCfgScale || "2.5");
 			setInferMethod(settings.aceInferMethod || "ode");
+			setAceThinking(settings.aceThinking === "true");
+			setAceAutoDuration(settings.aceAutoDuration !== "false");
 		}
 	}, [settings, activePlaylist]);
 
@@ -383,6 +389,8 @@ function SettingsPage() {
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
 			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
 			setSetting({ key: "aceInferMethod", value: inferMethod }),
+			setSetting({ key: "aceThinking", value: String(aceThinking) }),
+			setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
 		];
 
 		if (activePlaylist) {
@@ -395,6 +403,8 @@ function SettingsPage() {
 					lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
 					lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 					inferMethod: inferMethod || undefined,
+					aceThinking,
+					aceAutoDuration,
 				}),
 			);
 		}
@@ -548,6 +558,10 @@ function SettingsPage() {
 								setLmCfg={setLmCfg}
 								inferMethod={inferMethod}
 								setInferMethod={setInferMethod}
+								aceThinking={aceThinking}
+								setAceThinking={setAceThinking}
+								aceAutoDuration={aceAutoDuration}
+								setAceAutoDuration={setAceAutoDuration}
 								activePlaylist={!!activePlaylist}
 							/>
 						)}

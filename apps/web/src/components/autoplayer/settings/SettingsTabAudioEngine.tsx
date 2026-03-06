@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsField, SettingsPanel } from "./SettingsPanel";
 
@@ -10,11 +11,51 @@ export interface AudioEngineTabProps {
 	setLmCfg: (v: string) => void;
 	inferMethod: string;
 	setInferMethod: (v: string) => void;
+	aceThinking: boolean;
+	setAceThinking: (v: boolean) => void;
+	aceAutoDuration: boolean;
+	setAceAutoDuration: (v: boolean) => void;
 	activePlaylist: boolean;
 }
 
 const inputClass =
 	"h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0";
+
+interface ToggleOption<T> {
+	label: string;
+	value: T;
+}
+
+function ToggleButtons<T>({
+	options,
+	value,
+	onChange,
+}: {
+	options: [ToggleOption<T>, ToggleOption<T>];
+	value: T;
+	onChange: (v: T) => void;
+}): React.ReactElement {
+	return (
+		<div className="flex gap-0">
+			{options.map((option, i) => (
+				<button
+					key={option.label}
+					type="button"
+					className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+						i > 0 ? "border-l-0" : ""
+					} ${
+						value === option.value
+							? "bg-white text-black"
+							: "bg-transparent text-white hover:bg-white/10"
+					}`}
+					onClick={() => onChange(option.value)}
+				>
+					{option.label}
+				</button>
+			))}
+		</div>
+	);
+}
 
 export function SettingsTabAudioEngine({
 	inferSteps,
@@ -25,6 +66,10 @@ export function SettingsTabAudioEngine({
 	setLmCfg,
 	inferMethod,
 	setInferMethod,
+	aceThinking,
+	setAceThinking,
+	aceAutoDuration,
+	setAceAutoDuration,
 	activePlaylist,
 }: AudioEngineTabProps) {
 	return (
@@ -39,7 +84,34 @@ export function SettingsTabAudioEngine({
 					) : undefined
 				}
 			>
-				{/* Inference Steps */}
+				<SettingsField
+					label="ACE Thinking"
+					hint="ON = ACE REWRITES CAPTION INTERNALLY, OFF = FASTER, USES LLM OUTPUT AS-IS"
+				>
+					<ToggleButtons
+						options={[
+							{ label: "OFF (FASTER)", value: false },
+							{ label: "ON", value: true },
+						]}
+						value={aceThinking}
+						onChange={setAceThinking}
+					/>
+				</SettingsField>
+
+				<SettingsField
+					label="Auto Duration"
+					hint="ON = ACE DECIDES SONG LENGTH FROM LYRICS, OFF = USE LLM-SPECIFIED DURATION"
+				>
+					<ToggleButtons
+						options={[
+							{ label: "AUTO (RECOMMENDED)", value: true },
+							{ label: "FIXED", value: false },
+						]}
+						value={aceAutoDuration}
+						onChange={setAceAutoDuration}
+					/>
+				</SettingsField>
+
 				<SettingsField
 					label="Inference Steps"
 					hint="4-16 — HIGHER = BETTER QUALITY, SLOWER"
@@ -55,7 +127,6 @@ export function SettingsTabAudioEngine({
 					/>
 				</SettingsField>
 
-				{/* LM Temperature + CFG Scale — side by side */}
 				<div className="grid grid-cols-2 gap-3">
 					<SettingsField
 						label="LM Temperature"
@@ -88,34 +159,31 @@ export function SettingsTabAudioEngine({
 					</SettingsField>
 				</div>
 
-				{/* Diffusion Method */}
 				<SettingsField label="Diffusion Method">
-					<div className="flex gap-0">
-						<button
-							type="button"
-							className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-								inferMethod === "ode"
-									? "bg-white text-black"
-									: "bg-transparent text-white hover:bg-white/10"
-							}`}
-							onClick={() => setInferMethod("ode")}
-						>
-							ODE (FASTER)
-						</button>
-						<button
-							type="button"
-							className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-								inferMethod === "sde"
-									? "bg-white text-black"
-									: "bg-transparent text-white hover:bg-white/10"
-							}`}
-							onClick={() => setInferMethod("sde")}
-						>
-							SDE (STOCHASTIC)
-						</button>
-					</div>
+					<ToggleButtons
+						options={[
+							{ label: "ODE (FASTER)", value: "ode" },
+							{ label: "SDE (STOCHASTIC)", value: "sde" },
+						]}
+						value={inferMethod}
+						onChange={setInferMethod}
+					/>
 				</SettingsField>
 			</SettingsPanel>
+
+			<Button
+				className="w-full h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/60 hover:bg-white/10 hover:text-white"
+				onClick={() => {
+					setAceThinking(false);
+					setAceAutoDuration(true);
+					setInferSteps("8");
+					setLmTemp("0.85");
+					setLmCfg("2.5");
+					setInferMethod("ode");
+				}}
+			>
+				RESET TO DEFAULTS
+			</Button>
 		</div>
 	);
 }
