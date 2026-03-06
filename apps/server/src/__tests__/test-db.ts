@@ -56,6 +56,8 @@ const SCHEMA_SQL = `
 		owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
 		is_temporary INTEGER NOT NULL DEFAULT 0,
 		expires_at INTEGER,
+		ace_thinking INTEGER,
+		ace_auto_duration INTEGER,
 		description TEXT,
 		description_updated_at INTEGER
 	);

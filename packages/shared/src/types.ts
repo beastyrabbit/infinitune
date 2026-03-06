@@ -158,6 +158,8 @@ export interface Playlist {
 	ownerUserId: string | null;
 	isTemporary: boolean;
 	expiresAt: number | null;
+	aceThinking: boolean | null;
+	aceAutoDuration: boolean | null;
 	description: string | null;
 	descriptionUpdatedAt: number | null;
 }

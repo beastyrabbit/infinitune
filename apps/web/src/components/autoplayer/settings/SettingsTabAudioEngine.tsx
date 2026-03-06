@@ -10,6 +10,10 @@ export interface AudioEngineTabProps {
 	setLmCfg: (v: string) => void;
 	inferMethod: string;
 	setInferMethod: (v: string) => void;
+	aceThinking: boolean;
+	setAceThinking: (v: boolean) => void;
+	aceAutoDuration: boolean;
+	setAceAutoDuration: (v: boolean) => void;
 	activePlaylist: boolean;
 }
 
@@ -25,6 +29,10 @@ export function SettingsTabAudioEngine({
 	setLmCfg,
 	inferMethod,
 	setInferMethod,
+	aceThinking,
+	setAceThinking,
+	aceAutoDuration,
+	setAceAutoDuration,
 	activePlaylist,
 }: AudioEngineTabProps) {
 	return (
@@ -39,6 +47,68 @@ export function SettingsTabAudioEngine({
 					) : undefined
 				}
 			>
+				{/* ACE Thinking toggle */}
+				<SettingsField
+					label="ACE Thinking"
+					hint="ON = ACE REWRITES CAPTION INTERNALLY, OFF = FASTER, USES LLM OUTPUT AS-IS"
+				>
+					<div className="flex gap-0">
+						<button
+							type="button"
+							className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+								!aceThinking
+									? "bg-white text-black"
+									: "bg-transparent text-white hover:bg-white/10"
+							}`}
+							onClick={() => setAceThinking(false)}
+						>
+							OFF (FASTER)
+						</button>
+						<button
+							type="button"
+							className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+								aceThinking
+									? "bg-white text-black"
+									: "bg-transparent text-white hover:bg-white/10"
+							}`}
+							onClick={() => setAceThinking(true)}
+						>
+							ON
+						</button>
+					</div>
+				</SettingsField>
+
+				{/* ACE Auto Duration toggle */}
+				<SettingsField
+					label="Auto Duration"
+					hint="ON = ACE DECIDES SONG LENGTH FROM LYRICS, OFF = USE LLM-SPECIFIED DURATION"
+				>
+					<div className="flex gap-0">
+						<button
+							type="button"
+							className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+								aceAutoDuration
+									? "bg-white text-black"
+									: "bg-transparent text-white hover:bg-white/10"
+							}`}
+							onClick={() => setAceAutoDuration(true)}
+						>
+							AUTO (RECOMMENDED)
+						</button>
+						<button
+							type="button"
+							className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+								!aceAutoDuration
+									? "bg-white text-black"
+									: "bg-transparent text-white hover:bg-white/10"
+							}`}
+							onClick={() => setAceAutoDuration(false)}
+						>
+							FIXED
+						</button>
+					</div>
+				</SettingsField>
+
 				{/* Inference Steps */}
 				<SettingsField
 					label="Inference Steps"

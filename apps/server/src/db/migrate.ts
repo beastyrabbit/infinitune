@@ -275,6 +275,29 @@ export function ensureSchema() {
 		}
 	}
 
+	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN ace_thinking INTEGER");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error({ err }, "Failed to add ace_thinking column to playlists");
+			throw err;
+		}
+	}
+
+	try {
+		sqlite.exec("ALTER TABLE playlists ADD COLUMN ace_auto_duration INTEGER");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (!msg.includes("duplicate column name")) {
+			logger.error(
+				{ err },
+				"Failed to add ace_auto_duration column to playlists",
+			);
+			throw err;
+		}
+	}
+
 	sqlite.exec(`
 		CREATE INDEX IF NOT EXISTS playlists_by_owner_user_id ON playlists(owner_user_id);
 		CREATE INDEX IF NOT EXISTS playlists_by_is_temporary ON playlists(is_temporary);

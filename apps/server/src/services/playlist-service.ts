@@ -83,6 +83,8 @@ export async function create(data: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceThinking?: boolean;
+	aceAutoDuration?: boolean;
 	ownerUserId?: string;
 	isTemporary?: boolean;
 	expiresAt?: number;
@@ -109,6 +111,8 @@ export async function create(data: {
 			lmTemperature: data.lmTemperature,
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
+			aceThinking: data.aceThinking,
+			aceAutoDuration: data.aceAutoDuration,
 			ownerUserId: data.ownerUserId,
 			isTemporary: data.isTemporary ?? false,
 			expiresAt: data.expiresAt,
@@ -142,6 +146,8 @@ export async function updateParams(
 		"lmTemperature",
 		"lmCfgScale",
 		"inferMethod",
+		"aceThinking",
+		"aceAutoDuration",
 	];
 
 	const patch: Record<string, unknown> = {};
@@ -238,6 +244,8 @@ export async function resetDefaults(id: string) {
 			lmTemperature: null,
 			lmCfgScale: null,
 			inferMethod: null,
+			aceThinking: null,
+			aceAutoDuration: null,
 			managerBrief: null,
 			managerPlan: null,
 			managerEpoch: null,

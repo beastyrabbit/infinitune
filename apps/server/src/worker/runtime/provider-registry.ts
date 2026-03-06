@@ -153,6 +153,8 @@ async function submitAudioWithProvider(
 		lmTemperature: input.lmTemperature,
 		lmCfgScale: input.lmCfgScale,
 		inferMethod: input.inferMethod,
+		aceThinking: input.aceThinking,
+		aceAutoDuration: input.aceAutoDuration,
 		signal: input.signal,
 	});
 }

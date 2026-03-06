@@ -292,6 +292,8 @@ function AutoplayerPage() {
 			lmTemperature?: number;
 			lmCfgScale?: number;
 			inferMethod?: string;
+			aceThinking?: boolean;
+			aceAutoDuration?: boolean;
 		}): Promise<{ key: string; playlistId: string; playlistName: string }> => {
 			const key = generatePlaylistKey();
 			const created = await createPlaylist({
@@ -309,6 +311,8 @@ function AutoplayerPage() {
 				lmTemperature: data.lmTemperature,
 				lmCfgScale: data.lmCfgScale,
 				inferMethod: data.inferMethod,
+				aceThinking: data.aceThinking,
+				aceAutoDuration: data.aceAutoDuration,
 			});
 			return {
 				key,

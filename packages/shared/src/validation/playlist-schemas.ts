@@ -19,6 +19,8 @@ export const CreatePlaylistSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).optional(),
 	lmCfgScale: z.number().min(0).max(20).optional(),
 	inferMethod: z.string().optional(),
+	aceThinking: z.boolean().optional(),
+	aceAutoDuration: z.boolean().optional(),
 	ownerUserId: z.string().optional(),
 	isTemporary: z.boolean().optional(),
 	expiresAt: z.number().optional(),
@@ -53,6 +55,8 @@ export const UpdatePlaylistParamsSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).nullable().optional(),
 	lmCfgScale: z.number().min(0).max(20).nullable().optional(),
 	inferMethod: z.string().nullable().optional(),
+	aceThinking: z.boolean().nullable().optional(),
+	aceAutoDuration: z.boolean().nullable().optional(),
 });
 
 /** Schema for setting a key-value setting */

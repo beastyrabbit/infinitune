@@ -222,6 +222,8 @@ export interface ProviderTaskPorts {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceThinking?: boolean;
+		aceAutoDuration?: boolean;
 		signal?: AbortSignal;
 	};
 	pollAudio: {
