@@ -11,7 +11,7 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 ```bash
 # Development
 pnpm dev:all          # Web + server (2 processes, recommended)
-pnpm dev              # Vite dev server on :5173
+pnpm dev              # Vite dev server on :3000
 pnpm server           # Unified backend on :5175 (API + worker + rooms)
 pnpm infi --help      # Terminal daemon/controller CLI
 
@@ -155,7 +155,7 @@ Zod schemas for all mutation endpoints in `song-schemas.ts` and `playlist-schema
 
 ## Ports
 
-Vite dev server on 5173, unified server on 5175 (registered in `/home/beasty/projects/.ports`).
+Vite dev server on 3000, unified server on 5175 (registered in `/home/beasty/projects/.ports`).
 
 ## Commit Discipline
 
@@ -170,6 +170,7 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - **Zod imports**: `import z from "zod"` (default import — Zod 4, not `{ z }`)
 - **Drizzle imports**: Import operators individually: `import { eq, and, or, inArray, isNotNull, desc, sql } from "drizzle-orm"`
 - **Route files**: `autoplayer.tsx` is the main player; `autoplayer_.*.tsx` are nested routes (underscore = layout escape)
+- **Route codegen**: After renaming/adding route files, regenerate: `cd apps/web && npx @tanstack/router-cli generate` (must run from `apps/web/`, not repo root). `pnpm dev` also triggers it automatically.
 
 ## File Locations
 
