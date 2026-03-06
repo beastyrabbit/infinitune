@@ -760,7 +760,7 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 		genre: raw.genre?.trim() || "Electronic",
 		subGenre: raw.subGenre?.trim() || "Ambient",
 		vocalStyle: raw.vocalStyle?.trim() || "female smooth vocal",
-		lyrics: raw.lyrics?.trim() || "[Instrumental]",
+		lyrics: (raw.lyrics?.trim() || "[Instrumental]").replace(/\\n/g, "\n"),
 		caption:
 			raw.caption?.trim() ||
 			"ambient electronic, soft pads, gentle beat, dreamy atmosphere",
