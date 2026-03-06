@@ -35,7 +35,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg tini ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @openai/codex@0.107.0
+RUN npm install -g @openai/codex@0.111.0
 
 WORKDIR /app
 
