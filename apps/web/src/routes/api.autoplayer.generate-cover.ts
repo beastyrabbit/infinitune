@@ -29,6 +29,19 @@ export const Route = createFileRoute("/api/autoplayer/generate-cover")({
 						);
 					}
 					const cover = await createPreviewCover(result);
+					if (!cover) {
+						return new Response(
+							JSON.stringify({
+								error:
+									"Cover conversion failed (check ImageMagick availability)",
+								cover: null,
+							}),
+							{
+								status: 500,
+								headers: { "Content-Type": "application/json" },
+							},
+						);
+					}
 					return new Response(JSON.stringify({ cover }), {
 						headers: { "Content-Type": "application/json" },
 					});
