@@ -11,7 +11,6 @@ Real-time AI music generation platform with a unified API/worker server.
 - `pnpm dev:all`
 - `pnpm dev:web`
 - `pnpm dev:server`
-- `pnpm dev:server:alias`
 - `pnpm dev:web:portless`
 - `pnpm dev:server:portless`
 - `pnpm dev:all:portless`

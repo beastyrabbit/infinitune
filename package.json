@@ -4,7 +4,6 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm dev:web",
-    "dev:server:alias": "pnpm dev:server",
     "dev:all": "pnpm exec concurrently --kill-others-on-fail -n web,server -c blue,magenta \"pnpm dev:web\" \"LOG_TO_FILE=1 LOG_EVENT_BUS=1 WORKER_DIAGNOSTICS=1 pnpm dev:server\"",
     "dev:web": "VITE_API_URL=http://api.localhost:1355 ./node_modules/.bin/portless web pnpm -C apps/web dev",
     "dev:server": "API_URL=http://api.localhost:1355 APP_ORIGIN=http://web.localhost:1355 ./node_modules/.bin/portless api pnpm -C apps/server dev",
