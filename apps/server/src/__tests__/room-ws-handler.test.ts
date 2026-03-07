@@ -69,6 +69,30 @@ describe("room ws handler", () => {
 		expect(roomManager.getRoom("pl-123")?.playlistId).toBe("pl-123");
 	});
 
+	it("hydrates an existing room on join even without auto-create", () => {
+		const roomManager = new RoomManager();
+		roomManager.createRoom("pl-123", "Playlist One", "key-123");
+		const socket = createMockSocket();
+
+		handleRoomConnection(socket.ws, roomManager);
+		socket.emit(
+			"message",
+			Buffer.from(
+				JSON.stringify({
+					type: "join",
+					playlistId: "pl-123",
+					deviceId: "device-1",
+					deviceName: "Living Room",
+					role: "player",
+				}),
+			),
+		);
+
+		expect(vi.mocked(syncRoom)).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "pl-123" }),
+		);
+	});
+
 	it("rejects join requests with a mismatched protocol version", () => {
 		const roomManager = new RoomManager();
 		const socket = createMockSocket();

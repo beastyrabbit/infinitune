@@ -56,11 +56,11 @@ function writePngFallback(
 	finalPngPath: string,
 	sourceExtension: string,
 	tempDir: string,
-): void {
+): boolean {
 	if (sourceExtension === "png") {
 		fs.copyFileSync(sourcePath, normalizedPngPath);
 		fs.copyFileSync(sourcePath, finalPngPath);
-		return;
+		return true;
 	}
 
 	const normalized = tryGenerateDerivative(
@@ -70,9 +70,11 @@ function writePngFallback(
 		tempDir,
 	);
 	if (!normalized) {
-		throw new Error("Failed to normalize cover to PNG");
+		fs.copyFileSync(sourcePath, finalPngPath);
+		return false;
 	}
 	fs.copyFileSync(normalizedPngPath, finalPngPath);
+	return true;
 }
 
 export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
@@ -89,24 +91,34 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 
 	try {
 		fs.writeFileSync(sourcePath, data);
-		writePngFallback(sourcePath, normalizedPngPath, finalPngPath, ext, tempDir);
-
-		const hasWebp = tryGenerateDerivative(
-			"magick",
-			["normalized.png", "-quality", "82", "cover.webp"],
-			webpPath,
+		const hasNormalizedPng = writePngFallback(
+			sourcePath,
+			normalizedPngPath,
+			finalPngPath,
+			ext,
 			tempDir,
 		);
+
+		const hasWebp = hasNormalizedPng
+			? tryGenerateDerivative(
+					"magick",
+					["normalized.png", "-quality", "82", "cover.webp"],
+					webpPath,
+					tempDir,
+				)
+			: false;
 		if (hasWebp) {
 			fs.copyFileSync(webpPath, finalWebpPath);
 		}
 
-		const hasJxl = tryGenerateDerivative(
-			"cjxl",
-			["normalized.png", "cover.jxl", "--effort=7", "--distance=1.5"],
-			jxlPath,
-			tempDir,
-		);
+		const hasJxl = hasNormalizedPng
+			? tryGenerateDerivative(
+					"cjxl",
+					["normalized.png", "cover.jxl", "--effort=7", "--distance=1.5"],
+					jxlPath,
+					tempDir,
+				)
+			: false;
 		if (hasJxl) {
 			fs.copyFileSync(jxlPath, finalJxlPath);
 		}

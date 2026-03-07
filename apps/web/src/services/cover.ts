@@ -51,6 +51,7 @@ function createPreviewPngBuffer(
 	tempDir: string,
 ): Buffer | null {
 	if (sourceFormat === "png") {
+		fs.writeFileSync(pngPath, sourceBuffer);
 		return sourceBuffer;
 	}
 
