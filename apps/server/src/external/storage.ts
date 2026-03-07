@@ -139,7 +139,7 @@ export async function saveSongToNfs(options: {
 			if (!entry.url || entry.url.startsWith("data:")) continue;
 			const sourcePath = path.resolve(
 				import.meta.dirname,
-				"../../../data/covers",
+				"../../../../data/covers",
 				path.basename(entry.url),
 			);
 			if (fs.existsSync(sourcePath)) {
