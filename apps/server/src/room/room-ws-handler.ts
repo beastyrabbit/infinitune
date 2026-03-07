@@ -12,6 +12,10 @@ import type { RoomManager } from "./room-manager";
 // Track which room each WebSocket belongs to
 const wsRoomMap = new Map<WebSocket, { roomId: string; deviceId: string }>();
 
+function buildProtocolMismatchMessage(clientVersion: number): string {
+	return `Room connection requires a refresh. Client protocol v${clientVersion} is incompatible with server protocol v${ROOM_PROTOCOL_VERSION}. Refresh this page and reconnect.`;
+}
+
 /** Look up the room and device for a WebSocket connection. */
 function getRoomContext(
 	ws: WebSocket,
@@ -38,6 +42,23 @@ function handleClientMessage(
 						type: "error",
 						message: "join requires playlistId or roomId",
 					}),
+				);
+				break;
+			}
+
+			if (
+				msg.protocolVersion != null &&
+				msg.protocolVersion !== ROOM_PROTOCOL_VERSION
+			) {
+				ws.send(
+					JSON.stringify({
+						type: "error",
+						code: "PROTOCOL_MISMATCH",
+						message: buildProtocolMismatchMessage(msg.protocolVersion),
+					}),
+					() => {
+						ws.close(1008, "Protocol version mismatch");
+					},
 				);
 				break;
 			}

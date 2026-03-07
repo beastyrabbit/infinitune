@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { SongCover } from "@infinitune/shared/types";
 import { trimTrailingSilence } from "./audio-processing";
 import { getServiceUrls } from "./service-urls";
 
@@ -46,7 +47,8 @@ export async function saveSongToNfs(options: {
 	timeSignature: string;
 	audioDuration: number;
 	aceAudioPath: string;
-	coverBase64?: string | null;
+	cover?: SongCover | null;
+	coverPngBase64?: string | null;
 }): Promise<{
 	storagePath: string;
 	audioFile: string;
@@ -74,7 +76,8 @@ export async function saveSongToNfs(options: {
 		timeSignature,
 		audioDuration,
 		aceAudioPath,
-		coverBase64,
+		cover,
+		coverPngBase64,
 	} = options;
 
 	const storagePath =
@@ -126,8 +129,25 @@ export async function saveSongToNfs(options: {
 	// Trim trailing silence from audio
 	const trimResult = await trimTrailingSilence(audioFile);
 
-	if (coverBase64) {
-		const coverBuffer = Buffer.from(coverBase64, "base64");
+	if (cover?.pngUrl && !cover.pngUrl.startsWith("data:")) {
+		const coverFilenames = [
+			{ url: cover.pngUrl, output: "cover.png" },
+			{ url: cover.webpUrl, output: "cover.webp" },
+			{ url: cover.jxlUrl, output: "cover.jxl" },
+		];
+		for (const entry of coverFilenames) {
+			if (!entry.url || entry.url.startsWith("data:")) continue;
+			const sourcePath = path.resolve(
+				import.meta.dirname,
+				"../../../../data/covers",
+				path.basename(entry.url),
+			);
+			if (fs.existsSync(sourcePath)) {
+				fs.copyFileSync(sourcePath, path.join(songDir, entry.output));
+			}
+		}
+	} else if (coverPngBase64) {
+		const coverBuffer = Buffer.from(coverPngBase64, "base64");
 		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
 	}
 

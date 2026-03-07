@@ -1,3 +1,5 @@
+import type { SongCover } from "./protocol";
+
 /**
  * Shared wire types used by API server, worker, room server, and frontend.
  */
@@ -45,6 +47,8 @@ export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 export const LLM_PROVIDERS = ["ollama", "openrouter", "openai-codex"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
+export type { SongCover } from "./protocol";
+
 /**
  * Type alias for IDs — replaces Convex Id<"table"> usage.
  * All IDs are cuid2 strings.
@@ -86,7 +90,7 @@ export interface Song {
 	lyrics: string | null;
 	caption: string | null;
 	coverPrompt: string | null;
-	coverUrl: string | null;
+	cover: SongCover | null;
 	bpm: number | null;
 	keyScale: string | null;
 	timeSignature: string | null;

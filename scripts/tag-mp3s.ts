@@ -14,8 +14,9 @@
 import fs from "node:fs"
 import path from "node:path"
 import { execFileSync } from "node:child_process"
-import { db, schema } from "../api-server/db/index"
 import { inArray } from "drizzle-orm"
+import { db } from "../apps/server/src/db/index"
+import * as schema from "../apps/server/src/db/schema"
 
 const COVERS_DIR = path.resolve(import.meta.dirname, "../data/covers")
 
@@ -32,6 +33,8 @@ interface SongRow {
 	energy: string | null
 	era: string | null
 	coverUrl: string | null
+	coverWebpUrl: string | null
+	coverJxlUrl: string | null
 	storagePath: string | null
 	orderIndex: number
 	createdAt: number
@@ -57,9 +60,12 @@ function resolveAudioPath(storagePath: string | null, songId: string): string | 
 	return null
 }
 
-function resolveCoverPath(coverUrl: string | null, songId: string): string | null {
-	// Local cover in data/covers/
-	if (coverUrl?.startsWith("/covers/")) {
+function resolveCoverPath(
+	coverUrls: Array<string | null>,
+	songId: string,
+): string | null {
+	for (const coverUrl of coverUrls) {
+		if (!coverUrl?.startsWith("/covers/")) continue
 		const localPath = path.join(COVERS_DIR, path.basename(coverUrl))
 		if (fs.existsSync(localPath)) return localPath
 	}
@@ -142,7 +148,26 @@ function main() {
 	const playlistNames = getPlaylistNames()
 
 	const songs = db
-		.select()
+		.select({
+			id: schema.songs.id,
+			title: schema.songs.title,
+			artistName: schema.songs.artistName,
+			genre: schema.songs.genre,
+			subGenre: schema.songs.subGenre,
+			bpm: schema.songs.bpm,
+			lyrics: schema.songs.lyrics,
+			caption: schema.songs.caption,
+			mood: schema.songs.mood,
+			energy: schema.songs.energy,
+			era: schema.songs.era,
+			coverUrl: schema.songs.coverUrl,
+			coverWebpUrl: schema.songs.coverWebpUrl,
+			coverJxlUrl: schema.songs.coverJxlUrl,
+			storagePath: schema.songs.storagePath,
+			orderIndex: schema.songs.orderIndex,
+			createdAt: schema.songs.createdAt,
+			playlistId: schema.songs.playlistId,
+		})
 		.from(schema.songs)
 		.where(inArray(schema.songs.status, ["ready", "played"]))
 		.all() as SongRow[]
@@ -160,7 +185,10 @@ function main() {
 			continue
 		}
 
-		const coverPath = resolveCoverPath(song.coverUrl, song.id)
+		const coverPath = resolveCoverPath(
+			[song.coverUrl, song.coverWebpUrl, song.coverJxlUrl],
+			song.id,
+		)
 		const album = playlistNames.get(song.playlistId) ?? "Infinitune"
 		const year = new Date(song.createdAt).getFullYear().toString()
 

@@ -10,6 +10,7 @@ import {
 	type SongData,
 } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ROOM_WS_URL } from "@/lib/endpoints";
 
 const INITIAL_RECONNECT_DELAY = 1000;
@@ -37,6 +38,10 @@ export interface RoomConnection {
 	renameDevice: (targetDeviceId: string, name: string) => void;
 	serverTimeOffset: number;
 	addMessageHandler: (handler: (msg: ServerMessage) => void) => () => void;
+}
+
+function buildProtocolMismatchMessage(serverVersion: number): string {
+	return `The room connection needs a refresh. This tab is using protocol v${ROOM_PROTOCOL_VERSION}, but the server is on v${serverVersion}. Refresh this page and reconnect.`;
 }
 
 function generateDeviceId(): string {
@@ -72,6 +77,8 @@ export function useRoomConnection(
 	const reconnectDelay = useRef(INITIAL_RECONNECT_DELAY);
 	const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const deviceIdRef = useRef<string>("");
+	const protocolErrorHandledRef = useRef(false);
+	const protocolErrorRef = useRef<string | null>(null);
 	const roleRef = useRef(role);
 	const roomIdRef = useRef(roomId);
 	const messageHandlersRef = useRef<((msg: ServerMessage) => void)[]>([]);
@@ -93,58 +100,100 @@ export function useRoomConnection(
 	// Time sync: collect pong responses and compute median offset
 	const pingOffsetsRef = useRef<number[]>([]);
 
-	const handleMessage = useCallback((event: MessageEvent) => {
-		let parsedRaw: unknown;
-		try {
-			parsedRaw = JSON.parse(event.data);
-		} catch (err) {
-			console.error("[room-ws] Failed to parse server message:", err);
-			return;
+	const handleProtocolMismatch = useCallback((message: string) => {
+		if (protocolErrorHandledRef.current) return;
+		protocolErrorHandledRef.current = true;
+		protocolErrorRef.current = message;
+		setConnected(false);
+		if (reconnectTimer.current) {
+			clearTimeout(reconnectTimer.current);
+			reconnectTimer.current = null;
 		}
-		const parsed = ServerMessageSchema.safeParse(parsedRaw);
-		if (!parsed.success) {
-			console.error("[room-ws] Invalid server message:", parsed.error.message);
-			return;
+		const socket = wsRef.current;
+		wsRef.current = null;
+		if (
+			socket &&
+			(socket.readyState === WebSocket.OPEN ||
+				socket.readyState === WebSocket.CONNECTING)
+		) {
+			socket.close();
 		}
-		const msg: ServerMessage = parsed.data;
-
-		switch (msg.type) {
-			case "joinAck":
-				// Join acknowledged by room server; no-op for now.
-				break;
-			case "state":
-				setPlayback(msg.playback);
-				setCurrentSong(msg.currentSong);
-				setDevices(msg.devices);
-				break;
-			case "queue":
-				setQueue(msg.songs);
-				break;
-			case "pong": {
-				const now = Date.now();
-				const roundTrip = now - msg.clientTime;
-				const offset = msg.serverTime - msg.clientTime - roundTrip / 2;
-				pingOffsetsRef.current.push(offset);
-				if (pingOffsetsRef.current.length >= 3) {
-					const sorted = [...pingOffsetsRef.current].sort((a, b) => a - b);
-					const median = sorted[Math.floor(sorted.length / 2)];
-					setServerTimeOffset(median);
-				}
-				break;
-			}
-			case "error":
-				console.error("[room-ws] Server error:", msg.message);
-				break;
-		}
-
-		// Forward to registered handlers (useRoomPlayer listens here)
-		for (const handler of messageHandlersRef.current) {
-			handler(msg);
-		}
+		console.error("[room-ws] Protocol mismatch:", message);
+		toast.error(message, { duration: Number.POSITIVE_INFINITY });
 	}, []);
+
+	const handleMessage = useCallback(
+		(event: MessageEvent) => {
+			let parsedRaw: unknown;
+			try {
+				parsedRaw = JSON.parse(event.data);
+			} catch (err) {
+				console.error("[room-ws] Failed to parse server message:", err);
+				return;
+			}
+			const parsed = ServerMessageSchema.safeParse(parsedRaw);
+			if (!parsed.success) {
+				console.error(
+					"[room-ws] Invalid server message:",
+					parsed.error.message,
+				);
+				return;
+			}
+			const msg: ServerMessage = parsed.data;
+			if (
+				(msg.type === "joinAck" || msg.type === "state") &&
+				msg.protocolVersion != null &&
+				msg.protocolVersion !== ROOM_PROTOCOL_VERSION
+			) {
+				handleProtocolMismatch(
+					buildProtocolMismatchMessage(msg.protocolVersion),
+				);
+				return;
+			}
+
+			switch (msg.type) {
+				case "joinAck":
+					// Join acknowledged by room server; no-op for now.
+					break;
+				case "state":
+					setPlayback(msg.playback);
+					setCurrentSong(msg.currentSong);
+					setDevices(msg.devices);
+					break;
+				case "queue":
+					setQueue(msg.songs);
+					break;
+				case "pong": {
+					const now = Date.now();
+					const roundTrip = now - msg.clientTime;
+					const offset = msg.serverTime - msg.clientTime - roundTrip / 2;
+					pingOffsetsRef.current.push(offset);
+					if (pingOffsetsRef.current.length >= 3) {
+						const sorted = [...pingOffsetsRef.current].sort((a, b) => a - b);
+						const median = sorted[Math.floor(sorted.length / 2)];
+						setServerTimeOffset(median);
+					}
+					break;
+				}
+				case "error":
+					console.error("[room-ws] Server error:", msg.message);
+					if (msg.code === "PROTOCOL_MISMATCH") {
+						handleProtocolMismatch(msg.message);
+					}
+					break;
+			}
+
+			// Forward to registered handlers (useRoomPlayer listens here)
+			for (const handler of messageHandlersRef.current) {
+				handler(msg);
+			}
+		},
+		[handleProtocolMismatch],
+	);
 
 	const connect = useCallback(() => {
 		if (!roomIdRef.current) return;
+		if (protocolErrorRef.current) return;
 
 		if (typeof window === "undefined") return;
 		if (!deviceIdRef.current) {
@@ -187,6 +236,7 @@ export function useRoomConnection(
 		ws.addEventListener("close", () => {
 			setConnected(false);
 			wsRef.current = null;
+			if (protocolErrorRef.current) return;
 			// Exponential backoff reconnect
 			if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
 			reconnectTimer.current = setTimeout(() => {
@@ -206,6 +256,8 @@ export function useRoomConnection(
 
 	// Connect/disconnect when roomId changes
 	useEffect(() => {
+		protocolErrorHandledRef.current = false;
+		protocolErrorRef.current = null;
 		if (!roomId) return;
 		connect();
 		return () => {

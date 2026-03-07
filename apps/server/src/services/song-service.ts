@@ -1,4 +1,8 @@
-import { ACTIVE_STATUSES, type SongStatus } from "@infinitune/shared/types";
+import {
+	ACTIVE_STATUSES,
+	type SongCover,
+	type SongStatus,
+} from "@infinitune/shared/types";
 import { validateSongTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, sqlite } from "../db/index";
@@ -545,8 +549,15 @@ export async function updateMetadata(
 	}
 }
 
-export async function updateCover(id: string, coverUrl: string) {
-	await db.update(songs).set({ coverUrl }).where(eq(songs.id, id));
+export async function updateCover(id: string, cover: SongCover | null) {
+	await db
+		.update(songs)
+		.set({
+			coverUrl: cover?.pngUrl ?? null,
+			coverWebpUrl: cover?.webpUrl ?? null,
+			coverJxlUrl: cover?.jxlUrl ?? null,
+		})
+		.where(eq(songs.id, id));
 	const [row] = await db.select().from(songs).where(eq(songs.id, id));
 
 	if (row) {
@@ -658,6 +669,8 @@ export async function getWorkQueue(playlistId: string) {
 		(s) =>
 			s.coverPrompt &&
 			!s.coverUrl &&
+			!s.coverWebpUrl &&
+			!s.coverJxlUrl &&
 			s.status !== "pending" &&
 			s.status !== "generating_metadata" &&
 			s.status !== "error",

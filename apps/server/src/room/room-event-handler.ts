@@ -19,7 +19,7 @@ function toSongData(s: SongWire): SongData {
 		artistName: s.artistName ?? undefined,
 		genre: s.genre ?? undefined,
 		subGenre: s.subGenre ?? undefined,
-		coverUrl: s.coverUrl ?? undefined,
+		cover: s.cover ?? undefined,
 		audioUrl: s.audioUrl ?? undefined,
 		status: s.status,
 		orderIndex: s.orderIndex,

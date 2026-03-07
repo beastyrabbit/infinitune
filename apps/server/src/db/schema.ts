@@ -112,6 +112,8 @@ export const songs = sqliteTable(
 		caption: text("caption"),
 		coverPrompt: text("cover_prompt"),
 		coverUrl: text("cover_url"),
+		coverWebpUrl: text("cover_webp_url"),
+		coverJxlUrl: text("cover_jxl_url"),
 		bpm: real("bpm"),
 		keyScale: text("key_scale"),
 		timeSignature: text("time_signature"),

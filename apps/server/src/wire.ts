@@ -1,4 +1,4 @@
-import type { PlaylistManagerPlan } from "@infinitune/shared/types";
+import type { PlaylistManagerPlan, SongCover } from "@infinitune/shared/types";
 import type { Playlist, Setting, Song } from "./db/schema";
 import { logger } from "./logger";
 
@@ -29,16 +29,50 @@ export function playlistToWire(p: Playlist): PlaylistWire {
 	};
 }
 
-export type SongWire = Omit<Song, "instruments" | "tags" | "themes"> & {
+export type SongWire = Omit<
+	Song,
+	| "instruments"
+	| "tags"
+	| "themes"
+	| "coverUrl"
+	| "coverWebpUrl"
+	| "coverJxlUrl"
+> & {
 	instruments?: string[];
 	tags?: string[];
 	themes?: string[];
+	cover: SongCover | null;
 };
 
-export function songToWire(s: Song): SongWire {
-	const { instruments, tags, themes, ...rest } = s;
+function songCoverToWire(song: Song): SongCover | null {
+	if (!song.coverUrl && !song.coverWebpUrl && !song.coverJxlUrl) return null;
 	return {
-		...rest,
+		jxlUrl: song.coverJxlUrl ?? null,
+		webpUrl: song.coverWebpUrl ?? null,
+		pngUrl: song.coverUrl ?? null,
+	};
+}
+
+export function songToWire(s: Song): SongWire {
+	const { instruments, tags, themes } = s;
+	const wireRest = { ...s } as Partial<Song>;
+	delete wireRest.instruments;
+	delete wireRest.tags;
+	delete wireRest.themes;
+	delete wireRest.coverUrl;
+	delete wireRest.coverWebpUrl;
+	delete wireRest.coverJxlUrl;
+	return {
+		...(wireRest as Omit<
+			Song,
+			| "instruments"
+			| "tags"
+			| "themes"
+			| "coverUrl"
+			| "coverWebpUrl"
+			| "coverJxlUrl"
+		>),
+		cover: songCoverToWire(s),
 		instruments: parseJsonField(instruments),
 		tags: parseJsonField(tags),
 		themes: parseJsonField(themes),

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { SongCover } from "@infinitune/shared/types";
 import { getServiceUrls } from "@/lib/server-settings";
 import { trimTrailingSilence } from "./audio-processing";
 
@@ -25,6 +26,12 @@ function resolveLocalAudioPath(aceAudioPath: string): string | null {
 	}
 }
 
+function writeDataUrlFile(dataUrl: string, outputPath: string): void {
+	const base64 = dataUrl.split(",", 2)[1];
+	if (!base64) return;
+	fs.writeFileSync(outputPath, Buffer.from(base64, "base64"));
+}
+
 export async function saveSongToNfs(options: {
 	songId: string;
 	title: string;
@@ -47,7 +54,7 @@ export async function saveSongToNfs(options: {
 	timeSignature: string;
 	audioDuration: number;
 	aceAudioPath: string;
-	coverBase64?: string | null;
+	cover?: SongCover | null;
 }): Promise<{
 	storagePath: string;
 	audioFile: string;
@@ -75,7 +82,7 @@ export async function saveSongToNfs(options: {
 		timeSignature,
 		audioDuration,
 		aceAudioPath,
-		coverBase64,
+		cover,
 	} = options;
 
 	const storagePath =
@@ -127,9 +134,22 @@ export async function saveSongToNfs(options: {
 	// Trim trailing silence from audio
 	const trimResult = await trimTrailingSilence(audioFile);
 
-	if (coverBase64) {
-		const coverBuffer = Buffer.from(coverBase64, "base64");
-		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
+	if (cover?.pngUrl) {
+		const coverEntries = [
+			{ url: cover.pngUrl, output: "cover.png" },
+			{ url: cover.webpUrl, output: "cover.webp" },
+			{ url: cover.jxlUrl, output: "cover.jxl" },
+		];
+		for (const entry of coverEntries) {
+			if (!entry.url) continue;
+			if (entry.url.startsWith("data:")) {
+				writeDataUrlFile(entry.url, path.join(songDir, entry.output));
+				continue;
+			}
+			console.warn(
+				`[storage] Cannot write non-data cover URL to NFS: ${entry.url}`,
+			);
+		}
 	}
 
 	fs.writeFileSync(path.join(songDir, "lyrics.txt"), lyrics);

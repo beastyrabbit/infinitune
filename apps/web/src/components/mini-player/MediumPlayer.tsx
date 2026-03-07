@@ -63,7 +63,7 @@ export function MediumPlayer({
 						<CoverArt
 							title={song.title}
 							artistName={song.artistName ?? ""}
-							coverUrl={song.coverUrl}
+							cover={song.cover}
 							size="md"
 							spinning={playback.isPlaying}
 						/>

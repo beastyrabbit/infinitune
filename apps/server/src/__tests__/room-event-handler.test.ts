@@ -25,7 +25,7 @@ function makeSong(orderIndex: number) {
 		artistName: "Test Artist",
 		genre: "test",
 		subGenre: "test",
-		coverUrl: undefined,
+		cover: undefined,
 		audioUrl: `/audio/${orderIndex}.mp3`,
 		status: "ready",
 		orderIndex,

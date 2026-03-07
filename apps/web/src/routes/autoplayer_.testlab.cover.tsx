@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { CoverImage } from "@/components/autoplayer/CoverImage";
 import {
 	CollapsibleJson,
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { useSettings } from "@/integrations/api/hooks";
+import type { SongCover } from "@/types";
 
 export const Route = createFileRoute("/autoplayer_/testlab/cover")({
 	component: CoverTestPage,
@@ -19,7 +21,7 @@ interface CoverGeneration {
 	provider: string;
 	model: string;
 	prompt: string;
-	imageBase64: string | null;
+	cover: SongCover | null;
 	rawResponse: unknown;
 	error: string | null;
 }
@@ -74,7 +76,7 @@ function CoverTestPage() {
 						provider,
 						model,
 						prompt: coverPrompt,
-						imageBase64: null,
+						cover: null,
 						rawResponse: data,
 						error: data.error || `HTTP ${res.status}`,
 					},
@@ -91,12 +93,11 @@ function CoverTestPage() {
 					provider,
 					model,
 					prompt: coverPrompt,
-					imageBase64: data.imageBase64 || null,
+					cover: data.cover || null,
 					rawResponse: {
-						format: data.format,
-						imageSize: data.imageBase64
-							? `${Math.round(data.imageBase64.length / 1024)}KB`
-							: null,
+						jxl: Boolean(data.cover?.jxlUrl),
+						webp: Boolean(data.cover?.webpUrl),
+						png: Boolean(data.cover?.pngUrl),
 					},
 					error: null,
 				},
@@ -111,7 +112,7 @@ function CoverTestPage() {
 					provider,
 					model,
 					prompt: coverPrompt,
-					imageBase64: null,
+					cover: null,
 					rawResponse: null,
 					error: e instanceof Error ? e.message : String(e),
 				},
@@ -265,9 +266,9 @@ function CoverTestPage() {
 										</p>
 									)}
 
-									{gen.imageBase64 && (
-										<img
-											src={`data:image/png;base64,${gen.imageBase64}`}
+									{gen.cover && (
+										<CoverImage
+											cover={gen.cover}
 											alt="Generated cover"
 											className="w-full aspect-square border-4 border-white/20 object-cover"
 										/>

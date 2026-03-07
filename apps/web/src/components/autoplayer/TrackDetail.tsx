@@ -96,7 +96,7 @@ export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
 							<CoverArt
 								title={song.title || "Generating..."}
 								artistName={song.artistName || "..."}
-								coverUrl={song.coverUrl}
+								cover={song.cover}
 								size="md"
 							/>
 						</div>

@@ -18,10 +18,6 @@
     "check": "biome check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "dev:old:api-server": "tsx watch --env-file=.env.local --tsconfig tsconfig.json api-server/index.ts",
-    "dev:old:worker": "tsx watch --env-file=.env.local --tsconfig tsconfig.json worker/index.ts",
-    "dev:old:room-server": "tsx watch --env-file=.env.local --tsconfig tsconfig.json room-server/index.ts",
-    "dev:old:all": "pnpm exec concurrently --kill-others-on-fail -n vite,api,worker,rooms -c blue,magenta,green,yellow \"pnpm dev:web:fallback\" \"pnpm dev:old:api-server\" \"pnpm dev:old:worker\" \"pnpm dev:old:room-server\"",
     "tag:mp3s": "tsx --env-file=.env.local scripts/tag-mp3s.ts",
     "react:doctor": "pnpm exec react-doctor . --yes --project @infinitune/web"
   },

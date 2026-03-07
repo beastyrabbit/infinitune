@@ -138,7 +138,7 @@ export function NowPlaying({
 					<CoverArt
 						title={song.title || "Unknown"}
 						artistName={song.artistName || "Unknown"}
-						coverUrl={song.coverUrl}
+						cover={song.cover}
 						size="lg"
 						fill
 						spinning={isPlaying}
