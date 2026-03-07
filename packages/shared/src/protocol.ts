@@ -194,6 +194,7 @@ const PongMessageSchema = z.object({
 
 const ErrorMessageSchema = z.object({
 	type: z.literal("error"),
+	code: z.enum(["PROTOCOL_MISMATCH"]).optional(),
 	message: z.string(),
 });
 

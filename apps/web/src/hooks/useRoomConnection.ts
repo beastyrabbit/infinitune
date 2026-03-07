@@ -10,6 +10,7 @@ import {
 	type SongData,
 } from "@infinitune/shared/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ROOM_WS_URL } from "@/lib/endpoints";
 
 const INITIAL_RECONNECT_DELAY = 1000;
@@ -76,6 +77,7 @@ export function useRoomConnection(
 	const reconnectDelay = useRef(INITIAL_RECONNECT_DELAY);
 	const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const deviceIdRef = useRef<string>("");
+	const protocolErrorHandledRef = useRef(false);
 	const protocolErrorRef = useRef<string | null>(null);
 	const roleRef = useRef(role);
 	const roomIdRef = useRef(roomId);
@@ -99,7 +101,8 @@ export function useRoomConnection(
 	const pingOffsetsRef = useRef<number[]>([]);
 
 	const handleProtocolMismatch = useCallback((message: string) => {
-		if (protocolErrorRef.current === message) return;
+		if (protocolErrorHandledRef.current) return;
+		protocolErrorHandledRef.current = true;
 		protocolErrorRef.current = message;
 		setConnected(false);
 		if (reconnectTimer.current) {
@@ -116,9 +119,7 @@ export function useRoomConnection(
 			socket.close();
 		}
 		console.error("[room-ws] Protocol mismatch:", message);
-		if (typeof window !== "undefined") {
-			window.alert(message);
-		}
+		toast.error(message, { duration: Number.POSITIVE_INFINITY });
 	}, []);
 
 	const handleMessage = useCallback(
@@ -176,7 +177,7 @@ export function useRoomConnection(
 				}
 				case "error":
 					console.error("[room-ws] Server error:", msg.message);
-					if (msg.message.toLowerCase().includes("protocol")) {
+					if (msg.code === "PROTOCOL_MISMATCH") {
 						handleProtocolMismatch(msg.message);
 					}
 					break;
@@ -255,6 +256,7 @@ export function useRoomConnection(
 
 	// Connect/disconnect when roomId changes
 	useEffect(() => {
+		protocolErrorHandledRef.current = false;
 		protocolErrorRef.current = null;
 		if (!roomId) return;
 		connect();

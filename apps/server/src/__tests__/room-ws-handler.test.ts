@@ -113,10 +113,12 @@ describe("room ws handler", () => {
 			),
 		);
 
-		expect(socket.ws.send).toHaveBeenCalledWith(
-			expect.stringContaining("Refresh this page and reconnect."),
-			expect.any(Function),
-		);
+		const sendPayload = vi.mocked(socket.ws.send).mock.calls[0]?.[0];
+		expect(JSON.parse(String(sendPayload))).toMatchObject({
+			type: "error",
+			code: "PROTOCOL_MISMATCH",
+			message: expect.stringContaining("Refresh this page and reconnect."),
+		});
 		expect(socket.ws.close).toHaveBeenCalledWith(
 			1008,
 			"Protocol version mismatch",

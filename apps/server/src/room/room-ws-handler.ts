@@ -53,6 +53,7 @@ function handleClientMessage(
 				ws.send(
 					JSON.stringify({
 						type: "error",
+						code: "PROTOCOL_MISMATCH",
 						message: buildProtocolMismatchMessage(msg.protocolVersion),
 					}),
 					() => {

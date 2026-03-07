@@ -144,7 +144,11 @@ export async function saveSongToNfs(options: {
 			if (!entry.url) continue;
 			if (entry.url.startsWith("data:")) {
 				writeDataUrlFile(entry.url, path.join(songDir, entry.output));
+				continue;
 			}
+			console.warn(
+				`[storage] Cannot write non-data cover URL to NFS: ${entry.url}`,
+			);
 		}
 	}
 
