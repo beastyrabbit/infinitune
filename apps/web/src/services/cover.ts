@@ -43,6 +43,26 @@ function tryGeneratePreviewDerivative(
 	}
 }
 
+function createPreviewPngBuffer(
+	sourceBuffer: Buffer,
+	sourcePath: string,
+	pngPath: string,
+	sourceFormat: string,
+	tempDir: string,
+): Buffer | null {
+	if (sourceFormat === "png") {
+		return sourceBuffer;
+	}
+
+	const normalized = tryGeneratePreviewDerivative(
+		"magick",
+		[sourcePath, "PNG32:cover.png"],
+		pngPath,
+		tempDir,
+	);
+	return normalized;
+}
+
 export function createPreviewCover(
 	result: CoverResult | null,
 ): SongCover | null {
@@ -52,19 +72,22 @@ export function createPreviewCover(
 		path.join(os.tmpdir(), "infinitune-cover-preview-"),
 	);
 	const ext = sourceExtension(result.format);
+	const sourceBuffer = Buffer.from(result.imageBase64, "base64");
 	const sourcePath = path.join(tempDir, `source.${ext}`);
 	const pngPath = path.join(tempDir, "cover.png");
 	const webpPath = path.join(tempDir, "cover.webp");
 	const jxlPath = path.join(tempDir, "cover.jxl");
 
 	try {
-		fs.writeFileSync(sourcePath, Buffer.from(result.imageBase64, "base64"));
-		execFileSync("magick", [sourcePath, "PNG32:cover.png"], {
-			cwd: tempDir,
-			stdio: "pipe",
-		});
-
-		const pngBuffer = fs.readFileSync(pngPath);
+		fs.writeFileSync(sourcePath, sourceBuffer);
+		const pngBuffer = createPreviewPngBuffer(
+			sourceBuffer,
+			sourcePath,
+			pngPath,
+			ext,
+			tempDir,
+		);
+		if (!pngBuffer) return null;
 		const webpBuffer = tryGeneratePreviewDerivative(
 			"magick",
 			["cover.png", "-quality", "82", "cover.webp"],

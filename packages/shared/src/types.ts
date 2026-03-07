@@ -1,3 +1,5 @@
+import type { SongCover } from "./protocol";
+
 /**
  * Shared wire types used by API server, worker, room server, and frontend.
  */
@@ -45,11 +47,7 @@ export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 export const LLM_PROVIDERS = ["ollama", "openrouter", "openai-codex"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
-export interface SongCover {
-	jxlUrl: string | null;
-	webpUrl: string | null;
-	pngUrl: string | null;
-}
+export type { SongCover } from "./protocol";
 
 /**
  * Type alias for IDs — replaces Convex Id<"table"> usage.

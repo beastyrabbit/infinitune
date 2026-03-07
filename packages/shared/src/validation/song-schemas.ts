@@ -1,11 +1,6 @@
 import z from "zod";
+import { SongCoverSchema } from "../protocol";
 import { SONG_STATUSES } from "../types";
-
-const SongCoverSchema = z.object({
-	jxlUrl: z.string().nullable(),
-	webpUrl: z.string().nullable(),
-	pngUrl: z.string().nullable(),
-});
 
 /** Schema for creating a pending song */
 export const CreatePendingSongSchema = z.object({

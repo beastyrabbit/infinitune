@@ -18,7 +18,10 @@ function createMockSocket(): {
 	const handlers = new Map<string, SocketHandler[]>();
 	const ws = {
 		readyState: 1,
-		send: vi.fn(),
+		send: vi.fn((_data: unknown, callback?: () => void) => {
+			callback?.();
+		}),
+		close: vi.fn(),
 		on: vi.fn((event: string, handler: SocketHandler) => {
 			const existing = handlers.get(event) ?? [];
 			existing.push(handler);
@@ -64,5 +67,36 @@ describe("room ws handler", () => {
 		const firstSyncedRoom = vi.mocked(syncRoom).mock.calls[0]?.[0];
 		expect(firstSyncedRoom?.playlistId).toBe("pl-123");
 		expect(roomManager.getRoom("pl-123")?.playlistId).toBe("pl-123");
+	});
+
+	it("rejects join requests with a mismatched protocol version", () => {
+		const roomManager = new RoomManager();
+		const socket = createMockSocket();
+
+		handleRoomConnection(socket.ws, roomManager);
+		socket.emit(
+			"message",
+			Buffer.from(
+				JSON.stringify({
+					type: "join",
+					playlistId: "pl-123",
+					deviceId: "device-1",
+					deviceName: "Living Room",
+					role: "player",
+					playlistKey: "key-123",
+					protocolVersion: 1,
+				}),
+			),
+		);
+
+		expect(socket.ws.send).toHaveBeenCalledWith(
+			expect.stringContaining("Refresh this page and reconnect."),
+			expect.any(Function),
+		);
+		expect(socket.ws.close).toHaveBeenCalledWith(
+			1008,
+			"Protocol version mismatch",
+		);
+		expect(roomManager.getRoom("pl-123")).toBeUndefined();
 	});
 });

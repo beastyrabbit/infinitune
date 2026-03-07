@@ -50,6 +50,31 @@ function tryGenerateDerivative(
 	}
 }
 
+function writePngFallback(
+	sourcePath: string,
+	normalizedPngPath: string,
+	finalPngPath: string,
+	sourceExtension: string,
+	tempDir: string,
+): void {
+	if (sourceExtension === "png") {
+		fs.copyFileSync(sourcePath, normalizedPngPath);
+		fs.copyFileSync(sourcePath, finalPngPath);
+		return;
+	}
+
+	const normalized = tryGenerateDerivative(
+		"magick",
+		[sourcePath, "PNG32:normalized.png"],
+		normalizedPngPath,
+		tempDir,
+	);
+	if (!normalized) {
+		throw new Error("Failed to normalize cover to PNG");
+	}
+	fs.copyFileSync(normalizedPngPath, finalPngPath);
+}
+
 export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 	const id = createId();
 	const ext = normalizeSourceExtension(sourceFormat);
@@ -64,11 +89,7 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 
 	try {
 		fs.writeFileSync(sourcePath, data);
-		execFileSync("magick", [sourcePath, "PNG32:normalized.png"], {
-			cwd: tempDir,
-			stdio: "pipe",
-		});
-		fs.copyFileSync(normalizedPngPath, finalPngPath);
+		writePngFallback(sourcePath, normalizedPngPath, finalPngPath, ext, tempDir);
 
 		const hasWebp = tryGenerateDerivative(
 			"magick",
