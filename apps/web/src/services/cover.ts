@@ -1,12 +1,15 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { SongCover } from "@infinitune/shared/types";
 import WebSocket from "ws";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { getServiceUrls } from "@/lib/server-settings";
 import { callImageGen } from "@/services/llm-client";
+
+const execFileAsync = promisify(execFile);
 
 interface WorkflowNode {
 	class_type: string;
@@ -29,33 +32,33 @@ function toDataUrl(buffer: Buffer, mimeType: string): string {
 	return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
-function tryGeneratePreviewDerivative(
+async function tryGeneratePreviewDerivative(
 	command: string,
 	args: string[],
 	outputPath: string,
 	cwd: string,
-): Buffer | null {
+): Promise<Buffer | null> {
 	try {
-		execFileSync(command, args, { cwd, stdio: "pipe" });
+		await execFileAsync(command, args, { cwd });
 		return fs.existsSync(outputPath) ? fs.readFileSync(outputPath) : null;
 	} catch {
 		return null;
 	}
 }
 
-function createPreviewPngBuffer(
+async function createPreviewPngBuffer(
 	sourceBuffer: Buffer,
 	sourcePath: string,
 	pngPath: string,
 	sourceFormat: string,
 	tempDir: string,
-): Buffer | null {
+): Promise<Buffer | null> {
 	if (sourceFormat === "png") {
 		fs.writeFileSync(pngPath, sourceBuffer);
 		return sourceBuffer;
 	}
 
-	const normalized = tryGeneratePreviewDerivative(
+	const normalized = await tryGeneratePreviewDerivative(
 		"magick",
 		[sourcePath, "PNG32:cover.png"],
 		pngPath,
@@ -64,9 +67,9 @@ function createPreviewPngBuffer(
 	return normalized;
 }
 
-export function createPreviewCover(
+export async function createPreviewCover(
 	result: CoverResult | null,
-): SongCover | null {
+): Promise<SongCover | null> {
 	if (!result) return null;
 
 	const tempDir = fs.mkdtempSync(
@@ -81,7 +84,7 @@ export function createPreviewCover(
 
 	try {
 		fs.writeFileSync(sourcePath, sourceBuffer);
-		const pngBuffer = createPreviewPngBuffer(
+		const pngBuffer = await createPreviewPngBuffer(
 			sourceBuffer,
 			sourcePath,
 			pngPath,
@@ -89,13 +92,13 @@ export function createPreviewCover(
 			tempDir,
 		);
 		if (!pngBuffer) return null;
-		const webpBuffer = tryGeneratePreviewDerivative(
+		const webpBuffer = await tryGeneratePreviewDerivative(
 			"magick",
 			["cover.png", "-quality", "82", "cover.webp"],
 			webpPath,
 			tempDir,
 		);
-		const jxlBuffer = tryGeneratePreviewDerivative(
+		const jxlBuffer = await tryGeneratePreviewDerivative(
 			"cjxl",
 			["cover.png", "cover.jxl", "--effort=7", "--distance=1.5"],
 			jxlPath,

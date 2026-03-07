@@ -16,7 +16,7 @@ export const Route = createFileRoute("/api/autoplayer/generate-cover")({
 						provider: body.provider,
 						model: body.model,
 					});
-					const cover = createPreviewCover(result);
+					const cover = await createPreviewCover(result);
 					return new Response(JSON.stringify({ cover }), {
 						headers: { "Content-Type": "application/json" },
 					});

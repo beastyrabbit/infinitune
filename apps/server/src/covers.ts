@@ -12,25 +12,57 @@ fs.mkdirSync(COVERS_DIR, { recursive: true });
 export interface SavedCoverSet {
 	cover: SongCover;
 	filePaths: {
-		pngPath: string;
+		pngPath: string | null;
 		webpPath: string | null;
 		jxlPath: string | null;
 	};
 }
 
 function normalizeSourceExtension(sourceFormat?: string): string {
-	const normalized = sourceFormat?.trim().toLowerCase().replace(/^\./, "");
+	const normalized = sourceFormat
+		?.trim()
+		.toLowerCase()
+		.split(";")[0]
+		?.replace(/^\./, "");
 	if (!normalized) return "png";
-	if (normalized === "jpeg") return "jpg";
-	if (normalized === "image/png") return "png";
-	if (normalized === "image/jpeg") return "jpg";
-	if (normalized === "image/webp") return "webp";
-	return normalized;
+
+	switch (normalized) {
+		case "png":
+		case "image/png":
+			return "png";
+		case "jpg":
+		case "jpeg":
+		case "image/jpg":
+		case "image/jpeg":
+			return "jpg";
+		case "webp":
+		case "image/webp":
+			return "webp";
+		case "jxl":
+		case "image/jxl":
+			return "jxl";
+		case "avif":
+		case "image/avif":
+			return "avif";
+		case "gif":
+		case "image/gif":
+			return "gif";
+	}
+
+	const fallback = normalized.startsWith("image/")
+		? normalized.slice("image/".length)
+		: normalized;
+	return fallback.replace(/[^a-z0-9]+/g, "") || "png";
 }
 
-function buildCover(id: string, hasWebp: boolean, hasJxl: boolean): SongCover {
+function buildCover(
+	id: string,
+	hasPng: boolean,
+	hasWebp: boolean,
+	hasJxl: boolean,
+): SongCover {
 	return {
-		pngUrl: `/covers/${id}.png`,
+		pngUrl: hasPng ? `/covers/${id}.png` : null,
 		webpUrl: hasWebp ? `/covers/${id}.webp` : null,
 		jxlUrl: hasJxl ? `/covers/${id}.jxl` : null,
 	};
@@ -70,7 +102,9 @@ function writePngFallback(
 		tempDir,
 	);
 	if (!normalized) {
-		fs.copyFileSync(sourcePath, finalPngPath);
+		console.warn(
+			`[covers] Failed to normalize cover format "${sourceExtension}", skipping PNG fallback`,
+		);
 		return false;
 	}
 	fs.copyFileSync(normalizedPngPath, finalPngPath);
@@ -124,9 +158,9 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 		}
 
 		return {
-			cover: buildCover(id, hasWebp, hasJxl),
+			cover: buildCover(id, hasNormalizedPng, hasWebp, hasJxl),
 			filePaths: {
-				pngPath: finalPngPath,
+				pngPath: hasNormalizedPng ? finalPngPath : null,
 				webpPath: hasWebp ? finalWebpPath : null,
 				jxlPath: hasJxl ? finalJxlPath : null,
 			},

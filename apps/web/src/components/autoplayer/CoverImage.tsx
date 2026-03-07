@@ -9,9 +9,7 @@ interface CoverImageProps {
 export function CoverImage({ cover, alt, className }: CoverImageProps) {
 	if (!cover?.pngUrl && !cover?.webpUrl && !cover?.jxlUrl) return null;
 
-	const fallbackSrc =
-		cover.pngUrl ?? cover.webpUrl ?? cover.jxlUrl ?? undefined;
-	if (!fallbackSrc) return null;
+	const fallbackSrc = (cover.pngUrl ?? cover.webpUrl ?? cover.jxlUrl) as string;
 
 	return (
 		<picture>
