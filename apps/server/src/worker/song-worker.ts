@@ -921,7 +921,7 @@ export class SongWorker {
 
 				// Save cover image to disk and update song
 				try {
-					const { cover } = saveCover(
+					const { cover } = await saveCover(
 						Buffer.from(coverResult.imageBase64, "base64"),
 						coverResult.format,
 					);

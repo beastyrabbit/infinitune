@@ -44,7 +44,7 @@ app.post("/:id/upload-cover", async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const buffer = Buffer.from(result.data.imageBase64, "base64");
-	const { cover } = saveCover(buffer, result.data.sourceFormat);
+	const { cover } = await saveCover(buffer, result.data.sourceFormat);
 
 	await songService.updateCover(c.req.param("id"), cover);
 	return c.json({ ok: true, cover });

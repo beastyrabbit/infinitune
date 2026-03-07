@@ -1,11 +1,13 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { SongCover } from "@infinitune/shared/types";
 import { createId } from "@paralleldrive/cuid2";
 
 const COVERS_DIR = path.resolve(import.meta.dirname, "../../../data/covers");
+const execFileAsync = promisify(execFile);
 
 fs.mkdirSync(COVERS_DIR, { recursive: true });
 
@@ -68,34 +70,34 @@ function buildCover(
 	};
 }
 
-function tryGenerateDerivative(
+async function tryGenerateDerivative(
 	command: string,
 	args: string[],
 	outputPath: string,
 	cwd: string,
-): boolean {
+): Promise<boolean> {
 	try {
-		execFileSync(command, args, { cwd, stdio: "pipe" });
+		await execFileAsync(command, args, { cwd });
 		return fs.existsSync(outputPath);
 	} catch {
 		return false;
 	}
 }
 
-function writePngFallback(
+async function writePngFallback(
 	sourcePath: string,
 	normalizedPngPath: string,
 	finalPngPath: string,
 	sourceExtension: string,
 	tempDir: string,
-): boolean {
+): Promise<boolean> {
 	if (sourceExtension === "png") {
 		fs.copyFileSync(sourcePath, normalizedPngPath);
 		fs.copyFileSync(sourcePath, finalPngPath);
 		return true;
 	}
 
-	const normalized = tryGenerateDerivative(
+	const normalized = await tryGenerateDerivative(
 		"magick",
 		[sourcePath, "PNG32:normalized.png"],
 		normalizedPngPath,
@@ -111,7 +113,10 @@ function writePngFallback(
 	return true;
 }
 
-export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
+export async function saveCover(
+	data: Buffer,
+	sourceFormat = "png",
+): Promise<SavedCoverSet> {
 	const id = createId();
 	const ext = normalizeSourceExtension(sourceFormat);
 	const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "infinitune-cover-"));
@@ -125,7 +130,7 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 
 	try {
 		fs.writeFileSync(sourcePath, data);
-		const hasNormalizedPng = writePngFallback(
+		const hasNormalizedPng = await writePngFallback(
 			sourcePath,
 			normalizedPngPath,
 			finalPngPath,
@@ -134,7 +139,7 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 		);
 
 		const hasWebp = hasNormalizedPng
-			? tryGenerateDerivative(
+			? await tryGenerateDerivative(
 					"magick",
 					["normalized.png", "-quality", "82", "cover.webp"],
 					webpPath,
@@ -146,7 +151,7 @@ export function saveCover(data: Buffer, sourceFormat = "png"): SavedCoverSet {
 		}
 
 		const hasJxl = hasNormalizedPng
-			? tryGenerateDerivative(
+			? await tryGenerateDerivative(
 					"cjxl",
 					["normalized.png", "cover.jxl", "--effort=7", "--distance=1.5"],
 					jxlPath,
@@ -178,7 +183,7 @@ export async function saveCoverFromUrl(
 		throw new Error(`Failed to download cover: ${response.statusText}`);
 	const buffer = Buffer.from(await response.arrayBuffer());
 	const contentType = response.headers.get("content-type") ?? "image/png";
-	return saveCover(buffer, contentType);
+	return await saveCover(buffer, contentType);
 }
 
 export function getCoversDir(): string {
