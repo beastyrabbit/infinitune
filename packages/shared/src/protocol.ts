@@ -1,6 +1,6 @@
 import z from "zod";
 
-export const ROOM_PROTOCOL_VERSION = 1 as const;
+export const ROOM_PROTOCOL_VERSION = 2 as const;
 
 // ─── Shared Types ───────────────────────────────────────────────────
 
@@ -28,6 +28,13 @@ export const PlaybackStateSchema = z.object({
 });
 export type PlaybackState = z.infer<typeof PlaybackStateSchema>;
 
+export const SongCoverSchema = z.object({
+	jxlUrl: z.string().nullable(),
+	webpUrl: z.string().nullable(),
+	pngUrl: z.string().nullable(),
+});
+export type SongCover = z.infer<typeof SongCoverSchema>;
+
 /** Lightweight song data sent over the wire (subset of Convex song doc). */
 export const SongDataSchema = z.object({
 	id: z.string(),
@@ -35,7 +42,7 @@ export const SongDataSchema = z.object({
 	artistName: z.string().optional(),
 	genre: z.string().optional(),
 	subGenre: z.string().optional(),
-	coverUrl: z.string().optional(),
+	cover: SongCoverSchema.nullable().optional(),
 	audioUrl: z.string().optional(),
 	status: z.string(),
 	orderIndex: z.number(),

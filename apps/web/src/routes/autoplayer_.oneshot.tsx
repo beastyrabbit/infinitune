@@ -813,7 +813,7 @@ function OneshotPage() {
 											<CoverArt
 												title={song.title || "UNTITLED"}
 												artistName={song.artistName || "UNKNOWN"}
-												coverUrl={song.coverUrl}
+												cover={song.cover}
 												size="md"
 												spinning={!!isCurrentSong && isPlaying}
 											/>

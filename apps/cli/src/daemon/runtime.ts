@@ -103,7 +103,7 @@ function toSongData(song: Song): SongData {
 		artistName: song.artistName ?? undefined,
 		genre: song.genre ?? undefined,
 		subGenre: song.subGenre ?? undefined,
-		coverUrl: song.coverUrl ?? undefined,
+		cover: song.cover ?? undefined,
 		audioUrl: song.audioUrl ?? undefined,
 		status: song.status,
 		orderIndex: song.orderIndex,

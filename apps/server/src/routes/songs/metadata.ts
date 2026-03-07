@@ -32,7 +32,7 @@ app.patch("/:id/cover", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	await songService.updateCover(c.req.param("id"), result.data.coverUrl);
+	await songService.updateCover(c.req.param("id"), result.data.cover);
 	return c.json({ ok: true });
 });
 
@@ -44,12 +44,10 @@ app.post("/:id/upload-cover", async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const buffer = Buffer.from(result.data.imageBase64, "base64");
-	const { urlPath } = saveCover(buffer, "png");
-	const apiUrl = process.env.API_URL ?? "http://localhost:5175";
-	const coverUrl = `${apiUrl}${urlPath}`;
+	const { cover } = saveCover(buffer, result.data.sourceFormat);
 
-	await songService.updateCover(c.req.param("id"), coverUrl);
-	return c.json({ ok: true, coverUrl });
+	await songService.updateCover(c.req.param("id"), cover);
+	return c.json({ ok: true, cover });
 });
 
 // PATCH /api/songs/:id/cover-processing-ms

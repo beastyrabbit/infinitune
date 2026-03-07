@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CoverImage } from "@/components/autoplayer/CoverImage";
 import { LiveTimer } from "@/components/autoplayer/LiveTimer";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,7 +34,7 @@ interface SongInfo {
 	title: string;
 	artistName: string;
 	genre: string;
-	coverUrl?: string;
+	cover?: Song["cover"];
 	status: string;
 	orderIndex: number;
 	promptEpoch: number;
@@ -60,22 +61,22 @@ interface QueueSnapshot {
 function MiniCover({
 	title,
 	artistName,
-	coverUrl,
+	cover,
 	size = 48,
 }: {
 	title: string;
 	artistName: string;
-	coverUrl?: string;
+	cover?: Song["cover"];
 	size?: number;
 }) {
-	if (coverUrl) {
+	if (cover) {
 		return (
 			<div
 				className="shrink-0 overflow-hidden border-2 border-white/20"
 				style={{ width: size, height: size }}
 			>
-				<img
-					src={coverUrl}
+				<CoverImage
+					cover={cover}
 					alt={title}
 					className="w-full h-full object-cover"
 				/>
@@ -526,7 +527,7 @@ function SongCard({
 			<MiniCover
 				title={title}
 				artistName={artist}
-				coverUrl={songInfo?.coverUrl}
+				cover={songInfo?.cover}
 				size={44}
 			/>
 
@@ -1246,7 +1247,7 @@ function QueuePage() {
 				title: song.title || "Generating...",
 				artistName: song.artistName || "...",
 				genre: song.genre || "",
-				coverUrl: song.coverUrl ?? undefined,
+				cover: song.cover ?? undefined,
 				status: song.status,
 				orderIndex: song.orderIndex,
 				promptEpoch: song.promptEpoch ?? 0,

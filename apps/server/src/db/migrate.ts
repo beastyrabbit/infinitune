@@ -87,10 +87,12 @@ export function ensureSchema() {
 			genre TEXT,
 			sub_genre TEXT,
 			lyrics TEXT,
-			caption TEXT,
-			cover_prompt TEXT,
-			cover_url TEXT,
-			bpm REAL,
+				caption TEXT,
+				cover_prompt TEXT,
+				cover_url TEXT,
+				cover_webp_url TEXT,
+				cover_jxl_url TEXT,
+				bpm REAL,
 			key_scale TEXT,
 			time_signature TEXT,
 			audio_duration REAL,
@@ -193,6 +195,8 @@ export function ensureSchema() {
 	addColumn("playlists", "description_updated_at INTEGER");
 	addColumn("playlists", "ace_thinking INTEGER");
 	addColumn("playlists", "ace_auto_duration INTEGER");
+	addColumn("songs", "cover_webp_url TEXT");
+	addColumn("songs", "cover_jxl_url TEXT");
 
 	sqlite.exec(`
 		CREATE INDEX IF NOT EXISTS playlists_by_owner_user_id ON playlists(owner_user_id);

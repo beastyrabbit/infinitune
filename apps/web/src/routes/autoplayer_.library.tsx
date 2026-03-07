@@ -693,7 +693,7 @@ function LibraryPage() {
 											<CoverArt
 												title={song.title || "..."}
 												artistName={song.artistName || "..."}
-												coverUrl={song.coverUrl}
+												cover={song.cover}
 												size="sm"
 											/>
 											{isCurrent && (

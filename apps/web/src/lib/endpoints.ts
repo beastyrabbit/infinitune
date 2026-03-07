@@ -1,3 +1,5 @@
+import type { SongCover } from "@/types";
+
 /**
  * Centralized endpoint URLs for the Infinitune API server.
  *
@@ -60,4 +62,15 @@ export function resolveApiMediaUrl(
 	} catch {
 		return url;
 	}
+}
+
+export function resolveSongCover(
+	cover: SongCover | null | undefined,
+): SongCover | null {
+	if (!cover) return null;
+	return {
+		jxlUrl: resolveApiMediaUrl(cover.jxlUrl),
+		webpUrl: resolveApiMediaUrl(cover.webpUrl),
+		pngUrl: resolveApiMediaUrl(cover.pngUrl),
+	};
 }

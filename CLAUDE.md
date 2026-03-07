@@ -11,7 +11,7 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 ```bash
 # Development
 pnpm dev:all          # Web + server (2 processes, recommended)
-pnpm dev              # Vite dev server on :3000
+pnpm dev              # Vite dev server on :5173
 pnpm server           # Unified backend on :5175 (API + worker + rooms)
 pnpm infi --help      # Terminal daemon/controller CLI
 
@@ -68,7 +68,7 @@ Each song flows through statuses: `pending` → `generating_metadata` → `metad
 
 The worker spawns a `SongWorker` per song. Concurrency queues manage throughput with priority (interrupts > epoch songs > filler).
 
-### Room Server (Multi-Device Playback)
+### Rooms (Multi-Device Playback)
 
 Integrated into the unified server. Devices join a **room** as either **player** (outputs audio) or **controller** (remote control, no audio). All players sync playback. WebSocket protocol: Zod-validated messages in `packages/shared/src/protocol.ts`. REST API: `GET /api/v1/rooms`, `POST /api/v1/rooms`, `GET /api/v1/now-playing?room={id}`.
 
@@ -155,7 +155,7 @@ Zod schemas for all mutation endpoints in `song-schemas.ts` and `playlist-schema
 
 ## Ports
 
-Vite dev server on 3000, unified server on 5175 (registered in `/home/beasty/projects/.ports`).
+Vite dev server on 5173, unified server on 5175 (registered in `/home/beasty/projects/.ports`).
 
 ## Commit Discipline
 
@@ -187,7 +187,7 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - WS bridge: `events/ws-bridge.ts`
 - Service layer: `services/song-service.ts`, `services/playlist-service.ts`, `services/settings-service.ts`
 - API routes: `routes/songs/`, `routes/playlists.ts`, `routes/settings.ts`, `routes/rooms.ts`
-- Worker: `worker/index.ts`, `worker/song-worker.ts`, `worker/queues.ts`
+- Worker: `apps/server/src/worker/index.ts`, `apps/server/src/worker/song-worker.ts`, `apps/server/src/worker/queues.ts`
 - Room: `room/room-manager.ts`, `room/room.ts`, `room/room-event-handler.ts`, `room/room-ws-handler.ts`
 - External services: `external/llm-client.ts`, `external/llm.ts`, `external/ace.ts`, `external/cover.ts`
 - Wire mappers: `wire.ts`

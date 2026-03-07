@@ -1,3 +1,8 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { SongCover } from "@infinitune/shared/types";
 import WebSocket from "ws";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { getServiceUrls } from "@/lib/server-settings";
@@ -12,6 +17,75 @@ interface WorkflowNode {
 export interface CoverResult {
 	imageBase64: string;
 	format: string;
+}
+
+function sourceExtension(format: string): string {
+	const normalized = format.toLowerCase().replace(/^\./, "");
+	if (normalized === "jpeg") return "jpg";
+	return normalized;
+}
+
+function toDataUrl(buffer: Buffer, mimeType: string): string {
+	return `data:${mimeType};base64,${buffer.toString("base64")}`;
+}
+
+function tryGeneratePreviewDerivative(
+	command: string,
+	args: string[],
+	outputPath: string,
+	cwd: string,
+): Buffer | null {
+	try {
+		execFileSync(command, args, { cwd, stdio: "pipe" });
+		return fs.existsSync(outputPath) ? fs.readFileSync(outputPath) : null;
+	} catch {
+		return null;
+	}
+}
+
+export function createPreviewCover(
+	result: CoverResult | null,
+): SongCover | null {
+	if (!result) return null;
+
+	const tempDir = fs.mkdtempSync(
+		path.join(os.tmpdir(), "infinitune-cover-preview-"),
+	);
+	const ext = sourceExtension(result.format);
+	const sourcePath = path.join(tempDir, `source.${ext}`);
+	const pngPath = path.join(tempDir, "cover.png");
+	const webpPath = path.join(tempDir, "cover.webp");
+	const jxlPath = path.join(tempDir, "cover.jxl");
+
+	try {
+		fs.writeFileSync(sourcePath, Buffer.from(result.imageBase64, "base64"));
+		execFileSync("magick", [sourcePath, "PNG32:cover.png"], {
+			cwd: tempDir,
+			stdio: "pipe",
+		});
+
+		const pngBuffer = fs.readFileSync(pngPath);
+		const webpBuffer = tryGeneratePreviewDerivative(
+			"magick",
+			["cover.png", "-quality", "82", "cover.webp"],
+			webpPath,
+			tempDir,
+		);
+		const jxlBuffer = tryGeneratePreviewDerivative(
+			"cjxl",
+			["cover.png", "cover.jxl", "--effort=7", "--distance=1.5"],
+			jxlPath,
+			tempDir,
+		);
+
+		return {
+			jxlUrl: jxlBuffer ? toDataUrl(jxlBuffer, "image/jxl") : null,
+			webpUrl: webpBuffer ? toDataUrl(webpBuffer, "image/webp") : null,
+			pngUrl: toDataUrl(pngBuffer, "image/png"),
+		};
+	} finally {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	}
 }
 
 export async function generateCover(options: {

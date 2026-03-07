@@ -4,11 +4,13 @@ import {
 	getInitials,
 	getPatternStyle,
 } from "@/lib/cover-utils";
+import type { SongCover } from "@/types";
+import { CoverImage } from "./CoverImage";
 
 interface CoverArtProps {
 	title: string;
 	artistName: string;
-	coverUrl?: string | null;
+	cover?: SongCover | null;
 	size?: "sm" | "md" | "lg";
 	fill?: boolean;
 	/** Spin the disc (used in NowPlaying when playing) */
@@ -18,7 +20,7 @@ interface CoverArtProps {
 export function CoverArt({
 	title,
 	artistName,
-	coverUrl,
+	cover,
 	size = "md",
 	fill,
 	spinning = false,
@@ -28,7 +30,7 @@ export function CoverArt({
 	const sizeClass = fill ? "w-full h-full" : "w-full aspect-square";
 	const spinClass = spinning ? "animate-[spin_8s_linear_infinite]" : "";
 
-	if (coverUrl) {
+	if (cover) {
 		return (
 			<div
 				className={`${sizeClass} relative overflow-hidden flex items-center justify-center bg-black`}
@@ -36,8 +38,8 @@ export function CoverArt({
 				<div
 					className={`w-[85%] aspect-square rounded-full overflow-hidden relative shadow-[0_0_60px_rgba(0,0,0,0.8)] ${spinClass}`}
 				>
-					<img
-						src={coverUrl}
+					<CoverImage
+						cover={cover}
 						alt={`${title} cover`}
 						className="w-full h-full object-cover"
 					/>

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { CoverImage } from "@/components/autoplayer/CoverImage";
 import {
 	CollapsibleJson,
 	formatElapsed,
@@ -19,6 +20,7 @@ import {
 	useUpdateCover,
 	useUpdateStoragePath,
 } from "@/integrations/api/hooks";
+import type { SongCover } from "@/types";
 
 export const Route = createFileRoute("/autoplayer_/testlab/e2e")({
 	component: PipelineTestPage,
@@ -69,7 +71,7 @@ function PipelineTestPage() {
 	const [steps, setSteps] =
 		useState<Record<string, StepState>>(createInitialSteps);
 	const [isRunning, setIsRunning] = useState(false);
-	const [coverPreview, setCoverPreview] = useState<string | null>(null);
+	const [coverPreview, setCoverPreview] = useState<SongCover | null>(null);
 	const [audioUrl, setAudioUrl] = useState<string | null>(null);
 	const [songMeta, setSongMeta] = useState<Record<string, unknown> | null>(
 		null,
@@ -81,7 +83,7 @@ function PipelineTestPage() {
 		songId?: string;
 		taskId?: string;
 		audioPath?: string;
-		coverBase64?: string | null;
+		cover?: SongCover | null;
 	}>({});
 
 	const updateStep = useCallback((key: string, patch: Partial<StepState>) => {
@@ -289,30 +291,29 @@ function PipelineTestPage() {
 
 							if (coverRes.ok) {
 								const coverData = await coverRes.json();
-								if (coverData.imageBase64) {
-									cd.coverBase64 = coverData.imageBase64;
-									setCoverPreview(
-										`data:image/png;base64,${coverData.imageBase64}`,
-									);
+								if (coverData.cover) {
+									cd.cover = coverData.cover;
+									setCoverPreview(coverData.cover);
 									if (cd.songId) {
 										await updateCover({
 											id: cd.songId ?? "",
-											coverUrl: `data:image/png;base64,${coverData.imageBase64}`,
+											cover: coverData.cover,
 										});
 									}
 									updateStep("cover", {
 										status: "done",
 										completedAt: Date.now(),
 										output: {
-											format: coverData.format,
-											imageSize: `${Math.round(coverData.imageBase64.length / 1024)}KB`,
+											jxl: Boolean(coverData.cover.jxlUrl),
+											webp: Boolean(coverData.cover.webpUrl),
+											png: Boolean(coverData.cover.pngUrl),
 										},
 									});
 								} else {
 									updateStep("cover", {
 										status: "done",
 										completedAt: Date.now(),
-										output: { imageBase64: null },
+										output: { cover: null },
 									});
 								}
 							} else {
@@ -411,7 +412,7 @@ function PipelineTestPage() {
 						timeSignature: songData.timeSignature,
 						audioDuration: songData.audioDuration,
 						aceAudioPath: cd.audioPath,
-						coverBase64: cd.coverBase64 || null,
+						cover: cd.cover || null,
 					};
 					updateStep("save", {
 						status: "running",
@@ -685,8 +686,8 @@ function PipelineTestPage() {
 					<div className="p-4 space-y-4">
 						<div className="flex gap-4">
 							{coverPreview && (
-								<img
-									src={coverPreview}
+								<CoverImage
+									cover={coverPreview}
 									alt="Cover art"
 									className="w-32 h-32 border-4 border-white/20 object-cover"
 								/>

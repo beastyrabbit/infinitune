@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { generateCover } from "@/services/cover";
+import { createPreviewCover, generateCover } from "@/services/cover";
 
 export const Route = createFileRoute("/api/autoplayer/generate-cover")({
 	server: {
@@ -16,10 +16,10 @@ export const Route = createFileRoute("/api/autoplayer/generate-cover")({
 						provider: body.provider,
 						model: body.model,
 					});
-					return new Response(
-						JSON.stringify(result || { imageBase64: null, format: null }),
-						{ headers: { "Content-Type": "application/json" } },
-					);
+					const cover = createPreviewCover(result);
+					return new Response(JSON.stringify({ cover }), {
+						headers: { "Content-Type": "application/json" },
+					});
 				} catch (error: unknown) {
 					return new Response(
 						JSON.stringify({
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/api/autoplayer/generate-cover")({
 								error instanceof Error
 									? error.message
 									: "Failed to generate cover",
-							imageBase64: null,
+							cover: null,
 						}),
 						{ status: 500, headers: { "Content-Type": "application/json" } },
 					);

@@ -99,7 +99,7 @@ Create rooms for synchronized multi-device playback. Name your devices, join as 
 
 > **1.** Describe your music — *"2010 techno beats with English lyrics, S3RL energy, heavy 808 bass"*
 >
-> **2.** Hit Start — a background worker kicks off the pipeline: LLM writes metadata + lyrics, ComfyUI renders cover art, ACE-Step synthesizes audio
+> **2.** Hit Start — the unified backend kicks off the pipeline: LLM writes metadata + lyrics, ComfyUI renders cover art, ACE-Step synthesizes audio
 >
 > **3.** Listen endlessly — songs appear in real-time. Rate them up/down to steer the direction. Request one-offs or generate entire albums from a single track.
 
@@ -107,11 +107,11 @@ Create rooms for synchronized multi-device playback. Name your devices, join as 
 
 Each song flows through: `pending` → `generating_metadata` → `metadata_ready` → `submitting_to_ace` → `generating_audio` → `saving` → `ready` → `played`
 
-The worker spawns a per-song worker with concurrency queues managing throughput across three lanes: **LLM** (metadata/lyrics), **Image** (cover art), and **Audio** (ACE-Step synthesis).
+The unified server runs a per-song worker pipeline with concurrency queues managing throughput across three lanes: **LLM** (metadata/lyrics), **Image** (cover art), and **Audio** (ACE-Step synthesis).
 
 ### Multi-Device Playback
 
-Infinitune includes an integrated **Room Server** for synchronized playback — think Sonos or Spotify Connect, but for AI-generated music.
+Infinitune includes integrated room management for synchronized playback — think Sonos or Spotify Connect, but for AI-generated music.
 
 - **Roles** — devices join as **player** (outputs audio) or **controller** (remote control only)
 - **Sync** — all players stay locked to the same song and position
@@ -192,8 +192,8 @@ pnpm infi service uninstall
 | **Frontend** | React 19 · TanStack Router · React Query · Tailwind CSS 4 |
 | **Backend** | Hono (unified server — API + worker + rooms on one port) |
 | **Database** | SQLite (better-sqlite3, WAL mode) · Drizzle ORM |
-| **Room Server** | Integrated WebSocket server · multi-device sync · REST API |
-| **Worker** | Event-driven background pipeline · per-song workers · concurrency queues |
+| **Rooms** | Integrated WebSocket room service · multi-device sync · REST API |
+| **Worker Pipeline** | Event-driven background pipeline · per-song workers · concurrency queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
 | **Cover Art** | ComfyUI (image generation) |
 | **LLM** | Vercel AI SDK (Ollama/OpenRouter) + Codex App Server (`openai-codex`, ChatGPT subscription auth) |

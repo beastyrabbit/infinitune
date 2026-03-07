@@ -876,7 +876,7 @@ export class SongWorker {
 	private startCover(): void {
 		if (this.aborted) return;
 		if (!this.song.coverPrompt) return;
-		if (this.song.coverUrl) return; // Already has cover art
+		if (this.song.cover) return; // Already has cover art
 
 		const songId = this.songId;
 		const coverPrompt = this.song.coverPrompt;
@@ -907,22 +907,26 @@ export class SongWorker {
 							format?: string;
 						};
 						if (!result) throw new Error("No cover generated");
-						return { imageBase64: result.imageBase64 };
+						return {
+							imageBase64: result.imageBase64,
+							format: result.format ?? "png",
+						};
 					},
 				});
 			})
-			.then(async ({ result: coverResult, processingMs }) => {
+			.then(async ({ result, processingMs }) => {
+				const coverResult = result as { imageBase64: string; format: string };
 				// Capture base64 for NFS save in saveAndFinalize()
 				this.coverBase64 = coverResult.imageBase64;
 
 				// Save cover image to disk and update song
 				try {
-					const { urlPath } = saveCover(
+					const { cover } = saveCover(
 						Buffer.from(coverResult.imageBase64, "base64"),
-						"png",
+						coverResult.format,
 					);
-					await songService.updateCover(songId, urlPath);
-					this.song = { ...this.song, coverUrl: urlPath };
+					await songService.updateCover(songId, cover);
+					this.song = { ...this.song, cover };
 					songLogger(songId).info({ processingMs }, "Cover saved");
 					await songService.updateCoverProcessingMs(songId, processingMs);
 					return;
@@ -933,10 +937,13 @@ export class SongWorker {
 					);
 				}
 
-				await songService.updateCover(
-					songId,
-					`data:image/png;base64,${coverResult.imageBase64}`,
-				);
+				const fallbackCover = {
+					jxlUrl: null,
+					webpUrl: null,
+					pngUrl: `data:image/png;base64,${coverResult.imageBase64}`,
+				};
+				await songService.updateCover(songId, fallbackCover);
+				this.song = { ...this.song, cover: fallbackCover };
 				await songService.updateCoverProcessingMs(songId, processingMs);
 			})
 			.catch((error: unknown) => {
@@ -1110,8 +1117,8 @@ export class SongWorker {
 			this.coverBase64 = null; // free memory
 			if (
 				!coverBase64ForNfs &&
-				this.song.coverUrl &&
-				!this.song.coverUrl.startsWith("data:")
+				this.song.cover?.pngUrl &&
+				!this.song.cover.pngUrl.startsWith("data:")
 			) {
 				try {
 					// Cover is on local disk — read it directly
@@ -1121,7 +1128,7 @@ export class SongWorker {
 					);
 					const coverFile = path.join(
 						coversDir,
-						path.basename(this.song.coverUrl),
+						path.basename(this.song.cover.pngUrl),
 					);
 					if (fs.existsSync(coverFile)) {
 						coverBase64ForNfs = fs.readFileSync(coverFile).toString("base64");
@@ -1153,7 +1160,8 @@ export class SongWorker {
 				timeSignature: this.song.timeSignature || "4/4",
 				audioDuration: this.song.audioDuration || 240,
 				aceAudioPath: audioPath,
-				coverBase64: coverBase64ForNfs,
+				cover: this.song.cover ?? null,
+				coverPngBase64: coverBase64ForNfs,
 			});
 			await songService.updateStoragePath(
 				this.songId,

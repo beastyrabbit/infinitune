@@ -95,7 +95,7 @@ export function SortableSongCard({
 				<CoverArt
 					title={song.title || "Generating..."}
 					artistName={song.artistName || "..."}
-					coverUrl={song.coverUrl}
+					cover={song.cover}
 					size="sm"
 				/>
 				<div

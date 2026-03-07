@@ -45,6 +45,12 @@ export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 export const LLM_PROVIDERS = ["ollama", "openrouter", "openai-codex"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
+export interface SongCover {
+	jxlUrl: string | null;
+	webpUrl: string | null;
+	pngUrl: string | null;
+}
+
 /**
  * Type alias for IDs — replaces Convex Id<"table"> usage.
  * All IDs are cuid2 strings.
@@ -86,7 +92,7 @@ export interface Song {
 	lyrics: string | null;
 	caption: string | null;
 	coverPrompt: string | null;
-	coverUrl: string | null;
+	cover: SongCover | null;
 	bpm: number | null;
 	keyScale: string | null;
 	timeSignature: string | null;

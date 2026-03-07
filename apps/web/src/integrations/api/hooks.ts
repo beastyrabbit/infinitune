@@ -30,7 +30,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import z from "zod";
-import { resolveApiMediaUrl } from "@/lib/endpoints";
+import { resolveApiMediaUrl, resolveSongCover } from "@/lib/endpoints";
 import { api } from "./client";
 
 // Re-export types for convenience
@@ -81,7 +81,7 @@ function normalizeSongMedia(song: Song): Song {
 	return {
 		...song,
 		audioUrl: resolveApiMediaUrl(song.audioUrl),
-		coverUrl: resolveApiMediaUrl(song.coverUrl),
+		cover: resolveSongCover(song.cover),
 	};
 }
 
@@ -832,9 +832,11 @@ export const useUpdateAceTask = createMutation<{
 	{ silent: true },
 );
 
-export const useUpdateCover = createMutation<{ id: string; coverUrl: string }>(
-	(args) =>
-		api.patch(`/api/songs/${args.id}/cover`, { coverUrl: args.coverUrl }),
+export const useUpdateCover = createMutation<{
+	id: string;
+	cover: Song["cover"];
+}>(
+	(args) => api.patch(`/api/songs/${args.id}/cover`, { cover: args.cover }),
 	undefined,
 	{ silent: true },
 );

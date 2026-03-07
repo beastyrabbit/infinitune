@@ -1,6 +1,12 @@
 import z from "zod";
 import { SONG_STATUSES } from "../types";
 
+const SongCoverSchema = z.object({
+	jxlUrl: z.string().nullable(),
+	webpUrl: z.string().nullable(),
+	pngUrl: z.string().nullable(),
+});
+
 /** Schema for creating a pending song */
 export const CreatePendingSongSchema = z.object({
 	playlistId: z.string().min(1),
@@ -67,12 +73,13 @@ export const UpdateAceTaskSchema = z.object({
 
 /** Schema for cover URL update */
 export const UpdateCoverSchema = z.object({
-	coverUrl: z.string().min(1),
+	cover: SongCoverSchema.nullable(),
 });
 
 /** Schema for cover upload */
 export const UploadCoverSchema = z.object({
 	imageBase64: z.string().min(1),
+	sourceFormat: z.string().optional(),
 });
 
 /** Schema for play duration */
