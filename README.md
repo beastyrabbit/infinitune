@@ -205,15 +205,16 @@ pnpm infi service uninstall
 # Install dependencies
 pnpm install
 
-# Start everything (web + unified server)
+# Start everything (web + unified server) with Portless stable local domains
 pnpm dev:all
 
-# Or run with Portless stable local domains
-pnpm dev:all:portless
+# Fixed-port fallback (Vite :5173, server :5175)
+pnpm dev:all:fallback
 ```
 
-> Fallback mode: web runs on `:5173`, unified backend on `:5175` (`VITE_API_URL=http://localhost:5175`).
-> Portless mode: web at `http://web.localhost:1355`, backend API at `http://api.localhost:1355` with `VITE_API_URL` set automatically by scripts.
+> Default local dev uses Portless: web at `http://web.localhost:1355`, backend API at `http://api.localhost:1355`, with `VITE_API_URL` and `APP_ORIGIN` set automatically by scripts.
+> Fallback mode: use `pnpm dev:all:fallback` to run web on `:5173` and the unified backend on `:5175` (`VITE_API_URL=http://localhost:5175`).
+> Backend-only local dev should use `pnpm dev:server`; `pnpm server` is a pnpm built-in command name, not a reliable script entry point.
 
 ### Prerequisites
 

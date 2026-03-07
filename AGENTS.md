@@ -9,10 +9,14 @@ Real-time AI music generation platform with a unified API/worker server.
 ## Tooling
 - `pnpm dev`
 - `pnpm dev:all`
-- `pnpm server`
+- `pnpm dev:web`
+- `pnpm dev:server`
 - `pnpm dev:web:portless`
 - `pnpm dev:server:portless`
 - `pnpm dev:all:portless`
+- `pnpm dev:web:fallback`
+- `pnpm dev:server:fallback`
+- `pnpm dev:all:fallback`
 - `pnpm check`, `pnpm typecheck`, `pnpm test`
 
 ## Ports
