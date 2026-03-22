@@ -216,6 +216,14 @@ pnpm dev:all:fallback
 > Fallback mode: use `pnpm dev:all:fallback` to run web on `:5173` and the unified backend on `:5175` (`VITE_API_URL=http://localhost:5175`).
 > Backend-only local dev should use `pnpm dev:server`; `pnpm server` is a pnpm built-in command name, not a reliable script entry point.
 
+### T3Code Worktrees
+
+Set T3Code's "Run automatically on worktree creation" command to:
+
+```bash
+bash scripts/t3code-worktree-setup.sh
+```
+
 ### Prerequisites
 
 Infinitune requires external AI services running on your network:
