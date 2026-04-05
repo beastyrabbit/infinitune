@@ -12,7 +12,7 @@ env:
 
 jobs:
   build:
-    runs-on: arc-kub-homelab
+    runs-on: arc-infinitune
     permissions:
       contents: read
       packages: write
