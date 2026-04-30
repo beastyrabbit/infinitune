@@ -44,6 +44,8 @@ type MemoryTrigger =
 	| "long-channel";
 type SongLike = Awaited<ReturnType<typeof songService.listByPlaylist>>[number];
 
+export const MAX_HUMAN_CHAT_CONTENT_CHARS = 4_000;
+
 export class DirectorQuestionValidationError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -529,36 +531,47 @@ export async function postHumanChat(input: {
 	threadId?: string | null;
 	commitDirection?: boolean;
 }): Promise<{ messageId: string; committedDirection: boolean }> {
+	const normalizedContent = input.content.trim();
+	if (!normalizedContent) throw new Error("Chat message content is required");
+	const content =
+		normalizedContent.length > MAX_HUMAN_CHAT_CONTENT_CHARS
+			? normalizedContent.slice(0, MAX_HUMAN_CHAT_CONTENT_CHARS)
+			: normalizedContent;
+	const truncated = normalizedContent.length > content.length;
 	const message = await postChannelMessage({
 		playlistId: input.playlistId,
 		threadId: input.threadId,
 		senderKind: "human",
 		senderId: "human",
 		messageType: "chat",
-		content: input.content,
-		data: { committedDirection: input.commitDirection === true },
+		content,
+		data: {
+			committedDirection: input.commitDirection === true,
+			...(truncated
+				? { truncated: true, originalChars: normalizedContent.length }
+				: {}),
+		},
 	});
-	const trimmed = input.content.trim();
-	const slashSteer = trimmed.startsWith("/steer ")
-		? trimmed.slice("/steer ".length).trim()
+	const slashSteer = content.startsWith("/steer ")
+		? content.slice("/steer ".length).trim()
 		: "";
 	const shouldCommit = input.commitDirection === true || !!slashSteer;
 	if (shouldCommit) {
-		await playlistService.steer(input.playlistId, slashSteer || trimmed);
+		await playlistService.steer(input.playlistId, slashSteer || content);
 		await postChannelMessage({
 			playlistId: input.playlistId,
 			senderKind: "agent",
 			senderId: "playlist-director",
 			messageType: "decision",
 			content: "Committed a playlist steering decision from chat.",
-			data: { prompt: slashSteer || trimmed },
+			data: { prompt: slashSteer || content },
 		});
 	}
 	queueMicrotask(() => {
 		wakePlaylistDirector({
 			playlistId: input.playlistId,
 			trigger: "human-chat",
-			userMessage: input.content,
+			userMessage: content,
 			messageId: message.id,
 		}).catch((err) =>
 			logger.error(
@@ -569,7 +582,7 @@ export async function postHumanChat(input: {
 		scheduleMemoryCurator({
 			playlistId: input.playlistId,
 			trigger: shouldCommit ? "steering" : "user-chat",
-			content: input.content,
+			content,
 		}).catch((err) =>
 			logger.error(
 				{ err, playlistId: input.playlistId },

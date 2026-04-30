@@ -6,6 +6,7 @@ import {
 	getAgentReasoningSettingKey,
 	normalizeAgentReasoningLevel,
 } from "@infinitune/shared/agent-reasoning";
+import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import {
 	type Api,
 	type Context,
@@ -26,6 +27,7 @@ import {
 import z, { type ZodType } from "zod";
 import {
 	type AgentId,
+	type AgentModelPolicy,
 	getAgentSessionKey,
 	getAgentSpec,
 	getPiToolAllowlist,
@@ -164,6 +166,11 @@ export function buildAgentSystemPrompt(agentId: AgentId): string {
 	].join("\n\n");
 }
 
+type PiModelProfile = {
+	provider: "openai-codex" | "anthropic";
+	model: string;
+};
+
 function resolveModel(
 	modelRegistry: ModelRegistry,
 	provider: string,
@@ -174,26 +181,56 @@ function resolveModel(
 	return model as Model<Api>;
 }
 
+function resolveAgentModel(
+	modelRegistry: ModelRegistry,
+	modelPolicy: AgentModelPolicy,
+	preferred?: PiModelProfile,
+): { model: Model<Api>; provider: string; modelId: string } {
+	const candidates = [
+		preferred,
+		modelPolicy.primary,
+		modelPolicy.fallback,
+	].filter((candidate): candidate is PiModelProfile => !!candidate);
+	const seen = new Set<string>();
+	for (const candidate of candidates) {
+		const key = `${candidate.provider}/${candidate.model}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		const model = modelRegistry.find(candidate.provider, candidate.model);
+		if (model) {
+			return {
+				model: model as Model<Api>,
+				provider: candidate.provider,
+				modelId: candidate.model,
+			};
+		}
+	}
+	throw new Error(
+		`Pi model not found: ${[...seen].join(", ") || "no candidates"}`,
+	);
+}
+
 export function createPiSessionOptions(input: {
 	agentId: AgentId;
 	scopeId?: string | null;
 	customTools?: ToolDefinition[];
 	thinkingLevel?: AgentReasoningLevel;
+	modelProfile?: PiModelProfile;
 }) {
 	const handles = createPiRuntimeHandles();
 	const spec = getAgentSpec(input.agentId);
 	const sessionKey = getAgentSessionKey(input.agentId, input.scopeId);
 	const sessionDir = path.join(handles.agentDir, "sessions", sessionKey);
 	const tools = getPiToolAllowlist(input.agentId);
-	const model = resolveModel(
+	const resolvedModel = resolveAgentModel(
 		handles.modelRegistry,
-		spec.modelPolicy.primary.provider,
-		spec.modelPolicy.primary.model,
+		spec.modelPolicy,
+		input.modelProfile,
 	);
 	return {
 		cwd: process.cwd(),
 		agentDir: handles.agentDir,
-		model,
+		model: resolvedModel.model,
 		thinkingLevel: input.thinkingLevel ?? spec.modelPolicy.thinkingLevel,
 		authStorage: handles.authStorage,
 		modelRegistry: handles.modelRegistry,
@@ -207,8 +244,8 @@ export function createPiSessionOptions(input: {
 		settingsManager: SettingsManager.inMemory({
 			compaction: { enabled: true },
 			retry: { enabled: true, maxRetries: 2 },
-			defaultProvider: spec.modelPolicy.primary.provider,
-			defaultModel: spec.modelPolicy.primary.model,
+			defaultProvider: resolvedModel.provider,
+			defaultModel: resolvedModel.modelId,
 		}),
 		noTools: "builtin" as const,
 		tools,
@@ -234,9 +271,16 @@ export async function createInfinituneAgentSession(input: {
 	scopeId?: string | null;
 	customTools?: ToolDefinition[];
 }) {
-	const thinkingLevel = await getInfinituneAgentReasoningLevel(input.agentId);
+	const [thinkingLevel, settings] = await Promise.all([
+		getInfinituneAgentReasoningLevel(input.agentId),
+		settingsService.getAll().catch((): Record<string, string> => ({})),
+	]);
+	const modelProfile = resolveTextLlmProfile({
+		provider: settings.textProvider,
+		model: settings.textModel,
+	});
 	return await createAgentSession(
-		createPiSessionOptions({ ...input, thinkingLevel }),
+		createPiSessionOptions({ ...input, thinkingLevel, modelProfile }),
 	);
 }
 

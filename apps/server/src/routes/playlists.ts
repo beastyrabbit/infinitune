@@ -13,6 +13,7 @@ import {
 	DirectorQuestionValidationError,
 	getPlaylistChatState,
 	initializePlaylistDirectorPlan,
+	MAX_HUMAN_CHAT_CONTENT_CHARS,
 	postHumanChat,
 } from "../agents/playlist-director-service";
 import { getRequestActor, type RequestActor } from "../auth/actor";
@@ -104,7 +105,7 @@ app.get("/:id", async (c) => {
 });
 
 const ChatMessageSchema = z.object({
-	content: z.string().min(1),
+	content: z.string().min(1).max(MAX_HUMAN_CHAT_CONTENT_CHARS),
 	threadId: z.string().nullable().optional(),
 	commitDirection: z.boolean().optional(),
 });

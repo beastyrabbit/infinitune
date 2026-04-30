@@ -1,6 +1,6 @@
 import { Type } from "@mariozechner/pi-ai";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
-import { publicHttpRequestBuffer } from "../../utils/public-http";
+import { isPrivateIp, publicHttpRequestBuffer } from "../../utils/public-http";
 import {
 	type AgentId,
 	assertAgentToolAllowed,
@@ -70,13 +70,15 @@ function publicHttpUrl(rawUrl: string): URL {
 		throw new Error("Only public http/https URLs are allowed.");
 	}
 	const hostname = url.hostname.toLowerCase();
+	const isIpv6Literal = hostname.includes(":");
 	if (
 		hostname === "localhost" ||
 		BLOCKED_HOST_RE.test(hostname) ||
 		PRIVATE_IPV4_RE.test(hostname) ||
 		hostname === "0.0.0.0" ||
 		hostname === "::1" ||
-		hostname.startsWith("[")
+		hostname.startsWith("[") ||
+		(isIpv6Literal && isPrivateIp(hostname))
 	) {
 		throw new Error("Local, private, and internal network URLs are blocked.");
 	}

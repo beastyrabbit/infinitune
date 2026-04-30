@@ -375,6 +375,28 @@ describe("song-service", () => {
 			expect(updated.aceTaskId).toBeNull();
 		});
 
+		it("retries NFS save failures from saving and preserves ACE audio path", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "retry_pending",
+				erroredAtStatus: "saving",
+				errorMessage: "NFS save failed",
+				aceTaskId: "completed-task",
+				aceAudioPath: "/tmp/ace-output.mp3",
+				retryCount: 0,
+			});
+
+			await songService.retryErrored(song.id);
+
+			const db = getTestDb();
+			const [updated] = await db
+				.select()
+				.from(songs)
+				.where(eq(songs.id, song.id));
+			expect(updated.status).toBe("saving");
+			expect(updated.aceAudioPath).toBe("/tmp/ace-output.mp3");
+		});
+
 		it("does nothing for non-retry_pending songs", async () => {
 			const pl = await createTestPlaylist();
 			const song = await createTestSong(pl.id, 1, { status: "pending" });
@@ -447,6 +469,25 @@ describe("song-service", () => {
 				.from(songs)
 				.where(eq(songs.id, song.id));
 			expect(updated.status).toBe("metadata_ready");
+		});
+
+		it("keeps saving songs with an ACE audio path in saving", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "saving",
+				aceAudioPath: "/tmp/ace-output.mp3",
+			});
+
+			await songService.revertTransient(song.id);
+
+			const db = getTestDb();
+			const [updated] = await db
+				.select()
+				.from(songs)
+				.where(eq(songs.id, song.id));
+			expect(updated.status).toBe("saving");
+			expect(updated.aceAudioPath).toBe("/tmp/ace-output.mp3");
+			expect(emittedEvents).toHaveLength(0);
 		});
 
 		it("does nothing for ready/played/error songs", async () => {

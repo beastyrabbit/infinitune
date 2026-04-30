@@ -60,6 +60,14 @@ describe("agent network guards", () => {
 		expect(requestMock).not.toHaveBeenCalled();
 	});
 
+	it("blocks private IPv6 literal URLs before DNS lookup for web fetch", async () => {
+		await expect(webFetchUrl("http://[fc00::1]/page")).rejects.toThrow(
+			/private/i,
+		);
+		expect(lookupMock).not.toHaveBeenCalled();
+		expect(requestMock).not.toHaveBeenCalled();
+	});
+
 	it("blocks redirects from agent web fetches", async () => {
 		lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
 		setPublicHttpRequestOverrideForTests(async (url, options) => {

@@ -450,6 +450,11 @@ export async function revertTransient(id: string) {
 			.update(songs)
 			.set({ status: "pending", generationStartedAt: Date.now() })
 			.where(eq(songs.id, id));
+	} else if (song.status === "saving" && song.aceAudioPath) {
+		await db
+			.update(songs)
+			.set({ generationStartedAt: Date.now() })
+			.where(eq(songs.id, id));
 	} else if (
 		["submitting_to_ace", "generating_audio", "saving"].includes(song.status)
 	) {

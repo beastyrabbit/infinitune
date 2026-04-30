@@ -51,6 +51,7 @@ import {
 } from "../agents/memory-store";
 import {
 	answerDirectorQuestion,
+	MAX_HUMAN_CHAT_CONTENT_CHARS,
 	postHumanChat,
 } from "../agents/playlist-director-service";
 import {
@@ -367,5 +368,35 @@ describe("agent ensemble", () => {
 			.from(playlists)
 			.where(eq(playlists.id, playlist.id));
 		expect(row.promptEpoch).toBe(0);
+	});
+
+	it("caps human chat before storing and waking the director", async () => {
+		const playlist = await playlistService.create({
+			name: "Chat cap",
+			prompt: "garage rock",
+			llmProvider: "openai-codex",
+			llmModel: "",
+		});
+		await postHumanChat({
+			playlistId: playlist.id,
+			content: "x".repeat(MAX_HUMAN_CHAT_CONTENT_CHARS + 50),
+		});
+
+		const messages = await readChannelMessages({
+			playlistId: playlist.id,
+			limit: 10,
+		});
+		const human = messages.find((message) => message.senderKind === "human");
+		expect(human?.content).toHaveLength(MAX_HUMAN_CHAT_CONTENT_CHARS);
+		expect(human?.data).toMatchObject({ truncated: true });
+		await vi.waitFor(async () => {
+			const latest = await readChannelMessages({
+				playlistId: playlist.id,
+				limit: 10,
+			});
+			expect(latest.map((message) => message.senderId)).toContain(
+				"playlist-director",
+			);
+		});
 	});
 });
