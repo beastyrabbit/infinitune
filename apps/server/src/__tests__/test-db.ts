@@ -135,16 +135,60 @@ const SCHEMA_SQL = `
 		daemon_version TEXT
 	);
 
-	CREATE TABLE playlist_device_assignments (
-		id TEXT PRIMARY KEY,
-		created_at INTEGER NOT NULL,
-		playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-		device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-		assigned_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-		assigned_at INTEGER NOT NULL,
-		is_active INTEGER NOT NULL DEFAULT 1
-	);
-`;
+		CREATE TABLE playlist_device_assignments (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+			device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+			assigned_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+			assigned_at INTEGER NOT NULL,
+			is_active INTEGER NOT NULL DEFAULT 1
+		);
+
+		CREATE TABLE agent_channel_messages (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+			thread_id TEXT,
+			sender_kind TEXT NOT NULL,
+			sender_id TEXT NOT NULL,
+			message_type TEXT NOT NULL,
+			visibility TEXT NOT NULL DEFAULT 'public',
+			content TEXT NOT NULL,
+			data_json TEXT,
+			correlation_id TEXT
+		);
+
+		CREATE TABLE agent_memory_entries (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			scope TEXT NOT NULL,
+			playlist_id TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+			kind TEXT NOT NULL,
+			title TEXT NOT NULL,
+			content_json TEXT NOT NULL,
+			confidence REAL NOT NULL DEFAULT 0.5,
+			importance REAL NOT NULL DEFAULT 0.5,
+			use_count INTEGER NOT NULL DEFAULT 0,
+			last_used_at INTEGER,
+			expires_at INTEGER,
+			deleted_at INTEGER
+		);
+
+		CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			playlist_id TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+			agent_id TEXT NOT NULL,
+			session_key TEXT,
+			trigger TEXT NOT NULL,
+			status TEXT NOT NULL,
+			input_json TEXT,
+			output_json TEXT,
+			error TEXT
+		);
+	`;
 
 export function setupTestDb() {
 	testSqlite = new Database(":memory:");

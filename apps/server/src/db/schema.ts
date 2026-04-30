@@ -245,6 +245,101 @@ export const playlistDeviceAssignments = sqliteTable(
 	],
 );
 
+// ─── Agent Channel ─────────────────────────────────────────────────────
+
+export const agentChannelMessages = sqliteTable(
+	"agent_channel_messages",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		playlistId: text("playlist_id")
+			.notNull()
+			.references(() => playlists.id, { onDelete: "cascade" }),
+		threadId: text("thread_id"),
+		senderKind: text("sender_kind").notNull(),
+		senderId: text("sender_id").notNull(),
+		messageType: text("message_type").notNull(),
+		visibility: text("visibility").notNull().default("public"),
+		content: text("content").notNull(),
+		dataJson: text("data_json"),
+		correlationId: text("correlation_id"),
+	},
+	(table) => [
+		index("agent_channel_messages_by_playlist").on(
+			table.playlistId,
+			table.createdAt,
+		),
+		index("agent_channel_messages_by_thread").on(
+			table.playlistId,
+			table.threadId,
+		),
+		index("agent_channel_messages_by_correlation").on(table.correlationId),
+	],
+);
+
+export const agentMemoryEntries = sqliteTable(
+	"agent_memory_entries",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		scope: text("scope").notNull(),
+		playlistId: text("playlist_id").references(() => playlists.id, {
+			onDelete: "cascade",
+		}),
+		kind: text("kind").notNull(),
+		title: text("title").notNull(),
+		contentJson: text("content_json").notNull(),
+		confidence: real("confidence").notNull().default(0.5),
+		importance: real("importance").notNull().default(0.5),
+		useCount: integer("use_count").notNull().default(0),
+		lastUsedAt: integer("last_used_at", { mode: "number" }),
+		expiresAt: integer("expires_at", { mode: "number" }),
+		deletedAt: integer("deleted_at", { mode: "number" }),
+	},
+	(table) => [
+		index("agent_memory_entries_by_scope").on(table.scope, table.playlistId),
+		index("agent_memory_entries_by_kind").on(table.kind),
+		index("agent_memory_entries_by_deleted").on(table.deletedAt),
+	],
+);
+
+export const agentRuns = sqliteTable(
+	"agent_runs",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		playlistId: text("playlist_id").references(() => playlists.id, {
+			onDelete: "cascade",
+		}),
+		agentId: text("agent_id").notNull(),
+		sessionKey: text("session_key"),
+		trigger: text("trigger").notNull(),
+		status: text("status").notNull(),
+		inputJson: text("input_json"),
+		outputJson: text("output_json"),
+		error: text("error"),
+	},
+	(table) => [
+		index("agent_runs_by_playlist").on(table.playlistId, table.createdAt),
+		index("agent_runs_by_agent").on(table.agentId, table.createdAt),
+	],
+);
+
 // ─── Type exports ───────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -260,3 +355,9 @@ export type PlaylistDeviceAssignment =
 	typeof playlistDeviceAssignments.$inferSelect;
 export type NewPlaylistDeviceAssignment =
 	typeof playlistDeviceAssignments.$inferInsert;
+export type AgentChannelMessage = typeof agentChannelMessages.$inferSelect;
+export type NewAgentChannelMessage = typeof agentChannelMessages.$inferInsert;
+export type AgentMemoryEntry = typeof agentMemoryEntries.$inferSelect;
+export type NewAgentMemoryEntry = typeof agentMemoryEntries.$inferInsert;
+export type AgentRun = typeof agentRuns.$inferSelect;
+export type NewAgentRun = typeof agentRuns.$inferInsert;

@@ -1,3 +1,5 @@
+import { normalizeAgentReasoningLevel } from "@infinitune/shared/agent-reasoning";
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { settings } from "../db/schema";
@@ -14,10 +16,19 @@ export async function get(key: string): Promise<string | null> {
 }
 
 export async function set(key: string, value: string) {
-	await db.insert(settings).values({ key, value }).onConflictDoUpdate({
-		target: settings.key,
-		set: { value },
-	});
+	const storedValue =
+		key === "textProvider" || key === "personaProvider"
+			? normalizeLlmProvider(value)
+			: key.startsWith("agentReasoning.")
+				? normalizeAgentReasoningLevel(value)
+				: value;
+	await db
+		.insert(settings)
+		.values({ key, value: storedValue })
+		.onConflictDoUpdate({
+			target: settings.key,
+			set: { value: storedValue },
+		});
 
 	emit("settings.changed", { key });
 }

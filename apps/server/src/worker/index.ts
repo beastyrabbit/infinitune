@@ -1,5 +1,6 @@
 import {
 	DEFAULT_TEXT_PROVIDER,
+	normalizeLlmProvider,
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
 import { sqlite } from "../db/index";
@@ -276,9 +277,13 @@ async function getSettings(): Promise<{
 	personaModel: string;
 }> {
 	const all = await settingsService.getAll();
-	const textProvider = all.textProvider || DEFAULT_TEXT_PROVIDER;
+	const textProvider = normalizeLlmProvider(
+		all.textProvider || DEFAULT_TEXT_PROVIDER,
+	);
 	const textModel = all.textModel || "";
-	const personaProvider = all.personaProvider || textProvider;
+	const personaProvider = normalizeLlmProvider(
+		all.personaProvider || textProvider,
+	);
 	const hasExplicitPersonaModel =
 		Boolean(all.personaModel) && all.personaModel !== "__fallback__";
 	const personaModel = hasExplicitPersonaModel
@@ -290,7 +295,12 @@ async function getSettings(): Promise<{
 	return {
 		textProvider,
 		textModel,
-		imageProvider: all.imageProvider || "comfyui",
+		imageProvider:
+			all.imageProvider === "ollama"
+				? "comfyui"
+				: all.imageProvider === "openrouter"
+					? "inference-sh"
+					: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
 		personaProvider,
 		personaModel,
@@ -954,13 +964,6 @@ async function runPersonaScan(
 		provider: settings.personaProvider,
 		model: settings.personaModel,
 	});
-	if (pProvider === "openrouter" && !pModel.trim()) {
-		logger.warn(
-			"Skipping persona scan: OpenRouter persona provider requires an explicit persona model",
-		);
-		return;
-	}
-
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;
 		personaPending.add(song.id);

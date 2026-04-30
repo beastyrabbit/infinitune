@@ -1,4 +1,9 @@
-import { DEFAULT_TEXT_PROVIDER } from "@infinitune/shared/text-llm-profile";
+import {
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
+	normalizeLlmProvider,
+} from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,7 +27,6 @@ import {
 } from "@/integrations/api/client";
 import {
 	useAutoplayerCodexModels,
-	useAutoplayerOllamaModels,
 	useSettings,
 } from "@/integrations/api/hooks";
 
@@ -54,6 +58,7 @@ interface PlaylistCreatorProps {
 		inferMethod?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
+		initialDirectorPlan?: boolean;
 	}) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
@@ -76,6 +81,7 @@ interface PlaylistCreatorProps {
 		inferMethod?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
+		initialDirectorPlan?: boolean;
 	}) => void;
 }
 
@@ -101,7 +107,6 @@ export function PlaylistCreator({
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
 	const [model, setModel] = useState("");
-	const ollamaModels = useAutoplayerOllamaModels() ?? [];
 	const codexModels = useAutoplayerCodexModels() ?? [];
 	const [loading, setLoading] = useState(false);
 	const [enhancing, setEnhancing] = useState(false);
@@ -121,22 +126,16 @@ export function PlaylistCreator({
 		}
 	}, [prompt, roomNameEdited]);
 
-	// Apply defaults from settings once loaded — takes priority over ollama fallback
+	// Apply defaults from settings once loaded.
 	const settingsApplied = useRef(false);
 	useEffect(() => {
 		if (!settings || settingsApplied.current) return;
 		settingsApplied.current = true;
-		const configuredProvider =
-			(settings.textProvider as LlmProvider) || DEFAULT_TEXT_PROVIDER;
+		const configuredProvider = normalizeLlmProvider(settings.textProvider);
 		setProvider(configuredProvider);
 		setModel(settings.textModel?.trim() || "");
 	}, [settings]);
 
-	const textModels = useMemo(
-		() =>
-			ollamaModels.filter((m) => m.type === "text" || (!m.type && !m.vision)),
-		[ollamaModels],
-	);
 	const codexTextModels = useMemo(
 		() =>
 			codexModels.filter(
@@ -146,31 +145,22 @@ export function PlaylistCreator({
 	);
 
 	useEffect(() => {
-		if (provider === "ollama" && textModels.length > 0) {
-			if (!textModels.some((m) => m.name === model)) {
-				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
-				setModel(preferred ? preferred.name : textModels[0].name);
-			}
-			return;
-		}
-
-		if (provider === "openrouter") {
-			const isKnownOllamaModel = textModels.some((m) => m.name === model);
-			const isKnownCodexModel = codexTextModels.some((m) => m.name === model);
-			if (isKnownOllamaModel || isKnownCodexModel) {
-				setModel("");
-			}
-			return;
-		}
-
 		if (provider === "openai-codex" && codexTextModels.length > 0) {
 			if (!codexTextModels.some((m) => m.name === model)) {
 				const preferred =
 					codexTextModels.find((m) => m.is_default) || codexTextModels[0];
 				setModel(preferred.name);
 			}
+			return;
 		}
-	}, [provider, model, textModels, codexTextModels]);
+		if (provider === "openai-codex" && !model.trim()) {
+			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+			return;
+		}
+		if (provider === "anthropic" && !model.trim()) {
+			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
+		}
+	}, [provider, model, codexTextModels]);
 
 	const handleEnhancePrompt = async () => {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
@@ -232,7 +222,7 @@ export function PlaylistCreator({
 				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
 			);
 
-			setLoadingState(">>> INITIALIZING <<<");
+			setLoadingState(">>> DIRECTOR PLANNING <<<");
 
 			return {
 				name: roomName.trim() || prompt.trim().slice(0, 50),
@@ -253,10 +243,11 @@ export function PlaylistCreator({
 				inferMethod,
 				aceThinking,
 				aceAutoDuration,
+				initialDirectorPlan: true,
 			};
 		} catch (error) {
 			const reason = getRequestErrorMessage(error);
-			setLoadingState(">>> INITIALIZING <<<");
+			setLoadingState(">>> DIRECTOR PLANNING <<<");
 			setStatusMessage(
 				`Session analysis failed: ${reason}. Starting with defaults.`,
 			);
@@ -272,6 +263,7 @@ export function PlaylistCreator({
 				inferMethod,
 				aceThinking,
 				aceAutoDuration,
+				initialDirectorPlan: true,
 			};
 		}
 	};
@@ -402,28 +394,6 @@ export function PlaylistCreator({
 									<button
 										type="button"
 										className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "ollama"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setProvider("ollama")}
-									>
-										OLLAMA
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "openrouter"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setProvider("openrouter")}
-									>
-										OPENROUTER
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
 											provider === "openai-codex"
 												? "bg-white text-black"
 												: "bg-transparent text-white hover:bg-white/10"
@@ -432,6 +402,17 @@ export function PlaylistCreator({
 									>
 										OPENAI CODEX
 									</button>
+									<button
+										type="button"
+										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+											provider === "anthropic"
+												? "bg-white text-black"
+												: "bg-transparent text-white hover:bg-white/10"
+										}`}
+										onClick={() => setProvider("anthropic")}
+									>
+										ANTHROPIC
+									</button>
 								</div>
 							</div>
 
@@ -439,25 +420,7 @@ export function PlaylistCreator({
 								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									TEXT MODEL
 								</p>
-								{provider === "ollama" && textModels.length > 0 ? (
-									<Select value={model} onValueChange={setModel}>
-										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-											<SelectValue placeholder="SELECT MODEL" />
-										</SelectTrigger>
-										<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-											{textModels.map((m) => (
-												<SelectItem
-													key={m.name}
-													value={m.name}
-													className="font-mono text-sm font-bold uppercase text-white"
-												>
-													{m.name.toUpperCase()}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								) : provider === "openai-codex" &&
-									codexTextModels.length > 0 ? (
+								{provider === "openai-codex" && codexTextModels.length > 0 ? (
 									<Select value={model} onValueChange={setModel}>
 										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
 											<SelectValue placeholder="SELECT CODEX MODEL" />
@@ -479,11 +442,9 @@ export function PlaylistCreator({
 									<Input
 										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 										placeholder={
-											provider === "openrouter"
-												? "OPENROUTER/MODEL-ID"
-												: provider === "openai-codex"
-													? "GPT-5.3-CODEX"
-													: "LLAMA3.1:8B"
+											provider === "openai-codex"
+												? DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()
+												: DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()
 										}
 										value={model}
 										onChange={(e) => setModel(e.target.value)}
@@ -565,10 +526,10 @@ export function PlaylistCreator({
 							disabled={!canStart}
 						>
 							{loading
-								? loadingState || ">>> INITIALIZING <<<"
+								? loadingState || ">>> DIRECTOR PLANNING <<<"
 								: isRoom
-									? ">>> START IN ROOM <<<"
-									: ">>> START LISTENING <<<"}
+									? ">>> PLAN ROOM <<<"
+									: ">>> PLAN PLAYLIST <<<"}
 						</Button>
 						{statusMessage && (
 							<p className="text-center text-[10px] uppercase tracking-widest text-yellow-300 mt-2">

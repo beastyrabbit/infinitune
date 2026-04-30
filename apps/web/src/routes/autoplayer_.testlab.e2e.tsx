@@ -124,7 +124,9 @@ function PipelineTestPage() {
 			const imageProvider =
 				settings?.imageProvider === "ollama"
 					? "comfyui"
-					: settings?.imageProvider || "comfyui";
+					: settings?.imageProvider === "openrouter"
+						? "inference-sh"
+						: settings?.imageProvider || "comfyui";
 			const imageModel = settings?.imageModel || "";
 			const aceModel = settings?.aceModel || "";
 			const cd = collectedData.current;

@@ -103,13 +103,72 @@ export type AutoplayerModelOption = {
 	vision?: boolean;
 };
 
-export type OpenRouterModelOption = {
+export type InferenceShImageModelOption = {
 	id: string;
 	name: string;
-	promptPrice: string;
-	completionPrice: string;
-	contextLength: number;
+	priceLabel: string;
+	pricePerImageUsd?: number;
+	description: string;
 };
+
+export type AgentChannelSenderKind = "human" | "agent" | "system" | "tool";
+export type AgentChannelMessageType =
+	| "chat"
+	| "proposal"
+	| "critique"
+	| "decision"
+	| "question"
+	| "memory_note"
+	| "tool_summary";
+export type AgentChannelVisibility = "public" | "collapsed";
+
+export interface AgentChannelMessage {
+	id: string;
+	createdAt: number;
+	playlistId: string;
+	threadId: string | null;
+	senderKind: AgentChannelSenderKind;
+	senderId: string;
+	messageType: AgentChannelMessageType;
+	visibility: AgentChannelVisibility;
+	content: string;
+	data: unknown;
+	correlationId: string | null;
+}
+
+export interface AgentChatState {
+	playlistId: string;
+	requiredQuestions: AgentChannelMessage[];
+	generationBlocked: boolean;
+}
+
+export type AgentMemoryScope = "global" | "playlist";
+export type AgentMemoryKind =
+	| "taste"
+	| "avoid"
+	| "topic"
+	| "constraint"
+	| "production"
+	| "lyrics"
+	| "summary"
+	| "feedback";
+
+export interface AgentMemoryEntry {
+	id: string;
+	createdAt: number;
+	updatedAt: number;
+	scope: AgentMemoryScope;
+	playlistId: string | null;
+	kind: AgentMemoryKind;
+	title: string;
+	content: unknown;
+	confidence: number;
+	importance: number;
+	useCount: number;
+	lastUsedAt: number | null;
+	expiresAt: number | null;
+	deletedAt: number | null;
+}
 
 type TextModelOption = {
 	name: string;
@@ -172,7 +231,9 @@ function extractAutoplayerModelOptions(
 	});
 }
 
-function extractOpenRouterModels(payload: unknown): OpenRouterModelOption[] {
+function extractInferenceShImageModels(
+	payload: unknown,
+): InferenceShImageModelOption[] {
 	if (!payload || typeof payload !== "object") return [];
 	const models = (payload as { models?: unknown }).models;
 	if (!Array.isArray(models)) return [];
@@ -181,16 +242,15 @@ function extractOpenRouterModels(payload: unknown): OpenRouterModelOption[] {
 		const typedModel = model as {
 			id?: unknown;
 			name?: unknown;
-			promptPrice?: unknown;
-			completionPrice?: unknown;
-			contextLength?: unknown;
+			priceLabel?: unknown;
+			pricePerImageUsd?: unknown;
+			description?: unknown;
 		};
 		if (
 			typeof typedModel.id !== "string" ||
 			typeof typedModel.name !== "string" ||
-			typeof typedModel.promptPrice !== "string" ||
-			typeof typedModel.completionPrice !== "string" ||
-			typeof typedModel.contextLength !== "number"
+			typeof typedModel.priceLabel !== "string" ||
+			typeof typedModel.description !== "string"
 		) {
 			return [];
 		}
@@ -198,9 +258,12 @@ function extractOpenRouterModels(payload: unknown): OpenRouterModelOption[] {
 			{
 				id: typedModel.id,
 				name: typedModel.name,
-				promptPrice: typedModel.promptPrice,
-				completionPrice: typedModel.completionPrice,
-				contextLength: typedModel.contextLength,
+				priceLabel: typedModel.priceLabel,
+				pricePerImageUsd:
+					typeof typedModel.pricePerImageUsd === "number"
+						? typedModel.pricePerImageUsd
+						: undefined,
+				description: typedModel.description,
 			},
 		];
 	});
@@ -312,29 +375,21 @@ export function useAutoplayerCodexModels(
 	return data;
 }
 
-type OpenRouterModelType = "text" | "image";
-
-export function useAutoplayerOpenRouterModelsQuery(
-	type: OpenRouterModelType,
-	enabled = true,
-) {
+export function useAutoplayerInferenceShImageModelsQuery(enabled = true) {
 	return useQuery({
-		queryKey: ["autoplayer", "models", "openrouter", type],
+		queryKey: ["autoplayer", "models", "inference-sh", "image"],
 		queryFn: async () =>
-			extractOpenRouterModels(
-				await api.get<unknown>(
-					`/api/autoplayer/openrouter-models?type=${type}`,
-				),
+			extractInferenceShImageModels(
+				await api.get<unknown>("/api/autoplayer/inference-sh-image-models"),
 			),
 		enabled,
 	});
 }
 
-export function useAutoplayerOpenRouterModels(
-	type: OpenRouterModelType,
+export function useAutoplayerInferenceShImageModels(
 	enabled = true,
-): OpenRouterModelOption[] | undefined {
-	const { data } = useAutoplayerOpenRouterModelsQuery(type, enabled);
+): InferenceShImageModelOption[] | undefined {
+	const { data } = useAutoplayerInferenceShImageModelsQuery(enabled);
 	return data;
 }
 
@@ -617,6 +672,7 @@ export const useCreatePlaylist = createMutation<
 		inferMethod?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
+		initialDirectorPlan?: boolean;
 	},
 	Playlist
 >((args) => api.post<Playlist>("/api/playlists", args), [["playlists"]]);
@@ -687,6 +743,215 @@ export const useUpdatePlaylistPosition = createMutation<{
 	[["playlists"]],
 	{ silent: true },
 );
+
+// ─── Agent Channel + Memory ───────────────────────────────────────────
+
+export function useAgentChatMessages(
+	playlistId: string | null,
+	limit = 100,
+): AgentChannelMessage[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["agent-chat", "messages", playlistId, limit],
+		queryFn: async () => {
+			const response = await api.get<{ messages: AgentChannelMessage[] }>(
+				`/api/playlists/${encodeURIComponent(playlistId ?? "")}/agent-chat/messages?limit=${limit}`,
+			);
+			return response.messages;
+		},
+		enabled: !!playlistId,
+		refetchInterval: 5000,
+	});
+	return playlistId ? data : undefined;
+}
+
+export function useAgentChatState(
+	playlistId: string | null,
+): AgentChatState | undefined {
+	const { data } = useQuery({
+		queryKey: ["agent-chat", "state", playlistId],
+		queryFn: () =>
+			api.get<AgentChatState>(
+				`/api/playlists/${encodeURIComponent(playlistId ?? "")}/agent-chat/state`,
+			),
+		enabled: !!playlistId,
+		refetchInterval: 5000,
+	});
+	return playlistId ? data : undefined;
+}
+
+export function usePostAgentChatMessage() {
+	const qc = useQueryClient();
+	return useCallback(
+		async (args: {
+			playlistId: string;
+			content: string;
+			threadId?: string | null;
+			commitDirection?: boolean;
+		}): Promise<{ messageId: string; committedDirection: boolean }> => {
+			try {
+				const result = await api.post<{
+					messageId: string;
+					committedDirection: boolean;
+				}>(
+					`/api/playlists/${encodeURIComponent(args.playlistId)}/agent-chat/messages`,
+					{
+						content: args.content,
+						threadId: args.threadId,
+						commitDirection: args.commitDirection,
+					},
+				);
+				qc.invalidateQueries({
+					queryKey: ["agent-chat", "messages", args.playlistId],
+				});
+				qc.invalidateQueries({
+					queryKey: ["agent-chat", "state", args.playlistId],
+				});
+				qc.invalidateQueries({ queryKey: ["playlists"] });
+				return result;
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : "Unable to send chat message",
+				);
+				throw err;
+			}
+		},
+		[qc],
+	);
+}
+
+export function useAnswerAgentQuestion() {
+	const qc = useQueryClient();
+	return useCallback(
+		async (args: {
+			playlistId: string;
+			questionId: string;
+			content: string;
+		}): Promise<{ messageId: string }> => {
+			try {
+				const result = await api.post<{ messageId: string }>(
+					`/api/playlists/${encodeURIComponent(args.playlistId)}/agent-chat/answer`,
+					{ questionId: args.questionId, content: args.content },
+				);
+				qc.invalidateQueries({
+					queryKey: ["agent-chat", "messages", args.playlistId],
+				});
+				qc.invalidateQueries({
+					queryKey: ["agent-chat", "state", args.playlistId],
+				});
+				return result;
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : "Unable to answer question",
+				);
+				throw err;
+			}
+		},
+		[qc],
+	);
+}
+
+export function useAgentMemoryEntries(
+	playlistId: string | null,
+): AgentMemoryEntry[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["agent-memory", "playlist", playlistId],
+		queryFn: async () => {
+			const [playlistMemory, globalMemory] = await Promise.all([
+				api.get<{ entries: AgentMemoryEntry[] }>(
+					`/api/agent-memory?scope=playlist&playlistId=${encodeURIComponent(
+						playlistId ?? "",
+					)}&limit=60`,
+				),
+				api.get<{ entries: AgentMemoryEntry[] }>(
+					"/api/agent-memory?scope=global&limit=40",
+				),
+			]);
+			const seen = new Set<string>();
+			return [...playlistMemory.entries, ...globalMemory.entries].filter(
+				(entry) => {
+					if (seen.has(entry.id)) return false;
+					seen.add(entry.id);
+					return true;
+				},
+			);
+		},
+		enabled: !!playlistId,
+		refetchInterval: 10_000,
+	});
+	return playlistId ? data : undefined;
+}
+
+export function useUpdateAgentMemoryEntry() {
+	const qc = useQueryClient();
+	return useCallback(
+		async (args: {
+			id: string;
+			playlistId?: string | null;
+			patch: Partial<
+				Pick<
+					AgentMemoryEntry,
+					| "scope"
+					| "playlistId"
+					| "kind"
+					| "title"
+					| "content"
+					| "confidence"
+					| "importance"
+					| "expiresAt"
+				>
+			>;
+		}): Promise<AgentMemoryEntry> => {
+			try {
+				const result = await api.patch<{ entry: AgentMemoryEntry }>(
+					`/api/agent-memory/${encodeURIComponent(args.id)}`,
+					args.patch,
+				);
+				qc.invalidateQueries({ queryKey: ["agent-memory"] });
+				if (args.playlistId) {
+					qc.invalidateQueries({
+						queryKey: ["agent-memory", "playlist", args.playlistId],
+					});
+				}
+				return result.entry;
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : "Unable to update memory",
+				);
+				throw err;
+			}
+		},
+		[qc],
+	);
+}
+
+export function useDeleteAgentMemoryEntry() {
+	const qc = useQueryClient();
+	return useCallback(
+		async (args: {
+			id: string;
+			playlistId?: string | null;
+		}): Promise<AgentMemoryEntry> => {
+			try {
+				const result = await api.del<{ entry: AgentMemoryEntry }>(
+					`/api/agent-memory/${encodeURIComponent(args.id)}`,
+				);
+				qc.invalidateQueries({ queryKey: ["agent-memory"] });
+				if (args.playlistId) {
+					qc.invalidateQueries({
+						queryKey: ["agent-memory", "playlist", args.playlistId],
+					});
+				}
+				return result.entry;
+			} catch (err) {
+				toast.error(
+					err instanceof Error ? err.message : "Unable to delete memory",
+				);
+				throw err;
+			}
+		},
+		[qc],
+	);
+}
 
 // ─── Songs ───────────────────────────────────────────────────────────
 

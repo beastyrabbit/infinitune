@@ -123,7 +123,8 @@ async function generatePersonaWithProvider(
 async function generateCoverWithProvider(
 	input: ProviderTaskPorts["generateCover"],
 ): Promise<unknown> {
-	const normalizedProvider = normalizeProvider(input.provider);
+	const normalizedProvider =
+		input.provider === "ollama" ? "comfyui" : input.provider;
 	const result = await generateCover({
 		coverPrompt: input.coverPrompt,
 		provider: normalizedProvider,

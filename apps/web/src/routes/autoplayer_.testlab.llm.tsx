@@ -32,9 +32,9 @@ const MODEL_FIELD_ID = "llm-test-model";
 
 function LlmTestPage() {
 	const settings = useSettings();
-	const [provider, setProvider] = useState<
-		"ollama" | "openrouter" | "openai-codex"
-	>("ollama");
+	const [provider, setProvider] = useState<"ollama" | "openai-codex">(
+		"openai-codex",
+	);
 	const ollamaModels = useOllamaTextModels(provider === "ollama") ?? [];
 	const codexModels = useCodexTextModels(provider === "openai-codex") ?? [];
 	const promptContract = useAutoplayerPromptContract();
@@ -49,11 +49,10 @@ function LlmTestPage() {
 	useEffect(() => {
 		if (settings) {
 			const p =
-				settings.textProvider === "openrouter"
-					? "openrouter"
-					: settings.textProvider === "openai-codex"
-						? "openai-codex"
-						: "ollama";
+				settings.textProvider === "openrouter" ||
+				settings.textProvider === "openai-codex"
+					? "openai-codex"
+					: "ollama";
 			setProvider(p);
 			if (settings.textModel) setModel(settings.textModel);
 		}
@@ -212,19 +211,6 @@ function LlmTestPage() {
 									<button
 										type="button"
 										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-											provider === "openrouter"
-												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-												: "border-white/10 text-white/40"
-										}`}
-										onClick={() => setProvider("openrouter")}
-										disabled={isRunning}
-										aria-pressed={provider === "openrouter"}
-									>
-										OpenRouter
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
 											provider === "openai-codex"
 												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
 												: "border-white/10 text-white/40"
@@ -333,9 +319,7 @@ function LlmTestPage() {
 						Structured output:{" "}
 						{provider === "ollama"
 							? "Ollama format (JSON schema)"
-							: provider === "openai-codex"
-								? "Codex outputSchema (json_schema)"
-								: "OpenRouter response_format (json_schema)"}
+							: "Codex outputSchema (json_schema)"}
 					</div>
 				</div>
 			</section>

@@ -44,7 +44,7 @@ export type PlaylistMode = (typeof PLAYLIST_MODES)[number];
 export const PLAYLIST_STATUSES = ["active", "closing", "closed"] as const;
 export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 
-export const LLM_PROVIDERS = ["ollama", "openrouter", "openai-codex"] as const;
+export const LLM_PROVIDERS = ["openai-codex", "anthropic"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
 export type { SongCover } from "./protocol";
@@ -55,7 +55,7 @@ export type { SongCover } from "./protocol";
  */
 export type Id<_T extends string> = string;
 
-export interface PlaylistManagerPlanSlot {
+export interface PlaylistManagerPlanSlotV1 {
 	slot: number;
 	transitionIntent: string;
 	topicHint: string;
@@ -64,17 +64,62 @@ export interface PlaylistManagerPlanSlot {
 	energyTarget: "low" | "medium" | "high" | "extreme";
 }
 
-export interface PlaylistManagerPlan {
-	version: number;
+export interface PlaylistManagerPlanSlotV2 {
+	slot: number;
+	laneId: string;
+	preservedAnchors: string[];
+	variationMoves: string[];
+	sonicFocus: string;
+	lyricFocus: string;
+	captionFocus: string;
+	energyTarget: "low" | "medium" | "high" | "extreme";
+	noveltyTarget: "low" | "medium" | "high";
+	avoidPatterns: string[];
+	transitionIntent?: string;
+	topicHint?: string;
+	lyricTheme?: string;
+}
+
+export type PlaylistManagerPlanSlot =
+	| PlaylistManagerPlanSlotV1
+	| PlaylistManagerPlanSlotV2;
+
+export interface PlaylistManagerPlanV1 {
+	version: 1;
 	epoch: number;
 	startOrderIndex?: number;
 	windowSize: number;
 	strategySummary: string;
 	transitionPolicy: string;
 	avoidPatterns: string[];
-	slots: PlaylistManagerPlanSlot[];
+	slots: PlaylistManagerPlanSlotV1[];
 	updatedAt: number;
 }
+
+export interface PlaylistManagerPlanV2 {
+	version: 2;
+	epoch: number;
+	startOrderIndex?: number;
+	windowSize: number;
+	hardAnchors: string[];
+	softAnchors: string[];
+	variationBudget: "low" | "medium" | "high";
+	elasticDimensions: string[];
+	forbiddenMoves: string[];
+	diversityTargets: string[];
+	strategySummary: string;
+	transitionPolicy: string;
+	topicLanes: Array<{
+		id: string;
+		summary: string;
+		anchors: string[];
+	}>;
+	slots: PlaylistManagerPlanSlotV2[];
+	criticNotes: string[];
+	updatedAt: number;
+}
+
+export type PlaylistManagerPlan = PlaylistManagerPlanV1 | PlaylistManagerPlanV2;
 
 // ─── Wire types (what the API returns) ──────────────────────────────
 

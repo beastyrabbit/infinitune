@@ -18,6 +18,7 @@ import { logger, loggingConfig } from "./logger";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
+import agentMemoryRoutes from "./routes/agent-memory";
 import autoplayerRoutes from "./routes/autoplayer";
 import { createControlRoutes } from "./routes/control";
 import playlistsRoutes from "./routes/playlists";
@@ -193,7 +194,7 @@ app.use(
 	cors({
 		origin: (
 			process.env.ALLOWED_ORIGINS ??
-			"http://localhost:5173,http://web.localhost:1355"
+			"http://localhost:5173,https://web-infinitune.localhost:1355,http://web-infinitune.localhost:1355"
 		)
 			.split(",")
 			.map((origin) => origin.trim())
@@ -315,6 +316,7 @@ app.get("/api/worker/actors", (c) => {
 // ─── API routes ──────────────────────────────────────────────────────
 app.route("/api/settings", settingsRoutes);
 app.route("/api/playlists", playlistsRoutes);
+app.route("/api/agent-memory", agentMemoryRoutes);
 app.route("/api/songs", songsRoutes);
 app.route("/api/v1", createControlRoutes(roomManager));
 // Legacy compatibility endpoints (`/rooms`, `/now-playing`) while clients migrate.

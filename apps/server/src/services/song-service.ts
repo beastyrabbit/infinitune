@@ -709,7 +709,7 @@ export async function getWorkQueue(playlistId: string) {
 		)
 		.sort((a, b) => b.orderIndex - a.orderIndex);
 
-	const recentCompleted = completedSongs.slice(0, 5).map((s) => ({
+	const recentCompleted = completedSongs.slice(0, 12).map((s) => ({
 		title: s.title!,
 		artistName: s.artistName!,
 		genre: s.genre!,

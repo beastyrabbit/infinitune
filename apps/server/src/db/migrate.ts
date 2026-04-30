@@ -174,9 +174,72 @@ export function ensureSchema() {
 			ON playlist_device_assignments(playlist_id);
 		CREATE INDEX IF NOT EXISTS playlist_device_assignments_by_device
 			ON playlist_device_assignments(device_id);
-		CREATE INDEX IF NOT EXISTS playlist_device_assignments_by_active
-			ON playlist_device_assignments(is_active);
-	`);
+			CREATE INDEX IF NOT EXISTS playlist_device_assignments_by_active
+				ON playlist_device_assignments(is_active);
+
+			CREATE TABLE IF NOT EXISTS agent_channel_messages (
+				id TEXT PRIMARY KEY,
+				created_at INTEGER NOT NULL,
+				playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+				thread_id TEXT,
+				sender_kind TEXT NOT NULL,
+				sender_id TEXT NOT NULL,
+				message_type TEXT NOT NULL,
+				visibility TEXT NOT NULL DEFAULT 'public',
+				content TEXT NOT NULL,
+				data_json TEXT,
+				correlation_id TEXT
+			);
+
+			CREATE INDEX IF NOT EXISTS agent_channel_messages_by_playlist
+				ON agent_channel_messages(playlist_id, created_at);
+			CREATE INDEX IF NOT EXISTS agent_channel_messages_by_thread
+				ON agent_channel_messages(playlist_id, thread_id);
+			CREATE INDEX IF NOT EXISTS agent_channel_messages_by_correlation
+				ON agent_channel_messages(correlation_id);
+
+			CREATE TABLE IF NOT EXISTS agent_memory_entries (
+				id TEXT PRIMARY KEY,
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL,
+				scope TEXT NOT NULL,
+				playlist_id TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+				kind TEXT NOT NULL,
+				title TEXT NOT NULL,
+				content_json TEXT NOT NULL,
+				confidence REAL NOT NULL DEFAULT 0.5,
+				importance REAL NOT NULL DEFAULT 0.5,
+				use_count INTEGER NOT NULL DEFAULT 0,
+				last_used_at INTEGER,
+				expires_at INTEGER,
+				deleted_at INTEGER
+			);
+
+			CREATE INDEX IF NOT EXISTS agent_memory_entries_by_scope
+				ON agent_memory_entries(scope, playlist_id);
+			CREATE INDEX IF NOT EXISTS agent_memory_entries_by_kind
+				ON agent_memory_entries(kind);
+			CREATE INDEX IF NOT EXISTS agent_memory_entries_by_deleted
+				ON agent_memory_entries(deleted_at);
+
+			CREATE TABLE IF NOT EXISTS agent_runs (
+				id TEXT PRIMARY KEY,
+				created_at INTEGER NOT NULL,
+				playlist_id TEXT REFERENCES playlists(id) ON DELETE CASCADE,
+				agent_id TEXT NOT NULL,
+				session_key TEXT,
+				trigger TEXT NOT NULL,
+				status TEXT NOT NULL,
+				input_json TEXT,
+				output_json TEXT,
+				error TEXT
+			);
+
+			CREATE INDEX IF NOT EXISTS agent_runs_by_playlist
+				ON agent_runs(playlist_id, created_at);
+			CREATE INDEX IF NOT EXISTS agent_runs_by_agent
+				ON agent_runs(agent_id, created_at);
+		`);
 
 	// Additive column migrations (idempotent — ignores "duplicate column" errors).
 	// SQLite only supports one ADD COLUMN per ALTER TABLE statement.

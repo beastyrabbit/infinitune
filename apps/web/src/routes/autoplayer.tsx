@@ -1,10 +1,17 @@
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
-import { Disc3, Menu, Minimize2, Plus, Radio, Zap } from "lucide-react";
+import {
+	Disc3,
+	Menu,
+	MessageSquare,
+	Minimize2,
+	Plus,
+	Radio,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
-import { DirectionSteering } from "@/components/autoplayer/DirectionSteering";
 import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
 import { GenerationControls } from "@/components/autoplayer/GenerationControls";
 import { NowPlaying } from "@/components/autoplayer/NowPlaying";
@@ -294,6 +301,7 @@ function AutoplayerPage() {
 			inferMethod?: string;
 			aceThinking?: boolean;
 			aceAutoDuration?: boolean;
+			initialDirectorPlan?: boolean;
 		}): Promise<{ key: string; playlistId: string; playlistName: string }> => {
 			const key = generatePlaylistKey();
 			const created = await createPlaylist({
@@ -313,6 +321,7 @@ function AutoplayerPage() {
 				inferMethod: data.inferMethod,
 				aceThinking: data.aceThinking,
 				aceAutoDuration: data.aceAutoDuration,
+				initialDirectorPlan: data.initialDirectorPlan,
 			});
 			return {
 				key,
@@ -326,7 +335,7 @@ function AutoplayerPage() {
 	const handleCreatePlaylist = useCallback(
 		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
 			const created = await doCreatePlaylist(data);
-			navigate({ to: "/autoplayer", search: { pl: created.key } });
+			navigate({ to: "/autoplayer/orchestrator", search: { pl: created.key } });
 		},
 		[doCreatePlaylist, navigate],
 	);
@@ -336,12 +345,9 @@ function AutoplayerPage() {
 			const created = await doCreatePlaylist(data);
 
 			navigate({
-				to: "/autoplayer",
+				to: "/autoplayer/orchestrator",
 				search: {
 					pl: created.key,
-					room: created.playlistId,
-					role: "player",
-					name: created.playlistName,
 				},
 			});
 		},
@@ -389,22 +395,16 @@ function AutoplayerPage() {
 			// 3. Provider set but model empty + different from text → skip precheck
 			const explicitPP = settings?.personaProvider || "";
 			const explicitPM = settings?.personaModel || "";
-			let pProvider: "ollama" | "openrouter" | "openai-codex";
+			let pProvider: LlmProvider;
 			let pModel: string;
 			if (explicitPM) {
-				pProvider = (explicitPP || "ollama") as
-					| "ollama"
-					| "openrouter"
-					| "openai-codex";
+				pProvider = normalizeLlmProvider(explicitPP || settings?.textProvider);
 				pModel = explicitPM;
 			} else if (!explicitPP || explicitPP === settings?.textProvider) {
-				pProvider = (settings?.textProvider || "ollama") as
-					| "ollama"
-					| "openrouter"
-					| "openai-codex";
+				pProvider = normalizeLlmProvider(settings?.textProvider);
 				pModel = settings?.textModel || "";
 			} else {
-				pProvider = "ollama";
+				pProvider = normalizeLlmProvider(explicitPP);
 				pModel = ""; // will skip precheck below
 			}
 
@@ -746,17 +746,16 @@ function AutoplayerPage() {
 							</button>
 							<button
 								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500 flex items-center gap-1"
-								onClick={() => {
-									stopPlayback();
+								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500 flex items-center gap-1"
+								onClick={() =>
 									navigate({
-										to: "/autoplayer/oneshot",
+										to: "/autoplayer/orchestrator",
 										search: (prev) => prev,
-									});
-								}}
+									})
+								}
 							>
-								<Zap className="h-3.5 w-3.5" />
-								[ONESHOT]
+								<MessageSquare className="h-3.5 w-3.5" />
+								[ORCHESTRATOR]
 							</button>
 							<button
 								type="button"
@@ -892,18 +891,17 @@ function AutoplayerPage() {
 									</button>
 									<button
 										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-yellow-500 py-2 flex items-center gap-2"
+										className="text-left text-sm font-bold uppercase text-white/60 hover:text-red-500 py-2 flex items-center gap-2"
 										onClick={() => {
 											setMobileMenuOpen(false);
-											stopPlayback();
 											navigate({
-												to: "/autoplayer/oneshot",
+												to: "/autoplayer/orchestrator",
 												search: (prev) => prev,
 											});
 										}}
 									>
-										<Zap className="h-3.5 w-3.5" />
-										ONESHOT
+										<MessageSquare className="h-3.5 w-3.5" />
+										ORCHESTRATOR
 									</button>
 									<button
 										type="button"
@@ -1052,12 +1050,6 @@ function AutoplayerPage() {
 				</div>
 				<div className="flex flex-col bg-gray-950 overflow-y-auto">
 					{playlist && <GenerationControls playlist={playlist} />}
-					{playlist && (
-						<DirectionSteering
-							playlist={playlist}
-							disabled={playlist.status !== "active"}
-						/>
-					)}
 					<QuickRequest
 						onRequest={requestSong}
 						disabled={!playlist || playlist.status !== "active"}

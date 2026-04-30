@@ -22,5 +22,5 @@ Real-time AI music generation platform with a unified API/worker server.
 ## Ports
 - Vite: `5173` (fallback)
 - Unified server: `5175` (fallback)
-- Portless defaults: `web.localhost:1355` and `api.localhost:1355`
+- Portless defaults: `web-infinitune.localhost:1355` and `api-infinitune.localhost:1355`
 - Registered in `/home/beasty/projects/.ports`

@@ -10,12 +10,12 @@ export interface NetworkTabProps {
 	setAceStepUrl: (v: string) => void;
 	comfyuiUrl: string;
 	setComfyuiUrl: (v: string) => void;
-	openrouterApiKey: string;
-	setOpenrouterApiKey: (v: string) => void;
+	imageProvider: string;
 	ollamaTest: TestStatus;
 	aceTest: TestStatus;
 	comfyuiTest: TestStatus;
-	openrouterTest: TestStatus;
+	inferenceShTest: TestStatus;
+	codexImagegenTest: TestStatus;
 	codexTest: TestStatus;
 	codexAuthSession: {
 		id: string;
@@ -43,12 +43,12 @@ export function SettingsTabNetwork({
 	setAceStepUrl,
 	comfyuiUrl,
 	setComfyuiUrl,
-	openrouterApiKey,
-	setOpenrouterApiKey,
+	imageProvider,
 	ollamaTest,
 	aceTest,
 	comfyuiTest,
-	openrouterTest,
+	inferenceShTest,
+	codexImagegenTest,
 	codexTest,
 	codexAuthSession,
 	onUploadCodexAuthFile,
@@ -151,26 +151,43 @@ export function SettingsTabNetwork({
 				</SettingsField>
 			</SettingsPanel>
 
-			<SettingsPanel
-				title="AUTHENTICATION"
-				badge={
-					<TestButton
-						provider="openrouter"
-						status={openrouterTest}
-						onTest={onTest}
-					/>
-				}
-			>
-				<SettingsField label="OpenRouter API Key">
-					<Input
-						type="password"
-						className={inputClass}
-						placeholder="sk-or-..."
-						value={openrouterApiKey}
-						onChange={(e) => setOpenrouterApiKey(e.target.value)}
-					/>
-				</SettingsField>
-			</SettingsPanel>
+			{imageProvider === "inference-sh" && (
+				<SettingsPanel
+					title="INFERENCE.SH COVER IMAGES"
+					badge={
+						<TestButton
+							provider="inference-sh"
+							status={inferenceShTest}
+							onTest={onTest}
+						/>
+					}
+				>
+					<SettingsField label="Runtime">
+						<div className="min-h-10 px-3 py-2 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/70">
+							USES LOCAL INFSH CLI AUTH
+						</div>
+					</SettingsField>
+				</SettingsPanel>
+			)}
+
+			{imageProvider === "codex-imagegen" && (
+				<SettingsPanel
+					title="CODEX IMAGEGEN COVER IMAGES"
+					badge={
+						<TestButton
+							provider="codex-imagegen"
+							status={codexImagegenTest}
+							onTest={onTest}
+						/>
+					}
+				>
+					<SettingsField label="Runtime">
+						<div className="min-h-10 px-3 py-2 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/70">
+							USES LOCAL CODEX CLI CHATGPT LOGIN
+						</div>
+					</SettingsField>
+				</SettingsPanel>
+			)}
 
 			<SettingsPanel
 				title="OPENAI CODEX (CHATGPT SUBSCRIPTION)"

@@ -1,4 +1,5 @@
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistStatus } from "@infinitune/shared/types";
 import { validatePlaylistTransition } from "@infinitune/shared/validation/song-status";
 import { and, desc, eq, lte, ne, or, sql } from "drizzle-orm";
@@ -89,13 +90,14 @@ export async function create(data: {
 	isTemporary?: boolean;
 	expiresAt?: number;
 	description?: string;
+	emitCreated?: boolean;
 }) {
 	const [row] = await db
 		.insert(playlists)
 		.values({
 			name: data.name,
 			prompt: data.prompt,
-			llmProvider: data.llmProvider,
+			llmProvider: normalizeLlmProvider(data.llmProvider),
 			llmModel: data.llmModel,
 			mode: data.mode ?? "endless",
 			status: "active",
@@ -125,9 +127,15 @@ export async function create(data: {
 		})
 		.returning();
 
-	emit("playlist.created", { playlistId: row.id });
+	if (data.emitCreated !== false) {
+		emit("playlist.created", { playlistId: row.id });
+	}
 
 	return playlistToWire(row);
+}
+
+export function announceCreated(id: string) {
+	emit("playlist.created", { playlistId: id });
 }
 
 export async function updateParams(
@@ -157,7 +165,7 @@ export async function updateParams(
 		if (params[key] === undefined) continue;
 		if (key === "llmProvider") {
 			if (typeof params[key] !== "string") continue;
-			patch[key] = params[key].trim();
+			patch[key] = normalizeLlmProvider(params[key].trim());
 			touchedLlmProfile = true;
 			continue;
 		}
@@ -281,6 +289,35 @@ export async function steer(id: string, prompt: string) {
 		.where(eq(playlists.id, id));
 
 	emit("playlist.steered", { playlistId: id, newEpoch });
+}
+
+function formatDirectorDecisionData(data: unknown): string {
+	if (!data || typeof data !== "object") return "";
+	const obj = data as Record<string, unknown>;
+	const relevant = obj.rules ?? obj;
+	try {
+		return JSON.stringify(relevant, null, 2).slice(0, 4000);
+	} catch {
+		return "";
+	}
+}
+
+export async function commitDirectorSteeringDecision(
+	id: string,
+	input: { content: string; data?: unknown },
+) {
+	const [row] = await db.select().from(playlists).where(eq(playlists.id, id));
+	if (!row) return;
+
+	const currentPrompt = row.prompt.trim();
+	const dataText = formatDirectorDecisionData(input.data);
+	const decisionLines = [
+		input.content.trim(),
+		dataText ? `Structured rules: ${dataText}` : "",
+	].filter(Boolean);
+	const indentedDecision = decisionLines.join("\n").replace(/\n/g, "\n  ");
+	const nextPrompt = `${currentPrompt}\n\nDirector steering updates:\n- ${indentedDecision}`;
+	await steer(id, nextPrompt);
 }
 
 export async function toggleStar(id: string) {

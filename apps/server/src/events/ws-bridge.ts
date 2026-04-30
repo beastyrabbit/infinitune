@@ -57,6 +57,12 @@ function eventToRoutingKey(
 	if (event.startsWith("settings.")) {
 		return "settings";
 	}
+	if (event === "agent.chat_message") {
+		return `agent-chat.${data.playlistId}`;
+	}
+	if (event === "agent.memory_updated") {
+		return data.playlistId ? `agent-memory.${data.playlistId}` : "agent-memory";
+	}
 	return event;
 }
 
@@ -78,6 +84,8 @@ export function startWsBridge(): void {
 		"playlist.status_changed",
 		"playlist.updated",
 		"playlist.deleted",
+		"agent.chat_message",
+		"agent.memory_updated",
 		"settings.changed",
 	];
 

@@ -2,15 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
+import type { LlmProvider } from "@infinitune/shared/types";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
-import { saveCover } from "../covers";
 import {
-	generatePlaylistManagerPlan,
-	type ManagerRatingSignal,
-	type PromptDistance,
-	type RecentSong,
-	type SongMetadata,
-} from "../external/llm";
+	refreshPlaylistPlanWithDirector,
+	scheduleMemoryCurator,
+} from "../agents/playlist-director-service";
+import { saveCover } from "../covers";
+import type { PromptDistance, RecentSong, SongMetadata } from "../external/llm";
 import { saveSongToNfs } from "../external/storage";
 import { tagMp3 } from "../external/tag-mp3";
 import { songLogger } from "../logger";
@@ -173,7 +172,7 @@ export class SongWorker {
 
 	private async refreshPlaylistManager(
 		currentEpoch: number,
-		provider: "ollama" | "openrouter" | "openai-codex",
+		provider: LlmProvider,
 		model: string,
 		signal?: AbortSignal,
 	): Promise<void> {
@@ -271,53 +270,19 @@ export class SongWorker {
 			}
 
 			try {
-				const ratingSignals: ManagerRatingSignal[] = (
-					await songService.listByPlaylist(this.ctx.playlist.id)
-				)
-					.filter(
-						(song) => song.userRating === "up" || song.userRating === "down",
-					)
-					.sort((a, b) => b.orderIndex - a.orderIndex)
-					.slice(0, 20)
-					.map((song) => ({
-						title: song.title || "Untitled",
-						genre: song.genre || undefined,
-						mood: song.mood || undefined,
-						personaExtract: song.personaExtract || undefined,
-						rating: song.userRating as "up" | "down",
-					}));
-
-				const { managerBrief, managerPlan } = await generatePlaylistManagerPlan(
-					{
-						prompt: this.ctx.playlist.prompt,
+				const { managerBrief, managerPlan } =
+					await refreshPlaylistPlanWithDirector({
+						playlistId: this.ctx.playlist.id,
 						provider,
 						model,
-						lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
-						recentSongs: this.ctx.recentSongs,
-						recentDescriptions: this.ctx.recentDescriptions,
-						ratingSignals,
-						steerHistory: this.ctx.playlist.steerHistory,
-						previousBrief: this.ctx.playlist.managerBrief,
-						currentEpoch,
+						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
 						planWindow: 5,
 						signal,
-					},
-				);
-				await playlistService.updateManagerBrief(this.ctx.playlist.id, {
-					managerBrief,
-					managerPlan: JSON.stringify({
-						...managerPlan,
-						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
-					}),
-					managerEpoch: currentEpoch,
-				});
+					});
 				this.ctx.playlist = {
 					...this.ctx.playlist,
 					managerBrief,
-					managerPlan: {
-						...managerPlan,
-						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
-					},
+					managerPlan,
 					managerEpoch: currentEpoch,
 					managerUpdatedAt: Date.now(),
 				};
@@ -346,7 +311,7 @@ export class SongWorker {
 
 	private ensurePlaylistManagerRefresh(
 		currentEpoch: number,
-		provider: "ollama" | "openrouter" | "openai-codex",
+		provider: LlmProvider,
 		model: string,
 	): void {
 		if (
@@ -889,7 +854,9 @@ export class SongWorker {
 				const imageProvider =
 					settings.imageProvider === "ollama"
 						? "comfyui"
-						: settings.imageProvider;
+						: settings.imageProvider === "openrouter"
+							? "inference-sh"
+							: settings.imageProvider;
 				const imageModel = settings.imageModel;
 
 				return this.ctx.queues.image.enqueue({
@@ -1207,6 +1174,15 @@ export class SongWorker {
 		const audioUrl = `/api/songs/${this.songId}/audio`;
 		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
 		await playlistService.incrementGenerated(this.ctx.playlist.id);
+		queueMicrotask(() => {
+			scheduleMemoryCurator({
+				playlistId: this.ctx.playlist.id,
+				songId: this.songId,
+				trigger: "completed-song",
+			}).catch((err) =>
+				songLogger(this.songId).warn({ err }, "Memory curator failed"),
+			);
+		});
 
 		songLogger(this.songId).info(
 			{ title: this.song.title, audioProcessingMs },

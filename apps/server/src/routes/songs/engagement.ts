@@ -3,6 +3,7 @@ import {
 	RateSongSchema,
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
+import { scheduleMemoryCurator } from "../../agents/playlist-director-service";
 import * as songService from "../../services/song-service";
 
 const app = new Hono();
@@ -14,7 +15,11 @@ app.post("/:id/rating", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	await songService.rateSong(c.req.param("id"), result.data.rating);
+	const songId = c.req.param("id");
+	await songService.rateSong(songId, result.data.rating);
+	queueMicrotask(() => {
+		scheduleMemoryCurator({ songId, trigger: "rating" }).catch(() => {});
+	});
 	return c.json({ ok: true });
 });
 

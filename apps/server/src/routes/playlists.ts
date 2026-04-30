@@ -6,7 +6,16 @@ import {
 	UpdatePlaylistStatusSchema,
 } from "@infinitune/shared/validation/playlist-schemas";
 import { Hono } from "hono";
+import z from "zod";
+import { readChannelMessages } from "../agents/channel-store";
+import {
+	answerDirectorQuestion,
+	getPlaylistChatState,
+	initializePlaylistDirectorPlan,
+	postHumanChat,
+} from "../agents/playlist-director-service";
 import { getRequestActor } from "../auth/actor";
+import { logger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import { playlistToWire } from "../wire";
 
@@ -46,6 +55,69 @@ app.get("/:id", async (c) => {
 	return c.json(playlistToWire(playlist));
 });
 
+const ChatMessageSchema = z.object({
+	content: z.string().min(1),
+	threadId: z.string().nullable().optional(),
+	commitDirection: z.boolean().optional(),
+});
+
+const ChatAnswerSchema = z.object({
+	questionId: z.string().min(1),
+	content: z.string().min(1),
+});
+
+// GET /api/playlists/:id/agent-chat/messages
+app.get("/:id/agent-chat/messages", async (c) => {
+	const limit = Number.parseInt(c.req.query("limit") ?? "", 10);
+	const types = c.req
+		.query("types")
+		?.split(",")
+		.map((type) => type.trim())
+		.filter(Boolean);
+	const messages = await readChannelMessages({
+		playlistId: c.req.param("id"),
+		threadId: c.req.query("threadId") ?? undefined,
+		sinceId: c.req.query("sinceId") ?? undefined,
+		limit: Number.isFinite(limit) ? limit : undefined,
+		types: types as Parameters<typeof readChannelMessages>[0]["types"],
+	});
+	return c.json({ messages });
+});
+
+// POST /api/playlists/:id/agent-chat/messages
+app.post("/:id/agent-chat/messages", async (c) => {
+	const body = await c.req.json();
+	const result = ChatMessageSchema.safeParse(body);
+	if (!result.success) return c.json({ error: result.error.message }, 400);
+	return c.json(
+		await postHumanChat({
+			playlistId: c.req.param("id"),
+			content: result.data.content,
+			threadId: result.data.threadId,
+			commitDirection: result.data.commitDirection,
+		}),
+	);
+});
+
+// GET /api/playlists/:id/agent-chat/state
+app.get("/:id/agent-chat/state", async (c) => {
+	return c.json(await getPlaylistChatState(c.req.param("id")));
+});
+
+// POST /api/playlists/:id/agent-chat/answer
+app.post("/:id/agent-chat/answer", async (c) => {
+	const body = await c.req.json();
+	const result = ChatAnswerSchema.safeParse(body);
+	if (!result.success) return c.json({ error: result.error.message }, 400);
+	return c.json(
+		await answerDirectorQuestion({
+			playlistId: c.req.param("id"),
+			questionId: result.data.questionId,
+			content: result.data.content,
+		}),
+	);
+});
+
 // ─── Mutations ──────────────────────────────────────────────────────
 
 // POST /api/playlists
@@ -57,6 +129,8 @@ app.post("/", async (c) => {
 	}
 	const actor = await getRequestActor(c);
 	const createPayload = { ...result.data };
+	const initialDirectorPlan = createPayload.initialDirectorPlan === true;
+	delete createPayload.initialDirectorPlan;
 
 	if (createPayload.ownerUserId && actor.kind !== "user") {
 		return c.json({ error: "ownerUserId requires authenticated user" }, 401);
@@ -74,7 +148,30 @@ app.post("/", async (c) => {
 			createPayload.expiresAt ?? Date.now() + 24 * 60 * 60 * 1000;
 	}
 
-	return c.json(await playlistService.create(createPayload));
+	const playlist = await playlistService.create({
+		...createPayload,
+		emitCreated: !initialDirectorPlan,
+	});
+
+	if (initialDirectorPlan) {
+		try {
+			await initializePlaylistDirectorPlan({
+				playlistId: playlist.id,
+				provider: playlist.llmProvider,
+				model: playlist.llmModel,
+			});
+		} catch (err) {
+			logger.warn(
+				{ err, playlistId: playlist.id },
+				"Initial director plan failed; starting playlist with worker fallback",
+			);
+		} finally {
+			playlistService.announceCreated(playlist.id);
+		}
+	}
+
+	const refreshed = await playlistService.getById(playlist.id);
+	return c.json(refreshed ? playlistToWire(refreshed) : playlist);
 });
 
 // PATCH /api/playlists/:id/params

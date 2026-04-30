@@ -25,6 +25,7 @@ export const CreatePlaylistSchema = z.object({
 	isTemporary: z.boolean().optional(),
 	expiresAt: z.number().optional(),
 	description: z.string().max(4000).optional(),
+	initialDirectorPlan: z.boolean().optional(),
 });
 
 /** Schema for updating playlist status */

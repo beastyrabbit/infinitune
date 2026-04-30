@@ -10,6 +10,7 @@ import viteTsConfigPaths from "vite-tsconfig-paths";
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), "");
 	const VITE_API_URL = process.env.VITE_API_URL || env.VITE_API_URL;
+	const devServerPort = Number.parseInt(process.env.PORT ?? "", 10);
 	const apiProxyTarget = (VITE_API_URL || "http://localhost:5175").replace(
 		/\/+$/,
 		"",
@@ -17,6 +18,9 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		server: {
+			host: process.env.HOST || undefined,
+			port: Number.isFinite(devServerPort) ? devServerPort : undefined,
+			strictPort: Number.isFinite(devServerPort),
 			proxy: {
 				"/covers": {
 					target: apiProxyTarget,

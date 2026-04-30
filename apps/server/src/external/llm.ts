@@ -4,9 +4,11 @@ import {
 	SUPPORTED_LYRICS_LANGUAGES,
 } from "@infinitune/shared/lyrics-language";
 import type {
+	LlmProvider,
 	PlaylistManagerPlan,
 	PlaylistManagerPlanSlot,
 } from "@infinitune/shared/types";
+import { withLegacySlotFields } from "@infinitune/shared/validation/manager-plan";
 import z from "zod";
 import { logger } from "../logger";
 import { callLlmObject, callLlmText } from "./llm-client";
@@ -84,8 +86,8 @@ function sanitizePromptList(values?: string[] | null): string[] {
 const FIELD_GUIDANCE_INTRO = `Your response must conform to the provided JSON schema. Fill in every field.`;
 
 const FIELD_GUIDANCE_CORE_FIELDS = `Field guidance:
-- title: A creative, evocative song title
-- artistName: A fictional artist/band name that fits the genre (never use real artist names)
+- title: A creative, evocative song title. If the playlist/director explicitly requests reimagining real source songs, use the director-selected original title with a clear reimagining label.
+- artistName: A fictional artist/band name that fits the genre. If the playlist/director explicitly requests original source-song metadata, use the director-selected original artist name and mark the track as a reimagining in title/description.
 - genre: Broad category (e.g. Rock, Electronic, Hip-Hop, Jazz, Pop, Metal, R&B, Country, Classical)
 - subGenre: Specific sub-genre (e.g. Synthwave, Acid Jazz, Lo-Fi Hip-Hop, Shoegaze, Post-Punk)
 - vocalStyle: Describe the vocal performance for the AI audio generator. Format: gender + vocal quality + performance style.
@@ -94,7 +96,7 @@ const FIELD_GUIDANCE_CORE_FIELDS = `Field guidance:
   Performance style: soulful, energetic, intimate, passionate, anthemic, laid-back, aggressive, dreamy, playful, melancholic, defiant, tender
   Examples: "female breathy intimate vocal", "male raspy energetic vocal", "duet smooth passionate vocals", "choir powerful anthemic vocals"`;
 
-const FIELD_GUIDANCE_LYRICS = `- lyrics: Complete song lyrics. The WRITING QUALITY is critical — these must read like real songwriting, not AI filler.
+const FIELD_GUIDANCE_LYRICS = `- lyrics: Complete song lyrics. The WRITING QUALITY is critical — these must read like real songwriting, not AI filler. For real source-song reimaginings, preserve broad story/mood only; do not copy recognizable lyric lines.
   WRITING STYLE (adapt to genre):
   - Match the lyrical tradition of the genre. Prog rock = poetic, abstract. Hip-hop = wordplay, flow. Country = storytelling, concrete imagery. Pop = hooky, emotionally direct. Jazz = impressionistic. Punk = raw. Folk = narrative.
   - Use SPECIFIC imagery over vague abstractions. BAD: 'the pain inside my heart'. GOOD: 'fingerprints still on the glass where you leaned that morning'.
@@ -107,14 +109,21 @@ const FIELD_GUIDANCE_LYRICS = `- lyrics: Complete song lyrics. The WRITING QUALI
   Background vocals in parentheses: (ooh, aah), (harmonizing: we'll find our way)
   Use UPPERCASE for emotional intensity: "I will NOT surrender"
   Include at least one instrumental section. Aim for 6-10 syllables per line for vocal clarity.
-  IMPORTANT: Instruments mentioned in the caption MUST appear as instrumental tags in the lyrics.
+  IMPORTANT: Core instruments, vocal arrangement, and dynamic cues in the caption MUST be reflected in the lyrics tags or background-vocal notes where relevant.
   Keep tags concise (max one style hint in each section tag).
   If the track should be instrumental, use [Instrumental] instead of sung lyrics.`;
 
-const FIELD_GUIDANCE_CAPTION = `- caption: Audio generation prompt. Structure: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. Do NOT include vocal info, BPM, key, or duration — those go in dedicated fields. Max 300 chars.
-  Examples: "shoegaze, shimmering reverb guitars, droning Juno-60 pads, tight snare, warm tape saturation, hazy and melancholic"
-  "lo-fi hip-hop, dusty SP-404 samples, muted Rhodes, vinyl crackle, boom-bap drums, late-night contemplative"
-  Caption and lyrics tags must never conflict on instruments, mood, or performance direction.`;
+const FIELD_GUIDANCE_CAPTION = `- caption: Rich ACE-Step audio-type prompt, not a short label. Write one compact paragraph, usually 450-800 chars, with detailed specifics plus broad general tags.
+  Structure:
+  1. Genre fusion/style stack, era, and polish.
+  2. Groove/rhythm feel plus concrete core instruments.
+  3. Section movement: verse, pre-chorus, chorus, bridge, drop, or outro behavior.
+  4. Vocal performance: lead placement, doubles, harmonies, ad-libs, chants, spoken layers, or instrumental lead if relevant.
+  5. Production details: effects, transitions, texture, space, width, warmth, grit, haze, gloss, or distortion.
+  6. End with comma-separated broad tags so ACE gets general anchors.
+  Do NOT include BPM, key, time signature, or duration — those go in dedicated fields. Match vocalStyle and lyrics tags.
+  Example: "reggae dub pop with soft rock warmth and adult contemporary polish, laid-back one-drop groove and skanking guitar in the verses, pre-chorus opening into airy harmony stacks, chorus landing on roomy bass pulse with dub echoes, intimate close-mic lead vocal with doubled hooks and final gang chant, tape-delay tails, reverse swells, vinyl haze, warm wide glossy mix, contemporary, pop, reggae, dub, soft rock"
+  Caption and lyrics tags must never conflict on instruments, mood, vocals, or performance direction.`;
 
 const FIELD_GUIDANCE_COVER = `- coverPrompt: A HIGHLY DETAILED art description for the image printed on this song's CD. Do NOT include "CD disc artwork" or similar framing — that is added automatically. Just describe the art itself. Max 600 chars.
   RULES:
@@ -169,7 +178,7 @@ const FIELD_GUIDANCE_MINIMAL = buildPromptSections([
 	{
 		name: "caption_rules_compact",
 		content:
-			"- caption: [genre/style], [2-4 instruments], [texture], [mood]. No vocal info, BPM, key, duration.",
+			"- caption: one rich ACE-Step audio-type paragraph with genre stack, groove, instruments, section movement, vocal treatment, production texture, and broad tag tail. No BPM/key/time/duration.",
 	},
 	{
 		name: "cover_rules_compact",
@@ -382,8 +391,16 @@ const SYSTEM_PROMPT = getSystemPrompt("close");
 const SONG_SCHEMA = {
 	type: "object" as const,
 	properties: {
-		title: { type: "string", description: "Song title" },
-		artistName: { type: "string", description: "Fictional artist name" },
+		title: {
+			type: "string",
+			description:
+				"Song title. If the director selected a real source song, include that original title and a reimagining label.",
+		},
+		artistName: {
+			type: "string",
+			description:
+				"Artist name. Usually fictional; for director-selected source-song reimaginings, use the original artist name.",
+		},
 		genre: { type: "string", description: "Main genre" },
 		subGenre: { type: "string", description: "Specific sub-genre" },
 		vocalStyle: {
@@ -399,7 +416,7 @@ const SONG_SCHEMA = {
 		caption: {
 			type: "string",
 			description:
-				"Audio generation caption: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. No vocals, BPM, key, or duration. Max 300 chars.",
+				"Rich ACE-Step audio-type prompt: genre stack, groove, instruments, section movement, vocal treatment, production texture/effects, and broad tag tail. No BPM, key, time signature, or duration.",
 		},
 		coverPrompt: {
 			type: "string",
@@ -533,8 +550,16 @@ export function getSongPromptContract(
 }
 
 export const SongMetadataSchema = z.object({
-	title: z.string().describe("Song title"),
-	artistName: z.string().describe("Fictional artist name"),
+	title: z
+		.string()
+		.describe(
+			"Song title. If the director selected a real source song, include that original title and a reimagining label.",
+		),
+	artistName: z
+		.string()
+		.describe(
+			"Artist name. Usually fictional; for director-selected source-song reimaginings, use the original artist name.",
+		),
 	genre: z.string().describe("Main genre"),
 	subGenre: z.string().describe("Specific sub-genre"),
 	vocalStyle: z
@@ -550,7 +575,7 @@ export const SongMetadataSchema = z.object({
 	caption: z
 		.string()
 		.describe(
-			"Audio generation caption: [genre/style], [2-4 specific instruments], [texture/production words], [mood]. No vocals, BPM, key, or duration. Max 300 chars.",
+			"Rich ACE-Step audio-type prompt: genre stack, groove, instruments, section movement, vocal treatment, production texture/effects, and broad tag tail. No BPM, key, time signature, or duration.",
 		),
 	coverPrompt: z
 		.string()
@@ -644,13 +669,44 @@ Goal: build a rolling plan for the next N songs that balances coherence, variety
 Hard rules:
 - Preserve the playlist's core anchors unless steer history explicitly changes them.
 - Use ratings: reinforce up-rated traits, suppress down-rated traits.
-- Keep caption guidance (style/instruments/texture/mood) consistent with lyrical direction.
+- Keep caption guidance (genre stack/groove/arrangement/vocals/production texture) consistent with lyrical direction.
 - Avoid contradictory instructions across managerBrief, transitionPolicy, and slot directives.
 - Include 3-8 concrete avoidPatterns from weak or down-rated outcomes.
+- When the user asks for popular/famous/source-song reimaginings, the director must choose the source song for each slot. Put a distinct source in each slot's topicHint in this form: Source: "Title" by Artist. Do not repeat a source already used in recent songs or another slot in the same plan window unless the user explicitly asks or the repeat is far outside the current listening window.
+- For source-song reimaginings, preserve only the source's broad identity, mood, or story premise; never ask downstream writers to copy lyrics verbatim.
 
 Output:
 - Return valid JSON only, matching the schema exactly.
-- Keep managerBrief compact and actionable for downstream song generation.`;
+- Keep managerBrief compact and actionable for downstream song generation.
+- If source songs are relevant, managerBrief must state the source-selection policy and each slot must name its chosen source.`;
+
+function deriveAnchorList(prompt: string, fallback: string): string[] {
+	const pieces = prompt
+		.split(/[.;,\n]+/)
+		.map((piece) => piece.trim())
+		.filter(Boolean)
+		.slice(0, 4);
+	return pieces.length ? pieces : [fallback];
+}
+
+function inferVariationBudget(prompt: string): "low" | "medium" | "high" {
+	if (/\b(strict|exact|must|only|faithful|no drift|same)\b/i.test(prompt)) {
+		return "low";
+	}
+	if (
+		/\b(surprise|wild|experimental|adventurous|varied|different|creative)\b/i.test(
+			prompt,
+		)
+	) {
+		return "high";
+	}
+	return "medium";
+}
+
+function noveltyForSlot(slot: number): "low" | "medium" | "high" {
+	if (slot === 1) return "low";
+	return slot % 3 === 0 ? "high" : "medium";
+}
 
 function clampInt(
 	val: number,
@@ -708,7 +764,7 @@ Output:
 
 Requirements:
 - Preserve named references and core intent.
-- Add 2-4 concrete instruments, 1-3 texture/production cues, and one concise mood phrase.
+- Add concrete arrangement, vocal-performance, instrument, texture/production, and mood cues.
 - Keep additions genre-appropriate.
 
 Anti-drift rules:
@@ -763,7 +819,7 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 		lyrics: (raw.lyrics?.trim() || "[Instrumental]").replace(/\\n/g, "\n"),
 		caption:
 			raw.caption?.trim() ||
-			"ambient electronic, soft pads, gentle beat, dreamy atmosphere",
+			"ambient electronic with cinematic dream-pop softness, slow pulsing synth bass and brushed electronic drums under warm pad chords, verses stay intimate and spacious before the chorus widens into layered harmonies, close-mic lead vocal with soft doubles and airy ad-libs, tape haze, shimmer reverb, gentle filter swells, wide mellow mix, ambient, electronic, dream pop, cinematic",
 		coverPrompt: raw.coverPrompt?.trim() || undefined,
 		bpm: clampInt(raw.bpm, 60, 200, 120),
 		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
@@ -887,7 +943,7 @@ function buildPersonaUserPrompt(song: PersonaInput): PromptBuildResult {
 
 export async function generatePersonaExtract(options: {
 	song: PersonaInput;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	signal?: AbortSignal;
 }): Promise<string> {
@@ -913,6 +969,7 @@ export async function generatePersonaExtract(options: {
 		schema: PersonaSchema,
 		schemaName: "persona_extract",
 		temperature: 0.7,
+		reasoningAgentId: "persona-analyst",
 		signal,
 	});
 
@@ -924,7 +981,7 @@ export async function generatePersonaExtract(options: {
 
 export async function enhancePlaylistPrompt(options: {
 	prompt: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	signal?: AbortSignal;
 }): Promise<string> {
@@ -960,7 +1017,7 @@ export async function enhancePlaylistPrompt(options: {
 
 export async function enhanceSongRequest(options: {
 	request: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	signal?: AbortSignal;
 }): Promise<string> {
@@ -994,7 +1051,7 @@ export async function enhanceSongRequest(options: {
 export async function refineSessionPrompt(options: {
 	currentPrompt: string;
 	direction: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	signal?: AbortSignal;
 }): Promise<string> {
@@ -1038,7 +1095,7 @@ export async function refineSessionPrompt(options: {
 
 export async function enhanceSessionParams(options: {
 	prompt: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	signal?: AbortSignal;
 }): Promise<SessionParams> {
@@ -1084,12 +1141,13 @@ export async function enhanceSessionParams(options: {
 
 export async function generatePlaylistManagerPlan(options: {
 	prompt: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	lyricsLanguage?: string;
 	recentSongs?: RecentSong[];
 	recentDescriptions?: string[];
 	ratingSignals?: ManagerRatingSignal[];
+	webResearch?: string[];
 	steerHistory?: Array<{ epoch: number; direction: string; at: number }>;
 	previousBrief?: string | null;
 	currentEpoch: number;
@@ -1107,6 +1165,7 @@ export async function generatePlaylistManagerPlan(options: {
 		recentSongs,
 		recentDescriptions,
 		ratingSignals,
+		webResearch,
 		steerHistory,
 		previousBrief,
 		currentEpoch,
@@ -1159,6 +1218,7 @@ export async function generatePlaylistManagerPlan(options: {
 			if (safePersona) parts.push(`persona=${safePersona}`);
 			return parts.join(" | ");
 		}) ?? [];
+	const webResearchLines = sanitizePromptList(webResearch).slice(0, 16);
 
 	const systemBuild = buildPromptSections([
 		{ name: "playlist_manager_system", content: PLAYLIST_MANAGER_PROMPT },
@@ -1205,6 +1265,13 @@ export async function generatePlaylistManagerPlan(options: {
 					? `User feedback signals:\n${feedbackLines.join("\n")}`
 					: undefined,
 		},
+		{
+			name: "web_research",
+			content:
+				webResearchLines.length > 0
+					? `Web research for source-song popularity context. Use this only to choose diverse source categories/sources; do not echo a fixed example list in the human-facing operating plan, and do not copy lyrics.\n${webResearchLines.join("\n")}`
+					: undefined,
+		},
 	]);
 	logPromptBuild(
 		"playlist_manager_plan",
@@ -1223,6 +1290,7 @@ export async function generatePlaylistManagerPlan(options: {
 		schema: PlaylistManagerSchema,
 		schemaName: "playlist_manager_brief",
 		temperature: 0.6,
+		reasoningAgentId: "playlist-director",
 		signal,
 	});
 
@@ -1230,21 +1298,73 @@ export async function generatePlaylistManagerPlan(options: {
 		typeof result.managerBrief === "string" ? result.managerBrief.trim() : "";
 	if (!brief) throw new Error("Empty playlist manager brief");
 
-	const slots: PlaylistManagerPlanSlot[] = result.slots
-		.slice(0, planWindow)
-		.map((slot, idx) => ({
-			slot: idx + 1,
-			transitionIntent: slot.transitionIntent.trim(),
-			topicHint: slot.topicHint.trim(),
-			captionFocus: slot.captionFocus.trim(),
-			lyricTheme: slot.lyricTheme.trim(),
-			energyTarget: slot.energyTarget,
-		}));
+	const legacySlots: Array<{
+		slot: number;
+		transitionIntent: string;
+		topicHint: string;
+		captionFocus: string;
+		lyricTheme: string;
+		energyTarget: "low" | "medium" | "high" | "extreme";
+	}> = result.slots.slice(0, planWindow).map((slot, idx) => ({
+		slot: idx + 1,
+		transitionIntent: slot.transitionIntent.trim(),
+		topicHint: slot.topicHint.trim(),
+		captionFocus: slot.captionFocus.trim(),
+		lyricTheme: slot.lyricTheme.trim(),
+		energyTarget: slot.energyTarget,
+	}));
+	const slots =
+		legacySlots.length > 0
+			? legacySlots
+			: [
+					{
+						slot: 1,
+						transitionIntent: "stay coherent with gentle variation",
+						topicHint: "extend current playlist theme",
+						captionFocus: "keep instrumentation family consistent",
+						lyricTheme: "advance narrative without repeating lines",
+						energyTarget: "medium" as const,
+					},
+				];
+	const avoidPatterns = Array.isArray(result.avoidPatterns)
+		? result.avoidPatterns
+				.map((pattern) => pattern.trim())
+				.filter(Boolean)
+				.slice(0, 8)
+		: [];
+	const hardAnchors = deriveAnchorList(safePrompt, "preserve playlist prompt");
+	const softAnchors = [
+		`Lyrics language: ${languageLabel}`,
+		...(safePreviousBrief ? [safePreviousBrief.slice(0, 160)] : []),
+	].slice(0, 4);
+	const topicLanes = slots.map((slot) => ({
+		id: `lane-${slot.slot}`,
+		summary: slot.topicHint || `playlist lane ${slot.slot}`,
+		anchors: hardAnchors.slice(0, 2),
+	}));
 
-	const managerPlan: PlaylistManagerPlan = {
-		version: 1,
+	const managerPlan: PlaylistManagerPlan = withLegacySlotFields({
+		version: 2,
 		epoch: currentEpoch,
 		windowSize: planWindow,
+		hardAnchors,
+		softAnchors,
+		variationBudget: inferVariationBudget(safePrompt),
+		elasticDimensions: [
+			"topic",
+			"instrumentation",
+			"vocal style",
+			"mood",
+			"energy",
+			"era",
+			"lyrical angle",
+		],
+		forbiddenMoves: avoidPatterns,
+		diversityTargets: [
+			"avoid duplicate titles or artist identities",
+			"rotate lyrical worlds across the planned window",
+			"vary texture while preserving hard anchors",
+		],
 		strategySummary:
 			typeof result.strategySummary === "string"
 				? result.strategySummary.trim().slice(0, 600)
@@ -1253,27 +1373,28 @@ export async function generatePlaylistManagerPlan(options: {
 			typeof result.transitionPolicy === "string"
 				? result.transitionPolicy.trim().slice(0, 400)
 				: "Adapt transition smoothness to the playlist intent and listener feedback.",
-		avoidPatterns: Array.isArray(result.avoidPatterns)
-			? result.avoidPatterns
-					.map((pattern) => pattern.trim())
-					.filter(Boolean)
-					.slice(0, 8)
-			: [],
-		slots:
-			slots.length > 0
-				? slots
-				: [
-						{
-							slot: 1,
-							transitionIntent: "stay coherent with gentle variation",
-							topicHint: "extend current playlist theme",
-							captionFocus: "keep instrumentation family consistent",
-							lyricTheme: "advance narrative without repeating lines",
-							energyTarget: "medium",
-						},
-					],
+		topicLanes,
+		slots: slots.map((slot) => ({
+			slot: slot.slot,
+			laneId: `lane-${slot.slot}`,
+			preservedAnchors: hardAnchors,
+			variationMoves: [slot.transitionIntent, slot.topicHint].filter(Boolean),
+			sonicFocus: slot.captionFocus,
+			lyricFocus: slot.lyricTheme,
+			captionFocus: slot.captionFocus,
+			energyTarget: slot.energyTarget,
+			noveltyTarget: noveltyForSlot(slot.slot),
+			avoidPatterns,
+			transitionIntent: slot.transitionIntent,
+			topicHint: slot.topicHint,
+			lyricTheme: slot.lyricTheme,
+		})),
+		criticNotes: [
+			"Preserve hard anchors even when exploring elastic dimensions.",
+			"Retry song specs that drift from explicit user constraints.",
+		],
 		updatedAt: Date.now(),
-	};
+	});
 
 	return {
 		managerBrief: brief.slice(0, 1800),
@@ -1340,6 +1461,9 @@ function buildSongUserPrompt(options: {
 					})
 			: [];
 	const slot = options.managerSlot;
+	const v2Slot = slot && "preservedAnchors" in slot ? slot : undefined;
+	const formatList = (values?: string[]) =>
+		sanitizePromptList(values).slice(0, 8).join("; ");
 	return buildPromptSections([
 		{ name: "user_prompt", content: safePrompt },
 		{ name: "profile_directive", content: profileDirective[options.profile] },
@@ -1360,9 +1484,26 @@ function buildSongUserPrompt(options: {
 			content: slot
 				? [
 						"--- Current manager slot guidance ---",
+						"Director selection rule: this slot is the primary creative decision for this song. If it names a source title/artist, use that exact source and do not choose another.",
 						`Slot: ${slot.slot}`,
+						v2Slot?.laneId ? `Lane ID: ${v2Slot.laneId}` : "",
 						`Transition intent: ${sanitizePromptOptional(slot.transitionIntent) || ""}`,
 						`Topic hint: ${sanitizePromptOptional(slot.topicHint) || ""}`,
+						v2Slot?.preservedAnchors?.length
+							? `Preserved anchors: ${formatList(v2Slot.preservedAnchors)}`
+							: "",
+						v2Slot?.variationMoves?.length
+							? `Variation moves: ${formatList(v2Slot.variationMoves)}`
+							: "",
+						v2Slot?.avoidPatterns?.length
+							? `Avoid patterns: ${formatList(v2Slot.avoidPatterns)}`
+							: "",
+						v2Slot?.lyricFocus
+							? `Lyric focus: ${sanitizePromptOptional(v2Slot.lyricFocus) || ""}`
+							: "",
+						v2Slot?.sonicFocus
+							? `Sonic focus: ${sanitizePromptOptional(v2Slot.sonicFocus) || ""}`
+							: "",
 						`Caption focus: ${sanitizePromptOptional(slot.captionFocus) || ""}`,
 						`Lyric theme: ${sanitizePromptOptional(slot.lyricTheme) || ""}`,
 						`Energy target: ${slot.energyTarget}`,
@@ -1375,7 +1516,7 @@ function buildSongUserPrompt(options: {
 			name: "recent_songs",
 			content:
 				recentSongLines.length > 0
-					? `--- Recent songs in this playlist (for awareness — avoid duplicate titles/artists) ---\n${recentSongLines.join("\n")}\nCreate a fresh song with a different title, different artist, and ideally a different vocal style from the most recent entries.`
+					? `--- Recent songs in this playlist (director continuity awareness) ---\n${recentSongLines.join("\n")}\nIf the current director slot does not explicitly name a source song, choose a fresh song identity. If it does name a source song, follow the slot; the director is responsible for source selection and repeat tolerance.`
 					: undefined,
 		},
 		{
@@ -1390,7 +1531,7 @@ function buildSongUserPrompt(options: {
 
 export async function generateSongMetadata(options: {
 	prompt: string;
-	provider: "ollama" | "openrouter" | "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	lyricsLanguage?: string;
 	managerBrief?: string;
@@ -1506,10 +1647,8 @@ export async function generateSongMetadata(options: {
 		schema: SongMetadataSchema,
 		schemaName: "song_specification",
 		temperature,
-		seed:
-			provider === "ollama"
-				? Math.floor(Math.random() * 2147483647)
-				: undefined,
+		seed: undefined,
+		reasoningAgentId: "song-spec-writer",
 		signal,
 	});
 

@@ -24,14 +24,21 @@ const INITIAL_STATE: ServiceState = {
 	models: null,
 };
 
-const SERVICES = ["ollama", "comfyui", "ace-step", "openrouter"] as const;
+const SERVICES = [
+	"ollama",
+	"comfyui",
+	"ace-step",
+	"inference-sh",
+	"codex-imagegen",
+] as const;
 type ServiceName = (typeof SERVICES)[number];
 
 const SERVICE_META: Record<ServiceName, { label: string; urlKey: string }> = {
 	ollama: { label: "OLLAMA", urlKey: "ollamaUrl" },
 	comfyui: { label: "COMFYUI", urlKey: "comfyuiUrl" },
 	"ace-step": { label: "ACE-STEP", urlKey: "aceStepUrl" },
-	openrouter: { label: "OPENROUTER", urlKey: "" },
+	"inference-sh": { label: "INFERENCE.SH", urlKey: "" },
+	"codex-imagegen": { label: "CODEX IMAGEGEN", urlKey: "" },
 };
 
 function ConnectionsTestPage() {
@@ -41,103 +48,112 @@ function ConnectionsTestPage() {
 		ollama: { ...INITIAL_STATE },
 		comfyui: { ...INITIAL_STATE },
 		"ace-step": { ...INITIAL_STATE },
-		openrouter: { ...INITIAL_STATE },
+		"inference-sh": { ...INITIAL_STATE },
+		"codex-imagegen": { ...INITIAL_STATE },
 	});
 
-	const testService = useCallback(
-		async (service: ServiceName) => {
-			setStates((prev) => ({
-				...prev,
-				[service]: {
-					status: "testing",
-					message: null,
-					responseTime: null,
-					models: null,
-				},
-			}));
+	const testService = useCallback(async (service: ServiceName) => {
+		setStates((prev) => ({
+			...prev,
+			[service]: {
+				status: "testing",
+				message: null,
+				responseTime: null,
+				models: null,
+			},
+		}));
 
-			const startedAt = Date.now();
+		const startedAt = Date.now();
 
-			try {
-				const body: Record<string, string> = { provider: service };
-				if (service === "openrouter" && settings?.openrouterApiKey) {
-					body.apiKey = settings.openrouterApiKey;
-				}
+		try {
+			const body: Record<string, string> = { provider: service };
 
-				const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(body),
-				});
+			const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			});
 
-				const data = await res.json();
-				const responseTime = Date.now() - startedAt;
+			const data = await res.json();
+			const responseTime = Date.now() - startedAt;
 
-				if (data.ok) {
-					// Fetch models for services that support it
-					let models: string[] | null = null;
-					if (service === "ollama") {
-						try {
-							const modelsRes = await fetch(
-								`${API_URL}/api/autoplayer/ollama-models`,
-							);
-							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
-							const modelsData = await modelsRes.json();
-							models = (modelsData.models || []).map(
-								(m: unknown) => (m as { name: string }).name,
-							);
-						} catch (e) {
-							console.warn("Failed to fetch Ollama models:", e);
-						}
-					} else if (service === "ace-step") {
-						try {
-							const modelsRes = await fetch(
-								`${API_URL}/api/autoplayer/ace-models`,
-							);
-							if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
-							const modelsData = await modelsRes.json();
-							models = (modelsData.models || []).map(
-								(m: unknown) => (m as { name: string }).name,
-							);
-						} catch (e) {
-							console.warn("Failed to fetch ACE models:", e);
-						}
+			if (data.ok) {
+				// Fetch models for services that support it
+				let models: string[] | null = null;
+				if (service === "ollama") {
+					try {
+						const modelsRes = await fetch(
+							`${API_URL}/api/autoplayer/ollama-models`,
+						);
+						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
+						const modelsData = await modelsRes.json();
+						models = (modelsData.models || []).map(
+							(m: unknown) => (m as { name: string }).name,
+						);
+					} catch (e) {
+						console.warn("Failed to fetch Ollama models:", e);
 					}
-
-					setStates((prev) => ({
-						...prev,
-						[service]: {
-							status: "ok",
-							message: data.message,
-							responseTime,
-							models,
-						},
-					}));
-				} else {
-					setStates((prev) => ({
-						...prev,
-						[service]: {
-							status: "error",
-							message: data.error,
-							responseTime,
-							models: null,
-						},
-					}));
+				} else if (service === "ace-step") {
+					try {
+						const modelsRes = await fetch(
+							`${API_URL}/api/autoplayer/ace-models`,
+						);
+						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
+						const modelsData = await modelsRes.json();
+						models = (modelsData.models || []).map(
+							(m: unknown) => (m as { name: string }).name,
+						);
+					} catch (e) {
+						console.warn("Failed to fetch ACE models:", e);
+					}
+				} else if (service === "inference-sh") {
+					try {
+						const modelsRes = await fetch(
+							`${API_URL}/api/autoplayer/inference-sh-image-models`,
+						);
+						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
+						const modelsData = await modelsRes.json();
+						models = (modelsData.models || []).map(
+							(m: unknown) =>
+								`${(m as { name: string }).name} (${(m as { priceLabel: string }).priceLabel})`,
+						);
+					} catch (e) {
+						console.warn("Failed to fetch Inference.sh models:", e);
+					}
 				}
-			} catch (e: unknown) {
+
+				setStates((prev) => ({
+					...prev,
+					[service]: {
+						status: "ok",
+						message: data.message,
+						responseTime,
+						models,
+					},
+				}));
+			} else {
 				setStates((prev) => ({
 					...prev,
 					[service]: {
 						status: "error",
-						message: e instanceof Error ? e.message : String(e),
-						responseTime: Date.now() - startedAt,
+						message: data.error,
+						responseTime,
 						models: null,
 					},
 				}));
 			}
-		},
-		[settings],
-	);
+		} catch (e: unknown) {
+			setStates((prev) => ({
+				...prev,
+				[service]: {
+					status: "error",
+					message: e instanceof Error ? e.message : String(e),
+					responseTime: Date.now() - startedAt,
+					models: null,
+				},
+			}));
+		}
+	}, []);
 
 	const testAll = useCallback(() => {
 		for (const service of SERVICES) {
@@ -146,7 +162,8 @@ function ConnectionsTestPage() {
 	}, [testService]);
 
 	const getUrl = (service: ServiceName): string => {
-		if (service === "openrouter") return "openrouter.ai";
+		if (service === "inference-sh") return "infsh CLI";
+		if (service === "codex-imagegen") return "codex CLI";
 		const key = SERVICE_META[service].urlKey;
 		return settings?.[key] || "...";
 	};
@@ -193,12 +210,6 @@ function ConnectionsTestPage() {
 								<div className="text-[10px] font-mono text-white/30 truncate">
 									{url}
 								</div>
-
-								{service === "openrouter" && !settings?.openrouterApiKey && (
-									<p className="text-[10px] font-bold uppercase text-yellow-500">
-										No API key set in settings
-									</p>
-								)}
 
 								{state.responseTime !== null && (
 									<div className="text-[10px] font-bold uppercase text-white/30">
