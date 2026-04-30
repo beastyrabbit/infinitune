@@ -8,6 +8,7 @@ import {
 import {
 	deleteMemory,
 	getMemory,
+	MAX_MEMORY_TITLE_CHARS,
 	type MemoryKind,
 	type MemoryPatch,
 	type MemoryScope,
@@ -103,7 +104,7 @@ export function createMemoryTools(agentId: AgentId): ToolDefinition[] {
 				scope: ScopeSchema,
 				playlistId: Type.Optional(Type.String()),
 				kind: KindSchema,
-				title: Type.String(),
+				title: Type.String({ maxLength: MAX_MEMORY_TITLE_CHARS }),
 				content: Type.Any(),
 				confidence: Type.Number(),
 				importance: Type.Number(),
@@ -148,7 +149,9 @@ export function createMemoryTools(agentId: AgentId): ToolDefinition[] {
 					scope: Type.Optional(ScopeSchema),
 					playlistId: Type.Optional(Type.String()),
 					kind: Type.Optional(KindSchema),
-					title: Type.Optional(Type.String()),
+					title: Type.Optional(
+						Type.String({ maxLength: MAX_MEMORY_TITLE_CHARS }),
+					),
 					content: Type.Optional(Type.Any()),
 					confidence: Type.Optional(Type.Number()),
 					importance: Type.Optional(Type.Number()),

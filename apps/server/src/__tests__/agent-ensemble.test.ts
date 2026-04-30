@@ -46,6 +46,8 @@ import {
 import {
 	deleteMemory,
 	getMemory,
+	MAX_MEMORY_CONTENT_JSON_CHARS,
+	MAX_MEMORY_TITLE_CHARS,
 	updateMemory,
 	writeMemory,
 } from "../agents/memory-store";
@@ -174,6 +176,37 @@ describe("agent ensemble", () => {
 
 		await deleteMemory(entry.id);
 		expect((await getMemory(entry.id))?.deletedAt).toEqual(expect.any(Number));
+	});
+
+	it("caps memory title and JSON content before storing", async () => {
+		const playlist = await playlistService.create({
+			name: "Memory caps",
+			prompt: "synth pop",
+			llmProvider: "openai-codex",
+			llmModel: "",
+		});
+		await expect(
+			writeMemory({
+				scope: "playlist",
+				playlistId: playlist.id,
+				kind: "summary",
+				title: "x".repeat(MAX_MEMORY_TITLE_CHARS + 1),
+				content: { ok: true },
+				confidence: 0.5,
+				importance: 0.5,
+			}),
+		).rejects.toThrow("Memory title");
+		await expect(
+			writeMemory({
+				scope: "playlist",
+				playlistId: playlist.id,
+				kind: "summary",
+				title: "Oversized",
+				content: { text: "x".repeat(MAX_MEMORY_CONTENT_JSON_CHARS) },
+				confidence: 0.5,
+				importance: 0.5,
+			}),
+		).rejects.toThrow("Memory content JSON");
 	});
 
 	it("uses configurable recent-song and derived topic history context", async () => {

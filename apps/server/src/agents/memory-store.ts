@@ -15,6 +15,9 @@ export type MemoryKind =
 	| "summary"
 	| "feedback";
 
+export const MAX_MEMORY_TITLE_CHARS = 200;
+export const MAX_MEMORY_CONTENT_JSON_CHARS = 8_000;
+
 export interface MemoryEntryWire {
 	id: string;
 	createdAt: number;
@@ -44,6 +47,28 @@ export interface WriteMemoryInput {
 }
 
 export type MemoryPatch = Partial<WriteMemoryInput>;
+
+function normalizeMemoryTitle(title: string): string {
+	const normalized = title.trim();
+	if (!normalized) throw new Error("Memory title is required");
+	if (normalized.length > MAX_MEMORY_TITLE_CHARS) {
+		throw new Error(
+			`Memory title must be ${MAX_MEMORY_TITLE_CHARS} characters or less`,
+		);
+	}
+	return normalized;
+}
+
+export function stringifyMemoryContent(content: unknown): string {
+	const json = JSON.stringify(content);
+	if (json === undefined) throw new Error("Memory content must be JSON");
+	if (json.length > MAX_MEMORY_CONTENT_JSON_CHARS) {
+		throw new Error(
+			`Memory content JSON must be ${MAX_MEMORY_CONTENT_JSON_CHARS} characters or less`,
+		);
+	}
+	return json;
+}
 
 function toWire(row: typeof agentMemoryEntries.$inferSelect): MemoryEntryWire {
 	return {
@@ -126,6 +151,8 @@ export async function writeMemory(
 	input: WriteMemoryInput,
 ): Promise<MemoryEntryWire> {
 	const now = Date.now();
+	const title = normalizeMemoryTitle(input.title);
+	const contentJson = stringifyMemoryContent(input.content);
 	const [row] = await db
 		.insert(agentMemoryEntries)
 		.values({
@@ -135,8 +162,8 @@ export async function writeMemory(
 			playlistId:
 				input.scope === "playlist" ? (input.playlistId ?? null) : null,
 			kind: input.kind,
-			title: input.title,
-			contentJson: JSON.stringify(input.content),
+			title,
+			contentJson,
 			confidence: Math.max(0, Math.min(1, input.confidence)),
 			importance: Math.max(0, Math.min(1, input.importance)),
 			expiresAt: input.expiresAt ?? null,
@@ -153,6 +180,14 @@ export async function updateMemory(
 ): Promise<MemoryEntryWire | null> {
 	const current = await getMemory(id);
 	if (!current) return null;
+	const title =
+		patch.title === undefined
+			? current.title
+			: normalizeMemoryTitle(patch.title);
+	const contentJson =
+		patch.content === undefined
+			? stringifyMemoryContent(current.content)
+			: stringifyMemoryContent(patch.content);
 	const [row] = await db
 		.update(agentMemoryEntries)
 		.set({
@@ -163,11 +198,8 @@ export async function updateMemory(
 					? (patch.playlistId ?? current.playlistId)
 					: null,
 			kind: patch.kind ?? current.kind,
-			title: patch.title ?? current.title,
-			contentJson:
-				patch.content === undefined
-					? JSON.stringify(current.content)
-					: JSON.stringify(patch.content),
+			title,
+			contentJson,
 			confidence:
 				patch.confidence === undefined
 					? current.confidence

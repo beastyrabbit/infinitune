@@ -3,11 +3,13 @@ import z from "zod";
 import {
 	deleteMemory,
 	getMemory,
+	MAX_MEMORY_TITLE_CHARS,
 	type MemoryEntryWire,
 	type MemoryKind,
 	type MemoryPatch,
 	type MemoryScope,
 	searchMemory,
+	stringifyMemoryContent,
 	updateMemory,
 	writeMemory,
 } from "../agents/memory-store";
@@ -29,12 +31,26 @@ const MemoryKindSchema = z.enum([
 	"feedback",
 ]);
 
+const MemoryContentSchema = z.unknown().superRefine((value, ctx) => {
+	try {
+		stringifyMemoryContent(value);
+	} catch (error) {
+		ctx.addIssue({
+			code: "custom",
+			message:
+				error instanceof Error
+					? error.message
+					: "Memory content JSON is too large",
+		});
+	}
+});
+
 const WriteMemorySchema = z.object({
 	scope: MemoryScopeSchema,
 	playlistId: z.string().nullable().optional(),
 	kind: MemoryKindSchema,
-	title: z.string().min(1),
-	content: z.unknown(),
+	title: z.string().trim().min(1).max(MAX_MEMORY_TITLE_CHARS),
+	content: MemoryContentSchema,
 	confidence: z.number().min(0).max(1),
 	importance: z.number().min(0).max(1),
 	expiresAt: z.number().nullable().optional(),
@@ -44,8 +60,8 @@ const PatchMemorySchema = z.object({
 	scope: MemoryScopeSchema.optional(),
 	playlistId: z.string().nullable().optional(),
 	kind: MemoryKindSchema.optional(),
-	title: z.string().min(1).optional(),
-	content: z.unknown().optional(),
+	title: z.string().trim().min(1).max(MAX_MEMORY_TITLE_CHARS).optional(),
+	content: MemoryContentSchema.optional(),
 	confidence: z.number().min(0).max(1).optional(),
 	importance: z.number().min(0).max(1).optional(),
 	expiresAt: z.number().nullable().optional(),
