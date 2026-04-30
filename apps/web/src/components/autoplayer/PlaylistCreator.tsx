@@ -59,6 +59,7 @@ interface PlaylistCreatorProps {
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
+		roomSlug?: string;
 	}) => void;
 	onOpenSettings: () => void;
 	onOpenLibrary?: () => void;
@@ -82,6 +83,7 @@ interface PlaylistCreatorProps {
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
+		roomSlug?: string;
 	}) => void;
 }
 
@@ -212,6 +214,10 @@ export function PlaylistCreator({
 		const inferMethod = settings?.aceInferMethod || undefined;
 		const aceThinking = settings?.aceThinking === "true";
 		const aceAutoDuration = settings?.aceAutoDuration !== "false";
+		const roomSlug =
+			playbackMode === "room"
+				? slugify(roomName.trim() || "room") || "room"
+				: undefined;
 		let enhancedParams: EnhancedSessionParams = {};
 
 		try {
@@ -244,6 +250,7 @@ export function PlaylistCreator({
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,
+				roomSlug,
 			};
 		} catch (error) {
 			const reason = getRequestErrorMessage(error);
@@ -264,6 +271,7 @@ export function PlaylistCreator({
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,
+				roomSlug,
 			};
 		}
 	};

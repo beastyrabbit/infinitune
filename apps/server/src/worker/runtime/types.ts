@@ -1,3 +1,4 @@
+import type { PlaylistManagerPlanSlot } from "@infinitune/shared/types";
 import type { PlaylistWire, SongWire } from "../../wire";
 
 export interface WorkerBusEventCommon {
@@ -153,15 +154,7 @@ export interface ProviderTaskPorts {
 		model: string;
 		lyricsLanguage?: string;
 		managerBrief?: string;
-		managerSlot?: {
-			slot: number;
-			transitionPolicy?: string;
-			transitionIntent?: string;
-			topicHint?: string;
-			captionFocus?: string;
-			lyricTheme?: string;
-			energyTarget?: string;
-		};
+		managerSlot?: PlaylistManagerPlanSlot;
 		managerTransitionPolicy?: string;
 		targetBpm?: number;
 		targetKey?: string;

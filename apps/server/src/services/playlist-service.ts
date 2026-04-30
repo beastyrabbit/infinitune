@@ -365,9 +365,7 @@ export async function heartbeat(id: string) {
 
 	const patch: Record<string, unknown> = { lastSeenAt: Date.now() };
 	const fromStatus = row.status;
-	const shouldReactivate =
-		row.mode !== "oneshot" &&
-		(fromStatus === "closing" || fromStatus === "closed");
+	const shouldReactivate = row.mode !== "oneshot" && fromStatus === "closing";
 	if (shouldReactivate) {
 		patch.status = "active";
 	}

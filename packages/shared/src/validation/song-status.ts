@@ -18,7 +18,13 @@ export const ALLOWED_SONG_TRANSITIONS: Record<SongStatus, SongStatus[]> = {
 	ready: ["played"],
 	played: ["ready"], // allow replay
 	error: ["pending", "metadata_ready", "retry_pending"],
-	retry_pending: ["pending", "metadata_ready", "error"],
+	retry_pending: [
+		"pending",
+		"metadata_ready",
+		"generating_audio",
+		"saving",
+		"error",
+	],
 };
 
 /** Validate a song status transition. */

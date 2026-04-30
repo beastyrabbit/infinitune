@@ -141,8 +141,9 @@ export async function submitToAce(options: {
 		audio_format: "mp3",
 	};
 
-	if (aceModel) {
-		payload.model = aceModel;
+	const normalizedAceModel = aceModel?.trim();
+	if (normalizedAceModel && normalizedAceModel !== "__default__") {
+		payload.model = normalizedAceModel;
 	}
 
 	const response = await fetch(`${aceUrl}/release_task`, {

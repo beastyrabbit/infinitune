@@ -65,6 +65,11 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
+function normalizeAceModel(value: string | undefined | null): string {
+	const normalized = value?.trim() ?? "";
+	return normalized === "__default__" ? "" : normalized;
+}
+
 function normalizeProviderSetting(
 	value: string | undefined | null,
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
@@ -180,7 +185,7 @@ function SettingsPage() {
 					: settings.imageModel || DEFAULT_IMAGE_MODEL
 				: settings.imageModel || "",
 		);
-		setAceModel(settings.aceModel || "");
+		setAceModel(normalizeAceModel(settings.aceModel));
 		setPersonaProvider(
 			normalizeProviderSetting(
 				settings.personaProvider,
@@ -397,7 +402,7 @@ function SettingsPage() {
 			setSetting({ key: "textModel", value: textModel }),
 			setSetting({ key: "imageProvider", value: imageProvider }),
 			setSetting({ key: "imageModel", value: imageModel }),
-			setSetting({ key: "aceModel", value: aceModel }),
+			setSetting({ key: "aceModel", value: normalizeAceModel(aceModel) }),
 			setSetting({ key: "personaProvider", value: personaProvider }),
 			setSetting({
 				key: "personaModel",
@@ -616,9 +621,17 @@ function SettingsPage() {
 									onClick={async () => {
 										const workerUrl = API_URL;
 										try {
-											await fetch(`${workerUrl}/api/worker/persona/trigger`, {
-												method: "POST",
-											});
+											const response = await fetch(
+												`${workerUrl}/api/worker/persona/trigger`,
+												{
+													method: "POST",
+												},
+											);
+											if (!response.ok) {
+												throw new Error(
+													`Persona scan failed: ${response.status}`,
+												);
+											}
 											setPersonaScanTriggered(true);
 											setTimeout(() => setPersonaScanTriggered(false), 3000);
 										} catch {

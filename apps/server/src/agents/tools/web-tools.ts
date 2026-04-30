@@ -1,5 +1,6 @@
 import { Type } from "@mariozechner/pi-ai";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { publicHttpRequestBuffer } from "../../utils/public-http";
 import {
 	type AgentId,
 	assertAgentToolAllowed,
@@ -18,6 +19,7 @@ const BLOCKED_HOST_RE =
 	/(^|\.)((localhost)|(localdomain)|(internal)|(home\.arpa))$/i;
 const PRIVATE_IPV4_RE =
 	/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
+const MAX_FETCH_BYTES = 128 * 1024;
 
 function jsonResult(details: unknown) {
 	return {
@@ -82,17 +84,33 @@ function publicHttpUrl(rawUrl: string): URL {
 	return url;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 8000) {
+async function fetchTextWithTimeout(url: string, timeoutMs = 8000) {
+	const publicUrl = publicHttpUrl(url);
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+	const timeout = setTimeout(
+		() => controller.abort(new Error("Web fetch timed out")),
+		timeoutMs,
+	);
 	try {
-		return await fetch(url, {
+		const { response, buffer } = await publicHttpRequestBuffer(publicUrl, {
 			signal: controller.signal,
+			maxBytes: MAX_FETCH_BYTES,
+			blockedAddressMessage:
+				"Local, private, and internal network URLs are blocked.",
+			sizeErrorMessage: "Web fetch response is too large.",
+			abortMessage: "Web fetch aborted",
 			headers: {
 				"user-agent":
 					"Infinitune/1.0 music planning research (local development)",
 			},
 		});
+		if (response.status >= 300 && response.status < 400) {
+			throw new Error("Redirects are blocked for agent web fetches.");
+		}
+		return {
+			response,
+			text: buffer.toString("utf8"),
+		};
 	} finally {
 		clearTimeout(timeout);
 	}
@@ -136,9 +154,8 @@ export async function webSearch(
 
 	const url = new URL("https://html.duckduckgo.com/html/");
 	url.searchParams.set("q", safeQuery);
-	const response = await fetchWithTimeout(url.toString());
+	const { response, text: html } = await fetchTextWithTimeout(url.toString());
 	if (!response.ok) throw new Error(`Web search failed: ${response.status}`);
-	const html = await response.text();
 	const results = parseDuckDuckGoResults(
 		html,
 		Math.max(1, Math.min(limit, 10)),
@@ -155,7 +172,7 @@ export async function webFetchUrl(rawUrl: string): Promise<{
 	truncated: boolean;
 }> {
 	const url = publicHttpUrl(rawUrl);
-	const response = await fetchWithTimeout(url.toString());
+	const { response, text: body } = await fetchTextWithTimeout(url.toString());
 	if (!response.ok) throw new Error(`Web fetch failed: ${response.status}`);
 	const contentType = response.headers.get("content-type") ?? "";
 	if (
@@ -165,7 +182,6 @@ export async function webFetchUrl(rawUrl: string): Promise<{
 	) {
 		throw new Error(`Unsupported content type: ${contentType || "unknown"}`);
 	}
-	const body = await response.text();
 	const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
 	const title = titleMatch
 		? stripHtml(decodeHtml(titleMatch[1]))
@@ -196,11 +212,11 @@ export async function webSearchMusicFacts(
 	url.searchParams.set("srlimit", String(Math.max(1, Math.min(limit, 10))));
 	url.searchParams.set("srsearch", safeQuery);
 
-	const response = await fetchWithTimeout(url.toString());
+	const { response, text } = await fetchTextWithTimeout(url.toString());
 	if (!response.ok) {
 		throw new Error(`Music web search failed: ${response.status}`);
 	}
-	const data = (await response.json()) as {
+	const data = JSON.parse(text) as {
 		query?: {
 			search?: Array<{
 				pageid?: number;

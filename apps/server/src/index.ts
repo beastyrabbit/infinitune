@@ -3,7 +3,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { WebSocketServer } from "ws";
 import { sqlite } from "./db/index";
@@ -49,6 +49,7 @@ const REQUEST_LOG_SUMMARY_INTERVAL_MS = Number(
 const TEMP_PLAYLIST_CLEANUP_INTERVAL_MS = Number(
 	process.env.TEMP_PLAYLIST_CLEANUP_INTERVAL_MS ?? 15 * 60 * 1000,
 );
+const WORKER_ADMIN_TOKEN = process.env.INFINITUNE_WORKER_ADMIN_TOKEN?.trim();
 
 type NoisyRequestPattern = {
 	method?: string;
@@ -142,6 +143,18 @@ function flushNoisyRequestSummary(reason: "interval" | "shutdown"): void {
 	);
 }
 
+function isWorkerAdmin(c: Context): boolean {
+	if (!WORKER_ADMIN_TOKEN && process.env.NODE_ENV !== "production") return true;
+	const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+	const supplied = c.req.header("x-admin-token") ?? bearer;
+	return !!WORKER_ADMIN_TOKEN && supplied === WORKER_ADMIN_TOKEN;
+}
+
+function workerAdminDenied(c: Context): Response | null {
+	if (isWorkerAdmin(c)) return null;
+	return c.json({ error: "Not found" }, 404);
+}
+
 const noisyRequestSummaryTimer =
 	REQUEST_LOG_SUMMARY_INTERVAL_MS > 0
 		? setInterval(
@@ -183,7 +196,16 @@ app.onError((err, c) => {
 		{ err, method: c.req.method, path: c.req.path },
 		"Unhandled request error",
 	);
-	return c.json({ error: "Internal server error", message: err.message }, 500);
+	return c.json(
+		{
+			error: "Internal server error",
+			message:
+				process.env.NODE_ENV === "production"
+					? "Internal server error"
+					: err.message,
+		},
+		500,
+	);
 });
 
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -200,7 +222,12 @@ app.use(
 			.map((origin) => origin.trim())
 			.filter(Boolean),
 		allowMethods: ["GET", "POST", "PATCH", "DELETE", "PUT"],
-		allowHeaders: ["Content-Type", "Authorization", "x-device-token"],
+		allowHeaders: [
+			"Content-Type",
+			"Authorization",
+			"x-device-token",
+			"x-admin-token",
+		],
 	}),
 );
 
@@ -259,21 +286,25 @@ app.use("*", async (c, next) => {
 
 // ─── Health check ────────────────────────────────────────────────────
 app.get("/health", (c) => {
-	const queues = getQueues().getFullStatus();
-	const worker = getWorkerStats();
-	const actorGraph = getWorkerActorGraph();
+	const includeWorkerDetails = isWorkerAdmin(c);
 	return c.json({
 		ok: true,
 		wsClients: getClientCount(),
 		rooms: roomManager.listRooms().length,
-		queues,
-		worker,
-		actorGraph,
+		...(includeWorkerDetails
+			? {
+					queues: getQueues().getFullStatus(),
+					worker: getWorkerStats(),
+					actorGraph: getWorkerActorGraph(),
+				}
+			: {}),
 	});
 });
 
 // ─── Worker status (used by frontend queue dashboard) ────────────────
 app.get("/api/worker/status", async (c) => {
+	const denied = workerAdminDenied(c);
+	if (denied) return denied;
 	const queues = getQueues().getFullStatus();
 	const worker = getWorkerStats();
 	const actorGraph = getWorkerActorGraph();
@@ -296,6 +327,8 @@ app.get("/api/worker/status", async (c) => {
 });
 
 app.get("/api/worker/inspect", async (c) => {
+	const denied = workerAdminDenied(c);
+	if (denied) return denied;
 	const limitQuery = c.req.query("limit");
 	const limit = limitQuery ? Number.parseInt(limitQuery, 10) : undefined;
 	const resolved =
@@ -306,6 +339,8 @@ app.get("/api/worker/inspect", async (c) => {
 });
 
 app.get("/api/worker/actors", (c) => {
+	const denied = workerAdminDenied(c);
+	if (denied) return denied;
 	const actorGraph = getWorkerActorGraph();
 	return c.json({
 		actorGraph,
@@ -327,6 +362,8 @@ app.route("/api/autoplayer", autoplayerRoutes);
 
 // ─── Persona trigger ────────────────────────────────────────────────
 app.post("/api/worker/persona/trigger", (c) => {
+	const denied = workerAdminDenied(c);
+	if (denied) return denied;
 	try {
 		triggerPersonaScan();
 		return c.json({ ok: true });

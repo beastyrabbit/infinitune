@@ -354,6 +354,27 @@ describe("song-service", () => {
 			expect(updated.status).toBe("metadata_ready");
 		});
 
+		it("does not retry known failed ACE tasks by polling the old task id", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "retry_pending",
+				erroredAtStatus: "generating_audio",
+				errorMessage: "Audio generation failed",
+				aceTaskId: "failed-task",
+				retryCount: 0,
+			});
+
+			await songService.retryErrored(song.id);
+
+			const db = getTestDb();
+			const [updated] = await db
+				.select()
+				.from(songs)
+				.where(eq(songs.id, song.id));
+			expect(updated.status).toBe("metadata_ready");
+			expect(updated.aceTaskId).toBeNull();
+		});
+
 		it("does nothing for non-retry_pending songs", async () => {
 			const pl = await createTestPlaylist();
 			const song = await createTestSong(pl.id, 1, { status: "pending" });

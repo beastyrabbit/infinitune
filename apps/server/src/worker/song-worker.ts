@@ -5,6 +5,7 @@ import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import {
+	hasBlockingDirectorQuestion,
 	refreshPlaylistPlanWithDirector,
 	scheduleMemoryCurator,
 } from "../agents/playlist-director-service";
@@ -41,6 +42,7 @@ export interface SongWorkerContext {
 		textModel: string;
 		imageProvider: string;
 		imageModel?: string;
+		aceModel?: string;
 		personaProvider: string;
 		personaModel: string;
 	}>;
@@ -635,6 +637,13 @@ export class SongWorker {
 				break;
 
 			case "saving":
+				if (this.song.aceAudioPath) {
+					await this.saveAndFinalize(
+						this.song.aceAudioPath,
+						this.song.audioProcessingMs ?? 0,
+					);
+					break;
+				}
 				await songService.updateStatus(this.songId, "generating_audio");
 				if (this.song.aceTaskId) {
 					await this.resumeAudioPoll();
@@ -672,6 +681,15 @@ export class SongWorker {
 			songLogger(this.songId).info(
 				{ playlistId: this.ctx.playlist.id },
 				"Playlist is no longer active; skipping metadata generation",
+			);
+			return;
+		}
+
+		if (await hasBlockingDirectorQuestion(this.ctx.playlist.id)) {
+			this.aborted = true;
+			songLogger(this.songId).info(
+				{ playlistId: this.ctx.playlist.id },
+				"Required director question is pending; deferring metadata generation",
 			);
 			return;
 		}
@@ -929,7 +947,14 @@ export class SongWorker {
 
 		// Check playlist still active before audio submission
 		const active = await this.ctx.getPlaylistActive();
-		if (!active && this.aborted) return;
+		if (!active) {
+			this.aborted = true;
+			songLogger(this.songId).info(
+				{ playlistId: this.ctx.playlist.id },
+				"Playlist is no longer active; skipping ACE submission",
+			);
+			return;
+		}
 
 		const claimed = songService.claimAudio(this.songId);
 		if (!claimed) return;
@@ -954,11 +979,7 @@ export class SongWorker {
 							keyScale: this.song.keyScale || "C major",
 							timeSignature: this.song.timeSignature || "4/4",
 							audioDuration: this.song.audioDuration || 240,
-							aceModel: (
-								this.ctx.playlist as PlaylistWire & {
-									aceModel?: string;
-								}
-							).aceModel,
+							aceModel: (await this.ctx.getSettings()).aceModel,
 							inferenceSteps: this.ctx.playlist.inferenceSteps ?? undefined,
 							vocalLanguage: toAceVocalLanguageCode(
 								this.ctx.playlist.lyricsLanguage,
@@ -1055,6 +1076,8 @@ export class SongWorker {
 				{ error: audioResult.error },
 				"ACE generation failed",
 			);
+			await songService.revertTransient(this.songId);
+			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error(audioResult.error || "Audio generation failed");
 		} else if (status === "not_found") {
 			songLogger(this.songId).warn(
@@ -1062,6 +1085,7 @@ export class SongWorker {
 				"ACE task lost, reverting",
 			);
 			await songService.revertTransient(this.songId);
+			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error("ACE task not found");
 		}
 	}
@@ -1075,7 +1099,10 @@ export class SongWorker {
 			"ACE completed, saving",
 		);
 
-		await songService.updateStatus(this.songId, "saving");
+		if (this.song.status !== "saving") {
+			await songService.updateStatus(this.songId, "saving");
+		}
+		await songService.updateAceAudioPath(this.songId, audioPath);
 
 		// Save to NFS
 		try {
@@ -1166,7 +1193,9 @@ export class SongWorker {
 				songLogger(this.songId).warn({ err }, "ID3 tagging failed");
 			}
 		} catch (e: unknown) {
-			songLogger(this.songId).error({ err: e }, "NFS save failed, continuing");
+			this.lastError = e instanceof Error ? e.message : String(e);
+			songLogger(this.songId).error({ err: e }, "NFS save failed");
+			throw e;
 		}
 
 		if (this.aborted) return;

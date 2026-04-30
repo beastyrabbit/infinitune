@@ -13,7 +13,7 @@ export const Route = createFileRoute("/autoplayer_/orchestrator")({
 
 function OrchestratorPage() {
 	const navigate = useNavigate();
-	const { pl } = Route.useSearch();
+	const { pl, room, role, name, dn } = Route.useSearch();
 	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const currentPlaylist = useCurrentPlaylist();
 	const playlist = pl ? playlistByKey : currentPlaylist;
@@ -22,10 +22,10 @@ function OrchestratorPage() {
 		: currentPlaylist === undefined;
 
 	const backSearch = playlist?.playlistKey
-		? { pl: playlist.playlistKey }
+		? { pl: playlist.playlistKey, room, role, name, dn }
 		: pl
-			? { pl }
-			: {};
+			? { pl, room, role, name, dn }
+			: { room, role, name, dn };
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white">

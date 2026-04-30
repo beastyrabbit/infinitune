@@ -176,7 +176,8 @@ export async function updateMemory(
 				patch.importance === undefined
 					? current.importance
 					: Math.max(0, Math.min(1, patch.importance)),
-			expiresAt: patch.expiresAt ?? current.expiresAt,
+			expiresAt:
+				patch.expiresAt === undefined ? current.expiresAt : patch.expiresAt,
 		})
 		.where(eq(agentMemoryEntries.id, id))
 		.returning();

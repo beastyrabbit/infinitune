@@ -1,6 +1,6 @@
 import fsPromises from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { db } from "../db/index";
 import { agentChannelMessages } from "../db/schema";
 import { emit } from "../events/event-bus";
@@ -45,8 +45,11 @@ export interface PostChannelMessageInput {
 }
 
 const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+const isProduction = process.env.NODE_ENV === "production";
 const CHANNEL_FILE_LOGGING_ENABLED =
-	!isTest && process.env.AGENT_CHANNEL_LOG_TO_FILE !== "0";
+	!isTest &&
+	(process.env.AGENT_CHANNEL_LOG_TO_FILE === "1" ||
+		(!isProduction && process.env.AGENT_CHANNEL_LOG_TO_FILE !== "0"));
 const CHANNEL_LOG_DIR = path.resolve(
 	import.meta.dirname,
 	"../../../../data/logs/agent-channel",
@@ -83,17 +86,17 @@ async function appendChannelMessageLog(
 ): Promise<void> {
 	if (!CHANNEL_FILE_LOGGING_ENABLED) return;
 	const playlistSegment = safeFileSegment(message.playlistId);
-	await fsPromises.mkdir(CHANNEL_LOG_DIR, { recursive: true });
+	await fsPromises.mkdir(CHANNEL_LOG_DIR, { recursive: true, mode: 0o700 });
 	await Promise.all([
 		fsPromises.appendFile(
 			path.join(CHANNEL_LOG_DIR, `${playlistSegment}.ndjson`),
 			`${JSON.stringify(message)}\n`,
-			"utf8",
+			{ encoding: "utf8", mode: 0o600 },
 		),
 		fsPromises.appendFile(
 			path.join(CHANNEL_LOG_DIR, `${playlistSegment}.md`),
 			formatChannelTranscriptEntry(message),
-			"utf8",
+			{ encoding: "utf8", mode: 0o600 },
 		),
 	]);
 }
@@ -197,6 +200,9 @@ export async function readChannelMessages(input: {
 }): Promise<ChannelMessageWire[]> {
 	const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
 	const predicates = [eq(agentChannelMessages.playlistId, input.playlistId)];
+	const sinceMessage = input.sinceId
+		? await getChannelMessage(input.sinceId)
+		: null;
 	if (input.threadId !== undefined) {
 		predicates.push(
 			input.threadId === null
@@ -204,8 +210,15 @@ export async function readChannelMessages(input: {
 				: eq(agentChannelMessages.threadId, input.threadId),
 		);
 	}
-	if (input.sinceId) {
-		predicates.push(gt(agentChannelMessages.id, input.sinceId));
+	if (sinceMessage?.playlistId === input.playlistId) {
+		const sincePredicate = or(
+			gt(agentChannelMessages.createdAt, sinceMessage.createdAt),
+			and(
+				eq(agentChannelMessages.createdAt, sinceMessage.createdAt),
+				gt(agentChannelMessages.id, sinceMessage.id),
+			),
+		);
+		if (sincePredicate) predicates.push(sincePredicate);
 	}
 	if (input.types?.length) {
 		predicates.push(inArray(agentChannelMessages.messageType, input.types));
@@ -215,10 +228,14 @@ export async function readChannelMessages(input: {
 		.select()
 		.from(agentChannelMessages)
 		.where(and(...predicates))
-		.orderBy(desc(agentChannelMessages.createdAt))
+		.orderBy(
+			desc(agentChannelMessages.createdAt),
+			desc(agentChannelMessages.id),
+		)
 		.limit(limit);
 
-	return rows.reverse().map(toWire);
+	const messages = rows.reverse().map(toWire);
+	return messages.slice(-limit);
 }
 
 export async function listPendingRequiredQuestions(

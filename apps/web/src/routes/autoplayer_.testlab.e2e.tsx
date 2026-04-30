@@ -451,14 +451,17 @@ function PipelineTestPage() {
 								completedAt: Date.now(),
 								error: errText,
 							});
+							throw new Error(`Save failed: ${errText}`);
 						}
 					} catch (e: unknown) {
 						if (signal.aborted) throw e;
+						const message = e instanceof Error ? e.message : String(e);
 						updateStep("save", {
 							status: "error",
 							completedAt: Date.now(),
-							error: e instanceof Error ? e.message : String(e),
+							error: message,
 						});
+						throw new Error(message);
 					}
 				}
 

@@ -107,6 +107,12 @@ function PriceStrip({ model }: { model: InferenceShImageModelOption }) {
 	);
 }
 
+function defaultTextModelForProvider(provider: string): string {
+	return provider === "anthropic"
+		? DEFAULT_ANTHROPIC_TEXT_MODEL
+		: DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+}
+
 function InferenceShModelSelect({
 	models,
 	value,
@@ -265,7 +271,10 @@ export function SettingsTabModels({
 							{ value: "anthropic", label: "ANTHROPIC" },
 						]}
 						value={textProvider}
-						onChange={setTextProvider}
+						onChange={(nextProvider) => {
+							setTextProvider(nextProvider);
+							setTextModel(defaultTextModelForProvider(nextProvider));
+						}}
 					/>
 				</SettingsField>
 
@@ -401,7 +410,12 @@ export function SettingsTabModels({
 			<SettingsPanel title="ACE-STEP — AUDIO GENERATION">
 				<SettingsField label="Model">
 					{aceModels.length > 0 ? (
-						<Select value={aceModel} onValueChange={setAceModel}>
+						<Select
+							value={aceModel || "__default__"}
+							onValueChange={(value) =>
+								setAceModel(value === "__default__" ? "" : value)
+							}
+						>
 							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
 								<SelectValue placeholder="DEFAULT" />
 							</SelectTrigger>
@@ -444,7 +458,10 @@ export function SettingsTabModels({
 							{ value: "anthropic", label: "ANTHROPIC" },
 						]}
 						value={personaProvider}
-						onChange={setPersonaProvider}
+						onChange={(nextProvider) => {
+							setPersonaProvider(nextProvider);
+							setPersonaModel("");
+						}}
 					/>
 				</SettingsField>
 

@@ -8,6 +8,7 @@ import {
 	normalizePlaylistManagerPlan,
 	withLegacySlotFields,
 } from "@infinitune/shared/validation/manager-plan";
+import { emit } from "../events/event-bus";
 import {
 	generatePlaylistManagerPlan,
 	type ManagerRatingSignal,
@@ -42,6 +43,13 @@ type MemoryTrigger =
 	| "completed-song"
 	| "long-channel";
 type SongLike = Awaited<ReturnType<typeof songService.listByPlaylist>>[number];
+
+export class DirectorQuestionValidationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "DirectorQuestionValidationError";
+	}
+}
 
 function nonEmpty(value?: string | null): string | undefined {
 	const trimmed = value?.trim();
@@ -578,9 +586,31 @@ export async function answerDirectorQuestion(input: {
 	content: string;
 }): Promise<{ messageId: string }> {
 	const question = await getChannelMessage(input.questionId);
+	if (!question) {
+		throw new DirectorQuestionValidationError("Director question not found");
+	}
+	if (question.playlistId !== input.playlistId) {
+		throw new DirectorQuestionValidationError(
+			"Director question does not belong to this playlist",
+		);
+	}
+	if (question.messageType !== "question") {
+		throw new DirectorQuestionValidationError(
+			"Channel message is not a director question",
+		);
+	}
+	const questionData =
+		question.data && typeof question.data === "object"
+			? (question.data as { answeredAt?: unknown })
+			: null;
+	if (questionData?.answeredAt) {
+		throw new DirectorQuestionValidationError(
+			"Director question has already been answered",
+		);
+	}
 	const message = await postChannelMessage({
 		playlistId: input.playlistId,
-		threadId: question?.threadId ?? input.questionId,
+		threadId: question.threadId ?? input.questionId,
 		senderKind: "human",
 		senderId: "human",
 		messageType: "chat",
@@ -592,6 +622,7 @@ export async function answerDirectorQuestion(input: {
 		answeredBy: "human",
 		answerMessageId: message.id,
 	});
+	emit("playlist.updated", { playlistId: input.playlistId });
 	queueMicrotask(() => {
 		wakePlaylistDirector({
 			playlistId: input.playlistId,

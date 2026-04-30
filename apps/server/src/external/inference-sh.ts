@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import {
 	DEFAULT_INFERENCE_SH_IMAGE_MODEL,
 	INFERENCE_SH_IMAGE_MODELS,
 	type InferenceShImageModelOption,
 	normalizeInferenceShImageModel,
 } from "@infinitune/shared/inference-sh-image-models";
+import { isPrivateIp, publicHttpRequestBuffer } from "../utils/public-http";
 
 export {
 	DEFAULT_INFERENCE_SH_IMAGE_MODEL,
@@ -15,6 +15,8 @@ export {
 
 const ANSI_ESC = String.fromCharCode(27);
 const ANSI_CSI = String.fromCharCode(155);
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 function stripAnsi(value: string): string {
 	return value
@@ -200,6 +202,64 @@ function inferImageFormat(
 	return "png";
 }
 
+function assertPublicImageUrl(url: URL): void {
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new Error("Inference.sh image URL must use http or https");
+	}
+	if (
+		url.hostname === "localhost" ||
+		url.hostname.endsWith(".localhost") ||
+		url.hostname.endsWith(".localdomain") ||
+		url.hostname.endsWith(".internal")
+	) {
+		throw new Error("Inference.sh image URL points to a local host");
+	}
+}
+
+function assertImageSize(size: number): void {
+	if (size > MAX_IMAGE_BYTES) {
+		throw new Error("Inference.sh image output is too large");
+	}
+}
+
+async function downloadImageReference(
+	url: URL,
+	signal?: AbortSignal,
+): Promise<{ buffer: Buffer; contentType: string }> {
+	if (signal?.aborted) {
+		throw signal.reason ?? new DOMException("Aborted", "AbortError");
+	}
+	assertPublicImageUrl(url);
+	const { response, buffer } = await publicHttpRequestBuffer(url, {
+		signal,
+		timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+		timeoutMessage: "Inference.sh image download timed out",
+		abortMessage: "Inference.sh image validation aborted",
+		maxBytes: MAX_IMAGE_BYTES,
+		blockedAddressMessage:
+			"Inference.sh image URL resolved to a private address",
+		sizeErrorMessage: "Inference.sh image output is too large",
+	});
+	if (response.status >= 300 && response.status < 400) {
+		throw new Error("Inference.sh image URL redirects are not followed");
+	}
+	if (!response.ok) {
+		throw new Error(
+			`Failed to download Inference.sh image: ${response.status}`,
+		);
+	}
+	const contentType = response.headers.get("content-type") ?? "";
+	if (!contentType.toLowerCase().startsWith("image/")) {
+		throw new Error("Inference.sh image URL did not return an image");
+	}
+	const contentLength = Number.parseInt(
+		response.headers.get("content-length") ?? "",
+		10,
+	);
+	if (Number.isFinite(contentLength)) assertImageSize(contentLength);
+	return { buffer, contentType };
+}
+
 async function imageReferenceToBase64(
 	reference: string,
 	signal?: AbortSignal,
@@ -207,42 +267,31 @@ async function imageReferenceToBase64(
 	if (reference.startsWith("data:image/")) {
 		const [header, base64] = reference.split(",", 2);
 		if (!base64) throw new Error("Invalid data URL returned by Inference.sh");
+		assertImageSize(Math.ceil((base64.length * 3) / 4));
 		const format = header.match(/^data:image\/([^;]+)/)?.[1] ?? "png";
 		return { base64, format };
 	}
 
 	if (/^https?:\/\//i.test(reference)) {
-		const response = await fetch(reference, { signal });
-		if (!response.ok) {
-			throw new Error(
-				`Failed to download Inference.sh image: ${response.status}`,
-			);
-		}
-		const arrayBuffer = await response.arrayBuffer();
+		const url = new URL(reference);
+		const { buffer, contentType } = await downloadImageReference(url, signal);
 		return {
-			base64: Buffer.from(arrayBuffer).toString("base64"),
-			format: inferImageFormat(reference, response.headers.get("content-type")),
+			base64: buffer.toString("base64"),
+			format: inferImageFormat(reference, contentType),
 		};
 	}
 
 	if (reference.startsWith("file://")) {
-		const url = new URL(reference);
-		const buffer = await readFile(url);
-		return {
-			base64: buffer.toString("base64"),
-			format: inferImageFormat(url.pathname),
-		};
+		throw new Error("Inference.sh file URLs are not allowed");
 	}
 
 	if (/^[A-Za-z0-9+/=\s]+$/.test(reference) && reference.length > 500) {
-		return { base64: reference.replace(/\s+/g, ""), format: "png" };
+		const base64 = reference.replace(/\s+/g, "");
+		assertImageSize(Math.ceil((base64.length * 3) / 4));
+		return { base64, format: "png" };
 	}
 
-	const buffer = await readFile(reference);
-	return {
-		base64: buffer.toString("base64"),
-		format: inferImageFormat(reference),
-	};
+	throw new Error("Inference.sh returned an unsupported image reference");
 }
 
 export function getInferenceShImageModels(): InferenceShImageModelOption[] {
@@ -277,3 +326,8 @@ export async function callInferenceShImageGen(options: {
 	const image = await imageReferenceToBase64(reference, options.signal);
 	return { ...image, model };
 }
+
+export const _testInferenceSh = {
+	imageReferenceToBase64,
+	isPrivateIp,
+};

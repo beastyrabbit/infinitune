@@ -49,7 +49,10 @@ import {
 	updateMemory,
 	writeMemory,
 } from "../agents/memory-store";
-import { postHumanChat } from "../agents/playlist-director-service";
+import {
+	answerDirectorQuestion,
+	postHumanChat,
+} from "../agents/playlist-director-service";
 import {
 	getRecentSongsData,
 	getTopicHistoryData,
@@ -302,6 +305,38 @@ describe("agent ensemble", () => {
 			data: { requiresAnswer: true },
 		});
 		expect(await listPendingRequiredQuestions(playlist.id)).toHaveLength(1);
+	});
+
+	it("rejects answers to questions from another playlist", async () => {
+		const playlistA = await playlistService.create({
+			name: "A",
+			prompt: "ambient folk",
+			llmProvider: "openai-codex",
+			llmModel: "",
+		});
+		const playlistB = await playlistService.create({
+			name: "B",
+			prompt: "garage rock",
+			llmProvider: "openai-codex",
+			llmModel: "",
+		});
+		const question = await postChannelMessage({
+			playlistId: playlistA.id,
+			senderKind: "agent",
+			senderId: "playlist-director",
+			messageType: "question",
+			content: "Required language choice?",
+			data: { requiresAnswer: true },
+		});
+
+		await expect(
+			answerDirectorQuestion({
+				playlistId: playlistB.id,
+				questionId: question.id,
+				content: "English",
+			}),
+		).rejects.toThrow("does not belong");
+		expect(await listPendingRequiredQuestions(playlistA.id)).toHaveLength(1);
 	});
 
 	it("stores human chat and wakes the director", async () => {

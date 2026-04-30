@@ -112,7 +112,7 @@ export async function getNeedsPersona() {
 		.slice(0, 20)
 		.map((s) => ({
 			id: s.id,
-			title: s.title!,
+			title: s.title ?? "Untitled",
 			artistName: s.artistName,
 			genre: s.genre,
 			subGenre: s.subGenre,
@@ -387,21 +387,38 @@ export async function retryErrored(id: string) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song || song.status !== "retry_pending") return;
 
-	const revertTo =
-		song.erroredAtStatus === "generating_metadata"
-			? "pending"
-			: "metadata_ready";
+	const providerAudioFailure =
+		/^(audio generation failed|ace generation failed)/i.test(
+			song.errorMessage ?? "",
+		);
+	let revertTo: SongStatus = "metadata_ready";
+	if (song.erroredAtStatus === "generating_metadata") {
+		revertTo = "pending";
+	} else if (song.erroredAtStatus === "saving" && song.aceAudioPath) {
+		revertTo = "saving";
+	} else if (
+		(song.erroredAtStatus === "generating_audio" ||
+			song.erroredAtStatus === "saving") &&
+		song.aceTaskId &&
+		!providerAudioFailure
+	) {
+		revertTo = "generating_audio";
+	}
 
-	await db
-		.update(songs)
-		.set({
-			status: revertTo,
-			retryCount: (song.retryCount || 0) + 1,
-			errorMessage: null,
-			erroredAtStatus: null,
-			generationStartedAt: Date.now(),
-		})
-		.where(eq(songs.id, id));
+	const patch: Record<string, unknown> = {
+		status: revertTo,
+		retryCount: (song.retryCount || 0) + 1,
+		errorMessage: null,
+		erroredAtStatus: null,
+		generationStartedAt: Date.now(),
+	};
+	if (revertTo === "metadata_ready") {
+		patch.aceTaskId = null;
+		patch.aceSubmittedAt = null;
+		patch.aceAudioPath = null;
+	}
+
+	await db.update(songs).set(patch).where(eq(songs.id, id));
 	songLogger(id, song.playlistId).info(
 		{
 			fromStatus: "retry_pending",
@@ -578,6 +595,10 @@ export async function updateStoragePath(
 	await db.update(songs).set(patch).where(eq(songs.id, id));
 }
 
+export async function updateAceAudioPath(id: string, aceAudioPath: string) {
+	await db.update(songs).set({ aceAudioPath }).where(eq(songs.id, id));
+}
+
 export async function updateAudioDuration(id: string, audioDuration: number) {
 	await db.update(songs).set({ audioDuration }).where(eq(songs.id, id));
 }
@@ -710,10 +731,10 @@ export async function getWorkQueue(playlistId: string) {
 		.sort((a, b) => b.orderIndex - a.orderIndex);
 
 	const recentCompleted = completedSongs.slice(0, 12).map((s) => ({
-		title: s.title!,
-		artistName: s.artistName!,
-		genre: s.genre!,
-		subGenre: s.subGenre!,
+		title: s.title ?? "Untitled",
+		artistName: s.artistName ?? "Unknown Artist",
+		genre: s.genre ?? "Unknown",
+		subGenre: s.subGenre ?? "Unknown",
 		vocalStyle: s.vocalStyle,
 		mood: s.mood,
 		energy: s.energy,

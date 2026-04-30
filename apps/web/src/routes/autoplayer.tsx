@@ -302,6 +302,7 @@ function AutoplayerPage() {
 			aceThinking?: boolean;
 			aceAutoDuration?: boolean;
 			initialDirectorPlan?: boolean;
+			roomSlug?: string;
 		}): Promise<{ key: string; playlistId: string; playlistName: string }> => {
 			const key = generatePlaylistKey();
 			const created = await createPlaylist({
@@ -348,10 +349,14 @@ function AutoplayerPage() {
 				to: "/autoplayer/orchestrator",
 				search: {
 					pl: created.key,
+					room: data.roomSlug || room || created.key,
+					role: roomRole,
+					name: name || data.name,
+					dn,
 				},
 			});
 		},
-		[doCreatePlaylist, navigate],
+		[dn, doCreatePlaylist, name, navigate, room, roomRole],
 	);
 
 	const handleAddBatch = useCallback(async () => {
@@ -638,7 +643,7 @@ function AutoplayerPage() {
 		async (songId: string, newOrderIndex: number) => {
 			if (!playlistId) return;
 			await reorderSong({ id: songId, newOrderIndex });
-			reindexPlaylist({ playlistId });
+			await reindexPlaylist({ playlistId });
 		},
 		[playlistId, reorderSong, reindexPlaylist],
 	);
