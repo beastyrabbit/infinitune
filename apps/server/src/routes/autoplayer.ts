@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
+import type { LlmProvider } from "@infinitune/shared/types";
 import { Hono } from "hono";
 import { codexAppServerClient } from "../external/codex-app-server-client";
 import {
@@ -8,6 +10,11 @@ import {
 	getCodexLoginStatus,
 	startCodexDeviceAuth,
 } from "../external/codex-auth";
+import { testCodexImagegenProvider } from "../external/codex-imagegen";
+import {
+	getInferenceShImageModels,
+	testInferenceShImageProvider,
+} from "../external/inference-sh";
 import {
 	enhancePlaylistPrompt,
 	enhanceSessionParams,
@@ -23,7 +30,7 @@ import {
 	type SessionParams,
 	type SongMetadata,
 } from "../external/llm";
-import { getServiceUrls, getSetting } from "../external/service-urls";
+import { getServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
 
 interface OllamaModel {
@@ -33,15 +40,6 @@ interface OllamaModel {
 	details?: { families?: string[] };
 }
 
-interface OpenRouterModel {
-	id: string;
-	name: string;
-	pricing: { prompt: string; completion: string };
-	context_length: number;
-	architecture?: { modality?: string };
-	output_modalities?: string[];
-}
-
 interface CodexModelResponse {
 	id: string;
 	displayName: string;
@@ -49,7 +47,7 @@ interface CodexModelResponse {
 	isDefault: boolean;
 }
 
-type AutoplayerProvider = "ollama" | "openrouter" | "openai-codex";
+type AutoplayerProvider = LlmProvider;
 
 interface SourceSong {
 	title: string;
@@ -97,9 +95,10 @@ function parseProvider(value: unknown): AutoplayerProvider | undefined {
 	if (
 		value === "ollama" ||
 		value === "openrouter" ||
-		value === "openai-codex"
+		value === "openai-codex" ||
+		value === "anthropic"
 	) {
-		return value;
+		return normalizeLlmProvider(value);
 	}
 	return undefined;
 }
@@ -388,66 +387,27 @@ app.get("/ace-models", async (c) => {
 	}
 });
 
-// ─── GET /openrouter-models?type=text|image ─────────────────────────
-app.get("/openrouter-models", async (c) => {
+// ─── GET /inference-sh-image-models ─────────────────────────────────
+app.get("/inference-sh-image-models", (c) => {
+	return c.json({ models: getInferenceShImageModels() });
+});
+
+// ─── Legacy OpenRouter model endpoint ───────────────────────────────
+app.get("/openrouter-models", (c) => {
 	try {
-		const type = c.req.query("type") || "text";
-
-		const apiKey = await getSetting("openrouterApiKey");
-		if (!apiKey) {
-			return c.json(
-				{ error: "No OpenRouter API key configured", models: [] },
-				400,
-			);
-		}
-
-		const response = await fetch("https://openrouter.ai/api/v1/models", {
-			headers: { Authorization: `Bearer ${apiKey}` },
-			signal: AbortSignal.timeout(10000),
+		void c.req.query("type");
+		return c.json({
+			error: "OpenRouter image generation was replaced by Inference.sh",
+			models: [],
 		});
-
-		if (!response.ok) {
-			return c.json(
-				{ error: `OpenRouter returned ${response.status}`, models: [] },
-				502,
-			);
-		}
-
-		const data = (await response.json()) as { data?: OpenRouterModel[] };
-		const allModels: OpenRouterModel[] = data.data || [];
-
-		let filtered: typeof allModels;
-		if (type === "image") {
-			filtered = allModels.filter(
-				(m) =>
-					m.output_modalities?.includes("image") ||
-					m.architecture?.modality === "text->image",
-			);
-		} else {
-			filtered = allModels.filter(
-				(m) =>
-					m.architecture?.modality === "text->text" ||
-					m.architecture?.modality === "text+image->text",
-			);
-		}
-
-		const models = filtered.map((m) => ({
-			id: m.id,
-			name: m.name,
-			promptPrice: m.pricing.prompt,
-			completionPrice: m.pricing.completion,
-			contextLength: m.context_length,
-		}));
-
-		return c.json({ models });
 	} catch (error: unknown) {
-		logger.warn({ err: error }, "Failed to fetch OpenRouter models");
+		logger.warn({ err: error }, "Failed to serve legacy OpenRouter models");
 		return c.json(
 			{
 				error:
 					error instanceof Error
 						? error.message
-						: "Failed to fetch OpenRouter models",
+						: "OpenRouter image generation was replaced by Inference.sh",
 				models: [],
 			},
 			500,
@@ -1125,25 +1085,21 @@ app.post("/test-connection", async (c) => {
 			});
 		}
 
-		if (provider === "openrouter") {
-			if (!apiKey) {
-				return c.json({ ok: false, error: "No API key provided" });
-			}
-			const response = await fetch("https://openrouter.ai/api/v1/models", {
-				headers: { Authorization: `Bearer ${apiKey}` },
-				signal: AbortSignal.timeout(5000),
+		if (provider === "inference-sh" || provider === "openrouter") {
+			void apiKey;
+			await testInferenceShImageProvider();
+			return c.json({
+				ok: true,
+				message: "Inference.sh CLI ready",
 			});
-			if (!response.ok) {
-				logger.warn(
-					{ provider: "openrouter", status: response.status },
-					"Connection test failed",
-				);
-				return c.json({
-					ok: false,
-					error: `OpenRouter returned ${response.status}`,
-				});
-			}
-			return c.json({ ok: true, message: "Connected to OpenRouter" });
+		}
+
+		if (provider === "codex-imagegen") {
+			const message = await testCodexImagegenProvider();
+			return c.json({
+				ok: true,
+				message: message || "Codex CLI ready",
+			});
 		}
 
 		if (provider === "openai-codex") {
@@ -1159,6 +1115,13 @@ app.post("/test-connection", async (c) => {
 			return c.json({
 				ok: true,
 				message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
+			});
+		}
+
+		if (provider === "anthropic") {
+			return c.json({
+				ok: true,
+				message: "Anthropic text generation is managed by Pi auth storage",
 			});
 		}
 

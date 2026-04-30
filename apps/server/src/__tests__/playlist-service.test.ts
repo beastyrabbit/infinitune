@@ -326,7 +326,7 @@ describe("playlist-service", () => {
 			});
 		});
 
-		it("reactivates closed endless playlist", async () => {
+		it("does NOT reactivate closed endless playlist", async () => {
 			const db = getTestDb();
 			const [pl] = await db
 				.insert(playlists)
@@ -345,15 +345,12 @@ describe("playlist-service", () => {
 				.select()
 				.from(playlists)
 				.where(eq(playlists.id, pl.id));
-			expect(updated.status).toBe("active");
+			expect(updated.status).toBe("closed");
 
 			const statusEvent = emittedEvents.find(
 				(e) => e.event === "playlist.status_changed",
 			);
-			expect(statusEvent?.data).toMatchObject({
-				from: "closed",
-				to: "active",
-			});
+			expect(statusEvent).toBeUndefined();
 		});
 
 		it("does NOT reactivate closed oneshot playlist", async () => {

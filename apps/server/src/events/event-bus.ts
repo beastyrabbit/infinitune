@@ -22,6 +22,8 @@ export type EventMap = {
 	"playlist.updated": { playlistId: string };
 	"playlist.heartbeat": { playlistId: string };
 	"playlist.deleted": { playlistId: string };
+	"agent.chat_message": { playlistId: string; messageId: string };
+	"agent.memory_updated": { playlistId?: string | null; memoryId: string };
 	"settings.changed": { key: string };
 };
 

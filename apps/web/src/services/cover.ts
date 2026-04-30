@@ -7,7 +7,8 @@ import type { SongCover } from "@infinitune/shared/types";
 import WebSocket from "ws";
 import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { getServiceUrls } from "@/lib/server-settings";
-import { callImageGen } from "@/services/llm-client";
+import { callCodexImagegenCover } from "@/services/codex-imagegen";
+import { callInferenceShImageGen } from "@/services/inference-sh";
 
 const execFileAsync = promisify(execFile);
 
@@ -288,17 +289,21 @@ export async function generateCover(options: {
 		return { imageBase64: base64, format: "png" };
 	}
 
-	if (provider === "openrouter") {
-		if (!model?.trim()) {
-			throw new Error("OpenRouter image model is required");
-		}
-
-		const result = await callImageGen({
+	if (provider === "inference-sh" || provider === "openrouter") {
+		const result = await callInferenceShImageGen({
 			model,
 			prompt: fullPrompt,
 			signal,
 		});
-		return { imageBase64: result.base64, format: "png" };
+		return { imageBase64: result.base64, format: result.format };
+	}
+
+	if (provider === "codex-imagegen") {
+		const result = await callCodexImagegenCover({
+			prompt: fullPrompt,
+			signal,
+		});
+		return { imageBase64: result.base64, format: result.format };
 	}
 
 	return null;

@@ -1,6 +1,13 @@
 import z from "zod";
 import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
-import { LLM_PROVIDERS, PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
+import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
+
+const UPDATE_LLM_PROVIDERS = [
+	"openai-codex",
+	"anthropic",
+	"ollama",
+	"openrouter",
+] as const;
 
 /** Schema for creating a playlist */
 export const CreatePlaylistSchema = z.object({
@@ -25,6 +32,7 @@ export const CreatePlaylistSchema = z.object({
 	isTemporary: z.boolean().optional(),
 	expiresAt: z.number().optional(),
 	description: z.string().max(4000).optional(),
+	initialDirectorPlan: z.boolean().optional(),
 });
 
 /** Schema for updating playlist status */
@@ -44,7 +52,7 @@ export const UpdatePlaylistPositionSchema = z.object({
 
 /** Schema for updating generation params */
 export const UpdatePlaylistParamsSchema = z.object({
-	llmProvider: z.enum(LLM_PROVIDERS).optional(),
+	llmProvider: z.enum(UPDATE_LLM_PROVIDERS).optional(),
 	llmModel: z.string().nullable().optional(),
 	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES).nullable().optional(),
 	targetBpm: z.number().min(30).max(300).nullable().optional(),

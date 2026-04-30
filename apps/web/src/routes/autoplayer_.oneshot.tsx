@@ -1,6 +1,8 @@
 import {
-	DEFAULT_OLLAMA_TEXT_MODEL,
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
+	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -40,7 +42,6 @@ import { useVolumeSync } from "@/hooks/useVolumeSync";
 import { api, getRequestErrorMessage } from "@/integrations/api/client";
 import {
 	useAutoplayerCodexModels,
-	useAutoplayerOllamaModels,
 	useCreatePlaylist,
 	usePlaylistByKey,
 	useSettings,
@@ -95,8 +96,7 @@ function OneshotPage() {
 	// ── Local state ──
 	const [prompt, setPrompt] = useState("");
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
-	const [model, setModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
-	const ollamaModels = useAutoplayerOllamaModels() ?? [];
+	const [model, setModel] = useState(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
 	const codexModels = useAutoplayerCodexModels() ?? [];
 	const [enhancing, setEnhancing] = useState(false);
 	const [generating, setGenerating] = useState(false);
@@ -150,24 +150,18 @@ function OneshotPage() {
 	useEffect(() => {
 		if (!settings || settingsApplied.current) return;
 		settingsApplied.current = true;
-		const configuredProvider =
-			(settings.textProvider as LlmProvider) || DEFAULT_TEXT_PROVIDER;
+		const configuredProvider = normalizeLlmProvider(settings.textProvider);
 		setProvider(configuredProvider);
 		if (settings.textModel) {
 			setModel(settings.textModel);
-		} else if (configuredProvider === "ollama") {
-			setModel(DEFAULT_OLLAMA_TEXT_MODEL);
+		} else if (configuredProvider === "anthropic") {
+			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
 		} else {
-			setModel("");
+			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
 		}
 		modelSetByUserOrSettings.current = true;
 	}, [settings]);
 
-	const textModels = useMemo(
-		() =>
-			ollamaModels.filter((m) => m.type === "text" || (!m.type && !m.vision)),
-		[ollamaModels],
-	);
 	const codexTextModels = useMemo(
 		() =>
 			codexModels.filter(
@@ -177,31 +171,22 @@ function OneshotPage() {
 	);
 
 	useEffect(() => {
-		if (provider === "ollama" && textModels.length > 0) {
-			if (!textModels.some((m) => m.name === model)) {
-				const preferred = textModels.find((m) => m.name === "gpt-oss:20b");
-				setModel(preferred ? preferred.name : textModels[0].name);
-			}
-			return;
-		}
-
-		if (provider === "openrouter") {
-			const isKnownOllamaModel = textModels.some((m) => m.name === model);
-			const isKnownCodexModel = codexTextModels.some((m) => m.name === model);
-			if (isKnownOllamaModel || isKnownCodexModel) {
-				setModel("");
-			}
-			return;
-		}
-
 		if (provider === "openai-codex" && codexTextModels.length > 0) {
 			if (!codexTextModels.some((m) => m.name === model)) {
 				const preferred =
 					codexTextModels.find((m) => m.is_default) || codexTextModels[0];
 				setModel(preferred.name);
 			}
+			return;
 		}
-	}, [provider, model, textModels, codexTextModels]);
+		if (provider === "openai-codex" && !model.trim()) {
+			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+			return;
+		}
+		if (provider === "anthropic" && !model.trim()) {
+			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
+		}
+	}, [provider, model, codexTextModels]);
 
 	// ── Handlers ──
 	const handleEnhancePrompt = useCallback(async () => {
@@ -449,28 +434,6 @@ function OneshotPage() {
 										<button
 											type="button"
 											className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-												provider === "ollama"
-													? "bg-yellow-500 text-black border-yellow-500"
-													: "bg-transparent text-white hover:bg-white/10"
-											}`}
-											onClick={() => setProvider("ollama")}
-										>
-											OLLAMA
-										</button>
-										<button
-											type="button"
-											className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-												provider === "openrouter"
-													? "bg-yellow-500 text-black border-yellow-500"
-													: "bg-transparent text-white hover:bg-white/10"
-											}`}
-											onClick={() => setProvider("openrouter")}
-										>
-											OPENROUTER
-										</button>
-										<button
-											type="button"
-											className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
 												provider === "openai-codex"
 													? "bg-yellow-500 text-black border-yellow-500"
 													: "bg-transparent text-white hover:bg-white/10"
@@ -479,6 +442,17 @@ function OneshotPage() {
 										>
 											OPENAI CODEX
 										</button>
+										<button
+											type="button"
+											className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+												provider === "anthropic"
+													? "bg-yellow-500 text-black border-yellow-500"
+													: "bg-transparent text-white hover:bg-white/10"
+											}`}
+											onClick={() => setProvider("anthropic")}
+										>
+											ANTHROPIC
+										</button>
 									</div>
 								</div>
 
@@ -486,25 +460,7 @@ function OneshotPage() {
 									<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 										TEXT MODEL
 									</p>
-									{provider === "ollama" && textModels.length > 0 ? (
-										<Select value={model} onValueChange={setModel}>
-											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-												<SelectValue placeholder="SELECT MODEL" />
-											</SelectTrigger>
-											<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-												{textModels.map((m) => (
-													<SelectItem
-														key={m.name}
-														value={m.name}
-														className="font-mono text-sm font-bold uppercase text-white"
-													>
-														{m.name.toUpperCase()}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									) : provider === "openai-codex" &&
-										codexTextModels.length > 0 ? (
+									{provider === "openai-codex" && codexTextModels.length > 0 ? (
 										<Select value={model} onValueChange={setModel}>
 											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
 												<SelectValue placeholder="SELECT CODEX MODEL" />
@@ -526,11 +482,9 @@ function OneshotPage() {
 										<Input
 											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
 											placeholder={
-												provider === "openrouter"
-													? "OPENROUTER/MODEL-ID"
-													: provider === "openai-codex"
-														? "GPT-5.3-CODEX"
-														: "LLAMA3.1:8B"
+												provider === "openai-codex"
+													? DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()
+													: DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()
 											}
 											value={model}
 											onChange={(e) => setModel(e.target.value)}

@@ -1,3 +1,7 @@
+import {
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+} from "@infinitune/shared/text-llm-profile";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -8,7 +12,6 @@ import {
 import {
 	useAutoplayerPromptContract,
 	useCodexTextModels,
-	useOllamaTextModels,
 	useSettings,
 } from "@/integrations/api/hooks";
 
@@ -30,12 +33,22 @@ interface Generation {
 const PROMPT_FIELD_ID = "llm-test-prompt";
 const MODEL_FIELD_ID = "llm-test-model";
 
+function defaultModelForProvider(
+	provider: "openai-codex" | "anthropic",
+	configuredModel: string | undefined,
+): string {
+	const model = configuredModel?.trim() ?? "";
+	if (provider === "anthropic") {
+		return model.startsWith("claude-") ? model : DEFAULT_ANTHROPIC_TEXT_MODEL;
+	}
+	return model.startsWith("gpt-") ? model : DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+}
+
 function LlmTestPage() {
 	const settings = useSettings();
-	const [provider, setProvider] = useState<
-		"ollama" | "openrouter" | "openai-codex"
-	>("ollama");
-	const ollamaModels = useOllamaTextModels(provider === "ollama") ?? [];
+	const [provider, setProvider] = useState<"openai-codex" | "anthropic">(
+		"openai-codex",
+	);
 	const codexModels = useCodexTextModels(provider === "openai-codex") ?? [];
 	const promptContract = useAutoplayerPromptContract();
 
@@ -49,26 +62,13 @@ function LlmTestPage() {
 	useEffect(() => {
 		if (settings) {
 			const p =
-				settings.textProvider === "openrouter"
-					? "openrouter"
-					: settings.textProvider === "openai-codex"
-						? "openai-codex"
-						: "ollama";
+				settings.textProvider === "anthropic" ? "anthropic" : "openai-codex";
 			setProvider(p);
-			if (settings.textModel) setModel(settings.textModel);
+			setModel(defaultModelForProvider(p, settings.textModel));
 		}
 	}, [settings]);
 
 	useEffect(() => {
-		if (provider === "ollama") {
-			if (ollamaModels.length === 0) return;
-			setModel((current) => {
-				if (current && ollamaModels.includes(current)) return current;
-				return ollamaModels[0];
-			});
-			return;
-		}
-
 		if (provider === "openai-codex") {
 			if (codexModels.length === 0) return;
 			setModel((current) => {
@@ -77,8 +77,15 @@ function LlmTestPage() {
 				}
 				return codexModels[0].name;
 			});
+			return;
 		}
-	}, [provider, ollamaModels, codexModels]);
+
+		setModel((current) =>
+			current && !current.startsWith("gpt-")
+				? current
+				: DEFAULT_ANTHROPIC_TEXT_MODEL,
+		);
+	}, [provider, codexModels]);
 
 	const handleGenerate = useCallback(async () => {
 		setIsRunning(true);
@@ -199,41 +206,34 @@ function LlmTestPage() {
 									<button
 										type="button"
 										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-											provider === "ollama"
-												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-												: "border-white/10 text-white/40"
-										}`}
-										onClick={() => setProvider("ollama")}
-										disabled={isRunning}
-										aria-pressed={provider === "ollama"}
-									>
-										Ollama
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-											provider === "openrouter"
-												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-												: "border-white/10 text-white/40"
-										}`}
-										onClick={() => setProvider("openrouter")}
-										disabled={isRunning}
-										aria-pressed={provider === "openrouter"}
-									>
-										OpenRouter
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
 											provider === "openai-codex"
 												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
 												: "border-white/10 text-white/40"
 										}`}
-										onClick={() => setProvider("openai-codex")}
+										onClick={() => {
+											setProvider("openai-codex");
+											setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+										}}
 										disabled={isRunning}
 										aria-pressed={provider === "openai-codex"}
 									>
 										OpenAI Codex
+									</button>
+									<button
+										type="button"
+										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+											provider === "anthropic"
+												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+												: "border-white/10 text-white/40"
+										}`}
+										onClick={() => {
+											setProvider("anthropic");
+											setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
+										}}
+										disabled={isRunning}
+										aria-pressed={provider === "anthropic"}
+									>
+										Anthropic
 									</button>
 								</div>
 							</fieldset>
@@ -246,21 +246,7 @@ function LlmTestPage() {
 							>
 								Model
 							</label>
-							{provider === "ollama" ? (
-								<select
-									id={MODEL_FIELD_ID}
-									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
-									value={model}
-									onChange={(e) => setModel(e.target.value)}
-									disabled={isRunning}
-								>
-									{ollamaModels.map((m) => (
-										<option key={m} value={m}>
-											{m}
-										</option>
-									))}
-								</select>
-							) : provider === "openai-codex" && codexModels.length > 0 ? (
+							{provider === "openai-codex" && codexModels.length > 0 ? (
 								<select
 									id={MODEL_FIELD_ID}
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
@@ -282,8 +268,8 @@ function LlmTestPage() {
 									onChange={(e) => setModel(e.target.value)}
 									placeholder={
 										provider === "openai-codex"
-											? "e.g. gpt-5.3-codex"
-											: "e.g. meta-llama/llama-3.3-70b-instruct"
+											? DEFAULT_OPENAI_CODEX_TEXT_MODEL
+											: DEFAULT_ANTHROPIC_TEXT_MODEL
 									}
 									disabled={isRunning}
 								/>
@@ -331,11 +317,9 @@ function LlmTestPage() {
 					/>
 					<div className="mt-2 text-[10px] font-bold uppercase text-white/20">
 						Structured output:{" "}
-						{provider === "ollama"
-							? "Ollama format (JSON schema)"
-							: provider === "openai-codex"
-								? "Codex outputSchema (json_schema)"
-								: "OpenRouter response_format (json_schema)"}
+						{provider === "openai-codex"
+							? "Codex outputSchema (json_schema)"
+							: "Anthropic JSON schema"}
 					</div>
 				</div>
 			</section>

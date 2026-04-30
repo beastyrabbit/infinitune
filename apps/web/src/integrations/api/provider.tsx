@@ -79,6 +79,22 @@ function useWsInvalidation() {
 					queryClient.invalidateQueries({
 						queryKey: ["settings"],
 					});
+				} else if (routingKey.startsWith("agent-chat.")) {
+					const playlistId = routingKey.replace("agent-chat.", "");
+					queryClient.invalidateQueries({
+						queryKey: ["agent-chat", "messages", playlistId],
+					});
+					queryClient.invalidateQueries({
+						queryKey: ["agent-chat", "state", playlistId],
+					});
+				} else if (routingKey.startsWith("agent-memory.")) {
+					const playlistId = routingKey.replace("agent-memory.", "");
+					queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
+					queryClient.invalidateQueries({
+						queryKey: ["agent-memory", "playlist", playlistId],
+					});
+				} else if (routingKey === "agent-memory") {
+					queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
 				}
 			};
 

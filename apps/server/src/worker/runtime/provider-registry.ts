@@ -20,6 +20,11 @@ export interface ProviderConfig {
 }
 
 type OptionalStringList = string[] | undefined | null;
+type EnergyTarget = PlaylistManagerPlanSlot["energyTarget"];
+type NoveltyTarget = Extract<
+	PlaylistManagerPlanSlot,
+	{ noveltyTarget: string }
+>["noveltyTarget"];
 
 function normalizeProvider(provider: string) {
 	const { provider: normalized } = resolveTextLlmProfile({
@@ -29,17 +34,65 @@ function normalizeProvider(provider: string) {
 	return normalized;
 }
 
+function normalizeEnergyTarget(value: unknown): EnergyTarget {
+	return value === "low" ||
+		value === "medium" ||
+		value === "high" ||
+		value === "extreme"
+		? value
+		: "medium";
+}
+
+function normalizeNoveltyTarget(value: unknown): NoveltyTarget {
+	return value === "low" || value === "medium" || value === "high"
+		? value
+		: "medium";
+}
+
+function normalizeSlotText(value: unknown): string {
+	return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSlotList(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.flatMap((item) => {
+				const text = normalizeSlotText(item);
+				return text ? [text] : [];
+			})
+		: [];
+}
+
+function isV2ManagerSlot(
+	slot: PlaylistManagerPlanSlot,
+): slot is Extract<PlaylistManagerPlanSlot, { laneId: string }> {
+	return "laneId" in slot;
+}
+
 function normalizeManagerSlot(
 	slot?: ProviderTaskPorts["generateMetadata"]["managerSlot"],
 ): PlaylistManagerPlanSlot | undefined {
 	if (!slot) return undefined;
-	const energyTarget: PlaylistManagerPlanSlot["energyTarget"] =
-		slot.energyTarget === "low" ||
-		slot.energyTarget === "medium" ||
-		slot.energyTarget === "high" ||
-		slot.energyTarget === "extreme"
-			? slot.energyTarget
-			: "medium";
+	const energyTarget = normalizeEnergyTarget(slot.energyTarget);
+	if (isV2ManagerSlot(slot)) {
+		const sonicFocus = normalizeSlotText(slot.sonicFocus) || slot.captionFocus;
+		const lyricFocus = normalizeSlotText(slot.lyricFocus) || slot.lyricTheme;
+		return {
+			slot: slot.slot,
+			laneId: normalizeSlotText(slot.laneId) || `slot-${slot.slot}`,
+			preservedAnchors: normalizeSlotList(slot.preservedAnchors),
+			variationMoves: normalizeSlotList(slot.variationMoves),
+			sonicFocus: sonicFocus ?? "",
+			lyricFocus: lyricFocus ?? "",
+			captionFocus: normalizeSlotText(slot.captionFocus) || sonicFocus || "",
+			energyTarget,
+			noveltyTarget: normalizeNoveltyTarget(slot.noveltyTarget),
+			avoidPatterns: normalizeSlotList(slot.avoidPatterns),
+			transitionIntent: normalizeSlotText(slot.transitionIntent),
+			topicHint:
+				normalizeSlotText(slot.topicHint) || normalizeSlotText(slot.laneId),
+			lyricTheme: normalizeSlotText(slot.lyricTheme) || lyricFocus || "",
+		};
+	}
 	return {
 		slot: slot.slot,
 		transitionIntent: slot.transitionIntent ?? "",
@@ -123,7 +176,8 @@ async function generatePersonaWithProvider(
 async function generateCoverWithProvider(
 	input: ProviderTaskPorts["generateCover"],
 ): Promise<unknown> {
-	const normalizedProvider = normalizeProvider(input.provider);
+	const normalizedProvider =
+		input.provider === "ollama" ? "comfyui" : input.provider;
 	const result = await generateCover({
 		coverPrompt: input.coverPrompt,
 		provider: normalizedProvider,

@@ -10,9 +10,9 @@ Infinitune is an AI-powered infinite music generator. Users describe a vibe via 
 
 ```bash
 # Development
-pnpm dev:all          # Web + server with Portless (recommended)
-pnpm dev              # Web app via http://web.localhost:1355
-pnpm dev:server       # Unified backend via http://api.localhost:1355
+pnpm dev              # Web + server with Portless (recommended)
+pnpm dev:web          # Web app via https://web-infinitune.localhost:1355
+pnpm dev:server       # Unified backend via https://api-infinitune.localhost:1355
 pnpm dev:all:fallback # Fixed ports: web :5173, server :5175
 pnpm infi --help      # Terminal daemon/controller CLI
 
@@ -121,7 +121,7 @@ Used for `transitionDismissed`, `userPaused`, `userHasInteracted`.
 
 ### URL Resolution (apps/web/src/lib/endpoints.ts)
 
-Production Docker builds intentionally leave `VITE_API_URL` empty. The browser auto-detects `window.location.origin` so HTTPS pages get `https://` API and `wss://` WebSocket URLs. Production URL: `https://infinitune.heerlab.com`. Do NOT re-add `VITE_API_URL` to the CI build args or Dockerfile default — this breaks HTTPS deployments with mixed content errors. Default local dev uses Portless (`http://web.localhost:1355` -> `http://api.localhost:1355`); fixed-port fallback uses `VITE_API_URL=http://localhost:5175`.
+Production Docker builds intentionally leave `VITE_API_URL` empty. The browser auto-detects `window.location.origin` so HTTPS pages get `https://` API and `wss://` WebSocket URLs. Production URL: `https://infinitune.heerlab.com`. Do NOT re-add `VITE_API_URL` to the CI build args or Dockerfile default — this breaks HTTPS deployments with mixed content errors. Default local dev uses Portless (`https://web-infinitune.localhost:1355` -> `https://api-infinitune.localhost:1355`); fixed-port fallback uses `VITE_API_URL=http://localhost:5175`.
 
 ### LLM Client (apps/server/src/external/llm-client.ts)
 

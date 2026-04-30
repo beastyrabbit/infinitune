@@ -42,6 +42,36 @@ function extractTimeCosts(
 	return Object.keys(costs).length > 0 ? costs : undefined;
 }
 
+function captionAlreadyDescribesVocals(caption: string): boolean {
+	return /\b(vocal|vocals|voice|voices|singer|sung|lead|duet|choir|harmony|harmonies|ad-?lib|chant|spoken|rap|hook lines|background vocals)\b/i.test(
+		caption,
+	);
+}
+
+function captionRequestsNoVocals(caption: string, lyrics: string): boolean {
+	return (
+		/\b(instrumental|no vocals|wordless)\b/i.test(caption) ||
+		/^\s*\[Instrumental\]\s*$/i.test(lyrics)
+	);
+}
+
+function buildAcePrompt(options: {
+	caption: string;
+	lyrics: string;
+	vocalStyle?: string;
+}): string {
+	const caption = options.caption.trim();
+	const vocalStyle = options.vocalStyle?.trim();
+	if (
+		!vocalStyle ||
+		captionRequestsNoVocals(caption, options.lyrics) ||
+		captionAlreadyDescribesVocals(caption)
+	) {
+		return caption;
+	}
+	return `${caption}, ${vocalStyle}`;
+}
+
 export async function submitToAce(options: {
 	lyrics: string;
 	caption: string;
@@ -82,7 +112,7 @@ export async function submitToAce(options: {
 	const urls = await getServiceUrls();
 	const aceUrl = urls.aceStepUrl;
 
-	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
+	const fullPrompt = buildAcePrompt({ caption, lyrics, vocalStyle });
 
 	const thinking = aceThinking ?? false;
 	// -1 signals ACE-Step to auto-detect duration from lyrics
@@ -111,8 +141,9 @@ export async function submitToAce(options: {
 		audio_format: "mp3",
 	};
 
-	if (aceModel) {
-		payload.model = aceModel;
+	const normalizedAceModel = aceModel?.trim();
+	if (normalizedAceModel && normalizedAceModel !== "__default__") {
+		payload.model = normalizedAceModel;
 	}
 
 	const response = await fetch(`${aceUrl}/release_task`, {

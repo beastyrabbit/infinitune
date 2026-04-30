@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import WebSocket from "ws";
-import { callImageGen } from "./llm-client";
+import { callCodexImagegenCover } from "./codex-imagegen";
+import { callInferenceShImageGen } from "./inference-sh";
 import { getServiceUrls } from "./service-urls";
 
 interface WorkflowNode {
@@ -192,20 +193,24 @@ export async function generateCover(options: {
 		return { imageBase64: base64, format: "png" };
 	}
 
-	if (provider === "openrouter") {
-		if (!model?.trim()) {
-			throw new Error("OpenRouter image model is required");
-		}
-
-		const result = await callImageGen({
+	if (provider === "inference-sh" || provider === "openrouter") {
+		const result = await callInferenceShImageGen({
 			model,
 			prompt: fullPrompt,
 			signal,
 		});
-		return { imageBase64: result.base64, format: "png" };
+		return { imageBase64: result.base64, format: result.format };
+	}
+
+	if (provider === "codex-imagegen") {
+		const result = await callCodexImagegenCover({
+			prompt: fullPrompt,
+			signal,
+		});
+		return { imageBase64: result.base64, format: result.format };
 	}
 
 	throw new Error(
-		`Unsupported image provider "${provider}". Supported: comfyui, openrouter`,
+		`Unsupported image provider "${provider}". Supported: comfyui, inference-sh, codex-imagegen`,
 	);
 }

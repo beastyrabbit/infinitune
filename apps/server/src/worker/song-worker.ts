@@ -2,15 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
+import type { LlmProvider } from "@infinitune/shared/types";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
-import { saveCover } from "../covers";
 import {
-	generatePlaylistManagerPlan,
-	type ManagerRatingSignal,
-	type PromptDistance,
-	type RecentSong,
-	type SongMetadata,
-} from "../external/llm";
+	hasBlockingDirectorQuestion,
+	refreshPlaylistPlanWithDirector,
+	scheduleMemoryCurator,
+} from "../agents/playlist-director-service";
+import { saveCover } from "../covers";
+import type { PromptDistance, RecentSong, SongMetadata } from "../external/llm";
 import { saveSongToNfs } from "../external/storage";
 import { tagMp3 } from "../external/tag-mp3";
 import { songLogger } from "../logger";
@@ -42,6 +42,7 @@ export interface SongWorkerContext {
 		textModel: string;
 		imageProvider: string;
 		imageModel?: string;
+		aceModel?: string;
 		personaProvider: string;
 		personaModel: string;
 	}>;
@@ -173,7 +174,7 @@ export class SongWorker {
 
 	private async refreshPlaylistManager(
 		currentEpoch: number,
-		provider: "ollama" | "openrouter" | "openai-codex",
+		provider: LlmProvider,
 		model: string,
 		signal?: AbortSignal,
 	): Promise<void> {
@@ -271,53 +272,19 @@ export class SongWorker {
 			}
 
 			try {
-				const ratingSignals: ManagerRatingSignal[] = (
-					await songService.listByPlaylist(this.ctx.playlist.id)
-				)
-					.filter(
-						(song) => song.userRating === "up" || song.userRating === "down",
-					)
-					.sort((a, b) => b.orderIndex - a.orderIndex)
-					.slice(0, 20)
-					.map((song) => ({
-						title: song.title || "Untitled",
-						genre: song.genre || undefined,
-						mood: song.mood || undefined,
-						personaExtract: song.personaExtract || undefined,
-						rating: song.userRating as "up" | "down",
-					}));
-
-				const { managerBrief, managerPlan } = await generatePlaylistManagerPlan(
-					{
-						prompt: this.ctx.playlist.prompt,
+				const { managerBrief, managerPlan } =
+					await refreshPlaylistPlanWithDirector({
+						playlistId: this.ctx.playlist.id,
 						provider,
 						model,
-						lyricsLanguage: this.ctx.playlist.lyricsLanguage ?? undefined,
-						recentSongs: this.ctx.recentSongs,
-						recentDescriptions: this.ctx.recentDescriptions,
-						ratingSignals,
-						steerHistory: this.ctx.playlist.steerHistory,
-						previousBrief: this.ctx.playlist.managerBrief,
-						currentEpoch,
+						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
 						planWindow: 5,
 						signal,
-					},
-				);
-				await playlistService.updateManagerBrief(this.ctx.playlist.id, {
-					managerBrief,
-					managerPlan: JSON.stringify({
-						...managerPlan,
-						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
-					}),
-					managerEpoch: currentEpoch,
-				});
+					});
 				this.ctx.playlist = {
 					...this.ctx.playlist,
 					managerBrief,
-					managerPlan: {
-						...managerPlan,
-						startOrderIndex: Math.max(1, Math.floor(this.song.orderIndex)),
-					},
+					managerPlan,
 					managerEpoch: currentEpoch,
 					managerUpdatedAt: Date.now(),
 				};
@@ -346,7 +313,7 @@ export class SongWorker {
 
 	private ensurePlaylistManagerRefresh(
 		currentEpoch: number,
-		provider: "ollama" | "openrouter" | "openai-codex",
+		provider: LlmProvider,
 		model: string,
 	): void {
 		if (
@@ -670,6 +637,13 @@ export class SongWorker {
 				break;
 
 			case "saving":
+				if (this.song.aceAudioPath) {
+					await this.saveAndFinalize(
+						this.song.aceAudioPath,
+						this.song.audioProcessingMs ?? 0,
+					);
+					break;
+				}
 				await songService.updateStatus(this.songId, "generating_audio");
 				if (this.song.aceTaskId) {
 					await this.resumeAudioPoll();
@@ -707,6 +681,15 @@ export class SongWorker {
 			songLogger(this.songId).info(
 				{ playlistId: this.ctx.playlist.id },
 				"Playlist is no longer active; skipping metadata generation",
+			);
+			return;
+		}
+
+		if (await hasBlockingDirectorQuestion(this.ctx.playlist.id)) {
+			this.aborted = true;
+			songLogger(this.songId).info(
+				{ playlistId: this.ctx.playlist.id },
+				"Required director question is pending; deferring metadata generation",
 			);
 			return;
 		}
@@ -889,7 +872,9 @@ export class SongWorker {
 				const imageProvider =
 					settings.imageProvider === "ollama"
 						? "comfyui"
-						: settings.imageProvider;
+						: settings.imageProvider === "openrouter"
+							? "inference-sh"
+							: settings.imageProvider;
 				const imageModel = settings.imageModel;
 
 				return this.ctx.queues.image.enqueue({
@@ -962,7 +947,14 @@ export class SongWorker {
 
 		// Check playlist still active before audio submission
 		const active = await this.ctx.getPlaylistActive();
-		if (!active && this.aborted) return;
+		if (!active) {
+			this.aborted = true;
+			songLogger(this.songId).info(
+				{ playlistId: this.ctx.playlist.id },
+				"Playlist is no longer active; skipping ACE submission",
+			);
+			return;
+		}
 
 		const claimed = songService.claimAudio(this.songId);
 		if (!claimed) return;
@@ -987,11 +979,7 @@ export class SongWorker {
 							keyScale: this.song.keyScale || "C major",
 							timeSignature: this.song.timeSignature || "4/4",
 							audioDuration: this.song.audioDuration || 240,
-							aceModel: (
-								this.ctx.playlist as PlaylistWire & {
-									aceModel?: string;
-								}
-							).aceModel,
+							aceModel: (await this.ctx.getSettings()).aceModel,
 							inferenceSteps: this.ctx.playlist.inferenceSteps ?? undefined,
 							vocalLanguage: toAceVocalLanguageCode(
 								this.ctx.playlist.lyricsLanguage,
@@ -1088,6 +1076,8 @@ export class SongWorker {
 				{ error: audioResult.error },
 				"ACE generation failed",
 			);
+			await songService.revertTransient(this.songId);
+			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error(audioResult.error || "Audio generation failed");
 		} else if (status === "not_found") {
 			songLogger(this.songId).warn(
@@ -1095,6 +1085,7 @@ export class SongWorker {
 				"ACE task lost, reverting",
 			);
 			await songService.revertTransient(this.songId);
+			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error("ACE task not found");
 		}
 	}
@@ -1108,7 +1099,16 @@ export class SongWorker {
 			"ACE completed, saving",
 		);
 
-		await songService.updateStatus(this.songId, "saving");
+		if (this.song.status !== "saving") {
+			await songService.updateStatus(this.songId, "saving");
+		}
+		await songService.updateAceAudioPath(this.songId, audioPath);
+		this.song = {
+			...this.song,
+			status: "saving",
+			aceAudioPath: audioPath,
+			audioProcessingMs,
+		};
 
 		// Save to NFS
 		try {
@@ -1199,7 +1199,15 @@ export class SongWorker {
 				songLogger(this.songId).warn({ err }, "ID3 tagging failed");
 			}
 		} catch (e: unknown) {
-			songLogger(this.songId).error({ err: e }, "NFS save failed, continuing");
+			this.song = {
+				...this.song,
+				status: "saving",
+				aceAudioPath: audioPath,
+				audioProcessingMs,
+			};
+			this.lastError = e instanceof Error ? e.message : String(e);
+			songLogger(this.songId).error({ err: e }, "NFS save failed");
+			throw e;
 		}
 
 		if (this.aborted) return;
@@ -1207,6 +1215,15 @@ export class SongWorker {
 		const audioUrl = `/api/songs/${this.songId}/audio`;
 		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
 		await playlistService.incrementGenerated(this.ctx.playlist.id);
+		queueMicrotask(() => {
+			scheduleMemoryCurator({
+				playlistId: this.ctx.playlist.id,
+				songId: this.songId,
+				trigger: "completed-song",
+			}).catch((err) =>
+				songLogger(this.songId).warn({ err }, "Memory curator failed"),
+			);
+		});
 
 		songLogger(this.songId).info(
 			{ title: this.song.title, audioProcessingMs },

@@ -1,4 +1,5 @@
 import type { PlaylistManagerPlan, SongCover } from "@infinitune/shared/types";
+import { normalizePlaylistManagerPlan } from "@infinitune/shared/validation/manager-plan";
 import type { Playlist, Setting, Song } from "./db/schema";
 import { logger } from "./logger";
 
@@ -25,7 +26,10 @@ export function playlistToWire(p: Playlist): PlaylistWire {
 	return {
 		...rest,
 		steerHistory: parseJsonField(steerHistory),
-		managerPlan: parseJsonField<PlaylistManagerPlan>(managerPlan) ?? null,
+		managerPlan:
+			normalizePlaylistManagerPlan(
+				parseJsonField<PlaylistManagerPlan>(managerPlan),
+			) ?? null,
 	};
 }
 

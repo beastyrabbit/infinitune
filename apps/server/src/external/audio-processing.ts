@@ -44,8 +44,8 @@ export async function trimTrailingSilence(
 		if (!durationMatch) return noTrim;
 
 		const originalDuration =
-			Number.parseInt(durationMatch[1]) * 3600 +
-			Number.parseInt(durationMatch[2]) * 60 +
+			Number.parseInt(durationMatch[1], 10) * 3600 +
+			Number.parseInt(durationMatch[2], 10) * 60 +
 			Number.parseFloat(durationMatch[3]);
 
 		// Parse all silence_start timestamps

@@ -1,3 +1,7 @@
+import {
+	DEFAULT_INFERENCE_SH_IMAGE_MODEL,
+	INFERENCE_SH_IMAGE_MODELS,
+} from "@infinitune/shared/inference-sh-image-models";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -32,7 +36,9 @@ function CoverTestPage() {
 	const [coverPrompt, setCoverPrompt] = useState(
 		"cinematic matte painting, neon-drenched cyberpunk cityscape at midnight, towering holographic advertisements reflecting off rain-slicked streets, moody blue and magenta lighting, atmospheric fog, dystopian beauty",
 	);
-	const [provider, setProvider] = useState<"comfyui" | "openrouter">("comfyui");
+	const [provider, setProvider] = useState<
+		"comfyui" | "inference-sh" | "codex-imagegen"
+	>("comfyui");
 	const [model, setModel] = useState("");
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<CoverGeneration[]>([]);
@@ -41,9 +47,18 @@ function CoverTestPage() {
 	useEffect(() => {
 		if (settings) {
 			const p =
-				settings.imageProvider === "openrouter" ? "openrouter" : "comfyui";
+				settings.imageProvider === "inference-sh" ||
+				settings.imageProvider === "openrouter"
+					? "inference-sh"
+					: settings.imageProvider === "codex-imagegen"
+						? "codex-imagegen"
+						: "comfyui";
 			setProvider(p);
-			if (settings.imageModel) setModel(settings.imageModel);
+			if (settings.imageModel) {
+				setModel(settings.imageModel);
+			} else if (p === "inference-sh") {
+				setModel(DEFAULT_INFERENCE_SH_IMAGE_MODEL);
+			}
 		}
 	}, [settings]);
 
@@ -56,7 +71,7 @@ function CoverTestPage() {
 				coverPrompt,
 				provider,
 			};
-			if (provider === "openrouter") input.model = model;
+			if (provider === "inference-sh") input.model = model;
 
 			const res = await fetch("/api/autoplayer/generate-cover", {
 				method: "POST",
@@ -168,31 +183,51 @@ function CoverTestPage() {
 								<button
 									type="button"
 									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-										provider === "openrouter"
+										provider === "inference-sh"
 											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
 											: "border-white/10 text-white/40"
 									}`}
-									onClick={() => setProvider("openrouter")}
+									onClick={() => {
+										setProvider("inference-sh");
+										if (!model) setModel(DEFAULT_INFERENCE_SH_IMAGE_MODEL);
+									}}
 									disabled={isRunning}
 								>
-									OpenRouter
+									Inference.sh
+								</button>
+								<button
+									type="button"
+									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
+										provider === "codex-imagegen"
+											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
+											: "border-white/10 text-white/40"
+									}`}
+									onClick={() => setProvider("codex-imagegen")}
+									disabled={isRunning}
+								>
+									Codex
 								</button>
 							</div>
 						</div>
 
-						{provider === "openrouter" && (
+						{provider === "inference-sh" && (
 							<div>
 								{/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps control */}
 								<label className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Model
 								</label>
-								<input
+								<select
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
-									placeholder="e.g. stabilityai/stable-diffusion-xl"
 									disabled={isRunning}
-								/>
+								>
+									{INFERENCE_SH_IMAGE_MODELS.map((entry) => (
+										<option key={entry.id} value={entry.id}>
+											{entry.name} - {entry.priceLabel}
+										</option>
+									))}
+								</select>
 							</div>
 						)}
 					</div>

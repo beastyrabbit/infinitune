@@ -1,15 +1,26 @@
 import {
-	DEFAULT_OLLAMA_TEXT_MODEL,
+	type AgentReasoningLevel,
+	DEFAULT_AGENT_REASONING_LEVELS,
+	getAgentReasoningSettingKey,
+	INFINITUNE_AGENT_IDS,
+	type InfinituneAgentId,
+	normalizeAgentReasoningLevel,
+} from "@infinitune/shared/agent-reasoning";
+import { DEFAULT_INFERENCE_SH_IMAGE_MODEL as DEFAULT_IMAGE_MODEL } from "@infinitune/shared/inference-sh-image-models";
+import {
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
+	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
-import { LLM_PROVIDERS, type LlmProvider } from "@infinitune/shared/types";
+import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Cpu, Music, Plug, ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { SettingsTabAudioEngine } from "@/components/autoplayer/settings/SettingsTabAudioEngine";
 import type {
+	InferenceShImageModelOption,
 	ModelOption,
-	OpenRouterModelOption,
 } from "@/components/autoplayer/settings/SettingsTabModels";
 import { SettingsTabModels } from "@/components/autoplayer/settings/SettingsTabModels";
 import { SettingsTabNetwork } from "@/components/autoplayer/settings/SettingsTabNetwork";
@@ -19,8 +30,7 @@ import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import {
 	useAutoplayerAceModels,
 	useAutoplayerCodexModelsQuery,
-	useAutoplayerOllamaModels,
-	useAutoplayerOpenRouterModelsQuery,
+	useAutoplayerInferenceShImageModelsQuery,
 	usePlaylistByKey,
 	useSetSetting,
 	useSettings,
@@ -55,14 +65,16 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
+function normalizeAceModel(value: string | undefined | null): string {
+	const normalized = value?.trim() ?? "";
+	return normalized === "__default__" ? "" : normalized;
+}
+
 function normalizeProviderSetting(
 	value: string | undefined | null,
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
 ): LlmProvider {
-	const candidate = (value ?? "").trim();
-	return LLM_PROVIDERS.includes(candidate as LlmProvider)
-		? (candidate as LlmProvider)
-		: fallback;
+	return normalizeLlmProvider(value, fallback);
 }
 
 function SettingsPage() {
@@ -94,7 +106,7 @@ function SettingsPage() {
 	const [textProvider, setTextProvider] = useState<LlmProvider>(
 		DEFAULT_TEXT_PROVIDER,
 	);
-	const [textModel, setTextModel] = useState(DEFAULT_OLLAMA_TEXT_MODEL);
+	const [textModel, setTextModel] = useState(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
 	const [imageProvider, setImageProvider] = useState("comfyui");
 	const [imageModel, setImageModel] = useState("");
 	const [aceModel, setAceModel] = useState("");
@@ -102,34 +114,20 @@ function SettingsPage() {
 		DEFAULT_TEXT_PROVIDER,
 	);
 	const [personaModel, setPersonaModel] = useState("");
-	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+	const [agentReasoning, setAgentReasoning] = useState<
+		Record<InfinituneAgentId, AgentReasoningLevel>
+	>(DEFAULT_AGENT_REASONING_LEVELS);
 
 	// Available models
-	const ollamaModels = useAutoplayerOllamaModels() ?? [];
 	const aceModels = useAutoplayerAceModels() ?? [];
-	const needsOpenRouter =
-		(textProvider === "openrouter" ||
-			imageProvider === "openrouter" ||
-			personaProvider === "openrouter") &&
-		!!openrouterApiKey;
-	const openRouterTextModelsQuery = useAutoplayerOpenRouterModelsQuery(
-		"text",
-		needsOpenRouter,
-	);
-	const openRouterImageModelsQuery = useAutoplayerOpenRouterModelsQuery(
-		"image",
-		needsOpenRouter,
-	);
-	const openRouterTextModels: OpenRouterModelOption[] = needsOpenRouter
-		? (openRouterTextModelsQuery.data ?? [])
+	const needsInferenceSh = imageProvider === "inference-sh";
+	const inferenceShImageModelsQuery =
+		useAutoplayerInferenceShImageModelsQuery(needsInferenceSh);
+	const inferenceShImageModels: InferenceShImageModelOption[] = needsInferenceSh
+		? (inferenceShImageModelsQuery.data ?? [])
 		: [];
-	const openRouterImageModels: OpenRouterModelOption[] = needsOpenRouter
-		? (openRouterImageModelsQuery.data ?? [])
-		: [];
-	const openRouterLoading =
-		needsOpenRouter &&
-		(openRouterTextModelsQuery.isFetching ||
-			openRouterImageModelsQuery.isFetching);
+	const inferenceShLoading =
+		needsInferenceSh && inferenceShImageModelsQuery.isFetching;
 	const needsCodex =
 		textProvider === "openai-codex" || personaProvider === "openai-codex";
 	const codexModelsQuery = useAutoplayerCodexModelsQuery(needsCodex);
@@ -141,7 +139,10 @@ function SettingsPage() {
 
 	// Test statuses
 	const [ollamaTest, setOllamaTest] = useState<TestStatus>({ state: "idle" });
-	const [openrouterTest, setOpenrouterTest] = useState<TestStatus>({
+	const [inferenceShTest, setInferenceShTest] = useState<TestStatus>({
+		state: "idle",
+	});
+	const [codexImagegenTest, setCodexImagegenTest] = useState<TestStatus>({
 		state: "idle",
 	});
 	const [comfyuiTest, setComfyuiTest] = useState<TestStatus>({ state: "idle" });
@@ -165,12 +166,26 @@ function SettingsPage() {
 		const configuredTextModel = settings.textModel?.trim() || "";
 		setTextModel(
 			configuredTextModel ||
-				(normalizedTextProvider === "ollama" ? DEFAULT_OLLAMA_TEXT_MODEL : ""),
+				(normalizedTextProvider === "anthropic"
+					? DEFAULT_ANTHROPIC_TEXT_MODEL
+					: DEFAULT_OPENAI_CODEX_TEXT_MODEL),
 		);
 		const imgProv = settings.imageProvider || "comfyui";
-		setImageProvider(imgProv === "ollama" ? "comfyui" : imgProv);
-		setImageModel(settings.imageModel || "");
-		setAceModel(settings.aceModel || "");
+		const normalizedImageProvider =
+			imgProv === "ollama"
+				? "comfyui"
+				: imgProv === "openrouter"
+					? "inference-sh"
+					: imgProv;
+		setImageProvider(normalizedImageProvider);
+		setImageModel(
+			normalizedImageProvider === "inference-sh"
+				? imgProv === "openrouter"
+					? DEFAULT_IMAGE_MODEL
+					: settings.imageModel || DEFAULT_IMAGE_MODEL
+				: settings.imageModel || "",
+		);
+		setAceModel(normalizeAceModel(settings.aceModel));
 		setPersonaProvider(
 			normalizeProviderSetting(
 				settings.personaProvider,
@@ -178,7 +193,17 @@ function SettingsPage() {
 			),
 		);
 		setPersonaModel(normalizeFallbackModel(settings.personaModel));
-		setOpenrouterApiKey(settings.openrouterApiKey || "");
+		setAgentReasoning(
+			Object.fromEntries(
+				INFINITUNE_AGENT_IDS.map((agentId) => [
+					agentId,
+					normalizeAgentReasoningLevel(
+						settings[getAgentReasoningSettingKey(agentId)],
+						DEFAULT_AGENT_REASONING_LEVELS[agentId],
+					),
+				]),
+			) as Record<InfinituneAgentId, AgentReasoningLevel>,
+		);
 
 		if (activePlaylist) {
 			setInferSteps(
@@ -336,38 +361,37 @@ function SettingsPage() {
 		}
 	}, [codexAuthSession?.id]);
 
-	const testConnection = useCallback(
-		async (provider: string) => {
-			const setStatus =
-				provider === "ollama"
-					? setOllamaTest
-					: provider === "openrouter"
-						? setOpenrouterTest
+	const testConnection = useCallback(async (provider: string) => {
+		const setStatus =
+			provider === "ollama"
+				? setOllamaTest
+				: provider === "inference-sh"
+					? setInferenceShTest
+					: provider === "codex-imagegen"
+						? setCodexImagegenTest
 						: provider === "openai-codex"
 							? setCodexTest
 							: provider === "comfyui"
 								? setComfyuiTest
 								: setAceTest;
 
-			setStatus({ state: "testing" });
-			try {
-				const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ provider, apiKey: openrouterApiKey }),
-				});
-				const data = await res.json();
-				if (data.ok) {
-					setStatus({ state: "ok", message: data.message });
-				} else {
-					setStatus({ state: "error", message: data.error });
-				}
-			} catch {
-				setStatus({ state: "error", message: "Request failed" });
+		setStatus({ state: "testing" });
+		try {
+			const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ provider }),
+			});
+			const data = await res.json();
+			if (data.ok) {
+				setStatus({ state: "ok", message: data.message });
+			} else {
+				setStatus({ state: "error", message: data.error });
 			}
-		},
-		[openrouterApiKey],
-	);
+		} catch {
+			setStatus({ state: "error", message: "Request failed" });
+		}
+	}, []);
 
 	const save = async () => {
 		const promises: Promise<unknown>[] = [
@@ -378,19 +402,24 @@ function SettingsPage() {
 			setSetting({ key: "textModel", value: textModel }),
 			setSetting({ key: "imageProvider", value: imageProvider }),
 			setSetting({ key: "imageModel", value: imageModel }),
-			setSetting({ key: "aceModel", value: aceModel }),
+			setSetting({ key: "aceModel", value: normalizeAceModel(aceModel) }),
 			setSetting({ key: "personaProvider", value: personaProvider }),
 			setSetting({
 				key: "personaModel",
 				value: normalizeFallbackModel(personaModel),
 			}),
-			setSetting({ key: "openrouterApiKey", value: openrouterApiKey }),
 			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
 			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
 			setSetting({ key: "aceInferMethod", value: inferMethod }),
 			setSetting({ key: "aceThinking", value: String(aceThinking) }),
 			setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
+			...INFINITUNE_AGENT_IDS.map((agentId) =>
+				setSetting({
+					key: getAgentReasoningSettingKey(agentId),
+					value: agentReasoning[agentId],
+				}),
+			),
 		];
 
 		if (activePlaylist) {
@@ -501,12 +530,12 @@ function SettingsPage() {
 								setAceStepUrl={setAceStepUrl}
 								comfyuiUrl={comfyuiUrl}
 								setComfyuiUrl={setComfyuiUrl}
-								openrouterApiKey={openrouterApiKey}
-								setOpenrouterApiKey={setOpenrouterApiKey}
+								imageProvider={imageProvider}
 								ollamaTest={ollamaTest}
 								aceTest={aceTest}
 								comfyuiTest={comfyuiTest}
-								openrouterTest={openrouterTest}
+								inferenceShTest={inferenceShTest}
+								codexImagegenTest={codexImagegenTest}
 								codexTest={codexTest}
 								codexAuthSession={codexAuthSession}
 								onStartCodexAuth={startCodexAuth}
@@ -527,7 +556,15 @@ function SettingsPage() {
 								textModel={textModel}
 								setTextModel={setTextModel}
 								imageProvider={imageProvider}
-								setImageProvider={setImageProvider}
+								setImageProvider={(v) => {
+									setImageProvider(v);
+									if (v === "inference-sh" && !imageModel) {
+										setImageModel(DEFAULT_IMAGE_MODEL);
+									}
+									if (v === "codex-imagegen") {
+										setImageModel("");
+									}
+								}}
 								imageModel={imageModel}
 								setImageModel={setImageModel}
 								aceModel={aceModel}
@@ -538,11 +575,16 @@ function SettingsPage() {
 								}
 								personaModel={personaModel}
 								setPersonaModel={setPersonaModel}
-								ollamaModels={ollamaModels}
+								agentReasoning={agentReasoning}
+								setAgentReasoningLevel={(agentId, level) =>
+									setAgentReasoning((current) => ({
+										...current,
+										[agentId]: level,
+									}))
+								}
 								aceModels={aceModels}
-								openRouterTextModels={openRouterTextModels}
-								openRouterImageModels={openRouterImageModels}
-								openRouterLoading={openRouterLoading}
+								inferenceShImageModels={inferenceShImageModels}
+								inferenceShLoading={inferenceShLoading}
 								codexModels={codexModels}
 								codexLoading={codexLoading}
 							/>
@@ -579,9 +621,17 @@ function SettingsPage() {
 									onClick={async () => {
 										const workerUrl = API_URL;
 										try {
-											await fetch(`${workerUrl}/api/worker/persona/trigger`, {
-												method: "POST",
-											});
+											const response = await fetch(
+												`${workerUrl}/api/worker/persona/trigger`,
+												{
+													method: "POST",
+												},
+											);
+											if (!response.ok) {
+												throw new Error(
+													`Persona scan failed: ${response.status}`,
+												);
+											}
 											setPersonaScanTriggered(true);
 											setTimeout(() => setPersonaScanTriggered(false), 3000);
 										} catch {

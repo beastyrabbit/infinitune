@@ -9,14 +9,14 @@ import { AudioQueue, RequestResponseQueue } from "./runtime/queue-actors";
 
 // ─── Concurrency defaults by provider ────────────────────────────────
 const LLM_CONCURRENCY: Record<string, number> = {
-	ollama: 1,
-	openrouter: 5,
 	"openai-codex": CODEX_LLM_CONCURRENCY,
+	anthropic: 20,
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {
 	comfyui: 1,
-	openrouter: 100,
+	"inference-sh": 3,
+	"codex-imagegen": 1,
 };
 
 // ─── Cover generation result ─────────────────────────────────────────
@@ -33,7 +33,10 @@ export class EndpointQueues {
 	constructor(
 		pollFn: (taskId: string, signal: AbortSignal) => Promise<AcePollResult>,
 	) {
-		this.llm = new RequestResponseQueue<unknown>("llm", LLM_CONCURRENCY.ollama);
+		this.llm = new RequestResponseQueue<unknown>(
+			"llm",
+			LLM_CONCURRENCY["openai-codex"],
+		);
 		this.image = new RequestResponseQueue<CoverResult>(
 			"image",
 			IMAGE_CONCURRENCY.comfyui,
@@ -55,9 +58,13 @@ export class EndpointQueues {
 	/** Update concurrency based on current provider settings */
 	refreshAll(settings: { textProvider: string; imageProvider: string }): void {
 		const llmConcurrency =
-			LLM_CONCURRENCY[settings.textProvider] || LLM_CONCURRENCY.ollama;
+			LLM_CONCURRENCY[settings.textProvider] || LLM_CONCURRENCY["openai-codex"];
 		const imageProvider =
-			settings.imageProvider === "ollama" ? "comfyui" : settings.imageProvider;
+			settings.imageProvider === "ollama"
+				? "comfyui"
+				: settings.imageProvider === "openrouter"
+					? "inference-sh"
+					: settings.imageProvider;
 		const imageConcurrency =
 			IMAGE_CONCURRENCY[imageProvider] || IMAGE_CONCURRENCY.comfyui;
 

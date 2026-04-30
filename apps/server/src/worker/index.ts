@@ -1,5 +1,6 @@
 import {
 	DEFAULT_TEXT_PROVIDER,
+	normalizeLlmProvider,
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
 import { sqlite } from "../db/index";
@@ -11,7 +12,7 @@ import { logger, playlistLogger, songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
-import type { PlaylistWire, SongWire } from "../wire";
+import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import type { QueueStatus } from "./endpoint-queue";
 import { calculatePriority, PERSONA_PRIORITY } from "./priority";
 import { EndpointQueues } from "./queues";
@@ -72,6 +73,7 @@ const heartbeatTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** Per-playlist buffer deficit guard */
 const bufferLocks = new Map<string, boolean>();
 
+let aceReachableDuringStartup = true;
 let queues: EndpointQueues;
 let workerRuntime: ReturnType<typeof createWorkerRuntime> | null = null;
 const providerRegistry = new ProviderRegistry();
@@ -272,13 +274,18 @@ async function getSettings(): Promise<{
 	textModel: string;
 	imageProvider: string;
 	imageModel?: string;
+	aceModel?: string;
 	personaProvider: string;
 	personaModel: string;
 }> {
 	const all = await settingsService.getAll();
-	const textProvider = all.textProvider || DEFAULT_TEXT_PROVIDER;
+	const textProvider = normalizeLlmProvider(
+		all.textProvider || DEFAULT_TEXT_PROVIDER,
+	);
 	const textModel = all.textModel || "";
-	const personaProvider = all.personaProvider || textProvider;
+	const personaProvider = normalizeLlmProvider(
+		all.personaProvider || textProvider,
+	);
 	const hasExplicitPersonaModel =
 		Boolean(all.personaModel) && all.personaModel !== "__fallback__";
 	const personaModel = hasExplicitPersonaModel
@@ -286,12 +293,19 @@ async function getSettings(): Promise<{
 		: personaProvider === textProvider
 			? textModel
 			: "";
+	const aceModel = all.aceModel?.trim();
 
 	return {
 		textProvider,
 		textModel,
-		imageProvider: all.imageProvider || "comfyui",
+		imageProvider:
+			all.imageProvider === "ollama"
+				? "comfyui"
+				: all.imageProvider === "openrouter"
+					? "inference-sh"
+					: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
+		aceModel: aceModel && aceModel !== "__default__" ? aceModel : undefined,
 		personaProvider,
 		personaModel,
 	};
@@ -803,7 +817,7 @@ async function spawnSongWorker(
 		recentDescriptions: workQueue.recentDescriptions,
 		getPlaylistActive: async () => {
 			const pl = await playlistService.getById(playlistId);
-			return pl?.status === "active";
+			return pl?.status === "active" || pl?.status === "closing";
 		},
 		getCurrentEpoch: () => playlistEpochs.get(playlistId) ?? 0,
 		getSettings,
@@ -830,6 +844,34 @@ async function spawnSongWorker(
 			if (set.size === 0) playlistSongs.delete(playlistId);
 		}
 	});
+}
+
+async function spawnActionableSongsForPlaylist(
+	playlistId: string,
+): Promise<void> {
+	const playlist = await playlistService.getById(playlistId);
+	const playlistWire =
+		playlist && (playlist.status === "active" || playlist.status === "closing")
+			? playlistToWire(playlist)
+			: null;
+	if (!playlistWire) return;
+	playlistEpochs.set(playlistId, playlistWire.promptEpoch ?? 0);
+	const workQueue = await songService.getWorkQueue(playlistId);
+	const currentEpoch = playlistWire.promptEpoch ?? 0;
+	const actionableSongs = [
+		...workQueue.pending,
+		...workQueue.metadataReady,
+		...workQueue.generatingAudio,
+		...workQueue.needsRecovery,
+	].sort((a, b) => {
+		const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
+		const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
+		return aEpoch - bEpoch || a.orderIndex - b.orderIndex;
+	});
+
+	for (const song of actionableSongs) {
+		await spawnSongWorker(song, playlistWire, workQueue);
+	}
 }
 
 function cancelPlaylistWorkers(playlistId: string): void {
@@ -954,13 +996,6 @@ async function runPersonaScan(
 		provider: settings.personaProvider,
 		model: settings.personaModel,
 	});
-	if (pProvider === "openrouter" && !pModel.trim()) {
-		logger.warn(
-			"Skipping persona scan: OpenRouter persona provider requires an explicit persona model",
-		);
-		return;
-	}
-
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;
 		personaPending.add(song.id);
@@ -1035,14 +1070,16 @@ async function handleSongCreated(data: {
 	if (!song) return;
 
 	const playlist = await playlistService.getById(data.playlistId);
-	if (!playlist) return;
+	if (
+		!playlist ||
+		(playlist.status !== "active" && playlist.status !== "closing")
+	) {
+		return;
+	}
 
 	// Use getWorkQueue to get context for the worker
 	const workQueue = await songService.getWorkQueue(data.playlistId);
-	const playlistWire = (await playlistService.listActive()).find(
-		(p) => p.id === data.playlistId,
-	);
-	if (!playlistWire) return;
+	const playlistWire = playlistToWire(playlist);
 
 	songLogger(data.songId, data.playlistId).info(
 		{ status: data.status },
@@ -1088,16 +1125,26 @@ async function handleSongStatusChanged(data: {
 
 	// Song reverted to actionable state (from retry, revert, etc.) → spawn worker
 	if (
-		(to === "pending" || to === "metadata_ready") &&
+		[
+			"pending",
+			"metadata_ready",
+			"submitting_to_ace",
+			"generating_audio",
+			"saving",
+		].includes(to) &&
 		!songWorkers.has(songId)
 	) {
 		const song = (await songService.getByIds([songId]))[0];
 		if (!song) return;
 
-		const playlistWire = (await playlistService.listActive()).find(
-			(p) => p.id === playlistId,
-		);
-		if (!playlistWire) return;
+		const playlist = await playlistService.getById(playlistId);
+		if (
+			!playlist ||
+			(playlist.status !== "active" && playlist.status !== "closing")
+		) {
+			return;
+		}
+		const playlistWire = playlistToWire(playlist);
 
 		const workQueue = await songService.getWorkQueue(playlistId);
 		await spawnSongWorker(song, playlistWire, workQueue);
@@ -1203,6 +1250,7 @@ async function handlePlaylistHeartbeat(data: { playlistId: string }) {
 
 async function handlePlaylistUpdated(data: { playlistId: string }) {
 	// Position changed (user skipped/jumped) → check if buffer needs more songs
+	await spawnActionableSongsForPlaylist(data.playlistId);
 	await checkBufferDeficit(data.playlistId);
 }
 
@@ -1231,6 +1279,8 @@ async function handlePlaylistStatusChanged(data: {
 			cancelPlaylistWorkers(playlistId);
 			clearHeartbeatTimer(playlistId);
 			playlistEpochs.delete(playlistId);
+		} else {
+			await spawnActionableSongsForPlaylist(playlistId);
 		}
 	}
 
@@ -1243,7 +1293,8 @@ async function handlePlaylistStatusChanged(data: {
 	if (to === "active" && (from === "closing" || from === "closed")) {
 		// Re-activate heartbeat timer on reactivation
 		resetHeartbeatTimer(playlistId);
-		// Re-check buffer deficit
+		// Resume existing actionable songs before adding new buffer items.
+		await spawnActionableSongsForPlaylist(playlistId);
 		await checkBufferDeficit(playlistId);
 	}
 }
@@ -1285,6 +1336,7 @@ async function staleSongCleanup(): Promise<void> {
 // ─── Startup ACE reconciliation ─────────────────────────────────────
 
 async function reconcileAceState() {
+	aceReachableDuringStartup = true;
 	const songs = await songService.getInAudioPipeline();
 	if (songs.length === 0) return;
 
@@ -1296,14 +1348,12 @@ async function reconcileAceState() {
 		let aceStatus: Map<string, { status: string; audioPath?: string }>;
 		try {
 			aceStatus = await batchPollAce(taskIds);
-		} catch (_error: unknown) {
+		} catch (error: unknown) {
 			logger.warn(
-				{ count: songs.length },
-				"ACE unreachable, reverting all songs to metadata_ready",
+				{ err: error, count: songs.length, taskIdCount: taskIds.length },
+				"ACE unreachable during reconciliation; leaving audio pipeline state intact",
 			);
-			for (const song of songs) {
-				await songService.revertTransient(song.id);
-			}
+			aceReachableDuringStartup = false;
 			return;
 		}
 
@@ -1381,7 +1431,12 @@ async function startupSweep() {
 		}
 
 		// Handle stale songs
-		if (workQueue.staleSongs.length > 0) {
+		if (!aceReachableDuringStartup && workQueue.staleSongs.length > 0) {
+			playlistLogger(playlist.id).warn(
+				{ count: workQueue.staleSongs.length },
+				"[startup] Skipping stale cleanup because ACE reconciliation failed",
+			);
+		} else if (workQueue.staleSongs.length > 0) {
 			for (const stale of workQueue.staleSongs) {
 				songLogger(stale.id, playlist.id).info(
 					{ title: stale.title, status: stale.status },

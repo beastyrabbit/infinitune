@@ -1,3 +1,15 @@
+import {
+	AGENT_REASONING_LABELS,
+	AGENT_REASONING_LEVELS,
+	type AgentReasoningLevel,
+	DEFAULT_AGENT_REASONING_LEVELS,
+	INFINITUNE_AGENT_IDS,
+	type InfinituneAgentId,
+} from "@infinitune/shared/agent-reasoning";
+import {
+	DEFAULT_ANTHROPIC_TEXT_MODEL,
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+} from "@infinitune/shared/text-llm-profile";
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,12 +30,12 @@ export interface ModelOption {
 	inputModalities?: string[];
 }
 
-export interface OpenRouterModelOption {
+export interface InferenceShImageModelOption {
 	id: string;
 	name: string;
-	promptPrice: string;
-	completionPrice: string;
-	contextLength: number;
+	priceLabel: string;
+	pricePerImageUsd?: number;
+	description: string;
 }
 
 export interface ModelsTabProps {
@@ -41,11 +53,14 @@ export interface ModelsTabProps {
 	setPersonaProvider: (v: string) => void;
 	personaModel: string;
 	setPersonaModel: (v: string) => void;
-	ollamaModels: ModelOption[];
+	agentReasoning: Record<InfinituneAgentId, AgentReasoningLevel>;
+	setAgentReasoningLevel: (
+		agentId: InfinituneAgentId,
+		level: AgentReasoningLevel,
+	) => void;
 	aceModels: ModelOption[];
-	openRouterTextModels: OpenRouterModelOption[];
-	openRouterImageModels: OpenRouterModelOption[];
-	openRouterLoading: boolean;
+	inferenceShImageModels: InferenceShImageModelOption[];
+	inferenceShLoading: boolean;
 	codexModels: ModelOption[];
 	codexLoading: boolean;
 }
@@ -84,27 +99,28 @@ function ProviderToggle({
 	);
 }
 
-function PricingStrip({ model }: { model: OpenRouterModelOption }) {
-	const promptPerM = Number.parseFloat(model.promptPrice) * 1_000_000;
-	const completionPerM = Number.parseFloat(model.completionPrice) * 1_000_000;
-	const ctxK = Math.round(model.contextLength / 1000);
-
+function PriceStrip({ model }: { model: InferenceShImageModelOption }) {
 	return (
 		<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
-			${promptPerM.toFixed(2)}/M IN · ${completionPerM.toFixed(2)}/M OUT ·{" "}
-			{ctxK}K CTX
+			{model.priceLabel} · {model.description}
 		</p>
 	);
 }
 
-function OpenRouterModelSelect({
+function defaultTextModelForProvider(provider: string): string {
+	return provider === "anthropic"
+		? DEFAULT_ANTHROPIC_TEXT_MODEL
+		: DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+}
+
+function InferenceShModelSelect({
 	models,
 	value,
 	onChange,
 	placeholder,
 	loading,
 }: {
-	models: OpenRouterModelOption[];
+	models: InferenceShImageModelOption[];
 	value: string;
 	onChange: (v: string) => void;
 	placeholder: string;
@@ -145,7 +161,7 @@ function OpenRouterModelSelect({
 					onChange={(e) => onChange(e.target.value)}
 				/>
 				<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
-					SET API KEY IN NETWORK TAB TO LOAD MODEL LIST
+					INFERENCE.SH MODEL LIST IS UNAVAILABLE
 				</p>
 			</div>
 		);
@@ -176,7 +192,10 @@ function OpenRouterModelSelect({
 							setFilter("");
 						}}
 					>
-						{m.id}
+						<span className="block font-black">{m.name}</span>
+						<span className="block text-[10px] opacity-70">
+							{m.id} · {m.priceLabel}
+						</span>
 					</button>
 				))}
 				{filtered.length > 50 && (
@@ -209,7 +228,7 @@ function OpenRouterModelSelect({
 				</div>
 			)}
 
-			{selectedModel && <PricingStrip model={selectedModel} />}
+			{selectedModel && <PriceStrip model={selectedModel} />}
 		</div>
 	);
 }
@@ -229,17 +248,14 @@ export function SettingsTabModels({
 	setPersonaProvider,
 	personaModel,
 	setPersonaModel,
-	ollamaModels,
+	agentReasoning,
+	setAgentReasoningLevel,
 	aceModels,
-	openRouterTextModels,
-	openRouterImageModels,
-	openRouterLoading,
+	inferenceShImageModels,
+	inferenceShLoading,
 	codexModels,
 	codexLoading,
 }: ModelsTabProps) {
-	const textModels = ollamaModels.filter(
-		(m) => m.type === "text" || (!m.type && !m.vision),
-	);
 	const codexTextModels = codexModels.filter(
 		(m) => m.type === "text" || m.inputModalities?.includes("text"),
 	);
@@ -251,42 +267,19 @@ export function SettingsTabModels({
 				<SettingsField label="Provider">
 					<ProviderToggle
 						options={[
-							{ value: "ollama", label: "OLLAMA" },
-							{ value: "openrouter", label: "OPENROUTER" },
 							{ value: "openai-codex", label: "OPENAI CODEX" },
+							{ value: "anthropic", label: "ANTHROPIC" },
 						]}
 						value={textProvider}
-						onChange={setTextProvider}
+						onChange={(nextProvider) => {
+							setTextProvider(nextProvider);
+							setTextModel(defaultTextModelForProvider(nextProvider));
+						}}
 					/>
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{textProvider === "ollama" && textModels.length > 0 ? (
-						<Select value={textModel} onValueChange={setTextModel}>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="SELECT MODEL" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								{textModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										{m.name.toUpperCase()}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : textProvider === "openrouter" ? (
-						<OpenRouterModelSelect
-							models={openRouterTextModels}
-							value={textModel}
-							onChange={setTextModel}
-							placeholder="OPENROUTER/MODEL-ID"
-							loading={openRouterLoading}
-						/>
-					) : textProvider === "openai-codex" ? (
+					{textProvider === "openai-codex" ? (
 						codexLoading ? (
 							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
 								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
@@ -315,7 +308,7 @@ export function SettingsTabModels({
 							<div>
 								<Input
 									className={inputClass}
-									placeholder="GPT-5.3-CODEX"
+									placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
 									value={textModel}
 									onChange={(e) => setTextModel(e.target.value)}
 								/>
@@ -327,12 +320,53 @@ export function SettingsTabModels({
 					) : (
 						<Input
 							className={inputClass}
-							placeholder="LLAMA3.1:8B"
+							placeholder={DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()}
 							value={textModel}
 							onChange={(e) => setTextModel(e.target.value)}
 						/>
 					)}
 				</SettingsField>
+			</SettingsPanel>
+
+			{/* PI AGENT REASONING */}
+			<SettingsPanel title="PI AGENT REASONING">
+				<p className="text-[10px] font-bold uppercase leading-relaxed text-white/35">
+					SET THINKING DEPTH BY ROLE. KEEP DIRECTORS AND CRITICS HIGHER; USE
+					LOWER LEVELS FOR LIGHTER CREATIVE NOTES.
+				</p>
+				<div className="grid gap-2">
+					{INFINITUNE_AGENT_IDS.map((agentId) => {
+						const meta = AGENT_REASONING_LABELS[agentId];
+						const value =
+							agentReasoning[agentId] ??
+							DEFAULT_AGENT_REASONING_LEVELS[agentId];
+						return (
+							<div
+								key={agentId}
+								className="grid gap-2 border-4 border-white/10 bg-black/30 p-3 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center"
+							>
+								<div className="min-w-0">
+									<p className="font-mono text-xs font-black uppercase text-white">
+										{meta.label}
+									</p>
+									<p className="mt-1 text-[10px] font-bold uppercase leading-relaxed text-white/35">
+										{meta.description}
+									</p>
+								</div>
+								<ProviderToggle
+									options={AGENT_REASONING_LEVELS.map((level) => ({
+										value: level,
+										label: level === "xhigh" ? "XHIGH" : level.toUpperCase(),
+									}))}
+									value={value}
+									onChange={(next) =>
+										setAgentReasoningLevel(agentId, next as AgentReasoningLevel)
+									}
+								/>
+							</div>
+						);
+					})}
+				</div>
 			</SettingsPanel>
 
 			{/* IMAGE MODEL */}
@@ -341,7 +375,8 @@ export function SettingsTabModels({
 					<ProviderToggle
 						options={[
 							{ value: "comfyui", label: "COMFYUI" },
-							{ value: "openrouter", label: "OPENROUTER" },
+							{ value: "inference-sh", label: "INFERENCE.SH" },
+							{ value: "codex-imagegen", label: "CODEX" },
 						]}
 						value={imageProvider}
 						onChange={setImageProvider}
@@ -353,14 +388,19 @@ export function SettingsTabModels({
 						USING BUILT-IN Z-IMAGE-TURBO (LUMINA2) WORKFLOW — 4 STEPS, 496x496,
 						WEBSOCKET
 					</p>
+				) : imageProvider === "codex-imagegen" ? (
+					<p className="text-[10px] font-bold uppercase text-white/30">
+						USES CODEX CLI $IMAGEGEN WITH GPT-IMAGE-2 — COUNTS AGAINST CODEX
+						USAGE LIMITS, NOT OPENAI API BILLING
+					</p>
 				) : (
 					<SettingsField label="Model">
-						<OpenRouterModelSelect
-							models={openRouterImageModels}
+						<InferenceShModelSelect
+							models={inferenceShImageModels}
 							value={imageModel}
 							onChange={setImageModel}
-							placeholder="OPENAI/DALL-E-3"
-							loading={openRouterLoading}
+							placeholder="PRUNA/FLUX-KLEIN-4B"
+							loading={inferenceShLoading}
 						/>
 					</SettingsField>
 				)}
@@ -370,7 +410,12 @@ export function SettingsTabModels({
 			<SettingsPanel title="ACE-STEP — AUDIO GENERATION">
 				<SettingsField label="Model">
 					{aceModels.length > 0 ? (
-						<Select value={aceModel} onValueChange={setAceModel}>
+						<Select
+							value={aceModel || "__default__"}
+							onValueChange={(value) =>
+								setAceModel(value === "__default__" ? "" : value)
+							}
+						>
 							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
 								<SelectValue placeholder="DEFAULT" />
 							</SelectTrigger>
@@ -409,53 +454,19 @@ export function SettingsTabModels({
 				<SettingsField label="Provider">
 					<ProviderToggle
 						options={[
-							{ value: "ollama", label: "OLLAMA" },
-							{ value: "openrouter", label: "OPENROUTER" },
 							{ value: "openai-codex", label: "OPENAI CODEX" },
+							{ value: "anthropic", label: "ANTHROPIC" },
 						]}
 						value={personaProvider}
-						onChange={setPersonaProvider}
+						onChange={(nextProvider) => {
+							setPersonaProvider(nextProvider);
+							setPersonaModel("");
+						}}
 					/>
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{personaProvider === "ollama" && textModels.length > 0 ? (
-						<Select
-							value={personaModel || "__fallback__"}
-							onValueChange={(value) =>
-								setPersonaModel(value === "__fallback__" ? "" : value)
-							}
-						>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								<SelectItem
-									value="__fallback__"
-									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-								>
-									USE TEXT MODEL
-								</SelectItem>
-								{textModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										{m.name.toUpperCase()}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : personaProvider === "openrouter" ? (
-						<OpenRouterModelSelect
-							models={openRouterTextModels}
-							value={personaModel}
-							onChange={setPersonaModel}
-							placeholder="USES TEXT MODEL IF EMPTY"
-							loading={openRouterLoading}
-						/>
-					) : personaProvider === "openai-codex" ? (
+					{personaProvider === "openai-codex" ? (
 						codexLoading ? (
 							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
 								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
