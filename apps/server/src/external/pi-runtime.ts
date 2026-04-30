@@ -303,11 +303,33 @@ export async function promptInfinituneAgent(input: {
 	});
 	try {
 		await session.bindExtensions({});
-		await session.prompt(input.prompt);
+		if (input.signal?.aborted) {
+			throw abortSignalError(input.signal);
+		}
+		if (input.signal) {
+			await new Promise<void>((resolve, reject) => {
+				const promptPromise = session.prompt(input.prompt);
+				const onAbort = () => {
+					session.dispose();
+					reject(abortSignalError(input.signal));
+				};
+				input.signal?.addEventListener("abort", onAbort, { once: true });
+				promptPromise.then(resolve, reject).finally(() => {
+					input.signal?.removeEventListener("abort", onAbort);
+				});
+			});
+		} else {
+			await session.prompt(input.prompt);
+		}
 		return text.trim();
 	} finally {
 		session.dispose();
 	}
+}
+
+function abortSignalError(signal?: AbortSignal): Error {
+	if (signal?.reason instanceof Error) return signal.reason;
+	return new Error("Pi agent prompt aborted");
 }
 
 function extractText(

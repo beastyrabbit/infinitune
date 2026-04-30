@@ -1103,6 +1103,12 @@ export class SongWorker {
 			await songService.updateStatus(this.songId, "saving");
 		}
 		await songService.updateAceAudioPath(this.songId, audioPath);
+		this.song = {
+			...this.song,
+			status: "saving",
+			aceAudioPath: audioPath,
+			audioProcessingMs,
+		};
 
 		// Save to NFS
 		try {
@@ -1193,6 +1199,12 @@ export class SongWorker {
 				songLogger(this.songId).warn({ err }, "ID3 tagging failed");
 			}
 		} catch (e: unknown) {
+			this.song = {
+				...this.song,
+				status: "saving",
+				aceAudioPath: audioPath,
+				audioProcessingMs,
+			};
 			this.lastError = e instanceof Error ? e.message : String(e);
 			songLogger(this.songId).error({ err: e }, "NFS save failed");
 			throw e;
