@@ -112,7 +112,7 @@ const ChatMessageSchema = z.object({
 
 const ChatAnswerSchema = z.object({
 	questionId: z.string().min(1),
-	content: z.string().min(1),
+	content: z.string().min(1).max(MAX_HUMAN_CHAT_CONTENT_CHARS),
 });
 
 // GET /api/playlists/:id/agent-chat/messages

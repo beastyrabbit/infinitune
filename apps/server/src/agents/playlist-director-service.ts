@@ -46,6 +46,24 @@ type SongLike = Awaited<ReturnType<typeof songService.listByPlaylist>>[number];
 
 export const MAX_HUMAN_CHAT_CONTENT_CHARS = 4_000;
 
+function normalizeHumanChannelContent(input: string): {
+	content: string;
+	truncated: boolean;
+	originalChars: number;
+} {
+	const normalizedContent = input.trim();
+	if (!normalizedContent) throw new Error("Chat message content is required");
+	const content =
+		normalizedContent.length > MAX_HUMAN_CHAT_CONTENT_CHARS
+			? normalizedContent.slice(0, MAX_HUMAN_CHAT_CONTENT_CHARS)
+			: normalizedContent;
+	return {
+		content,
+		truncated: normalizedContent.length > content.length,
+		originalChars: normalizedContent.length,
+	};
+}
+
 export class DirectorQuestionValidationError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -531,13 +549,9 @@ export async function postHumanChat(input: {
 	threadId?: string | null;
 	commitDirection?: boolean;
 }): Promise<{ messageId: string; committedDirection: boolean }> {
-	const normalizedContent = input.content.trim();
-	if (!normalizedContent) throw new Error("Chat message content is required");
-	const content =
-		normalizedContent.length > MAX_HUMAN_CHAT_CONTENT_CHARS
-			? normalizedContent.slice(0, MAX_HUMAN_CHAT_CONTENT_CHARS)
-			: normalizedContent;
-	const truncated = normalizedContent.length > content.length;
+	const { content, truncated, originalChars } = normalizeHumanChannelContent(
+		input.content,
+	);
 	const message = await postChannelMessage({
 		playlistId: input.playlistId,
 		threadId: input.threadId,
@@ -547,9 +561,7 @@ export async function postHumanChat(input: {
 		content,
 		data: {
 			committedDirection: input.commitDirection === true,
-			...(truncated
-				? { truncated: true, originalChars: normalizedContent.length }
-				: {}),
+			...(truncated ? { truncated: true, originalChars } : {}),
 		},
 	});
 	const slashSteer = content.startsWith("/steer ")
@@ -598,6 +610,9 @@ export async function answerDirectorQuestion(input: {
 	questionId: string;
 	content: string;
 }): Promise<{ messageId: string }> {
+	const { content, truncated, originalChars } = normalizeHumanChannelContent(
+		input.content,
+	);
 	const question = await getChannelMessage(input.questionId);
 	if (!question) {
 		throw new DirectorQuestionValidationError("Director question not found");
@@ -627,8 +642,11 @@ export async function answerDirectorQuestion(input: {
 		senderKind: "human",
 		senderId: "human",
 		messageType: "chat",
-		content: input.content,
-		data: { answersQuestionId: input.questionId },
+		content,
+		data: {
+			answersQuestionId: input.questionId,
+			...(truncated ? { truncated: true, originalChars } : {}),
+		},
 	});
 	await markChannelQuestionAnswered({
 		id: input.questionId,
@@ -640,7 +658,7 @@ export async function answerDirectorQuestion(input: {
 		wakePlaylistDirector({
 			playlistId: input.playlistId,
 			trigger: "answer",
-			userMessage: input.content,
+			userMessage: content,
 			messageId: message.id,
 		}).catch((err) =>
 			logger.error(

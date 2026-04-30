@@ -340,6 +340,51 @@ describe("agent ensemble", () => {
 		expect(await listPendingRequiredQuestions(playlistA.id)).toHaveLength(1);
 	});
 
+	it("caps director question answers before storing and waking the director", async () => {
+		const playlist = await playlistService.create({
+			name: "Answer cap",
+			prompt: "garage rock",
+			llmProvider: "openai-codex",
+			llmModel: "",
+		});
+		const question = await postChannelMessage({
+			playlistId: playlist.id,
+			senderKind: "agent",
+			senderId: "playlist-director",
+			messageType: "question",
+			content: "Which direction?",
+			data: { requiresAnswer: true },
+		});
+
+		await answerDirectorQuestion({
+			playlistId: playlist.id,
+			questionId: question.id,
+			content: "y".repeat(MAX_HUMAN_CHAT_CONTENT_CHARS + 50),
+		});
+
+		const messages = await readChannelMessages({
+			playlistId: playlist.id,
+			limit: 10,
+		});
+		const answer = messages.find(
+			(message) =>
+				message.senderKind === "human" &&
+				(message.data as { answersQuestionId?: string } | null)
+					?.answersQuestionId === question.id,
+		);
+		expect(answer?.content).toHaveLength(MAX_HUMAN_CHAT_CONTENT_CHARS);
+		expect(answer?.data).toMatchObject({ truncated: true });
+		await vi.waitFor(async () => {
+			const latest = await readChannelMessages({
+				playlistId: playlist.id,
+				limit: 10,
+			});
+			expect(latest.map((message) => message.senderId)).toContain(
+				"playlist-director",
+			);
+		});
+	});
+
 	it("stores human chat and wakes the director", async () => {
 		const playlist = await playlistService.create({
 			name: "Chat",
