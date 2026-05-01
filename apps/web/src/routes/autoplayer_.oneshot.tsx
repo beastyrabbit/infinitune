@@ -1,8 +1,7 @@
 import {
 	ACE_DCW_DEFAULTS,
-	ACE_VAE_DEFAULT,
 	normalizeAceDcwScaler,
-	normalizeAceVaeCheckpoint,
+	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
 import {
@@ -128,9 +127,10 @@ function OneshotPage() {
 		settings?.aceModel,
 		settings?.aceModel !== undefined,
 	);
-	const aceDcwEnabled = settings?.aceDcwEnabled
-		? settings.aceDcwEnabled !== "false"
-		: ACE_DCW_DEFAULTS.enabled;
+	const aceDcwEnabled = parseBooleanSetting(
+		settings?.aceDcwEnabled,
+		ACE_DCW_DEFAULTS.enabled,
+	);
 	const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
 	const aceDcwScaler = normalizeAceDcwScaler(
 		settings?.aceDcwScaler,
@@ -141,9 +141,6 @@ function OneshotPage() {
 		ACE_DCW_DEFAULTS.highScaler,
 	);
 	const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
-	const aceVaeCheckpoint = normalizeAceVaeCheckpoint(
-		settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,
-	);
 
 	const modelSetByUserOrSettings = useRef(false);
 
@@ -294,7 +291,6 @@ function OneshotPage() {
 				aceDcwScaler,
 				aceDcwHighScaler,
 				aceDcwWavelet,
-				aceVaeCheckpoint,
 			});
 			setLocalPlaylistId(result.id);
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
@@ -323,7 +319,6 @@ function OneshotPage() {
 		aceDcwScaler,
 		aceDcwHighScaler,
 		aceDcwWavelet,
-		aceVaeCheckpoint,
 		createPlaylist,
 		navigate,
 	]);

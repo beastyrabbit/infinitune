@@ -15,7 +15,6 @@ const AceModelSchema = z
 	.max(128)
 	.refine(isValidAceModel, "Invalid ACE-Step model identifier");
 const AceDcwWaveletSchema = z.string().min(1).max(64);
-const AceVaeCheckpointSchema = z.string().max(128);
 
 /** Schema for creating a playlist */
 export const CreatePlaylistSchema = z.object({
@@ -40,7 +39,6 @@ export const CreatePlaylistSchema = z.object({
 	aceDcwScaler: z.number().min(0).max(1).optional(),
 	aceDcwHighScaler: z.number().min(0).max(1).optional(),
 	aceDcwWavelet: AceDcwWaveletSchema.optional(),
-	aceVaeCheckpoint: AceVaeCheckpointSchema.optional(),
 	aceThinking: z.boolean().optional(),
 	aceAutoDuration: z.boolean().optional(),
 	ownerUserId: z.string().optional(),
@@ -84,7 +82,6 @@ export const UpdatePlaylistParamsSchema = z.object({
 	aceDcwScaler: z.number().min(0).max(1).nullable().optional(),
 	aceDcwHighScaler: z.number().min(0).max(1).nullable().optional(),
 	aceDcwWavelet: AceDcwWaveletSchema.nullable().optional(),
-	aceVaeCheckpoint: AceVaeCheckpointSchema.nullable().optional(),
 	aceThinking: z.boolean().nullable().optional(),
 	aceAutoDuration: z.boolean().nullable().optional(),
 });

@@ -1,7 +1,4 @@
-import {
-	normalizeAceModel,
-	normalizeAceVaeCheckpoint,
-} from "@infinitune/shared/ace-settings";
+import { normalizeAceModel } from "@infinitune/shared/ace-settings";
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistStatus } from "@infinitune/shared/types";
@@ -94,7 +91,6 @@ export async function create(data: {
 	aceDcwScaler?: number;
 	aceDcwHighScaler?: number;
 	aceDcwWavelet?: string;
-	aceVaeCheckpoint?: string;
 	aceThinking?: boolean;
 	aceAutoDuration?: boolean;
 	ownerUserId?: string;
@@ -133,9 +129,6 @@ export async function create(data: {
 			aceDcwScaler: data.aceDcwScaler,
 			aceDcwHighScaler: data.aceDcwHighScaler,
 			aceDcwWavelet: data.aceDcwWavelet,
-			aceVaeCheckpoint: data.aceVaeCheckpoint
-				? normalizeAceVaeCheckpoint(data.aceVaeCheckpoint)
-				: undefined,
 			aceThinking: data.aceThinking,
 			aceAutoDuration: data.aceAutoDuration,
 			ownerUserId: data.ownerUserId,
@@ -183,7 +176,6 @@ export async function updateParams(
 		"aceDcwScaler",
 		"aceDcwHighScaler",
 		"aceDcwWavelet",
-		"aceVaeCheckpoint",
 		"aceThinking",
 		"aceAutoDuration",
 	];
@@ -220,13 +212,6 @@ export async function updateParams(
 		if (key === "aceModel") {
 			patch[key] =
 				typeof params[key] === "string" ? normalizeAceModel(params[key]) : null;
-			continue;
-		}
-		if (key === "aceVaeCheckpoint") {
-			patch[key] =
-				typeof params[key] === "string"
-					? normalizeAceVaeCheckpoint(params[key])
-					: null;
 			continue;
 		}
 		patch[key] = params[key];
@@ -300,7 +285,6 @@ export async function resetDefaults(id: string) {
 			aceDcwScaler: null,
 			aceDcwHighScaler: null,
 			aceDcwWavelet: null,
-			aceVaeCheckpoint: null,
 			aceThinking: null,
 			aceAutoDuration: null,
 			managerBrief: null,

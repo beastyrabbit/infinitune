@@ -305,7 +305,6 @@ function AutoplayerPage() {
 			aceDcwScaler?: number;
 			aceDcwHighScaler?: number;
 			aceDcwWavelet?: string;
-			aceVaeCheckpoint?: string;
 			aceThinking?: boolean;
 			aceAutoDuration?: boolean;
 			initialDirectorPlan?: boolean;
@@ -333,7 +332,6 @@ function AutoplayerPage() {
 				aceDcwScaler: data.aceDcwScaler,
 				aceDcwHighScaler: data.aceDcwHighScaler,
 				aceDcwWavelet: data.aceDcwWavelet,
-				aceVaeCheckpoint: data.aceVaeCheckpoint,
 				aceThinking: data.aceThinking,
 				aceAutoDuration: data.aceAutoDuration,
 				initialDirectorPlan: data.initialDirectorPlan,

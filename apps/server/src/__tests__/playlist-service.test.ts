@@ -67,7 +67,6 @@ describe("playlist-service", () => {
 				aceDcwScaler: 0.05,
 				aceDcwHighScaler: 0.02,
 				aceDcwWavelet: "haar",
-				aceVaeCheckpoint: "scragvae",
 			});
 
 			expect(result.mode).toBe("oneshot");
@@ -79,7 +78,6 @@ describe("playlist-service", () => {
 			expect(result.aceDcwScaler).toBe(0.05);
 			expect(result.aceDcwHighScaler).toBe(0.02);
 			expect(result.aceDcwWavelet).toBe("haar");
-			expect(result.aceVaeCheckpoint).toBe("scragvae");
 		});
 	});
 
@@ -183,7 +181,6 @@ describe("playlist-service", () => {
 				aceDcwScaler: 0.05,
 				aceDcwHighScaler: 0.02,
 				aceDcwWavelet: "haar",
-				aceVaeCheckpoint: "scragvae",
 			});
 
 			const [updated] = await db
@@ -197,7 +194,6 @@ describe("playlist-service", () => {
 			expect(updated.aceDcwScaler).toBe(0.05);
 			expect(updated.aceDcwHighScaler).toBe(0.02);
 			expect(updated.aceDcwWavelet).toBe("haar");
-			expect(updated.aceVaeCheckpoint).toBe("scragvae");
 		});
 
 		it("clears ACE playlist overrides when resetting defaults", async () => {
@@ -212,7 +208,6 @@ describe("playlist-service", () => {
 				aceDcwScaler: 0.1,
 				aceDcwHighScaler: 0.04,
 				aceDcwWavelet: "haar",
-				aceVaeCheckpoint: "scragvae",
 			});
 
 			const db = getTestDb();
@@ -228,7 +223,6 @@ describe("playlist-service", () => {
 			expect(updated.aceDcwScaler).toBeNull();
 			expect(updated.aceDcwHighScaler).toBeNull();
 			expect(updated.aceDcwWavelet).toBeNull();
-			expect(updated.aceVaeCheckpoint).toBeNull();
 		});
 	});
 

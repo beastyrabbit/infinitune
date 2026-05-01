@@ -130,7 +130,6 @@ function mockPlaylist(overrides: Record<string, unknown> = {}) {
 		aceDcwScaler: null,
 		aceDcwHighScaler: null,
 		aceDcwWavelet: null,
-		aceVaeCheckpoint: null,
 		lastSeenAt: null,
 		steerHistory: null,
 		managerBrief: null,

@@ -306,12 +306,6 @@ function SettingsPage() {
 							settings.aceModel !== undefined,
 						),
 			);
-			setAceVaeCheckpoint(
-				activePlaylist.aceVaeCheckpoint ||
-					normalizeAceVaeCheckpoint(
-						settings.aceVaeCheckpoint || ACE_VAE_DEFAULT,
-					),
-			);
 		} else {
 			setInferSteps(settings.aceInferenceSteps || "8");
 			setLmTemp(settings.aceLmTemperature || "0.85");
@@ -532,9 +526,6 @@ function SettingsPage() {
 		);
 		const inheritedAceDcwWavelet =
 			settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
-		const inheritedAceVaeCheckpoint = normalizeAceVaeCheckpoint(
-			settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,
-		);
 		const inheritedAceThinking = parseBooleanSetting(
 			settings?.aceThinking,
 			false,
@@ -572,6 +563,10 @@ function SettingsPage() {
 			setSetting({
 				key: "personaModel",
 				value: normalizeFallbackModel(personaModel),
+			}),
+			setSetting({
+				key: "aceVaeCheckpoint",
+				value: normalizedAceVaeCheckpoint,
 			}),
 			...INFINITUNE_AGENT_IDS.map((agentId) =>
 				setSetting({
@@ -631,11 +626,6 @@ function SettingsPage() {
 						inheritedAceDcwWavelet,
 						activePlaylist.aceDcwWavelet,
 					),
-					aceVaeCheckpoint: preserveInheritedPlaylistValue(
-						normalizedAceVaeCheckpoint,
-						inheritedAceVaeCheckpoint,
-						activePlaylist.aceVaeCheckpoint,
-					),
 					aceThinking: preserveInheritedPlaylistValue(
 						aceThinking,
 						inheritedAceThinking,
@@ -663,10 +653,6 @@ function SettingsPage() {
 					value: normalizedDcwHighScaler,
 				}),
 				setSetting({ key: "aceDcwWavelet", value: normalizedDcwWavelet }),
-				setSetting({
-					key: "aceVaeCheckpoint",
-					value: normalizedAceVaeCheckpoint,
-				}),
 				setSetting({ key: "aceThinking", value: String(aceThinking) }),
 				setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
 			);

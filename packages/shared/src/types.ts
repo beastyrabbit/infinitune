@@ -201,7 +201,6 @@ export interface Playlist {
 	aceDcwScaler: number | null;
 	aceDcwHighScaler: number | null;
 	aceDcwWavelet: string | null;
-	aceVaeCheckpoint: string | null;
 	currentOrderIndex: number | null;
 	lastSeenAt: number | null;
 	promptEpoch: number | null;

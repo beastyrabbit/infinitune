@@ -62,12 +62,11 @@ export function ensureSchema() {
 			infer_method TEXT,
 			ace_model TEXT,
 			ace_dcw_enabled INTEGER,
-			ace_dcw_mode TEXT,
-			ace_dcw_scaler REAL,
-			ace_dcw_high_scaler REAL,
-			ace_dcw_wavelet TEXT,
-			ace_vae_checkpoint TEXT,
-			current_order_index REAL,
+				ace_dcw_mode TEXT,
+				ace_dcw_scaler REAL,
+				ace_dcw_high_scaler REAL,
+				ace_dcw_wavelet TEXT,
+				current_order_index REAL,
 			last_seen_at INTEGER,
 			prompt_epoch INTEGER DEFAULT 0,
 			steer_history TEXT,
@@ -271,7 +270,6 @@ export function ensureSchema() {
 	addColumn("playlists", "ace_dcw_scaler REAL");
 	addColumn("playlists", "ace_dcw_high_scaler REAL");
 	addColumn("playlists", "ace_dcw_wavelet TEXT");
-	addColumn("playlists", "ace_vae_checkpoint TEXT");
 	addColumn("songs", "cover_webp_url TEXT");
 	addColumn("songs", "cover_jxl_url TEXT");
 

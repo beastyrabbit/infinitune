@@ -1,4 +1,7 @@
-import { ACE_DCW_DEFAULTS } from "@infinitune/shared/ace-settings";
+import {
+	ACE_DCW_DEFAULTS,
+	ACE_DCW_MODES,
+} from "@infinitune/shared/ace-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -222,7 +225,7 @@ export function SettingsTabAudioEngine({
 								<SelectValue placeholder="DOUBLE" />
 							</SelectTrigger>
 							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								{["low", "high", "double", "pix"].map((mode) => (
+								{ACE_DCW_MODES.map((mode) => (
 									<SelectItem
 										key={mode}
 										value={mode}

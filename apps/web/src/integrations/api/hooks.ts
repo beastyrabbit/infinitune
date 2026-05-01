@@ -689,7 +689,6 @@ export const useCreatePlaylist = createMutation<
 		aceDcwScaler?: number;
 		aceDcwHighScaler?: number;
 		aceDcwWavelet?: string;
-		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;

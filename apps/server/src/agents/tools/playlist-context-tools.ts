@@ -280,7 +280,6 @@ export function createPlaylistContextTools(agentId: AgentId): ToolDefinition[] {
 					aceDcwScaler: playlist.aceDcwScaler,
 					aceDcwHighScaler: playlist.aceDcwHighScaler,
 					aceDcwWavelet: playlist.aceDcwWavelet,
-					aceVaeCheckpoint: playlist.aceVaeCheckpoint,
 					aceThinking: playlist.aceThinking,
 					aceAutoDuration: playlist.aceAutoDuration,
 				});

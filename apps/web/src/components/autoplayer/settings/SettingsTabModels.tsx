@@ -504,7 +504,9 @@ export function SettingsTabModels({
 						</p>
 					)}
 				</SettingsField>
+			</SettingsPanel>
 
+			<SettingsPanel title="ACE-STEP VAE — SERVICE CONFIG">
 				<SettingsField
 					label="VAE Checkpoint"
 					hint="SERVICE-LEVEL ACE SETTING; SET ACESTEP_VAE_CHECKPOINT TO MATCH CUSTOM SERVERS"

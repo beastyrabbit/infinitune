@@ -1,8 +1,6 @@
 import {
 	ACE_DCW_DEFAULTS,
-	ACE_VAE_DEFAULT,
 	normalizeAceDcwScaler,
-	normalizeAceVaeCheckpoint,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
 import {
@@ -69,7 +67,6 @@ interface PlaylistCreatorProps {
 		aceDcwScaler?: number;
 		aceDcwHighScaler?: number;
 		aceDcwWavelet?: string;
-		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
@@ -100,7 +97,6 @@ interface PlaylistCreatorProps {
 		aceDcwScaler?: number;
 		aceDcwHighScaler?: number;
 		aceDcwWavelet?: string;
-		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
@@ -250,9 +246,6 @@ export function PlaylistCreator({
 			ACE_DCW_DEFAULTS.highScaler,
 		);
 		const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
-		const aceVaeCheckpoint = normalizeAceVaeCheckpoint(
-			settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,
-		);
 		const aceThinking = settings?.aceThinking === "true";
 		const aceAutoDuration = settings?.aceAutoDuration !== "false";
 		const roomSlug =
@@ -294,7 +287,6 @@ export function PlaylistCreator({
 				aceDcwScaler,
 				aceDcwHighScaler,
 				aceDcwWavelet,
-				aceVaeCheckpoint,
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,
@@ -322,7 +314,6 @@ export function PlaylistCreator({
 				aceDcwScaler,
 				aceDcwHighScaler,
 				aceDcwWavelet,
-				aceVaeCheckpoint,
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,
