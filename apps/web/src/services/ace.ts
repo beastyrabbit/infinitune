@@ -1,7 +1,4 @@
-import {
-	ACE_DCW_DEFAULTS,
-	normalizeAceModel,
-} from "@infinitune/shared/ace-settings";
+import { normalizeAceModel } from "@infinitune/shared/ace-settings";
 import { getServiceUrls } from "@/lib/server-settings";
 
 export interface AceSubmitResult {
@@ -108,19 +105,13 @@ export async function submitToAce(options: {
 		payload.model = normalizedAceModel;
 	}
 
-	const hasDcwSettings =
-		aceDcwEnabled !== undefined ||
-		aceDcwMode !== undefined ||
-		aceDcwScaler !== undefined ||
-		aceDcwHighScaler !== undefined ||
-		aceDcwWavelet !== undefined;
-	if (hasDcwSettings) {
-		payload.dcw_enabled = aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled;
-		payload.dcw_mode = aceDcwMode || ACE_DCW_DEFAULTS.mode;
-		payload.dcw_scaler = aceDcwScaler ?? ACE_DCW_DEFAULTS.scaler;
-		payload.dcw_high_scaler = aceDcwHighScaler ?? ACE_DCW_DEFAULTS.highScaler;
-		payload.dcw_wavelet = aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+	if (aceDcwEnabled !== undefined) payload.dcw_enabled = aceDcwEnabled;
+	if (aceDcwMode !== undefined) payload.dcw_mode = aceDcwMode;
+	if (aceDcwScaler !== undefined) payload.dcw_scaler = aceDcwScaler;
+	if (aceDcwHighScaler !== undefined) {
+		payload.dcw_high_scaler = aceDcwHighScaler;
 	}
+	if (aceDcwWavelet !== undefined) payload.dcw_wavelet = aceDcwWavelet;
 
 	const response = await fetch(`${aceUrl}/release_task`, {
 		method: "POST",

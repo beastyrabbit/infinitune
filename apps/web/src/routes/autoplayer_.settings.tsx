@@ -491,6 +491,20 @@ function SettingsPage() {
 			aceDcwHighScaler,
 			ACE_DCW_DEFAULTS.highScaler,
 		);
+		const normalizedAceModel = normalizeAceModel(aceModel);
+		const inheritedAceModel = normalizeAceModel(
+			resolveAceModelSetting(
+				settings?.aceModel,
+				settings?.aceModel !== undefined,
+			),
+		);
+		const playlistAceModel =
+			activePlaylist &&
+			(!normalizedAceModel ||
+				(activePlaylist.aceModel == null &&
+					normalizedAceModel === inheritedAceModel))
+				? null
+				: normalizedAceModel;
 		const promises: Promise<unknown>[] = [
 			setSetting({ key: "ollamaUrl", value: ollamaUrl }),
 			setSetting({ key: "aceStepUrl", value: aceStepUrl }),
@@ -499,7 +513,7 @@ function SettingsPage() {
 			setSetting({ key: "textModel", value: textModel }),
 			setSetting({ key: "imageProvider", value: imageProvider }),
 			setSetting({ key: "imageModel", value: imageModel }),
-			setSetting({ key: "aceModel", value: normalizeAceModel(aceModel) }),
+			setSetting({ key: "aceModel", value: normalizedAceModel }),
 			setSetting({ key: "personaProvider", value: personaProvider }),
 			setSetting({
 				key: "personaModel",
@@ -538,7 +552,7 @@ function SettingsPage() {
 					lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
 					lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 					inferMethod: inferMethod || undefined,
-					aceModel: normalizeAceModel(aceModel),
+					aceModel: playlistAceModel,
 					aceDcwEnabled,
 					aceDcwMode,
 					aceDcwScaler: Number.parseFloat(normalizedDcwScaler),
