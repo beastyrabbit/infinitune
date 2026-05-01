@@ -215,6 +215,11 @@ export interface ProviderTaskPorts {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceDcwEnabled?: boolean;
+		aceDcwMode?: string;
+		aceDcwScaler?: number;
+		aceDcwHighScaler?: number;
+		aceDcwWavelet?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		signal?: AbortSignal;

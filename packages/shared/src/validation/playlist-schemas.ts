@@ -1,4 +1,5 @@
 import z from "zod";
+import { ACE_DCW_MODES } from "../ace-settings";
 import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
 import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
 
@@ -26,6 +27,13 @@ export const CreatePlaylistSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).optional(),
 	lmCfgScale: z.number().min(0).max(20).optional(),
 	inferMethod: z.string().optional(),
+	aceModel: z.string().optional(),
+	aceDcwEnabled: z.boolean().optional(),
+	aceDcwMode: z.enum(ACE_DCW_MODES).optional(),
+	aceDcwScaler: z.number().min(0).max(1).optional(),
+	aceDcwHighScaler: z.number().min(0).max(1).optional(),
+	aceDcwWavelet: z.string().min(1).optional(),
+	aceVaeCheckpoint: z.string().optional(),
 	aceThinking: z.boolean().optional(),
 	aceAutoDuration: z.boolean().optional(),
 	ownerUserId: z.string().optional(),
@@ -63,6 +71,13 @@ export const UpdatePlaylistParamsSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).nullable().optional(),
 	lmCfgScale: z.number().min(0).max(20).nullable().optional(),
 	inferMethod: z.string().nullable().optional(),
+	aceModel: z.string().nullable().optional(),
+	aceDcwEnabled: z.boolean().nullable().optional(),
+	aceDcwMode: z.enum(ACE_DCW_MODES).nullable().optional(),
+	aceDcwScaler: z.number().min(0).max(1).nullable().optional(),
+	aceDcwHighScaler: z.number().min(0).max(1).nullable().optional(),
+	aceDcwWavelet: z.string().min(1).nullable().optional(),
+	aceVaeCheckpoint: z.string().nullable().optional(),
 	aceThinking: z.boolean().nullable().optional(),
 	aceAutoDuration: z.boolean().nullable().optional(),
 });

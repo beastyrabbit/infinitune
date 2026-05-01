@@ -1,4 +1,10 @@
 import {
+	ACE_DCW_DEFAULTS,
+	ACE_VAE_DEFAULT,
+	normalizeAceVaeCheckpoint,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
+import {
 	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
@@ -56,6 +62,13 @@ interface PlaylistCreatorProps {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceModel?: string;
+		aceDcwEnabled?: boolean;
+		aceDcwMode?: string;
+		aceDcwScaler?: number;
+		aceDcwHighScaler?: number;
+		aceDcwWavelet?: string;
+		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
@@ -80,6 +93,13 @@ interface PlaylistCreatorProps {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceModel?: string;
+		aceDcwEnabled?: boolean;
+		aceDcwMode?: string;
+		aceDcwScaler?: number;
+		aceDcwHighScaler?: number;
+		aceDcwWavelet?: string;
+		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
@@ -212,6 +232,24 @@ export function PlaylistCreator({
 			? Number.parseFloat(settings.aceLmCfgScale)
 			: undefined;
 		const inferMethod = settings?.aceInferMethod || undefined;
+		const aceModel = resolveAceModelSetting(
+			settings?.aceModel,
+			settings?.aceModel !== undefined,
+		);
+		const aceDcwEnabled = settings?.aceDcwEnabled
+			? settings.aceDcwEnabled !== "false"
+			: ACE_DCW_DEFAULTS.enabled;
+		const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		const aceDcwScaler = settings?.aceDcwScaler
+			? Number.parseFloat(settings.aceDcwScaler)
+			: ACE_DCW_DEFAULTS.scaler;
+		const aceDcwHighScaler = settings?.aceDcwHighScaler
+			? Number.parseFloat(settings.aceDcwHighScaler)
+			: ACE_DCW_DEFAULTS.highScaler;
+		const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+		const aceVaeCheckpoint = normalizeAceVaeCheckpoint(
+			settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,
+		);
 		const aceThinking = settings?.aceThinking === "true";
 		const aceAutoDuration = settings?.aceAutoDuration !== "false";
 		const roomSlug =
@@ -247,6 +285,13 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
+				aceModel,
+				aceDcwEnabled,
+				aceDcwMode,
+				aceDcwScaler,
+				aceDcwHighScaler,
+				aceDcwWavelet,
+				aceVaeCheckpoint,
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,
@@ -268,6 +313,13 @@ export function PlaylistCreator({
 				lmTemperature,
 				lmCfgScale,
 				inferMethod,
+				aceModel,
+				aceDcwEnabled,
+				aceDcwMode,
+				aceDcwScaler,
+				aceDcwHighScaler,
+				aceDcwWavelet,
+				aceVaeCheckpoint,
 				aceThinking,
 				aceAutoDuration,
 				initialDirectorPlan: true,

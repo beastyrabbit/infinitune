@@ -971,6 +971,8 @@ export class SongWorker {
 					priority: this.getPriority(),
 					endpoint: "ace-step",
 					execute: async (signal) => {
+						const settings = await this.ctx.getSettings();
+						const playlistAceModel = this.ctx.playlist.aceModel;
 						const result = await this.ctx.capabilities.submitAudio({
 							lyrics: this.song.lyrics || "",
 							caption: this.song.caption || "",
@@ -979,7 +981,10 @@ export class SongWorker {
 							keyScale: this.song.keyScale || "C major",
 							timeSignature: this.song.timeSignature || "4/4",
 							audioDuration: this.song.audioDuration || 240,
-							aceModel: (await this.ctx.getSettings()).aceModel,
+							aceModel:
+								playlistAceModel === null
+									? settings.aceModel
+									: playlistAceModel,
 							inferenceSteps: this.ctx.playlist.inferenceSteps ?? undefined,
 							vocalLanguage: toAceVocalLanguageCode(
 								this.ctx.playlist.lyricsLanguage,
@@ -987,6 +992,11 @@ export class SongWorker {
 							lmTemperature: this.ctx.playlist.lmTemperature ?? undefined,
 							lmCfgScale: this.ctx.playlist.lmCfgScale ?? undefined,
 							inferMethod: this.ctx.playlist.inferMethod ?? undefined,
+							aceDcwEnabled: this.ctx.playlist.aceDcwEnabled ?? undefined,
+							aceDcwMode: this.ctx.playlist.aceDcwMode ?? undefined,
+							aceDcwScaler: this.ctx.playlist.aceDcwScaler ?? undefined,
+							aceDcwHighScaler: this.ctx.playlist.aceDcwHighScaler ?? undefined,
+							aceDcwWavelet: this.ctx.playlist.aceDcwWavelet ?? undefined,
 							aceThinking: this.ctx.playlist.aceThinking ?? undefined,
 							aceAutoDuration: this.ctx.playlist.aceAutoDuration ?? undefined,
 							signal,

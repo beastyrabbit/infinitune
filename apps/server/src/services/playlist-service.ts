@@ -1,3 +1,10 @@
+import {
+	ACE_DCW_DEFAULTS,
+	ACE_QUALITY_DEFAULT_MODEL,
+	ACE_VAE_DEFAULT,
+	normalizeAceModel,
+	normalizeAceVaeCheckpoint,
+} from "@infinitune/shared/ace-settings";
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistStatus } from "@infinitune/shared/types";
@@ -84,6 +91,13 @@ export async function create(data: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceModel?: string;
+	aceDcwEnabled?: boolean;
+	aceDcwMode?: string;
+	aceDcwScaler?: number;
+	aceDcwHighScaler?: number;
+	aceDcwWavelet?: string;
+	aceVaeCheckpoint?: string;
 	aceThinking?: boolean;
 	aceAutoDuration?: boolean;
 	ownerUserId?: string;
@@ -113,6 +127,18 @@ export async function create(data: {
 			lmTemperature: data.lmTemperature,
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
+			aceModel:
+				data.aceModel !== undefined
+					? normalizeAceModel(data.aceModel)
+					: undefined,
+			aceDcwEnabled: data.aceDcwEnabled,
+			aceDcwMode: data.aceDcwMode,
+			aceDcwScaler: data.aceDcwScaler,
+			aceDcwHighScaler: data.aceDcwHighScaler,
+			aceDcwWavelet: data.aceDcwWavelet,
+			aceVaeCheckpoint: data.aceVaeCheckpoint
+				? normalizeAceVaeCheckpoint(data.aceVaeCheckpoint)
+				: undefined,
 			aceThinking: data.aceThinking,
 			aceAutoDuration: data.aceAutoDuration,
 			ownerUserId: data.ownerUserId,
@@ -154,6 +180,13 @@ export async function updateParams(
 		"lmTemperature",
 		"lmCfgScale",
 		"inferMethod",
+		"aceModel",
+		"aceDcwEnabled",
+		"aceDcwMode",
+		"aceDcwScaler",
+		"aceDcwHighScaler",
+		"aceDcwWavelet",
+		"aceVaeCheckpoint",
 		"aceThinking",
 		"aceAutoDuration",
 	];
@@ -185,6 +218,18 @@ export async function updateParams(
 				typeof params[key] === "string" ? params[key] : undefined,
 			);
 			touchedLyricsLanguage = true;
+			continue;
+		}
+		if (key === "aceModel") {
+			patch[key] =
+				typeof params[key] === "string" ? normalizeAceModel(params[key]) : null;
+			continue;
+		}
+		if (key === "aceVaeCheckpoint") {
+			patch[key] =
+				typeof params[key] === "string"
+					? normalizeAceVaeCheckpoint(params[key])
+					: ACE_VAE_DEFAULT;
 			continue;
 		}
 		patch[key] = params[key];
@@ -252,6 +297,13 @@ export async function resetDefaults(id: string) {
 			lmTemperature: null,
 			lmCfgScale: null,
 			inferMethod: null,
+			aceModel: ACE_QUALITY_DEFAULT_MODEL,
+			aceDcwEnabled: ACE_DCW_DEFAULTS.enabled,
+			aceDcwMode: ACE_DCW_DEFAULTS.mode,
+			aceDcwScaler: ACE_DCW_DEFAULTS.scaler,
+			aceDcwHighScaler: ACE_DCW_DEFAULTS.highScaler,
+			aceDcwWavelet: ACE_DCW_DEFAULTS.wavelet,
+			aceVaeCheckpoint: ACE_VAE_DEFAULT,
 			aceThinking: null,
 			aceAutoDuration: null,
 			managerBrief: null,

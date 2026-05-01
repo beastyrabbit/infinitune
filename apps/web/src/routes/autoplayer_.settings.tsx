@@ -1,4 +1,11 @@
 import {
+	ACE_DCW_DEFAULTS,
+	ACE_VAE_DEFAULT,
+	normalizeAceModel,
+	normalizeAceVaeCheckpoint,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
+import {
 	type AgentReasoningLevel,
 	DEFAULT_AGENT_REASONING_LEVELS,
 	getAgentReasoningSettingKey,
@@ -65,11 +72,6 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
-function normalizeAceModel(value: string | undefined | null): string {
-	const normalized = value?.trim() ?? "";
-	return normalized === "__default__" ? "" : normalized;
-}
-
 function normalizeProviderSetting(
 	value: string | undefined | null,
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
@@ -96,6 +98,20 @@ function SettingsPage() {
 	const [inferMethod, setInferMethod] = useState("ode");
 	const [aceThinking, setAceThinking] = useState(false);
 	const [aceAutoDuration, setAceAutoDuration] = useState(true);
+	const [aceDcwEnabled, setAceDcwEnabled] = useState<boolean>(
+		ACE_DCW_DEFAULTS.enabled,
+	);
+	const [aceDcwMode, setAceDcwMode] = useState<string>(ACE_DCW_DEFAULTS.mode);
+	const [aceDcwScaler, setAceDcwScaler] = useState(
+		String(ACE_DCW_DEFAULTS.scaler),
+	);
+	const [aceDcwHighScaler, setAceDcwHighScaler] = useState(
+		String(ACE_DCW_DEFAULTS.highScaler),
+	);
+	const [aceDcwWavelet, setAceDcwWavelet] = useState<string>(
+		ACE_DCW_DEFAULTS.wavelet,
+	);
+	const [aceVaeCheckpoint, setAceVaeCheckpoint] = useState(ACE_VAE_DEFAULT);
 
 	// Service URLs
 	const [ollamaUrl, setOllamaUrl] = useState("http://192.168.10.120:11434");
@@ -185,7 +201,15 @@ function SettingsPage() {
 					: settings.imageModel || DEFAULT_IMAGE_MODEL
 				: settings.imageModel || "",
 		);
-		setAceModel(normalizeAceModel(settings.aceModel));
+		setAceModel(
+			resolveAceModelSetting(
+				settings.aceModel,
+				settings.aceModel !== undefined,
+			),
+		);
+		setAceVaeCheckpoint(
+			normalizeAceVaeCheckpoint(settings.aceVaeCheckpoint || ACE_VAE_DEFAULT),
+		);
 		setPersonaProvider(
 			normalizeProviderSetting(
 				settings.personaProvider,
@@ -226,6 +250,39 @@ function SettingsPage() {
 			);
 			setAceThinking(activePlaylist.aceThinking ?? false);
 			setAceAutoDuration(activePlaylist.aceAutoDuration ?? true);
+			setAceDcwEnabled(
+				activePlaylist.aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled,
+			);
+			setAceDcwMode(activePlaylist.aceDcwMode || ACE_DCW_DEFAULTS.mode);
+			setAceDcwScaler(
+				activePlaylist.aceDcwScaler?.toString() ||
+					settings.aceDcwScaler ||
+					String(ACE_DCW_DEFAULTS.scaler),
+			);
+			setAceDcwHighScaler(
+				activePlaylist.aceDcwHighScaler?.toString() ||
+					settings.aceDcwHighScaler ||
+					String(ACE_DCW_DEFAULTS.highScaler),
+			);
+			setAceDcwWavelet(
+				activePlaylist.aceDcwWavelet ||
+					settings.aceDcwWavelet ||
+					ACE_DCW_DEFAULTS.wavelet,
+			);
+			setAceModel(
+				activePlaylist.aceModel !== null
+					? activePlaylist.aceModel
+					: resolveAceModelSetting(
+							settings.aceModel,
+							settings.aceModel !== undefined,
+						),
+			);
+			setAceVaeCheckpoint(
+				activePlaylist.aceVaeCheckpoint ||
+					normalizeAceVaeCheckpoint(
+						settings.aceVaeCheckpoint || ACE_VAE_DEFAULT,
+					),
+			);
 		} else {
 			setInferSteps(settings.aceInferenceSteps || "8");
 			setLmTemp(settings.aceLmTemperature || "0.85");
@@ -233,6 +290,17 @@ function SettingsPage() {
 			setInferMethod(settings.aceInferMethod || "ode");
 			setAceThinking(settings.aceThinking === "true");
 			setAceAutoDuration(settings.aceAutoDuration !== "false");
+			setAceDcwEnabled(
+				settings.aceDcwEnabled
+					? settings.aceDcwEnabled !== "false"
+					: ACE_DCW_DEFAULTS.enabled,
+			);
+			setAceDcwMode(settings.aceDcwMode || ACE_DCW_DEFAULTS.mode);
+			setAceDcwScaler(settings.aceDcwScaler || String(ACE_DCW_DEFAULTS.scaler));
+			setAceDcwHighScaler(
+				settings.aceDcwHighScaler || String(ACE_DCW_DEFAULTS.highScaler),
+			);
+			setAceDcwWavelet(settings.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet);
 		}
 	}, [settings, activePlaylist]);
 
@@ -412,6 +480,15 @@ function SettingsPage() {
 			setSetting({ key: "aceLmTemperature", value: lmTemp }),
 			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
 			setSetting({ key: "aceInferMethod", value: inferMethod }),
+			setSetting({ key: "aceDcwEnabled", value: String(aceDcwEnabled) }),
+			setSetting({ key: "aceDcwMode", value: aceDcwMode }),
+			setSetting({ key: "aceDcwScaler", value: aceDcwScaler }),
+			setSetting({ key: "aceDcwHighScaler", value: aceDcwHighScaler }),
+			setSetting({ key: "aceDcwWavelet", value: aceDcwWavelet }),
+			setSetting({
+				key: "aceVaeCheckpoint",
+				value: normalizeAceVaeCheckpoint(aceVaeCheckpoint),
+			}),
 			setSetting({ key: "aceThinking", value: String(aceThinking) }),
 			setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
 			...INFINITUNE_AGENT_IDS.map((agentId) =>
@@ -432,6 +509,17 @@ function SettingsPage() {
 					lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
 					lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 					inferMethod: inferMethod || undefined,
+					aceModel: normalizeAceModel(aceModel),
+					aceDcwEnabled,
+					aceDcwMode,
+					aceDcwScaler: aceDcwScaler
+						? Number.parseFloat(aceDcwScaler)
+						: undefined,
+					aceDcwHighScaler: aceDcwHighScaler
+						? Number.parseFloat(aceDcwHighScaler)
+						: undefined,
+					aceDcwWavelet: aceDcwWavelet || undefined,
+					aceVaeCheckpoint: normalizeAceVaeCheckpoint(aceVaeCheckpoint),
 					aceThinking,
 					aceAutoDuration,
 				}),
@@ -569,6 +657,8 @@ function SettingsPage() {
 								setImageModel={setImageModel}
 								aceModel={aceModel}
 								setAceModel={setAceModel}
+								aceVaeCheckpoint={aceVaeCheckpoint}
+								setAceVaeCheckpoint={setAceVaeCheckpoint}
 								personaProvider={personaProvider}
 								setPersonaProvider={(v) =>
 									setPersonaProvider(normalizeProviderSetting(v, textProvider))
@@ -604,6 +694,16 @@ function SettingsPage() {
 								setAceThinking={setAceThinking}
 								aceAutoDuration={aceAutoDuration}
 								setAceAutoDuration={setAceAutoDuration}
+								aceDcwEnabled={aceDcwEnabled}
+								setAceDcwEnabled={setAceDcwEnabled}
+								aceDcwMode={aceDcwMode}
+								setAceDcwMode={setAceDcwMode}
+								aceDcwScaler={aceDcwScaler}
+								setAceDcwScaler={setAceDcwScaler}
+								aceDcwHighScaler={aceDcwHighScaler}
+								setAceDcwHighScaler={setAceDcwHighScaler}
+								aceDcwWavelet={aceDcwWavelet}
+								setAceDcwWavelet={setAceDcwWavelet}
 								activePlaylist={!!activePlaylist}
 							/>
 						)}

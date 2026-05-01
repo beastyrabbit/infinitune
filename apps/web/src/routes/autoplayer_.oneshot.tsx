@@ -1,4 +1,10 @@
 import {
+	ACE_DCW_DEFAULTS,
+	ACE_VAE_DEFAULT,
+	normalizeAceVaeCheckpoint,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
+import {
 	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
@@ -117,6 +123,24 @@ function OneshotPage() {
 	const [lmTemp, setLmTemp] = useState("0.85");
 	const [lmCfg, setLmCfg] = useState("2.5");
 	const [inferMeth, setInferMeth] = useState("ode");
+	const aceModel = resolveAceModelSetting(
+		settings?.aceModel,
+		settings?.aceModel !== undefined,
+	);
+	const aceDcwEnabled = settings?.aceDcwEnabled
+		? settings.aceDcwEnabled !== "false"
+		: ACE_DCW_DEFAULTS.enabled;
+	const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
+	const aceDcwScaler = settings?.aceDcwScaler
+		? Number.parseFloat(settings.aceDcwScaler)
+		: ACE_DCW_DEFAULTS.scaler;
+	const aceDcwHighScaler = settings?.aceDcwHighScaler
+		? Number.parseFloat(settings.aceDcwHighScaler)
+		: ACE_DCW_DEFAULTS.highScaler;
+	const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+	const aceVaeCheckpoint = normalizeAceVaeCheckpoint(
+		settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,
+	);
 
 	const modelSetByUserOrSettings = useRef(false);
 
@@ -261,6 +285,13 @@ function OneshotPage() {
 				lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
 				lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
 				inferMethod: inferMeth,
+				aceModel,
+				aceDcwEnabled,
+				aceDcwMode,
+				aceDcwScaler,
+				aceDcwHighScaler,
+				aceDcwWavelet,
+				aceVaeCheckpoint,
 			});
 			setLocalPlaylistId(result.id);
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
@@ -283,6 +314,13 @@ function OneshotPage() {
 		lmTemp,
 		lmCfg,
 		inferMeth,
+		aceModel,
+		aceDcwEnabled,
+		aceDcwMode,
+		aceDcwScaler,
+		aceDcwHighScaler,
+		aceDcwWavelet,
+		aceVaeCheckpoint,
 		createPlaylist,
 		navigate,
 	]);

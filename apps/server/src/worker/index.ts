@@ -1,3 +1,4 @@
+import { resolveAceModelSetting } from "@infinitune/shared/ace-settings";
 import {
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -293,7 +294,10 @@ async function getSettings(): Promise<{
 		: personaProvider === textProvider
 			? textModel
 			: "";
-	const aceModel = all.aceModel?.trim();
+	const aceModel = resolveAceModelSetting(
+		all.aceModel,
+		all.aceModel !== undefined,
+	);
 
 	return {
 		textProvider,
@@ -305,7 +309,7 @@ async function getSettings(): Promise<{
 					? "inference-sh"
 					: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
-		aceModel: aceModel && aceModel !== "__default__" ? aceModel : undefined,
+		aceModel: aceModel || undefined,
 		personaProvider,
 		personaModel,
 	};

@@ -1,5 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+	ACE_KNOWN_MODELS,
+	ACE_QUALITY_DEFAULT_MODEL,
+	getAceModelKey,
+} from "@infinitune/shared/ace-settings";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Hono } from "hono";
@@ -349,41 +354,145 @@ app.get("/ollama-models", async (c) => {
 
 // ─── GET /ace-models ────────────────────────────────────────────────
 app.get("/ace-models", async (c) => {
+	const knownModels = ACE_KNOWN_MODELS.map((name) => ({
+		name,
+		displayName:
+			name === ACE_QUALITY_DEFAULT_MODEL ? `${name} (recommended)` : name,
+		is_default: false,
+		is_loaded: false,
+	}));
+
 	try {
 		const urls = await getServiceUrls();
-		const response = await fetch(`${urls.aceStepUrl}/v1/models`, {
+		const inventoryResponse = await fetch(
+			`${urls.aceStepUrl}/v1/model_inventory`,
+			{
+				signal: AbortSignal.timeout(10000),
+			},
+		);
+		const healthResponse = await fetch(`${urls.aceStepUrl}/health`, {
 			signal: AbortSignal.timeout(10000),
-		});
-		if (!response.ok) {
-			return c.json(
-				{ error: `ACE-Step returned ${response.status}`, models: [] },
-				502,
-			);
-		}
-		const data = (await response.json()) as {
-			data?: { id?: string; name?: string }[];
-			models?: { id?: string; name?: string }[];
-		};
+		}).catch(() => null);
+		const modelsResponse = await fetch(`${urls.aceStepUrl}/v1/models`, {
+			signal: AbortSignal.timeout(10000),
+		}).catch(() => null);
 
-		const rawModels = data.data || data.models || [];
-		const models = rawModels.map((m: { id?: string; name?: string }) => ({
-			name: m.id || m.name || "unknown",
-			is_default: rawModels.length === 1,
-		}));
+		const inventory = inventoryResponse.ok
+			? ((await inventoryResponse.json()) as {
+					data?: {
+						models?: {
+							name?: string;
+							is_default?: boolean;
+							is_loaded?: boolean;
+							supported_task_types?: string[];
+						}[];
+						default_model?: string;
+					};
+				})
+			: null;
+		const health =
+			healthResponse?.ok === true
+				? ((await healthResponse.json()) as {
+						data?: { loaded_model?: string };
+					})
+				: null;
+		const modelsData =
+			modelsResponse?.ok === true
+				? ((await modelsResponse.json()) as {
+						data?: { id?: string; name?: string }[];
+						models?: { id?: string; name?: string }[];
+						default_model?: string;
+					})
+				: null;
+
+		if (!inventory && !modelsData) {
+			return c.json({
+				error: `ACE-Step returned ${inventoryResponse.status}`,
+				models: knownModels,
+			});
+		}
+
+		const rawModels = modelsData?.data || modelsData?.models || [];
+		const inventoryModels = inventory?.data?.models || [];
+		const defaultModel =
+			inventory?.data?.default_model || modelsData?.default_model || undefined;
+		const loadedModel = health?.data?.loaded_model;
+		const seen = new Map<
+			string,
+			{
+				name: string;
+				displayName?: string;
+				is_default?: boolean;
+				is_loaded?: boolean;
+				supportedTaskTypes?: string[];
+			}
+		>();
+
+		for (const model of knownModels) {
+			seen.set(getAceModelKey(model.name), model);
+		}
+
+		for (const m of rawModels) {
+			const name = m.id || m.name || "unknown";
+			const key = getAceModelKey(name);
+			seen.set(key, {
+				...seen.get(key),
+				name,
+				displayName: m.name,
+				is_default: getAceModelKey(name) === getAceModelKey(defaultModel),
+				is_loaded: getAceModelKey(name) === getAceModelKey(loadedModel),
+			});
+		}
+
+		for (const model of inventoryModels) {
+			if (!model.name) continue;
+			const key = getAceModelKey(model.name);
+			seen.set(key, {
+				...seen.get(key),
+				name: model.name,
+				displayName: model.name,
+				is_default:
+					model.is_default ??
+					getAceModelKey(model.name) === getAceModelKey(defaultModel),
+				is_loaded:
+					model.is_loaded ??
+					getAceModelKey(model.name) === getAceModelKey(loadedModel),
+				supportedTaskTypes: model.supported_task_types,
+			});
+		}
+
+		if (loadedModel) {
+			const loadedKey = getAceModelKey(loadedModel);
+			const existing = seen.get(loadedKey);
+			seen.set(loadedKey, {
+				...existing,
+				name: existing?.name || loadedModel,
+				is_loaded: true,
+			});
+		}
+
+		if (defaultModel) {
+			const defaultKey = getAceModelKey(defaultModel);
+			const existing = seen.get(defaultKey);
+			seen.set(defaultKey, {
+				...existing,
+				name: existing?.name || defaultModel,
+				is_default: true,
+			});
+		}
+
+		const models = Array.from(seen.values());
 
 		return c.json({ models });
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to fetch ACE-Step models");
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to fetch ACE-Step models",
-				models: [],
-			},
-			500,
-		);
+		return c.json({
+			error:
+				error instanceof Error
+					? error.message
+					: "Failed to fetch ACE-Step models",
+			models: knownModels,
+		});
 	}
 });
 
@@ -1156,11 +1265,17 @@ app.post("/test-connection", async (c) => {
 					error: `ACE-Step returned ${response.status}`,
 				});
 			}
-			const data = (await response.json()) as { data?: unknown[] };
-			const models = data.data || [];
+			const data = (await response.json()) as {
+				data?: unknown[];
+				models?: unknown[];
+				default_model?: string;
+			};
+			const models = data.data || data.models || [];
 			return c.json({
 				ok: true,
-				message: `Connected — ${models.length} model(s)`,
+				message: `Connected — ${models.length} model(s)${
+					data.default_model ? `, default ${data.default_model}` : ""
+				}`,
 			});
 		}
 

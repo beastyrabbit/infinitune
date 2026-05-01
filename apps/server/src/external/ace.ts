@@ -1,3 +1,7 @@
+import {
+	ACE_DCW_DEFAULTS,
+	normalizeAceModel,
+} from "@infinitune/shared/ace-settings";
 import { logger } from "../logger";
 import { getServiceUrls } from "./service-urls";
 
@@ -86,6 +90,11 @@ export async function submitToAce(options: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceDcwEnabled?: boolean;
+	aceDcwMode?: string;
+	aceDcwScaler?: number;
+	aceDcwHighScaler?: number;
+	aceDcwWavelet?: string;
 	aceThinking?: boolean;
 	aceAutoDuration?: boolean;
 	signal?: AbortSignal;
@@ -104,6 +113,11 @@ export async function submitToAce(options: {
 		lmTemperature,
 		lmCfgScale,
 		inferMethod,
+		aceDcwEnabled,
+		aceDcwMode,
+		aceDcwScaler,
+		aceDcwHighScaler,
+		aceDcwWavelet,
 		aceThinking,
 		aceAutoDuration,
 		signal,
@@ -141,9 +155,23 @@ export async function submitToAce(options: {
 		audio_format: "mp3",
 	};
 
-	const normalizedAceModel = aceModel?.trim();
-	if (normalizedAceModel && normalizedAceModel !== "__default__") {
+	const normalizedAceModel = normalizeAceModel(aceModel);
+	if (normalizedAceModel) {
 		payload.model = normalizedAceModel;
+	}
+
+	const hasDcwSettings =
+		aceDcwEnabled !== undefined ||
+		aceDcwMode !== undefined ||
+		aceDcwScaler !== undefined ||
+		aceDcwHighScaler !== undefined ||
+		aceDcwWavelet !== undefined;
+	if (hasDcwSettings) {
+		payload.dcw_enabled = aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled;
+		payload.dcw_mode = aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		payload.dcw_scaler = aceDcwScaler ?? ACE_DCW_DEFAULTS.scaler;
+		payload.dcw_high_scaler = aceDcwHighScaler ?? ACE_DCW_DEFAULTS.highScaler;
+		payload.dcw_wavelet = aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
 	}
 
 	const response = await fetch(`${aceUrl}/release_task`, {

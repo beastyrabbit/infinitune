@@ -80,7 +80,7 @@ Live dashboard showing LLM, image, and audio pipeline status with active/waiting
 <summary><strong>More screenshots</strong></summary>
 
 #### Settings
-Configure service endpoints (Ollama, ACE-Step, ComfyUI), API keys, and model preferences.
+Configure service endpoints (Ollama, ACE-Step, ComfyUI), API keys, model preferences, and ACE-Step audio defaults.
 
 <div align="center">
 <img src="docs/screenshots/settings-page.png" alt="Settings page" width="100%">
@@ -235,6 +235,8 @@ Infinitune requires external AI services running on your network:
 | **ComfyUI** | Cover art generation | `:8188` |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
 | **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
+
+ACE-Step defaults are quality-biased for v0.1.7+: Infinitune prefers `acestep-v15-xl-turbo` for new playlists, with turbo-style `8` inference steps and DCW enabled (`double`, `0.05`, `0.02`, `haar`). XL models need substantially more VRAM; choose server default or `acestep-v15-turbo` in Settings on smaller hosts. Alternate VAEs are ACE service-level configuration; set `ACESTEP_VAE_CHECKPOINT=scragvae` or a custom checkpoint/path on the ACE-Step server to match the app setting.
 
 ### Environment Variables
 

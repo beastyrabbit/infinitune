@@ -1,4 +1,11 @@
 import {
+	ACE_KNOWN_MODELS,
+	ACE_QUALITY_DEFAULT_MODEL,
+	ACE_VAE_OPTIONS,
+	getAceModelKey,
+	isAceXlModel,
+} from "@infinitune/shared/ace-settings";
+import {
 	AGENT_REASONING_LABELS,
 	AGENT_REASONING_LEVELS,
 	type AgentReasoningLevel,
@@ -25,6 +32,8 @@ export interface ModelOption {
 	name: string;
 	displayName?: string;
 	is_default?: boolean;
+	is_loaded?: boolean;
+	supportedTaskTypes?: string[];
 	vision?: boolean;
 	type?: string;
 	inputModalities?: string[];
@@ -49,6 +58,8 @@ export interface ModelsTabProps {
 	setImageModel: (v: string) => void;
 	aceModel: string;
 	setAceModel: (v: string) => void;
+	aceVaeCheckpoint: string;
+	setAceVaeCheckpoint: (v: string) => void;
 	personaProvider: string;
 	setPersonaProvider: (v: string) => void;
 	personaModel: string;
@@ -244,6 +255,8 @@ export function SettingsTabModels({
 	setImageModel,
 	aceModel,
 	setAceModel,
+	aceVaeCheckpoint,
+	setAceVaeCheckpoint,
 	personaProvider,
 	setPersonaProvider,
 	personaModel,
@@ -256,6 +269,32 @@ export function SettingsTabModels({
 	codexModels,
 	codexLoading,
 }: ModelsTabProps) {
+	const aceModelOptions = useMemo(() => {
+		const byName = new Map<string, ModelOption>();
+		for (const name of ACE_KNOWN_MODELS) {
+			byName.set(getAceModelKey(name), {
+				name,
+				displayName:
+					name === ACE_QUALITY_DEFAULT_MODEL ? `${name} (recommended)` : name,
+			});
+		}
+		for (const model of aceModels) {
+			const key = getAceModelKey(model.name);
+			byName.set(key, {
+				...byName.get(key),
+				...model,
+			});
+		}
+		return Array.from(byName.values());
+	}, [aceModels]);
+	const loadedAceModels = aceModelOptions.filter((model) => model.is_loaded);
+	const selectedAceModelValue =
+		aceModelOptions.find(
+			(model) => getAceModelKey(model.name) === getAceModelKey(aceModel),
+		)?.name ||
+		aceModel ||
+		"__default__";
+
 	const codexTextModels = codexModels.filter(
 		(m) => m.type === "text" || m.inputModalities?.includes("text"),
 	);
@@ -408,44 +447,99 @@ export function SettingsTabModels({
 
 			{/* ACE-STEP MODEL */}
 			<SettingsPanel title="ACE-STEP — AUDIO GENERATION">
-				<SettingsField label="Model">
-					{aceModels.length > 0 ? (
-						<Select
-							value={aceModel || "__default__"}
-							onValueChange={(value) =>
-								setAceModel(value === "__default__" ? "" : value)
-							}
-						>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="DEFAULT" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+				<SettingsField
+					label="Model"
+					hint="XL TURBO IS THE QUALITY DEFAULT; USE SERVER DEFAULT FOR LOWER VRAM HOSTS"
+				>
+					<Select
+						value={selectedAceModelValue}
+						onValueChange={(value) =>
+							setAceModel(value === "__default__" ? "" : value)
+						}
+					>
+						<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+							<SelectValue placeholder="ACESTEP-V15-XL-TURBO" />
+						</SelectTrigger>
+						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+							<SelectItem
+								value="__default__"
+								className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+							>
+								SERVER DEFAULT
+							</SelectItem>
+							{aceModelOptions.map((m) => (
 								<SelectItem
-									value="__default__"
+									key={m.name}
+									value={m.name}
 									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
 								>
-									DEFAULT
+									{m.name.toUpperCase()}
+									{getAceModelKey(m.name) === ACE_QUALITY_DEFAULT_MODEL
+										? " (RECOMMENDED)"
+										: ""}
+									{m.is_loaded ? " (LOADED)" : ""}
+									{m.is_default ? " (SERVER DEFAULT)" : ""}
+									{isAceXlModel(m.name) ? " — XL" : ""}
 								</SelectItem>
-								{aceModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										{m.name.toUpperCase()}
-										{m.is_default ? " (DEFAULT)" : ""}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : (
-						<Input
-							className={inputClass}
-							placeholder="ACESTEP-V15-TURBO"
-							value={aceModel}
-							onChange={(e) => setAceModel(e.target.value)}
-						/>
+							))}
+						</SelectContent>
+					</Select>
+					{loadedAceModels.length > 0 && (
+						<p className="mt-2 text-[10px] font-bold uppercase text-green-400">
+							API LOADED:{" "}
+							{loadedAceModels
+								.map((model) => model.name.toUpperCase())
+								.join(", ")}
+						</p>
 					)}
+				</SettingsField>
+
+				<SettingsField
+					label="VAE Checkpoint"
+					hint="SERVICE-LEVEL ACE SETTING; SET ACESTEP_VAE_CHECKPOINT TO MATCH CUSTOM SERVERS"
+				>
+					<Select
+						value={
+							ACE_VAE_OPTIONS.some(
+								(option) => option.value === aceVaeCheckpoint,
+							)
+								? aceVaeCheckpoint
+								: "__custom__"
+						}
+						onValueChange={(value) => {
+							if (value !== "__custom__") setAceVaeCheckpoint(value);
+						}}
+					>
+						<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+							<SelectValue placeholder="OFFICIAL" />
+						</SelectTrigger>
+						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+							{ACE_VAE_OPTIONS.map((option) => (
+								<SelectItem
+									key={option.value}
+									value={option.value}
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									{option.label}
+								</SelectItem>
+							))}
+							<SelectItem
+								value="__custom__"
+								className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+							>
+								CUSTOM / PATH
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				</SettingsField>
+
+				<SettingsField label="Custom VAE">
+					<Input
+						className={inputClass}
+						placeholder="official"
+						value={aceVaeCheckpoint}
+						onChange={(e) => setAceVaeCheckpoint(e.target.value)}
+					/>
 				</SettingsField>
 			</SettingsPanel>
 

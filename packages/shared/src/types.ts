@@ -195,6 +195,13 @@ export interface Playlist {
 	lmTemperature: number | null;
 	lmCfgScale: number | null;
 	inferMethod: string | null;
+	aceModel: string | null;
+	aceDcwEnabled: boolean | null;
+	aceDcwMode: string | null;
+	aceDcwScaler: number | null;
+	aceDcwHighScaler: number | null;
+	aceDcwWavelet: string | null;
+	aceVaeCheckpoint: string | null;
 	currentOrderIndex: number | null;
 	lastSeenAt: number | null;
 	promptEpoch: number | null;

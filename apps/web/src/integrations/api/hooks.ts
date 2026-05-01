@@ -98,6 +98,8 @@ export type AutoplayerModelOption = {
 	name: string;
 	displayName?: string;
 	is_default?: boolean;
+	is_loaded?: boolean;
+	supportedTaskTypes?: string[];
 	inputModalities?: string[];
 	type?: string;
 	vision?: boolean;
@@ -200,6 +202,8 @@ function extractAutoplayerModelOptions(
 			name?: unknown;
 			displayName?: unknown;
 			is_default?: unknown;
+			is_loaded?: unknown;
+			supportedTaskTypes?: unknown;
 			inputModalities?: unknown;
 			type?: unknown;
 			vision?: unknown;
@@ -216,6 +220,15 @@ function extractAutoplayerModelOptions(
 					typeof typedModel.is_default === "boolean"
 						? typedModel.is_default
 						: undefined,
+				is_loaded:
+					typeof typedModel.is_loaded === "boolean"
+						? typedModel.is_loaded
+						: undefined,
+				supportedTaskTypes: Array.isArray(typedModel.supportedTaskTypes)
+					? typedModel.supportedTaskTypes.flatMap((item) =>
+							typeof item === "string" ? [item] : [],
+						)
+					: undefined,
 				inputModalities: Array.isArray(typedModel.inputModalities)
 					? typedModel.inputModalities.flatMap((item) =>
 							typeof item === "string" ? [item] : [],
@@ -670,6 +683,13 @@ export const useCreatePlaylist = createMutation<
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		aceModel?: string;
+		aceDcwEnabled?: boolean;
+		aceDcwMode?: string;
+		aceDcwScaler?: number;
+		aceDcwHighScaler?: number;
+		aceDcwWavelet?: string;
+		aceVaeCheckpoint?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
 		initialDirectorPlan?: boolean;
