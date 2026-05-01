@@ -20,7 +20,7 @@ import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
 import { getWorkerInspectObserver } from "./runtime/inspection";
-import type { ProviderCapability } from "./runtime/types";
+import type { ProviderCapability, ProviderTaskPorts } from "./runtime/types";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -30,6 +30,27 @@ export type SongWorkerStatus =
 	| "errored"
 	| "cancelled";
 
+export interface SongWorkerSettings {
+	textProvider: string;
+	textModel: string;
+	imageProvider: string;
+	imageModel?: string;
+	aceModel?: string;
+	aceInferenceSteps?: number;
+	aceLmTemperature?: number;
+	aceLmCfgScale?: number;
+	aceInferMethod?: string;
+	aceDcwEnabled: boolean;
+	aceDcwMode: string;
+	aceDcwScaler: number;
+	aceDcwHighScaler: number;
+	aceDcwWavelet: string;
+	aceThinking: boolean;
+	aceAutoDuration: boolean;
+	personaProvider: string;
+	personaModel: string;
+}
+
 export interface SongWorkerContext {
 	queues: EndpointQueues;
 	playlist: PlaylistWire;
@@ -37,20 +58,7 @@ export interface SongWorkerContext {
 	recentDescriptions: string[];
 	getPlaylistActive: () => Promise<boolean>;
 	getCurrentEpoch?: () => number;
-	getSettings: () => Promise<{
-		textProvider: string;
-		textModel: string;
-		imageProvider: string;
-		imageModel?: string;
-		aceModel?: string;
-		aceDcwEnabled: boolean;
-		aceDcwMode: string;
-		aceDcwScaler: number;
-		aceDcwHighScaler: number;
-		aceDcwWavelet: string;
-		personaProvider: string;
-		personaModel: string;
-	}>;
+	getSettings: () => Promise<SongWorkerSettings>;
 	capabilities: ProviderCapability;
 }
 
@@ -143,6 +151,43 @@ function needsManagerRefresh(
 		planStartOrder === null ||
 		pastPlannedWindow
 	);
+}
+
+export function buildAceSubmitInput({
+	song,
+	playlist,
+	settings,
+	signal,
+}: {
+	song: SongWire;
+	playlist: PlaylistWire;
+	settings: SongWorkerSettings;
+	signal?: AbortSignal;
+}): ProviderTaskPorts["submitAudio"] {
+	const playlistAceModel = playlist.aceModel;
+	return {
+		lyrics: song.lyrics || "",
+		caption: song.caption || "",
+		vocalStyle: song.vocalStyle ?? undefined,
+		bpm: song.bpm || 120,
+		keyScale: song.keyScale || "C major",
+		timeSignature: song.timeSignature || "4/4",
+		audioDuration: song.audioDuration || 240,
+		aceModel: playlistAceModel === null ? settings.aceModel : playlistAceModel,
+		inferenceSteps: playlist.inferenceSteps ?? settings.aceInferenceSteps,
+		vocalLanguage: toAceVocalLanguageCode(playlist.lyricsLanguage),
+		lmTemperature: playlist.lmTemperature ?? settings.aceLmTemperature,
+		lmCfgScale: playlist.lmCfgScale ?? settings.aceLmCfgScale,
+		inferMethod: playlist.inferMethod ?? settings.aceInferMethod,
+		aceDcwEnabled: playlist.aceDcwEnabled ?? settings.aceDcwEnabled,
+		aceDcwMode: playlist.aceDcwMode ?? settings.aceDcwMode,
+		aceDcwScaler: playlist.aceDcwScaler ?? settings.aceDcwScaler,
+		aceDcwHighScaler: playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
+		aceDcwWavelet: playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
+		aceThinking: playlist.aceThinking ?? settings.aceThinking,
+		aceAutoDuration: playlist.aceAutoDuration ?? settings.aceAutoDuration,
+		signal,
+	};
 }
 
 // ─── SongWorker ──────────────────────────────────────────────────────
@@ -977,39 +1022,14 @@ export class SongWorker {
 					endpoint: "ace-step",
 					execute: async (signal) => {
 						const settings = await this.ctx.getSettings();
-						const playlistAceModel = this.ctx.playlist.aceModel;
-						const result = await this.ctx.capabilities.submitAudio({
-							lyrics: this.song.lyrics || "",
-							caption: this.song.caption || "",
-							vocalStyle: this.song.vocalStyle ?? undefined,
-							bpm: this.song.bpm || 120,
-							keyScale: this.song.keyScale || "C major",
-							timeSignature: this.song.timeSignature || "4/4",
-							audioDuration: this.song.audioDuration || 240,
-							aceModel:
-								playlistAceModel === null
-									? settings.aceModel
-									: playlistAceModel,
-							inferenceSteps: this.ctx.playlist.inferenceSteps ?? undefined,
-							vocalLanguage: toAceVocalLanguageCode(
-								this.ctx.playlist.lyricsLanguage,
-							),
-							lmTemperature: this.ctx.playlist.lmTemperature ?? undefined,
-							lmCfgScale: this.ctx.playlist.lmCfgScale ?? undefined,
-							inferMethod: this.ctx.playlist.inferMethod ?? undefined,
-							aceDcwEnabled:
-								this.ctx.playlist.aceDcwEnabled ?? settings.aceDcwEnabled,
-							aceDcwMode: this.ctx.playlist.aceDcwMode ?? settings.aceDcwMode,
-							aceDcwScaler:
-								this.ctx.playlist.aceDcwScaler ?? settings.aceDcwScaler,
-							aceDcwHighScaler:
-								this.ctx.playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
-							aceDcwWavelet:
-								this.ctx.playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
-							aceThinking: this.ctx.playlist.aceThinking ?? undefined,
-							aceAutoDuration: this.ctx.playlist.aceAutoDuration ?? undefined,
-							signal,
-						});
+						const result = await this.ctx.capabilities.submitAudio(
+							buildAceSubmitInput({
+								song: this.song,
+								playlist: this.ctx.playlist,
+								settings,
+								signal,
+							}),
+						);
 
 						if (signal.aborted) throw new Error("Cancelled");
 
