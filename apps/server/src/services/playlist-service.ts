@@ -1,7 +1,4 @@
 import {
-	ACE_DCW_DEFAULTS,
-	ACE_QUALITY_DEFAULT_MODEL,
-	ACE_VAE_DEFAULT,
 	normalizeAceModel,
 	normalizeAceVaeCheckpoint,
 } from "@infinitune/shared/ace-settings";
@@ -229,7 +226,7 @@ export async function updateParams(
 			patch[key] =
 				typeof params[key] === "string"
 					? normalizeAceVaeCheckpoint(params[key])
-					: ACE_VAE_DEFAULT;
+					: null;
 			continue;
 		}
 		patch[key] = params[key];
@@ -297,13 +294,13 @@ export async function resetDefaults(id: string) {
 			lmTemperature: null,
 			lmCfgScale: null,
 			inferMethod: null,
-			aceModel: ACE_QUALITY_DEFAULT_MODEL,
-			aceDcwEnabled: ACE_DCW_DEFAULTS.enabled,
-			aceDcwMode: ACE_DCW_DEFAULTS.mode,
-			aceDcwScaler: ACE_DCW_DEFAULTS.scaler,
-			aceDcwHighScaler: ACE_DCW_DEFAULTS.highScaler,
-			aceDcwWavelet: ACE_DCW_DEFAULTS.wavelet,
-			aceVaeCheckpoint: ACE_VAE_DEFAULT,
+			aceModel: null,
+			aceDcwEnabled: null,
+			aceDcwMode: null,
+			aceDcwScaler: null,
+			aceDcwHighScaler: null,
+			aceDcwWavelet: null,
+			aceVaeCheckpoint: null,
 			aceThinking: null,
 			aceAutoDuration: null,
 			managerBrief: null,

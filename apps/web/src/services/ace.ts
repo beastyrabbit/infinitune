@@ -15,6 +15,15 @@ export interface AcePollResult {
 	result?: unknown;
 }
 
+async function assertOk(response: Response, label: string): Promise<void> {
+	if (!response.ok) {
+		const text = await response.text().catch(() => "");
+		throw new Error(
+			`${label} failed (HTTP ${response.status}): ${text.slice(0, 200)}`,
+		);
+	}
+}
+
 export async function submitToAce(options: {
 	lyrics: string;
 	caption: string;
@@ -120,6 +129,8 @@ export async function submitToAce(options: {
 		signal,
 	});
 
+	await assertOk(response, "ACE-Step submit");
+
 	const data = await response.json();
 	const taskId = data.data?.task_id;
 	if (!taskId) {
@@ -142,6 +153,8 @@ export async function batchPollAce(
 		body: JSON.stringify({ task_id_list: taskIds }),
 		signal,
 	});
+
+	await assertOk(response, "ACE-Step batch poll");
 
 	const data = await response.json();
 	const results = data.data;
@@ -215,6 +228,8 @@ export async function pollAce(
 		body: JSON.stringify({ task_id_list: [taskId] }),
 		signal,
 	});
+
+	await assertOk(response, "ACE-Step poll");
 
 	const data = await response.json();
 	const results = data.data;

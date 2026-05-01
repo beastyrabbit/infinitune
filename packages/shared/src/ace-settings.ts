@@ -29,10 +29,50 @@ export const ACE_VAE_OPTIONS = [
 	{ value: "scragvae", label: "SCRAGVAE" },
 ] as const;
 
-export function normalizeAceModel(value: string | null | undefined): string {
+const ACE_MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+
+function normalizeAceModelValue(value: string | null | undefined): string {
 	const normalized = value?.trim() ?? "";
 	const lower = normalized.toLowerCase();
 	return normalized === "__default__" || lower === "default" ? "" : normalized;
+}
+
+function isSafeAceModelId(value: string): boolean {
+	return (
+		value.length <= 128 &&
+		ACE_MODEL_ID_PATTERN.test(value) &&
+		!value.includes("..") &&
+		!value.includes("//") &&
+		!value.includes("\\") &&
+		!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
+	);
+}
+
+export function isValidAceModel(value: string | null | undefined): boolean {
+	const normalized = normalizeAceModelValue(value);
+	return normalized === "" || isSafeAceModelId(normalized);
+}
+
+export function normalizeAceModel(value: string | null | undefined): string {
+	const normalized = normalizeAceModelValue(value);
+	return normalized && isSafeAceModelId(normalized) ? normalized : "";
+}
+
+export function normalizeAceDcwScaler(
+	value: string | number | null | undefined,
+	fallback: number,
+): number {
+	const normalizedFallback = Number.isFinite(fallback)
+		? Math.min(1, Math.max(0, fallback))
+		: 0;
+	const parsed =
+		typeof value === "number"
+			? value
+			: value?.trim()
+				? Number(value.trim())
+				: Number.NaN;
+	if (!Number.isFinite(parsed)) return normalizedFallback;
+	return Math.min(1, Math.max(0, parsed));
 }
 
 export function getAceModelKey(value: string | null | undefined): string {

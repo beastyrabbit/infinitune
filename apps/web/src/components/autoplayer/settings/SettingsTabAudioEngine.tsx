@@ -59,6 +59,7 @@ function ToggleButtons<T>({
 				<button
 					key={option.label}
 					type="button"
+					aria-pressed={value === option.value}
 					className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
 						i > 0 ? "border-l-0" : ""
 					} ${

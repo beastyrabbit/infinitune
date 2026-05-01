@@ -1,4 +1,8 @@
-import { resolveAceModelSetting } from "@infinitune/shared/ace-settings";
+import {
+	ACE_DCW_DEFAULTS,
+	normalizeAceDcwScaler,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
 import {
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -276,6 +280,11 @@ async function getSettings(): Promise<{
 	imageProvider: string;
 	imageModel?: string;
 	aceModel?: string;
+	aceDcwEnabled: boolean;
+	aceDcwMode: string;
+	aceDcwScaler: number;
+	aceDcwHighScaler: number;
+	aceDcwWavelet: string;
 	personaProvider: string;
 	personaModel: string;
 }> {
@@ -298,6 +307,14 @@ async function getSettings(): Promise<{
 		all.aceModel,
 		all.aceModel !== undefined,
 	);
+	const aceDcwScaler = normalizeAceDcwScaler(
+		all.aceDcwScaler,
+		ACE_DCW_DEFAULTS.scaler,
+	);
+	const aceDcwHighScaler = normalizeAceDcwScaler(
+		all.aceDcwHighScaler,
+		ACE_DCW_DEFAULTS.highScaler,
+	);
 
 	return {
 		textProvider,
@@ -310,6 +327,13 @@ async function getSettings(): Promise<{
 					: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
 		aceModel: aceModel || undefined,
+		aceDcwEnabled: all.aceDcwEnabled
+			? all.aceDcwEnabled !== "false"
+			: ACE_DCW_DEFAULTS.enabled,
+		aceDcwMode: all.aceDcwMode || ACE_DCW_DEFAULTS.mode,
+		aceDcwScaler,
+		aceDcwHighScaler,
+		aceDcwWavelet: all.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet,
 		personaProvider,
 		personaModel,
 	};

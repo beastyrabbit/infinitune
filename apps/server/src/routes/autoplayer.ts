@@ -54,6 +54,44 @@ interface CodexModelResponse {
 
 type AutoplayerProvider = LlmProvider;
 
+interface AceModelInventoryResponse {
+	data?: {
+		models?: {
+			name?: string;
+			is_default?: boolean;
+			is_loaded?: boolean;
+			supported_task_types?: string[];
+		}[];
+		default_model?: string;
+	};
+}
+
+interface AceHealthResponse {
+	data?: { loaded_model?: string };
+}
+
+interface AceModelsResponse {
+	data?: { id?: string; name?: string }[];
+	models?: { id?: string; name?: string }[];
+	default_model?: string;
+}
+
+async function parseAceJson<T>(
+	response: Response | null,
+	source: string,
+): Promise<T | null> {
+	if (response?.ok !== true) return null;
+	try {
+		return (await response.json()) as T;
+	} catch (error) {
+		logger.warn(
+			{ err: error, source },
+			"Failed to parse ACE-Step model response",
+		);
+		return null;
+	}
+}
+
 interface SourceSong {
 	title: string;
 	artistName: string;
@@ -364,50 +402,31 @@ app.get("/ace-models", async (c) => {
 
 	try {
 		const urls = await getServiceUrls();
-		const inventoryResponse = await fetch(
-			`${urls.aceStepUrl}/v1/model_inventory`,
-			{
-				signal: AbortSignal.timeout(10000),
-			},
-		);
-		const healthResponse = await fetch(`${urls.aceStepUrl}/health`, {
-			signal: AbortSignal.timeout(10000),
-		}).catch(() => null);
-		const modelsResponse = await fetch(`${urls.aceStepUrl}/v1/models`, {
-			signal: AbortSignal.timeout(10000),
-		}).catch(() => null);
+		const [inventoryResponse, healthResponse, modelsResponse] =
+			await Promise.all([
+				fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+				fetch(`${urls.aceStepUrl}/health`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+				fetch(`${urls.aceStepUrl}/v1/models`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+			]);
 
-		const inventory = inventoryResponse.ok
-			? ((await inventoryResponse.json()) as {
-					data?: {
-						models?: {
-							name?: string;
-							is_default?: boolean;
-							is_loaded?: boolean;
-							supported_task_types?: string[];
-						}[];
-						default_model?: string;
-					};
-				})
-			: null;
-		const health =
-			healthResponse?.ok === true
-				? ((await healthResponse.json()) as {
-						data?: { loaded_model?: string };
-					})
-				: null;
-		const modelsData =
-			modelsResponse?.ok === true
-				? ((await modelsResponse.json()) as {
-						data?: { id?: string; name?: string }[];
-						models?: { id?: string; name?: string }[];
-						default_model?: string;
-					})
-				: null;
+		const [inventory, health, modelsData] = await Promise.all([
+			parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
+			parseAceJson<AceHealthResponse>(healthResponse, "health"),
+			parseAceJson<AceModelsResponse>(modelsResponse, "models"),
+		]);
 
 		if (!inventory && !modelsData) {
 			return c.json({
-				error: `ACE-Step returned ${inventoryResponse.status}`,
+				error: inventoryResponse
+					? `ACE-Step returned ${inventoryResponse.status}`
+					: "ACE-Step model APIs unavailable",
+				available: false,
 				models: knownModels,
 			});
 		}
@@ -483,16 +502,20 @@ app.get("/ace-models", async (c) => {
 
 		const models = Array.from(seen.values());
 
-		return c.json({ models });
+		return c.json({ available: true, models });
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to fetch ACE-Step models");
-		return c.json({
-			error:
-				error instanceof Error
-					? error.message
-					: "Failed to fetch ACE-Step models",
-			models: knownModels,
-		});
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to fetch ACE-Step models",
+				available: false,
+				models: knownModels,
+			},
+			502,
+		);
 	}
 });
 
@@ -1252,30 +1275,54 @@ app.post("/test-connection", async (c) => {
 		}
 
 		if (provider === "ace-step") {
-			const response = await fetch(`${urls.aceStepUrl}/v1/models`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) {
+			const [inventoryResponse, healthResponse, modelsResponse] =
+				await Promise.all([
+					fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+					fetch(`${urls.aceStepUrl}/health`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+					fetch(`${urls.aceStepUrl}/v1/models`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+				]);
+			const [inventory, health, modelsData] = await Promise.all([
+				parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
+				parseAceJson<AceHealthResponse>(healthResponse, "health"),
+				parseAceJson<AceModelsResponse>(modelsResponse, "models"),
+			]);
+
+			if (!inventory && !health && !modelsData) {
+				const failedResponse =
+					inventoryResponse || healthResponse || modelsResponse;
 				logger.warn(
-					{ provider: "ace-step", status: response.status },
+					{ provider: "ace-step", status: failedResponse?.status },
 					"Connection test failed",
 				);
 				return c.json({
 					ok: false,
-					error: `ACE-Step returned ${response.status}`,
+					error: failedResponse
+						? `ACE-Step returned ${failedResponse.status}`
+						: "ACE-Step unavailable",
 				});
 			}
-			const data = (await response.json()) as {
-				data?: unknown[];
-				models?: unknown[];
-				default_model?: string;
-			};
-			const models = data.data || data.models || [];
+
+			const rawModels = modelsData?.data || modelsData?.models || [];
+			const inventoryModels = inventory?.data?.models || [];
+			const loadedModel = health?.data?.loaded_model;
+			const defaultModel =
+				inventory?.data?.default_model || modelsData?.default_model;
+			const modelCount = Math.max(
+				rawModels.length,
+				inventoryModels.length,
+				loadedModel ? 1 : 0,
+			);
 			return c.json({
 				ok: true,
-				message: `Connected — ${models.length} model(s)${
-					data.default_model ? `, default ${data.default_model}` : ""
-				}`,
+				message: `Connected — ${modelCount} model(s)${
+					defaultModel ? `, default ${defaultModel}` : ""
+				}${loadedModel ? `, loaded ${loadedModel}` : ""}`,
 			});
 		}
 

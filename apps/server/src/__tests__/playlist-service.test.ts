@@ -199,6 +199,37 @@ describe("playlist-service", () => {
 			expect(updated.aceDcwWavelet).toBe("haar");
 			expect(updated.aceVaeCheckpoint).toBe("scragvae");
 		});
+
+		it("clears ACE playlist overrides when resetting defaults", async () => {
+			const pl = await playlistService.create({
+				name: "ACE Reset",
+				prompt: "test",
+				llmProvider: "openrouter",
+				llmModel: "gpt-4",
+				aceModel: "acestep-v15-xl-turbo",
+				aceDcwEnabled: false,
+				aceDcwMode: "high",
+				aceDcwScaler: 0.1,
+				aceDcwHighScaler: 0.04,
+				aceDcwWavelet: "haar",
+				aceVaeCheckpoint: "scragvae",
+			});
+
+			const db = getTestDb();
+			await playlistService.resetDefaults(pl.id);
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+
+			expect(updated.aceModel).toBeNull();
+			expect(updated.aceDcwEnabled).toBeNull();
+			expect(updated.aceDcwMode).toBeNull();
+			expect(updated.aceDcwScaler).toBeNull();
+			expect(updated.aceDcwHighScaler).toBeNull();
+			expect(updated.aceDcwWavelet).toBeNull();
+			expect(updated.aceVaeCheckpoint).toBeNull();
+		});
 	});
 
 	// ─── updateStatus ──────────────────────────────────────────────

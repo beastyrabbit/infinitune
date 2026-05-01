@@ -1,6 +1,7 @@
 import {
 	ACE_DCW_DEFAULTS,
 	ACE_VAE_DEFAULT,
+	normalizeAceDcwScaler,
 	normalizeAceModel,
 	normalizeAceVaeCheckpoint,
 	resolveAceModelSetting,
@@ -77,6 +78,17 @@ function normalizeProviderSetting(
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
 ): LlmProvider {
 	return normalizeLlmProvider(value, fallback);
+}
+
+function parseBooleanSetting(
+	value: string | undefined | null,
+	fallback: boolean,
+): boolean {
+	return value ? value !== "false" : fallback;
+}
+
+function normalizeDcwScalerInput(value: string, fallback: number): string {
+	return String(normalizeAceDcwScaler(value, fallback));
 }
 
 function SettingsPage() {
@@ -228,6 +240,21 @@ function SettingsPage() {
 				]),
 			) as Record<InfinituneAgentId, AgentReasoningLevel>,
 		);
+		const globalAceDcwEnabled = parseBooleanSetting(
+			settings.aceDcwEnabled,
+			ACE_DCW_DEFAULTS.enabled,
+		);
+		const globalAceDcwMode = settings.aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		const globalAceDcwScaler = normalizeDcwScalerInput(
+			settings.aceDcwScaler || "",
+			ACE_DCW_DEFAULTS.scaler,
+		);
+		const globalAceDcwHighScaler = normalizeDcwScalerInput(
+			settings.aceDcwHighScaler || "",
+			ACE_DCW_DEFAULTS.highScaler,
+		);
+		const globalAceDcwWavelet =
+			settings.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
 
 		if (activePlaylist) {
 			setInferSteps(
@@ -250,25 +277,25 @@ function SettingsPage() {
 			);
 			setAceThinking(activePlaylist.aceThinking ?? false);
 			setAceAutoDuration(activePlaylist.aceAutoDuration ?? true);
-			setAceDcwEnabled(
-				activePlaylist.aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled,
-			);
-			setAceDcwMode(activePlaylist.aceDcwMode || ACE_DCW_DEFAULTS.mode);
+			setAceDcwEnabled(activePlaylist.aceDcwEnabled ?? globalAceDcwEnabled);
+			setAceDcwMode(activePlaylist.aceDcwMode || globalAceDcwMode);
 			setAceDcwScaler(
-				activePlaylist.aceDcwScaler?.toString() ||
-					settings.aceDcwScaler ||
-					String(ACE_DCW_DEFAULTS.scaler),
+				activePlaylist.aceDcwScaler == null
+					? globalAceDcwScaler
+					: normalizeDcwScalerInput(
+							activePlaylist.aceDcwScaler.toString(),
+							ACE_DCW_DEFAULTS.scaler,
+						),
 			);
 			setAceDcwHighScaler(
-				activePlaylist.aceDcwHighScaler?.toString() ||
-					settings.aceDcwHighScaler ||
-					String(ACE_DCW_DEFAULTS.highScaler),
+				activePlaylist.aceDcwHighScaler == null
+					? globalAceDcwHighScaler
+					: normalizeDcwScalerInput(
+							activePlaylist.aceDcwHighScaler.toString(),
+							ACE_DCW_DEFAULTS.highScaler,
+						),
 			);
-			setAceDcwWavelet(
-				activePlaylist.aceDcwWavelet ||
-					settings.aceDcwWavelet ||
-					ACE_DCW_DEFAULTS.wavelet,
-			);
+			setAceDcwWavelet(activePlaylist.aceDcwWavelet || globalAceDcwWavelet);
 			setAceModel(
 				activePlaylist.aceModel !== null
 					? activePlaylist.aceModel
@@ -290,17 +317,11 @@ function SettingsPage() {
 			setInferMethod(settings.aceInferMethod || "ode");
 			setAceThinking(settings.aceThinking === "true");
 			setAceAutoDuration(settings.aceAutoDuration !== "false");
-			setAceDcwEnabled(
-				settings.aceDcwEnabled
-					? settings.aceDcwEnabled !== "false"
-					: ACE_DCW_DEFAULTS.enabled,
-			);
-			setAceDcwMode(settings.aceDcwMode || ACE_DCW_DEFAULTS.mode);
-			setAceDcwScaler(settings.aceDcwScaler || String(ACE_DCW_DEFAULTS.scaler));
-			setAceDcwHighScaler(
-				settings.aceDcwHighScaler || String(ACE_DCW_DEFAULTS.highScaler),
-			);
-			setAceDcwWavelet(settings.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet);
+			setAceDcwEnabled(globalAceDcwEnabled);
+			setAceDcwMode(globalAceDcwMode);
+			setAceDcwScaler(globalAceDcwScaler);
+			setAceDcwHighScaler(globalAceDcwHighScaler);
+			setAceDcwWavelet(globalAceDcwWavelet);
 		}
 	}, [settings, activePlaylist]);
 
@@ -462,6 +483,14 @@ function SettingsPage() {
 	}, []);
 
 	const save = async () => {
+		const normalizedDcwScaler = normalizeDcwScalerInput(
+			aceDcwScaler,
+			ACE_DCW_DEFAULTS.scaler,
+		);
+		const normalizedDcwHighScaler = normalizeDcwScalerInput(
+			aceDcwHighScaler,
+			ACE_DCW_DEFAULTS.highScaler,
+		);
 		const promises: Promise<unknown>[] = [
 			setSetting({ key: "ollamaUrl", value: ollamaUrl }),
 			setSetting({ key: "aceStepUrl", value: aceStepUrl }),
@@ -482,8 +511,8 @@ function SettingsPage() {
 			setSetting({ key: "aceInferMethod", value: inferMethod }),
 			setSetting({ key: "aceDcwEnabled", value: String(aceDcwEnabled) }),
 			setSetting({ key: "aceDcwMode", value: aceDcwMode }),
-			setSetting({ key: "aceDcwScaler", value: aceDcwScaler }),
-			setSetting({ key: "aceDcwHighScaler", value: aceDcwHighScaler }),
+			setSetting({ key: "aceDcwScaler", value: normalizedDcwScaler }),
+			setSetting({ key: "aceDcwHighScaler", value: normalizedDcwHighScaler }),
 			setSetting({ key: "aceDcwWavelet", value: aceDcwWavelet }),
 			setSetting({
 				key: "aceVaeCheckpoint",
@@ -512,12 +541,8 @@ function SettingsPage() {
 					aceModel: normalizeAceModel(aceModel),
 					aceDcwEnabled,
 					aceDcwMode,
-					aceDcwScaler: aceDcwScaler
-						? Number.parseFloat(aceDcwScaler)
-						: undefined,
-					aceDcwHighScaler: aceDcwHighScaler
-						? Number.parseFloat(aceDcwHighScaler)
-						: undefined,
+					aceDcwScaler: Number.parseFloat(normalizedDcwScaler),
+					aceDcwHighScaler: Number.parseFloat(normalizedDcwHighScaler),
 					aceDcwWavelet: aceDcwWavelet || undefined,
 					aceVaeCheckpoint: normalizeAceVaeCheckpoint(aceVaeCheckpoint),
 					aceThinking,

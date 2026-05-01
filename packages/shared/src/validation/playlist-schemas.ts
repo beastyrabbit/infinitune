@@ -1,5 +1,5 @@
 import z from "zod";
-import { ACE_DCW_MODES } from "../ace-settings";
+import { ACE_DCW_MODES, isValidAceModel } from "../ace-settings";
 import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
 import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
 
@@ -9,6 +9,11 @@ const UPDATE_LLM_PROVIDERS = [
 	"ollama",
 	"openrouter",
 ] as const;
+
+const AceModelSchema = z
+	.string()
+	.max(128)
+	.refine(isValidAceModel, "Invalid ACE-Step model identifier");
 
 /** Schema for creating a playlist */
 export const CreatePlaylistSchema = z.object({
@@ -27,7 +32,7 @@ export const CreatePlaylistSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).optional(),
 	lmCfgScale: z.number().min(0).max(20).optional(),
 	inferMethod: z.string().optional(),
-	aceModel: z.string().optional(),
+	aceModel: AceModelSchema.optional(),
 	aceDcwEnabled: z.boolean().optional(),
 	aceDcwMode: z.enum(ACE_DCW_MODES).optional(),
 	aceDcwScaler: z.number().min(0).max(1).optional(),
@@ -71,7 +76,7 @@ export const UpdatePlaylistParamsSchema = z.object({
 	lmTemperature: z.number().min(0).max(2).nullable().optional(),
 	lmCfgScale: z.number().min(0).max(20).nullable().optional(),
 	inferMethod: z.string().nullable().optional(),
-	aceModel: z.string().nullable().optional(),
+	aceModel: AceModelSchema.nullable().optional(),
 	aceDcwEnabled: z.boolean().nullable().optional(),
 	aceDcwMode: z.enum(ACE_DCW_MODES).nullable().optional(),
 	aceDcwScaler: z.number().min(0).max(1).nullable().optional(),

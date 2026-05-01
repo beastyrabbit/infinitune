@@ -72,4 +72,17 @@ describe("submitToAce", () => {
 
 		expect(payload.model).toBeUndefined();
 	});
+
+	it("preserves an explicit DCW off setting", async () => {
+		await submitToAce({
+			...baseSubmitOptions(),
+			aceDcwEnabled: false,
+		});
+
+		const fetchMock = vi.mocked(fetch);
+		const payload = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
+
+		expect(payload.dcw_enabled).toBe(false);
+		expect(payload.dcw_mode).toBe("double");
+	});
 });

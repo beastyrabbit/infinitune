@@ -1,6 +1,7 @@
 import {
 	ACE_DCW_DEFAULTS,
 	ACE_VAE_DEFAULT,
+	normalizeAceDcwScaler,
 	normalizeAceVaeCheckpoint,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
@@ -131,12 +132,14 @@ function OneshotPage() {
 		? settings.aceDcwEnabled !== "false"
 		: ACE_DCW_DEFAULTS.enabled;
 	const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
-	const aceDcwScaler = settings?.aceDcwScaler
-		? Number.parseFloat(settings.aceDcwScaler)
-		: ACE_DCW_DEFAULTS.scaler;
-	const aceDcwHighScaler = settings?.aceDcwHighScaler
-		? Number.parseFloat(settings.aceDcwHighScaler)
-		: ACE_DCW_DEFAULTS.highScaler;
+	const aceDcwScaler = normalizeAceDcwScaler(
+		settings?.aceDcwScaler,
+		ACE_DCW_DEFAULTS.scaler,
+	);
+	const aceDcwHighScaler = normalizeAceDcwScaler(
+		settings?.aceDcwHighScaler,
+		ACE_DCW_DEFAULTS.highScaler,
+	);
 	const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
 	const aceVaeCheckpoint = normalizeAceVaeCheckpoint(
 		settings?.aceVaeCheckpoint || ACE_VAE_DEFAULT,

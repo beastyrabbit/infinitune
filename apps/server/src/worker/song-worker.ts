@@ -43,6 +43,11 @@ export interface SongWorkerContext {
 		imageProvider: string;
 		imageModel?: string;
 		aceModel?: string;
+		aceDcwEnabled: boolean;
+		aceDcwMode: string;
+		aceDcwScaler: number;
+		aceDcwHighScaler: number;
+		aceDcwWavelet: string;
 		personaProvider: string;
 		personaModel: string;
 	}>;
@@ -992,11 +997,15 @@ export class SongWorker {
 							lmTemperature: this.ctx.playlist.lmTemperature ?? undefined,
 							lmCfgScale: this.ctx.playlist.lmCfgScale ?? undefined,
 							inferMethod: this.ctx.playlist.inferMethod ?? undefined,
-							aceDcwEnabled: this.ctx.playlist.aceDcwEnabled ?? undefined,
-							aceDcwMode: this.ctx.playlist.aceDcwMode ?? undefined,
-							aceDcwScaler: this.ctx.playlist.aceDcwScaler ?? undefined,
-							aceDcwHighScaler: this.ctx.playlist.aceDcwHighScaler ?? undefined,
-							aceDcwWavelet: this.ctx.playlist.aceDcwWavelet ?? undefined,
+							aceDcwEnabled:
+								this.ctx.playlist.aceDcwEnabled ?? settings.aceDcwEnabled,
+							aceDcwMode: this.ctx.playlist.aceDcwMode ?? settings.aceDcwMode,
+							aceDcwScaler:
+								this.ctx.playlist.aceDcwScaler ?? settings.aceDcwScaler,
+							aceDcwHighScaler:
+								this.ctx.playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
+							aceDcwWavelet:
+								this.ctx.playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
 							aceThinking: this.ctx.playlist.aceThinking ?? undefined,
 							aceAutoDuration: this.ctx.playlist.aceAutoDuration ?? undefined,
 							signal,
