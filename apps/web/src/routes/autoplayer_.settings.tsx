@@ -4,6 +4,7 @@ import {
 	normalizeAceDcwScaler,
 	normalizeAceModel,
 	normalizeAceVaeCheckpoint,
+	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
 import {
@@ -79,13 +80,6 @@ function normalizeProviderSetting(
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
 ): LlmProvider {
 	return normalizeLlmProvider(value, fallback);
-}
-
-function parseBooleanSetting(
-	value: string | undefined | null,
-	fallback: boolean,
-): boolean {
-	return value ? value !== "false" : fallback;
 }
 
 function normalizeDcwScalerInput(value: string, fallback: number): string {
@@ -829,6 +823,7 @@ function SettingsPage() {
 								inferenceShLoading={inferenceShLoading}
 								codexModels={codexModels}
 								codexLoading={codexLoading}
+								activePlaylist={!!activePlaylist}
 							/>
 						)}
 
@@ -909,7 +904,11 @@ function SettingsPage() {
 								}`}
 								onClick={save}
 							>
-								{saved ? "SAVED" : "SAVE SETTINGS"}
+								{saved
+									? "SAVED"
+									: activePlaylist
+										? "SAVE SETTINGS + PLAYLIST OVERRIDES"
+										: "SAVE SETTINGS"}
 							</Button>
 						</div>
 					</div>

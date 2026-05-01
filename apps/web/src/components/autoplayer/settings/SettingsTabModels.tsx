@@ -74,6 +74,7 @@ export interface ModelsTabProps {
 	inferenceShLoading: boolean;
 	codexModels: ModelOption[];
 	codexLoading: boolean;
+	activePlaylist: boolean;
 }
 
 const inputClass =
@@ -268,6 +269,7 @@ export function SettingsTabModels({
 	inferenceShLoading,
 	codexModels,
 	codexLoading,
+	activePlaylist,
 }: ModelsTabProps) {
 	const aceModelOptions = useMemo(() => {
 		const byName = new Map<string, ModelOption>();
@@ -446,7 +448,16 @@ export function SettingsTabModels({
 			</SettingsPanel>
 
 			{/* ACE-STEP MODEL */}
-			<SettingsPanel title="ACE-STEP — AUDIO GENERATION">
+			<SettingsPanel
+				title="ACE-STEP — AUDIO GENERATION"
+				badge={
+					activePlaylist ? (
+						<span className="text-[10px] font-black uppercase tracking-wider text-yellow-500 animate-pulse">
+							PLAYLIST OVERRIDES
+						</span>
+					) : undefined
+				}
+			>
 				<SettingsField
 					label="Model"
 					hint="XL TURBO IS THE QUALITY DEFAULT; USE SERVER DEFAULT FOR LOWER VRAM HOSTS"

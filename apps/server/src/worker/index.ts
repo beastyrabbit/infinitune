@@ -1,6 +1,7 @@
 import {
 	ACE_DCW_DEFAULTS,
 	normalizeAceDcwScaler,
+	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
 import {
@@ -61,13 +62,6 @@ function parseOptionalIntegerSetting(
 ): number | undefined {
 	const parsed = parseOptionalNumberSetting(value);
 	return parsed === undefined ? undefined : Math.trunc(parsed);
-}
-
-function parseBooleanSetting(
-	value: string | undefined,
-	fallback: boolean,
-): boolean {
-	return value ? value !== "false" : fallback;
 }
 
 const WORKER_DIAGNOSTICS_INTERVAL_MS = parsePositiveIntervalMs(

@@ -75,8 +75,17 @@ export function normalizeAceDcwScaler(
 	return Math.min(1, Math.max(0, parsed));
 }
 
+export function parseBooleanSetting(
+	value: string | null | undefined,
+	fallback: boolean,
+): boolean {
+	return value ? value !== "false" : fallback;
+}
+
 export function getAceModelKey(value: string | null | undefined): string {
-	return normalizeAceModel(value).replace(/^acestep\//, "");
+	return normalizeAceModel(value)
+		.toLowerCase()
+		.replace(/^acestep\//, "");
 }
 
 export function resolveAceModelSetting(

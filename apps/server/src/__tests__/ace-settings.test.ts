@@ -1,8 +1,10 @@
 import {
 	ACE_DCW_DEFAULTS,
+	getAceModelKey,
 	isValidAceModel,
 	normalizeAceDcwScaler,
 	normalizeAceModel,
+	parseBooleanSetting,
 } from "@infinitune/shared/ace-settings";
 import { describe, expect, it } from "vitest";
 
@@ -20,5 +22,17 @@ describe("ace-settings", () => {
 		expect(isValidAceModel("acestep-v15-xl-turbo")).toBe(true);
 		expect(normalizeAceModel("https://example.test/model")).toBe("");
 		expect(isValidAceModel("../model")).toBe(false);
+	});
+
+	it("deduplicates ACE model identifiers case-insensitively", () => {
+		expect(getAceModelKey("Acestep/ACESTEP-V15-XL-TURBO")).toBe(
+			"acestep-v15-xl-turbo",
+		);
+	});
+
+	it("parses persisted boolean settings with a fallback", () => {
+		expect(parseBooleanSetting("true", false)).toBe(true);
+		expect(parseBooleanSetting("false", true)).toBe(false);
+		expect(parseBooleanSetting(undefined, true)).toBe(true);
 	});
 });

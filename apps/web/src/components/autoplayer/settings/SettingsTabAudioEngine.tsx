@@ -108,7 +108,7 @@ export function SettingsTabAudioEngine({
 				badge={
 					activePlaylist ? (
 						<span className="text-[10px] font-black uppercase tracking-wider text-yellow-500 animate-pulse">
-							EDITING ACTIVE PLAYLIST
+							PLAYLIST OVERRIDES
 						</span>
 					) : undefined
 				}
