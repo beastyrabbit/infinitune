@@ -61,11 +61,23 @@ describe("playlist-service", () => {
 				mode: "oneshot",
 				targetBpm: 140,
 				audioDuration: 120,
+				aceModel: "acestep-v15-xl-turbo",
+				aceDcwEnabled: true,
+				aceDcwMode: "double",
+				aceDcwScaler: 0.05,
+				aceDcwHighScaler: 0.02,
+				aceDcwWavelet: "haar",
 			});
 
 			expect(result.mode).toBe("oneshot");
 			expect(result.targetBpm).toBe(140);
 			expect(result.audioDuration).toBe(120);
+			expect(result.aceModel).toBe("acestep-v15-xl-turbo");
+			expect(result.aceDcwEnabled).toBe(true);
+			expect(result.aceDcwMode).toBe("double");
+			expect(result.aceDcwScaler).toBe(0.05);
+			expect(result.aceDcwHighScaler).toBe(0.02);
+			expect(result.aceDcwWavelet).toBe("haar");
 		});
 	});
 
@@ -151,6 +163,66 @@ describe("playlist-service", () => {
 			expect(updated.llmModel).toBe("");
 			expect(updated.managerBrief).toBeNull();
 			expect(updated.managerPlan).toBeNull();
+		});
+
+		it("updates ACE-Step model, DCW, and VAE params", async () => {
+			const pl = await playlistService.create({
+				name: "ACE Params",
+				prompt: "test",
+				llmProvider: "openrouter",
+				llmModel: "gpt-4",
+			});
+
+			const db = getTestDb();
+			await playlistService.updateParams(pl.id, {
+				aceModel: "acestep-v15-xl-turbo",
+				aceDcwEnabled: true,
+				aceDcwMode: "double",
+				aceDcwScaler: 0.05,
+				aceDcwHighScaler: 0.02,
+				aceDcwWavelet: "haar",
+			});
+
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+
+			expect(updated.aceModel).toBe("acestep-v15-xl-turbo");
+			expect(updated.aceDcwEnabled).toBe(true);
+			expect(updated.aceDcwMode).toBe("double");
+			expect(updated.aceDcwScaler).toBe(0.05);
+			expect(updated.aceDcwHighScaler).toBe(0.02);
+			expect(updated.aceDcwWavelet).toBe("haar");
+		});
+
+		it("clears ACE playlist overrides when resetting defaults", async () => {
+			const pl = await playlistService.create({
+				name: "ACE Reset",
+				prompt: "test",
+				llmProvider: "openrouter",
+				llmModel: "gpt-4",
+				aceModel: "acestep-v15-xl-turbo",
+				aceDcwEnabled: false,
+				aceDcwMode: "high",
+				aceDcwScaler: 0.1,
+				aceDcwHighScaler: 0.04,
+				aceDcwWavelet: "haar",
+			});
+
+			const db = getTestDb();
+			await playlistService.resetDefaults(pl.id);
+			const [updated] = await db
+				.select()
+				.from(playlists)
+				.where(eq(playlists.id, pl.id));
+
+			expect(updated.aceModel).toBeNull();
+			expect(updated.aceDcwEnabled).toBeNull();
+			expect(updated.aceDcwMode).toBeNull();
+			expect(updated.aceDcwScaler).toBeNull();
+			expect(updated.aceDcwHighScaler).toBeNull();
+			expect(updated.aceDcwWavelet).toBeNull();
 		});
 	});
 

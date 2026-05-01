@@ -60,7 +60,13 @@ export function ensureSchema() {
 			lm_temperature REAL,
 			lm_cfg_scale REAL,
 			infer_method TEXT,
-			current_order_index REAL,
+			ace_model TEXT,
+			ace_dcw_enabled INTEGER,
+				ace_dcw_mode TEXT,
+				ace_dcw_scaler REAL,
+				ace_dcw_high_scaler REAL,
+				ace_dcw_wavelet TEXT,
+				current_order_index REAL,
 			last_seen_at INTEGER,
 			prompt_epoch INTEGER DEFAULT 0,
 			steer_history TEXT,
@@ -258,6 +264,12 @@ export function ensureSchema() {
 	addColumn("playlists", "description_updated_at INTEGER");
 	addColumn("playlists", "ace_thinking INTEGER");
 	addColumn("playlists", "ace_auto_duration INTEGER");
+	addColumn("playlists", "ace_model TEXT");
+	addColumn("playlists", "ace_dcw_enabled INTEGER");
+	addColumn("playlists", "ace_dcw_mode TEXT");
+	addColumn("playlists", "ace_dcw_scaler REAL");
+	addColumn("playlists", "ace_dcw_high_scaler REAL");
+	addColumn("playlists", "ace_dcw_wavelet TEXT");
 	addColumn("songs", "cover_webp_url TEXT");
 	addColumn("songs", "cover_jxl_url TEXT");
 

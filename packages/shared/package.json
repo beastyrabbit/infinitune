@@ -4,6 +4,7 @@
 	"type": "module",
 	"exports": {
 		"./types": "./src/types.ts",
+		"./ace-settings": "./src/ace-settings.ts",
 		"./lyrics-language": "./src/lyrics-language.ts",
 		"./inference-sh-image-models": "./src/inference-sh-image-models.ts",
 		"./agent-reasoning": "./src/agent-reasoning.ts",

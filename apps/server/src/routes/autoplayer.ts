@@ -1,5 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+	ACE_KNOWN_MODELS,
+	ACE_QUALITY_DEFAULT_MODEL,
+	getAceModelKey,
+} from "@infinitune/shared/ace-settings";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Hono } from "hono";
@@ -48,6 +53,44 @@ interface CodexModelResponse {
 }
 
 type AutoplayerProvider = LlmProvider;
+
+interface AceModelInventoryResponse {
+	data?: {
+		models?: {
+			name?: string;
+			is_default?: boolean;
+			is_loaded?: boolean;
+			supported_task_types?: string[];
+		}[];
+		default_model?: string;
+	};
+}
+
+interface AceHealthResponse {
+	data?: { loaded_model?: string };
+}
+
+interface AceModelsResponse {
+	data?: { id?: string; name?: string }[];
+	models?: { id?: string; name?: string }[];
+	default_model?: string;
+}
+
+async function parseAceJson<T>(
+	response: Response | null,
+	source: string,
+): Promise<T | null> {
+	if (response?.ok !== true) return null;
+	try {
+		return (await response.json()) as T;
+	} catch (error) {
+		logger.warn(
+			{ err: error, source },
+			"Failed to parse ACE-Step model response",
+		);
+		return null;
+	}
+}
 
 interface SourceSong {
 	title: string;
@@ -349,29 +392,117 @@ app.get("/ollama-models", async (c) => {
 
 // ─── GET /ace-models ────────────────────────────────────────────────
 app.get("/ace-models", async (c) => {
+	const knownModels = ACE_KNOWN_MODELS.map((name) => ({
+		name,
+		displayName:
+			name === ACE_QUALITY_DEFAULT_MODEL ? `${name} (recommended)` : name,
+		is_default: false,
+		is_loaded: false,
+	}));
+
 	try {
 		const urls = await getServiceUrls();
-		const response = await fetch(`${urls.aceStepUrl}/v1/models`, {
-			signal: AbortSignal.timeout(10000),
-		});
-		if (!response.ok) {
-			return c.json(
-				{ error: `ACE-Step returned ${response.status}`, models: [] },
-				502,
-			);
+		const [inventoryResponse, healthResponse, modelsResponse] =
+			await Promise.all([
+				fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+				fetch(`${urls.aceStepUrl}/health`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+				fetch(`${urls.aceStepUrl}/v1/models`, {
+					signal: AbortSignal.timeout(10000),
+				}).catch(() => null),
+			]);
+
+		const [inventory, health, modelsData] = await Promise.all([
+			parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
+			parseAceJson<AceHealthResponse>(healthResponse, "health"),
+			parseAceJson<AceModelsResponse>(modelsResponse, "models"),
+		]);
+
+		if (!inventory && !modelsData) {
+			return c.json({
+				error: inventoryResponse
+					? `ACE-Step returned ${inventoryResponse.status}`
+					: "ACE-Step model APIs unavailable",
+				available: false,
+				models: knownModels,
+			});
 		}
-		const data = (await response.json()) as {
-			data?: { id?: string; name?: string }[];
-			models?: { id?: string; name?: string }[];
-		};
 
-		const rawModels = data.data || data.models || [];
-		const models = rawModels.map((m: { id?: string; name?: string }) => ({
-			name: m.id || m.name || "unknown",
-			is_default: rawModels.length === 1,
-		}));
+		const rawModels = modelsData?.data || modelsData?.models || [];
+		const inventoryModels = inventory?.data?.models || [];
+		const defaultModel =
+			inventory?.data?.default_model || modelsData?.default_model || undefined;
+		const loadedModel = health?.data?.loaded_model;
+		const seen = new Map<
+			string,
+			{
+				name: string;
+				displayName?: string;
+				is_default?: boolean;
+				is_loaded?: boolean;
+				supportedTaskTypes?: string[];
+			}
+		>();
 
-		return c.json({ models });
+		for (const model of knownModels) {
+			seen.set(getAceModelKey(model.name), model);
+		}
+
+		for (const m of rawModels) {
+			const name = m.id || m.name || "unknown";
+			const key = getAceModelKey(name);
+			seen.set(key, {
+				...seen.get(key),
+				name,
+				displayName: m.name,
+				is_default: getAceModelKey(name) === getAceModelKey(defaultModel),
+				is_loaded: getAceModelKey(name) === getAceModelKey(loadedModel),
+			});
+		}
+
+		for (const model of inventoryModels) {
+			if (!model.name) continue;
+			const key = getAceModelKey(model.name);
+			seen.set(key, {
+				...seen.get(key),
+				name: model.name,
+				displayName: model.name,
+				is_default:
+					model.is_default ??
+					getAceModelKey(model.name) === getAceModelKey(defaultModel),
+				is_loaded:
+					model.is_loaded ??
+					getAceModelKey(model.name) === getAceModelKey(loadedModel),
+				supportedTaskTypes: model.supported_task_types,
+			});
+		}
+
+		if (loadedModel) {
+			const loadedKey = getAceModelKey(loadedModel);
+			const existing = seen.get(loadedKey);
+			seen.set(loadedKey, {
+				...existing,
+				name: existing?.name || loadedModel,
+				is_loaded: true,
+			});
+		}
+
+		if (defaultModel) {
+			const defaultKey = getAceModelKey(defaultModel);
+			const existing = seen.get(defaultKey);
+			seen.set(defaultKey, {
+				...existing,
+				name: existing?.name || defaultModel,
+				is_default: true,
+			});
+		}
+
+		const models = Array.from(seen.values());
+
+		return c.json({ available: true, models });
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to fetch ACE-Step models");
 		return c.json(
@@ -380,9 +511,10 @@ app.get("/ace-models", async (c) => {
 					error instanceof Error
 						? error.message
 						: "Failed to fetch ACE-Step models",
-				models: [],
+				available: false,
+				models: knownModels,
 			},
-			500,
+			502,
 		);
 	}
 });
@@ -1143,24 +1275,54 @@ app.post("/test-connection", async (c) => {
 		}
 
 		if (provider === "ace-step") {
-			const response = await fetch(`${urls.aceStepUrl}/v1/models`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) {
+			const [inventoryResponse, healthResponse, modelsResponse] =
+				await Promise.all([
+					fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+					fetch(`${urls.aceStepUrl}/health`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+					fetch(`${urls.aceStepUrl}/v1/models`, {
+						signal: AbortSignal.timeout(5000),
+					}).catch(() => null),
+				]);
+			const [inventory, health, modelsData] = await Promise.all([
+				parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
+				parseAceJson<AceHealthResponse>(healthResponse, "health"),
+				parseAceJson<AceModelsResponse>(modelsResponse, "models"),
+			]);
+
+			if (!inventory && !health && !modelsData) {
+				const failedResponse =
+					inventoryResponse || healthResponse || modelsResponse;
 				logger.warn(
-					{ provider: "ace-step", status: response.status },
+					{ provider: "ace-step", status: failedResponse?.status },
 					"Connection test failed",
 				);
 				return c.json({
 					ok: false,
-					error: `ACE-Step returned ${response.status}`,
+					error: failedResponse
+						? `ACE-Step returned ${failedResponse.status}`
+						: "ACE-Step unavailable",
 				});
 			}
-			const data = (await response.json()) as { data?: unknown[] };
-			const models = data.data || [];
+
+			const rawModels = modelsData?.data || modelsData?.models || [];
+			const inventoryModels = inventory?.data?.models || [];
+			const loadedModel = health?.data?.loaded_model;
+			const defaultModel =
+				inventory?.data?.default_model || modelsData?.default_model;
+			const modelCount = Math.max(
+				rawModels.length,
+				inventoryModels.length,
+				loadedModel ? 1 : 0,
+			);
 			return c.json({
 				ok: true,
-				message: `Connected — ${models.length} model(s)`,
+				message: `Connected — ${modelCount} model(s)${
+					defaultModel ? `, default ${defaultModel}` : ""
+				}${loadedModel ? `, loaded ${loadedModel}` : ""}`,
 			});
 		}
 

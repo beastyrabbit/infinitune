@@ -274,6 +274,12 @@ export function createPlaylistContextTools(agentId: AgentId): ToolDefinition[] {
 					lmTemperature: playlist.lmTemperature,
 					lmCfgScale: playlist.lmCfgScale,
 					inferMethod: playlist.inferMethod,
+					aceModel: playlist.aceModel,
+					aceDcwEnabled: playlist.aceDcwEnabled,
+					aceDcwMode: playlist.aceDcwMode,
+					aceDcwScaler: playlist.aceDcwScaler,
+					aceDcwHighScaler: playlist.aceDcwHighScaler,
+					aceDcwWavelet: playlist.aceDcwWavelet,
 					aceThinking: playlist.aceThinking,
 					aceAutoDuration: playlist.aceAutoDuration,
 				});

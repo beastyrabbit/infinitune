@@ -1,4 +1,13 @@
 import {
+	ACE_DCW_DEFAULTS,
+	ACE_VAE_DEFAULT,
+	normalizeAceDcwScaler,
+	normalizeAceModel,
+	normalizeAceVaeCheckpoint,
+	parseBooleanSetting,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
+import {
 	type AgentReasoningLevel,
 	DEFAULT_AGENT_REASONING_LEVELS,
 	getAgentReasoningSettingKey,
@@ -38,6 +47,7 @@ import {
 } from "@/integrations/api/hooks";
 import { API_URL } from "@/lib/endpoints";
 import { validatePlaylistKeySearch } from "@/lib/playlist-key";
+import { preserveInheritedPlaylistValue } from "@/lib/playlist-overrides";
 
 export const Route = createFileRoute("/autoplayer_/settings")({
 	component: SettingsPage,
@@ -65,16 +75,15 @@ function normalizeFallbackModel(value: string | undefined | null): string {
 	return value === "__fallback__" ? "" : (value ?? "");
 }
 
-function normalizeAceModel(value: string | undefined | null): string {
-	const normalized = value?.trim() ?? "";
-	return normalized === "__default__" ? "" : normalized;
-}
-
 function normalizeProviderSetting(
 	value: string | undefined | null,
 	fallback: LlmProvider = DEFAULT_TEXT_PROVIDER,
 ): LlmProvider {
 	return normalizeLlmProvider(value, fallback);
+}
+
+function normalizeDcwScalerInput(value: string, fallback: number): string {
+	return String(normalizeAceDcwScaler(value, fallback));
 }
 
 function SettingsPage() {
@@ -96,6 +105,20 @@ function SettingsPage() {
 	const [inferMethod, setInferMethod] = useState("ode");
 	const [aceThinking, setAceThinking] = useState(false);
 	const [aceAutoDuration, setAceAutoDuration] = useState(true);
+	const [aceDcwEnabled, setAceDcwEnabled] = useState<boolean>(
+		ACE_DCW_DEFAULTS.enabled,
+	);
+	const [aceDcwMode, setAceDcwMode] = useState<string>(ACE_DCW_DEFAULTS.mode);
+	const [aceDcwScaler, setAceDcwScaler] = useState(
+		String(ACE_DCW_DEFAULTS.scaler),
+	);
+	const [aceDcwHighScaler, setAceDcwHighScaler] = useState(
+		String(ACE_DCW_DEFAULTS.highScaler),
+	);
+	const [aceDcwWavelet, setAceDcwWavelet] = useState<string>(
+		ACE_DCW_DEFAULTS.wavelet,
+	);
+	const [aceVaeCheckpoint, setAceVaeCheckpoint] = useState(ACE_VAE_DEFAULT);
 
 	// Service URLs
 	const [ollamaUrl, setOllamaUrl] = useState("http://192.168.10.120:11434");
@@ -185,7 +208,15 @@ function SettingsPage() {
 					: settings.imageModel || DEFAULT_IMAGE_MODEL
 				: settings.imageModel || "",
 		);
-		setAceModel(normalizeAceModel(settings.aceModel));
+		setAceModel(
+			resolveAceModelSetting(
+				settings.aceModel,
+				settings.aceModel !== undefined,
+			),
+		);
+		setAceVaeCheckpoint(
+			normalizeAceVaeCheckpoint(settings.aceVaeCheckpoint || ACE_VAE_DEFAULT),
+		);
 		setPersonaProvider(
 			normalizeProviderSetting(
 				settings.personaProvider,
@@ -203,6 +234,26 @@ function SettingsPage() {
 					),
 				]),
 			) as Record<InfinituneAgentId, AgentReasoningLevel>,
+		);
+		const globalAceDcwEnabled = parseBooleanSetting(
+			settings.aceDcwEnabled,
+			ACE_DCW_DEFAULTS.enabled,
+		);
+		const globalAceDcwMode = settings.aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		const globalAceDcwScaler = normalizeDcwScalerInput(
+			settings.aceDcwScaler || "",
+			ACE_DCW_DEFAULTS.scaler,
+		);
+		const globalAceDcwHighScaler = normalizeDcwScalerInput(
+			settings.aceDcwHighScaler || "",
+			ACE_DCW_DEFAULTS.highScaler,
+		);
+		const globalAceDcwWavelet =
+			settings.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+		const globalAceThinking = parseBooleanSetting(settings.aceThinking, false);
+		const globalAceAutoDuration = parseBooleanSetting(
+			settings.aceAutoDuration,
+			true,
 		);
 
 		if (activePlaylist) {
@@ -224,15 +275,49 @@ function SettingsPage() {
 			setInferMethod(
 				activePlaylist.inferMethod || settings.aceInferMethod || "ode",
 			);
-			setAceThinking(activePlaylist.aceThinking ?? false);
-			setAceAutoDuration(activePlaylist.aceAutoDuration ?? true);
+			setAceThinking(activePlaylist.aceThinking ?? globalAceThinking);
+			setAceAutoDuration(
+				activePlaylist.aceAutoDuration ?? globalAceAutoDuration,
+			);
+			setAceDcwEnabled(activePlaylist.aceDcwEnabled ?? globalAceDcwEnabled);
+			setAceDcwMode(activePlaylist.aceDcwMode || globalAceDcwMode);
+			setAceDcwScaler(
+				activePlaylist.aceDcwScaler == null
+					? globalAceDcwScaler
+					: normalizeDcwScalerInput(
+							activePlaylist.aceDcwScaler.toString(),
+							ACE_DCW_DEFAULTS.scaler,
+						),
+			);
+			setAceDcwHighScaler(
+				activePlaylist.aceDcwHighScaler == null
+					? globalAceDcwHighScaler
+					: normalizeDcwScalerInput(
+							activePlaylist.aceDcwHighScaler.toString(),
+							ACE_DCW_DEFAULTS.highScaler,
+						),
+			);
+			setAceDcwWavelet(activePlaylist.aceDcwWavelet || globalAceDcwWavelet);
+			setAceModel(
+				activePlaylist.aceModel !== null
+					? activePlaylist.aceModel
+					: resolveAceModelSetting(
+							settings.aceModel,
+							settings.aceModel !== undefined,
+						),
+			);
 		} else {
 			setInferSteps(settings.aceInferenceSteps || "8");
 			setLmTemp(settings.aceLmTemperature || "0.85");
 			setLmCfg(settings.aceLmCfgScale || "2.5");
 			setInferMethod(settings.aceInferMethod || "ode");
-			setAceThinking(settings.aceThinking === "true");
-			setAceAutoDuration(settings.aceAutoDuration !== "false");
+			setAceThinking(globalAceThinking);
+			setAceAutoDuration(globalAceAutoDuration);
+			setAceDcwEnabled(globalAceDcwEnabled);
+			setAceDcwMode(globalAceDcwMode);
+			setAceDcwScaler(globalAceDcwScaler);
+			setAceDcwHighScaler(globalAceDcwHighScaler);
+			setAceDcwWavelet(globalAceDcwWavelet);
 		}
 	}, [settings, activePlaylist]);
 
@@ -394,6 +479,78 @@ function SettingsPage() {
 	}, []);
 
 	const save = async () => {
+		const normalizedInferMethod = inferMethod || "ode";
+		const normalizedDcwScaler = normalizeDcwScalerInput(
+			aceDcwScaler,
+			ACE_DCW_DEFAULTS.scaler,
+		);
+		const normalizedDcwHighScaler = normalizeDcwScalerInput(
+			aceDcwHighScaler,
+			ACE_DCW_DEFAULTS.highScaler,
+		);
+		const normalizedDcwMode = aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		const normalizedDcwWavelet =
+			aceDcwWavelet.trim() || ACE_DCW_DEFAULTS.wavelet;
+		const normalizedAceModel = normalizeAceModel(aceModel);
+		const normalizedAceVaeCheckpoint =
+			normalizeAceVaeCheckpoint(aceVaeCheckpoint);
+		const inheritedAceModel = normalizeAceModel(
+			resolveAceModelSetting(
+				settings?.aceModel,
+				settings?.aceModel !== undefined,
+			),
+		);
+		const inheritedInferenceSteps = Number.parseInt(
+			settings?.aceInferenceSteps || "8",
+			10,
+		);
+		const inheritedLmTemperature = Number.parseFloat(
+			settings?.aceLmTemperature || "0.85",
+		);
+		const inheritedLmCfgScale = Number.parseFloat(
+			settings?.aceLmCfgScale || "2.5",
+		);
+		const inheritedInferMethod = settings?.aceInferMethod || "ode";
+		const inheritedAceDcwEnabled = parseBooleanSetting(
+			settings?.aceDcwEnabled,
+			ACE_DCW_DEFAULTS.enabled,
+		);
+		const inheritedAceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
+		const inheritedAceDcwScaler = normalizeAceDcwScaler(
+			settings?.aceDcwScaler,
+			ACE_DCW_DEFAULTS.scaler,
+		);
+		const inheritedAceDcwHighScaler = normalizeAceDcwScaler(
+			settings?.aceDcwHighScaler,
+			ACE_DCW_DEFAULTS.highScaler,
+		);
+		const inheritedAceDcwWavelet =
+			settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+		const inheritedAceThinking = parseBooleanSetting(
+			settings?.aceThinking,
+			false,
+		);
+		const inheritedAceAutoDuration = parseBooleanSetting(
+			settings?.aceAutoDuration,
+			true,
+		);
+		const parsedInferenceSteps = inferSteps
+			? Number.parseInt(inferSteps, 10)
+			: null;
+		const parsedLmTemperature = lmTemp ? Number.parseFloat(lmTemp) : null;
+		const parsedLmCfgScale = lmCfg ? Number.parseFloat(lmCfg) : null;
+		const parsedDcwScaler = Number.parseFloat(normalizedDcwScaler);
+		const parsedDcwHighScaler = Number.parseFloat(normalizedDcwHighScaler);
+		const playlistAceModel =
+			activePlaylist &&
+			(!normalizedAceModel ||
+				preserveInheritedPlaylistValue(
+					normalizedAceModel,
+					inheritedAceModel,
+					activePlaylist.aceModel,
+				) === null)
+				? null
+				: normalizedAceModel;
 		const promises: Promise<unknown>[] = [
 			setSetting({ key: "ollamaUrl", value: ollamaUrl }),
 			setSetting({ key: "aceStepUrl", value: aceStepUrl }),
@@ -402,18 +559,15 @@ function SettingsPage() {
 			setSetting({ key: "textModel", value: textModel }),
 			setSetting({ key: "imageProvider", value: imageProvider }),
 			setSetting({ key: "imageModel", value: imageModel }),
-			setSetting({ key: "aceModel", value: normalizeAceModel(aceModel) }),
 			setSetting({ key: "personaProvider", value: personaProvider }),
 			setSetting({
 				key: "personaModel",
 				value: normalizeFallbackModel(personaModel),
 			}),
-			setSetting({ key: "aceInferenceSteps", value: inferSteps }),
-			setSetting({ key: "aceLmTemperature", value: lmTemp }),
-			setSetting({ key: "aceLmCfgScale", value: lmCfg }),
-			setSetting({ key: "aceInferMethod", value: inferMethod }),
-			setSetting({ key: "aceThinking", value: String(aceThinking) }),
-			setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
+			setSetting({
+				key: "aceVaeCheckpoint",
+				value: normalizedAceVaeCheckpoint,
+			}),
 			...INFINITUNE_AGENT_IDS.map((agentId) =>
 				setSetting({
 					key: getAgentReasoningSettingKey(agentId),
@@ -426,15 +580,81 @@ function SettingsPage() {
 			promises.push(
 				updateParams({
 					id: activePlaylist.id,
-					inferenceSteps: inferSteps
-						? Number.parseInt(inferSteps, 10)
-						: undefined,
-					lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
-					lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
-					inferMethod: inferMethod || undefined,
-					aceThinking,
-					aceAutoDuration,
+					inferenceSteps: preserveInheritedPlaylistValue(
+						parsedInferenceSteps,
+						inheritedInferenceSteps,
+						activePlaylist.inferenceSteps,
+					),
+					lmTemperature: preserveInheritedPlaylistValue(
+						parsedLmTemperature,
+						inheritedLmTemperature,
+						activePlaylist.lmTemperature,
+					),
+					lmCfgScale: preserveInheritedPlaylistValue(
+						parsedLmCfgScale,
+						inheritedLmCfgScale,
+						activePlaylist.lmCfgScale,
+					),
+					inferMethod: preserveInheritedPlaylistValue(
+						normalizedInferMethod,
+						inheritedInferMethod,
+						activePlaylist.inferMethod,
+					),
+					aceModel: playlistAceModel,
+					aceDcwEnabled: preserveInheritedPlaylistValue(
+						aceDcwEnabled,
+						inheritedAceDcwEnabled,
+						activePlaylist.aceDcwEnabled,
+					),
+					aceDcwMode: preserveInheritedPlaylistValue(
+						normalizedDcwMode,
+						inheritedAceDcwMode,
+						activePlaylist.aceDcwMode,
+					),
+					aceDcwScaler: preserveInheritedPlaylistValue(
+						parsedDcwScaler,
+						inheritedAceDcwScaler,
+						activePlaylist.aceDcwScaler,
+					),
+					aceDcwHighScaler: preserveInheritedPlaylistValue(
+						parsedDcwHighScaler,
+						inheritedAceDcwHighScaler,
+						activePlaylist.aceDcwHighScaler,
+					),
+					aceDcwWavelet: preserveInheritedPlaylistValue(
+						normalizedDcwWavelet,
+						inheritedAceDcwWavelet,
+						activePlaylist.aceDcwWavelet,
+					),
+					aceThinking: preserveInheritedPlaylistValue(
+						aceThinking,
+						inheritedAceThinking,
+						activePlaylist.aceThinking,
+					),
+					aceAutoDuration: preserveInheritedPlaylistValue(
+						aceAutoDuration,
+						inheritedAceAutoDuration,
+						activePlaylist.aceAutoDuration,
+					),
 				}),
+			);
+		} else {
+			promises.push(
+				setSetting({ key: "aceModel", value: normalizedAceModel }),
+				setSetting({ key: "aceInferenceSteps", value: inferSteps }),
+				setSetting({ key: "aceLmTemperature", value: lmTemp }),
+				setSetting({ key: "aceLmCfgScale", value: lmCfg }),
+				setSetting({ key: "aceInferMethod", value: normalizedInferMethod }),
+				setSetting({ key: "aceDcwEnabled", value: String(aceDcwEnabled) }),
+				setSetting({ key: "aceDcwMode", value: normalizedDcwMode }),
+				setSetting({ key: "aceDcwScaler", value: normalizedDcwScaler }),
+				setSetting({
+					key: "aceDcwHighScaler",
+					value: normalizedDcwHighScaler,
+				}),
+				setSetting({ key: "aceDcwWavelet", value: normalizedDcwWavelet }),
+				setSetting({ key: "aceThinking", value: String(aceThinking) }),
+				setSetting({ key: "aceAutoDuration", value: String(aceAutoDuration) }),
 			);
 		}
 
@@ -569,6 +789,8 @@ function SettingsPage() {
 								setImageModel={setImageModel}
 								aceModel={aceModel}
 								setAceModel={setAceModel}
+								aceVaeCheckpoint={aceVaeCheckpoint}
+								setAceVaeCheckpoint={setAceVaeCheckpoint}
 								personaProvider={personaProvider}
 								setPersonaProvider={(v) =>
 									setPersonaProvider(normalizeProviderSetting(v, textProvider))
@@ -587,6 +809,7 @@ function SettingsPage() {
 								inferenceShLoading={inferenceShLoading}
 								codexModels={codexModels}
 								codexLoading={codexLoading}
+								activePlaylist={!!activePlaylist}
 							/>
 						)}
 
@@ -604,6 +827,16 @@ function SettingsPage() {
 								setAceThinking={setAceThinking}
 								aceAutoDuration={aceAutoDuration}
 								setAceAutoDuration={setAceAutoDuration}
+								aceDcwEnabled={aceDcwEnabled}
+								setAceDcwEnabled={setAceDcwEnabled}
+								aceDcwMode={aceDcwMode}
+								setAceDcwMode={setAceDcwMode}
+								aceDcwScaler={aceDcwScaler}
+								setAceDcwScaler={setAceDcwScaler}
+								aceDcwHighScaler={aceDcwHighScaler}
+								setAceDcwHighScaler={setAceDcwHighScaler}
+								aceDcwWavelet={aceDcwWavelet}
+								setAceDcwWavelet={setAceDcwWavelet}
 								activePlaylist={!!activePlaylist}
 							/>
 						)}
@@ -657,7 +890,11 @@ function SettingsPage() {
 								}`}
 								onClick={save}
 							>
-								{saved ? "SAVED" : "SAVE SETTINGS"}
+								{saved
+									? "SAVED"
+									: activePlaylist
+										? "SAVE SETTINGS + PLAYLIST OVERRIDES"
+										: "SAVE SETTINGS"}
 							</Button>
 						</div>
 					</div>

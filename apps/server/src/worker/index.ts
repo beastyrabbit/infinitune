@@ -1,4 +1,10 @@
 import {
+	ACE_DCW_DEFAULTS,
+	normalizeAceDcwScaler,
+	parseBooleanSetting,
+	resolveAceModelSetting,
+} from "@infinitune/shared/ace-settings";
+import {
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
 	resolveTextLlmProfile,
@@ -25,7 +31,11 @@ import { createPlaylistActor } from "./runtime/playlist-actor";
 import { ProviderRegistry } from "./runtime/provider-registry";
 import { createSongActor } from "./runtime/song-actor";
 import type { WorkerRuntimeEvent } from "./runtime/types";
-import { SongWorker, type SongWorkerContext } from "./song-worker";
+import {
+	SongWorker,
+	type SongWorkerContext,
+	type SongWorkerSettings,
+} from "./song-worker";
 
 const AUDIO_POLL_INTERVAL = 2_000; // 2 seconds (ACE needs frequent polling)
 const HEARTBEAT_STALE_MS = 90_000; // 90 seconds = 3 missed 30s heartbeats
@@ -37,6 +47,21 @@ function parsePositiveIntervalMs(
 	const parsed = Number(value ?? defaultValue);
 	if (!Number.isFinite(parsed) || parsed < minimumValue) return undefined;
 	return Math.trunc(parsed);
+}
+
+function parseOptionalNumberSetting(
+	value: string | undefined,
+): number | undefined {
+	if (!value?.trim()) return undefined;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseOptionalIntegerSetting(
+	value: string | undefined,
+): number | undefined {
+	const parsed = parseOptionalNumberSetting(value);
+	return parsed === undefined ? undefined : Math.trunc(parsed);
 }
 
 const WORKER_DIAGNOSTICS_INTERVAL_MS = parsePositiveIntervalMs(
@@ -269,15 +294,7 @@ function stopAllActors() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function getSettings(): Promise<{
-	textProvider: string;
-	textModel: string;
-	imageProvider: string;
-	imageModel?: string;
-	aceModel?: string;
-	personaProvider: string;
-	personaModel: string;
-}> {
+async function getSettings(): Promise<SongWorkerSettings> {
 	const all = await settingsService.getAll();
 	const textProvider = normalizeLlmProvider(
 		all.textProvider || DEFAULT_TEXT_PROVIDER,
@@ -293,7 +310,18 @@ async function getSettings(): Promise<{
 		: personaProvider === textProvider
 			? textModel
 			: "";
-	const aceModel = all.aceModel?.trim();
+	const aceModel = resolveAceModelSetting(
+		all.aceModel,
+		all.aceModel !== undefined,
+	);
+	const aceDcwScaler = normalizeAceDcwScaler(
+		all.aceDcwScaler,
+		ACE_DCW_DEFAULTS.scaler,
+	);
+	const aceDcwHighScaler = normalizeAceDcwScaler(
+		all.aceDcwHighScaler,
+		ACE_DCW_DEFAULTS.highScaler,
+	);
 
 	return {
 		textProvider,
@@ -305,7 +333,21 @@ async function getSettings(): Promise<{
 					? "inference-sh"
 					: all.imageProvider || "comfyui",
 		imageModel: all.imageModel ?? undefined,
-		aceModel: aceModel && aceModel !== "__default__" ? aceModel : undefined,
+		aceModel: aceModel || undefined,
+		aceInferenceSteps: parseOptionalIntegerSetting(all.aceInferenceSteps),
+		aceLmTemperature: parseOptionalNumberSetting(all.aceLmTemperature),
+		aceLmCfgScale: parseOptionalNumberSetting(all.aceLmCfgScale),
+		aceInferMethod: all.aceInferMethod || undefined,
+		aceDcwEnabled: parseBooleanSetting(
+			all.aceDcwEnabled,
+			ACE_DCW_DEFAULTS.enabled,
+		),
+		aceDcwMode: all.aceDcwMode || ACE_DCW_DEFAULTS.mode,
+		aceDcwScaler,
+		aceDcwHighScaler,
+		aceDcwWavelet: all.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet,
+		aceThinking: parseBooleanSetting(all.aceThinking, false),
+		aceAutoDuration: parseBooleanSetting(all.aceAutoDuration, true),
 		personaProvider,
 		personaModel,
 	};

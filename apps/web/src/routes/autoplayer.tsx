@@ -299,6 +299,12 @@ function AutoplayerPage() {
 			lmTemperature?: number;
 			lmCfgScale?: number;
 			inferMethod?: string;
+			aceModel?: string;
+			aceDcwEnabled?: boolean;
+			aceDcwMode?: string;
+			aceDcwScaler?: number;
+			aceDcwHighScaler?: number;
+			aceDcwWavelet?: string;
 			aceThinking?: boolean;
 			aceAutoDuration?: boolean;
 			initialDirectorPlan?: boolean;
@@ -320,6 +326,12 @@ function AutoplayerPage() {
 				lmTemperature: data.lmTemperature,
 				lmCfgScale: data.lmCfgScale,
 				inferMethod: data.inferMethod,
+				aceModel: data.aceModel,
+				aceDcwEnabled: data.aceDcwEnabled,
+				aceDcwMode: data.aceDcwMode,
+				aceDcwScaler: data.aceDcwScaler,
+				aceDcwHighScaler: data.aceDcwHighScaler,
+				aceDcwWavelet: data.aceDcwWavelet,
 				aceThinking: data.aceThinking,
 				aceAutoDuration: data.aceAutoDuration,
 				initialDirectorPlan: data.initialDirectorPlan,

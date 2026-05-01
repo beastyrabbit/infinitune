@@ -1,3 +1,4 @@
+import { normalizeAceModel } from "@infinitune/shared/ace-settings";
 import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistStatus } from "@infinitune/shared/types";
@@ -84,6 +85,12 @@ export async function create(data: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	aceModel?: string;
+	aceDcwEnabled?: boolean;
+	aceDcwMode?: string;
+	aceDcwScaler?: number;
+	aceDcwHighScaler?: number;
+	aceDcwWavelet?: string;
 	aceThinking?: boolean;
 	aceAutoDuration?: boolean;
 	ownerUserId?: string;
@@ -113,6 +120,15 @@ export async function create(data: {
 			lmTemperature: data.lmTemperature,
 			lmCfgScale: data.lmCfgScale,
 			inferMethod: data.inferMethod,
+			aceModel:
+				data.aceModel !== undefined
+					? normalizeAceModel(data.aceModel)
+					: undefined,
+			aceDcwEnabled: data.aceDcwEnabled,
+			aceDcwMode: data.aceDcwMode,
+			aceDcwScaler: data.aceDcwScaler,
+			aceDcwHighScaler: data.aceDcwHighScaler,
+			aceDcwWavelet: data.aceDcwWavelet,
 			aceThinking: data.aceThinking,
 			aceAutoDuration: data.aceAutoDuration,
 			ownerUserId: data.ownerUserId,
@@ -154,6 +170,12 @@ export async function updateParams(
 		"lmTemperature",
 		"lmCfgScale",
 		"inferMethod",
+		"aceModel",
+		"aceDcwEnabled",
+		"aceDcwMode",
+		"aceDcwScaler",
+		"aceDcwHighScaler",
+		"aceDcwWavelet",
 		"aceThinking",
 		"aceAutoDuration",
 	];
@@ -185,6 +207,11 @@ export async function updateParams(
 				typeof params[key] === "string" ? params[key] : undefined,
 			);
 			touchedLyricsLanguage = true;
+			continue;
+		}
+		if (key === "aceModel") {
+			patch[key] =
+				typeof params[key] === "string" ? normalizeAceModel(params[key]) : null;
 			continue;
 		}
 		patch[key] = params[key];
@@ -252,6 +279,12 @@ export async function resetDefaults(id: string) {
 			lmTemperature: null,
 			lmCfgScale: null,
 			inferMethod: null,
+			aceModel: null,
+			aceDcwEnabled: null,
+			aceDcwMode: null,
+			aceDcwScaler: null,
+			aceDcwHighScaler: null,
+			aceDcwWavelet: null,
 			aceThinking: null,
 			aceAutoDuration: null,
 			managerBrief: null,
