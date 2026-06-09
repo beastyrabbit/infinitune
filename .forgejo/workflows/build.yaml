@@ -6,41 +6,92 @@ on:
       - "v*"
   workflow_dispatch:
 
+enable-openid-connect: true
+
 env:
   REGISTRY: git.heerlab.com
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: beasty/infinitune
+  INFISICAL_API_URL: ${{ vars.INFISICAL_API_URL }}
+  INFISICAL_ENV: ${{ vars.INFISICAL_ENV }}
+  INFISICAL_MACHINE_IDENTITY_ID: ${{ vars.INFISICAL_MACHINE_IDENTITY_ID }}
+  FJ_CI_INFISICAL_PROJECT_ID: ${{ vars.FJ_CI_INFISICAL_PROJECT_ID }}
+  FJ_REGISTRY_SECRET_PATH: ${{ vars.FJ_REGISTRY_SECRET_PATH }}
 
 jobs:
   build:
     runs-on: personal
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Docker CLI
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates docker.io
+          apt-get install -y --no-install-recommends ca-certificates curl docker.io
           docker --version
 
+      - name: Install Infisical CLI
+        run: |
+          set -euo pipefail
+          npm install --global @infisical/cli@0.43.91
+          infisical --version
+
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.forgejo-runners.svc.cluster.local:1234
 
       - name: Login to Forgejo Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          : "${INFISICAL_API_URL:?Missing INFISICAL_API_URL Forgejo variable}"
+          : "${INFISICAL_ENV:?Missing INFISICAL_ENV Forgejo variable}"
+          : "${INFISICAL_MACHINE_IDENTITY_ID:?Missing INFISICAL_MACHINE_IDENTITY_ID Forgejo variable}"
+          : "${FJ_CI_INFISICAL_PROJECT_ID:?Missing FJ_CI_INFISICAL_PROJECT_ID Forgejo variable}"
+          : "${FJ_REGISTRY_SECRET_PATH:?Missing FJ_REGISTRY_SECRET_PATH Forgejo variable}"
+          : "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?Missing Forgejo OIDC request token}"
+          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?Missing Forgejo OIDC request URL}"
+
+          oidc_response="$(curl -fsS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://git.heerlab.com/beasty")"
+          forgejo_jwt="$(node -e 'const fs = require("fs"); const body = JSON.parse(fs.readFileSync(0, "utf8")); process.stdout.write(body.value || "");' <<< "$oidc_response")"
+          : "${forgejo_jwt:?Forgejo OIDC response did not include a token}"
+
+          infisical_token="$(infisical login \
+            --method oidc-auth \
+            --machine-identity-id "$INFISICAL_MACHINE_IDENTITY_ID" \
+            --jwt "$forgejo_jwt" \
+            --domain "$INFISICAL_API_URL" \
+            --plain \
+            --silent)"
+          : "${infisical_token:?Infisical OIDC login returned an empty token}"
+          echo "::add-mask::$infisical_token"
+
+          package_token="$(infisical secrets get FORGEJO_PACKAGE_TOKEN \
+            --domain "$INFISICAL_API_URL" \
+            --token "$infisical_token" \
+            --projectId "$FJ_CI_INFISICAL_PROJECT_ID" \
+            --env "$INFISICAL_ENV" \
+            --path "$FJ_REGISTRY_SECRET_PATH" \
+            --plain \
+            --silent)"
+          : "${package_token:?Missing FORGEJO_PACKAGE_TOKEN in Forgejo CI Infisical project}"
+          echo "::add-mask::$package_token"
+          printf '%s' "$package_token" | docker login "$REGISTRY" --username beasty --password-stdin
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -50,14 +101,12 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Output image digest
         env:
