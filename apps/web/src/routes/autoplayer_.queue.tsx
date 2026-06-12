@@ -1,7 +1,6 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
 	Activity,
-	ArrowLeft,
 	BarChart3,
 	Clock3,
 	Disc3,
@@ -10,6 +9,8 @@ import {
 	Radio,
 } from "lucide-react";
 import { useMemo } from "react";
+import { OpsPageHeader } from "@/components/autoplayer/OpsPageHeader";
+import { Stat } from "@/components/autoplayer/Stat";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
 import {
 	type RadioAlbum,
@@ -43,33 +44,6 @@ function formatDuration(ms: number | null | undefined): string {
 	return `${seconds}s`;
 }
 
-function Stat({
-	label,
-	value,
-	tone = "default",
-}: {
-	label: string;
-	value: number | string;
-	tone?: "default" | "ready" | "active" | "warn";
-}) {
-	const valueClass =
-		tone === "ready"
-			? "text-emerald-200"
-			: tone === "active"
-				? "text-amber-200"
-				: tone === "warn"
-					? "text-red-200"
-					: "text-white";
-	return (
-		<div className="border border-white/10 bg-[#171a1b] p-4">
-			<div className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
-				{label}
-			</div>
-			<div className={`mt-2 text-3xl font-black ${valueClass}`}>{value}</div>
-		</div>
-	);
-}
-
 function Chart({
 	title,
 	buckets,
@@ -97,11 +71,17 @@ function Chart({
 						<div key={bucket.label}>
 							<div className="mb-1 flex justify-between gap-3 font-mono text-[10px] font-bold uppercase tracking-widest text-white/55">
 								<span className="truncate">{bucket.label}</span>
-								<span>{value}</span>
+								<span className="tabular-nums text-amber-200">{value}</span>
 							</div>
-							<div className="h-2 bg-white/10">
+							<div
+								className="h-2 bg-white/5"
+								style={{
+									backgroundImage:
+										"repeating-linear-gradient(90deg, transparent 0 6px, rgba(255,255,255,0.06) 6px 7px)",
+								}}
+							>
 								<div
-									className="h-full bg-amber-300"
+									className="h-full bg-gradient-to-r from-amber-300 to-amber-300/40"
 									style={{
 										width: `${Math.max(4, (bucket.count / max) * 100)}%`,
 									}}
@@ -203,24 +183,33 @@ function QueuePage() {
 		.sort((a, b) => a.createdAt - b.createdAt);
 	const analytics = queue?.analytics;
 
+	const audioActive = workerStatus?.queues.audio.active ?? 0;
+
 	return (
 		<div className="min-h-screen bg-[#101213] text-stone-100">
-			<header className="border-b border-white/10 bg-black/70 px-4 py-4">
-				<div className="mx-auto flex max-w-7xl items-center gap-4">
-					<Link to="/autoplayer" className="text-white/55 hover:text-white">
-						<ArrowLeft className="h-5 w-5" />
-					</Link>
-					<div>
-						<h1 className="flex items-center gap-3 font-mono text-2xl font-black uppercase tracking-[0.18em]">
-							<ListMusic className="h-6 w-6 text-amber-300" />
-							Radio Operations
-						</h1>
-						<p className="mt-1 font-mono text-xs uppercase tracking-[0.2em] text-white/35">
-							Schedule v{queue?.station.scheduleVersion ?? 0}
-						</p>
+			<OpsPageHeader
+				icon={ListMusic}
+				title="Radio Operations"
+				subtitle={`Schedule v${queue?.station.scheduleVersion ?? 0}`}
+				right={
+					<div className="flex items-center gap-2 border border-white/10 bg-black/40 px-3 py-2 font-mono text-[10px] font-black uppercase tracking-[0.2em]">
+						<span
+							className={`h-2 w-2 rounded-full ${
+								audioActive > 0
+									? "animate-pulse bg-amber-300"
+									: "bg-emerald-300/70"
+							}`}
+						/>
+						<span
+							className={
+								audioActive > 0 ? "text-amber-200" : "text-emerald-200"
+							}
+						>
+							{audioActive > 0 ? `${audioActive} rendering` : "Idle"}
+						</span>
 					</div>
-				</div>
-			</header>
+				}
+			/>
 
 			<main className="mx-auto max-w-7xl px-4 py-6">
 				<div className="mb-6 grid gap-3 md:grid-cols-4 xl:grid-cols-8">

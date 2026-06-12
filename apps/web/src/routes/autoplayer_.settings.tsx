@@ -23,9 +23,8 @@ import {
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
-	ArrowLeft,
 	Disc3,
 	Loader2,
 	Music2,
@@ -35,6 +34,8 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { OpsPageHeader } from "@/components/autoplayer/OpsPageHeader";
+import { Stat } from "@/components/autoplayer/Stat";
 import { SettingsTabAudioEngine } from "@/components/autoplayer/settings/SettingsTabAudioEngine";
 import type {
 	InferenceShImageModelOption,
@@ -116,33 +117,6 @@ function normalizeProviderSetting(
 
 function normalizeDcwScalerInput(value: string, fallback: number): string {
 	return String(normalizeAceDcwScaler(value, fallback));
-}
-
-function Stat({
-	label,
-	value,
-	tone = "default",
-}: {
-	label: string;
-	value: number | string;
-	tone?: "default" | "ready" | "active" | "warn";
-}) {
-	const valueClass =
-		tone === "ready"
-			? "text-emerald-200"
-			: tone === "active"
-				? "text-amber-200"
-				: tone === "warn"
-					? "text-red-200"
-					: "text-white";
-	return (
-		<div className="border border-white/10 bg-[#171a1b] p-4">
-			<div className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
-				{label}
-			</div>
-			<div className={`mt-2 text-3xl font-black ${valueClass}`}>{value}</div>
-		</div>
-	);
 }
 
 function SettingsPage() {
@@ -424,28 +398,28 @@ function SettingsPage() {
 		}
 	}
 
+	const dirtyCount = Object.keys(draft).length;
+
 	return (
 		<div className="min-h-screen bg-[#101213] font-mono text-stone-100">
-			<header className="border-b border-white/10 bg-black px-4 py-4">
-				<div className="mx-auto flex max-w-6xl items-center gap-4">
-					<Link to="/autoplayer" className="text-white/55 hover:text-white">
-						<ArrowLeft className="h-5 w-5" />
-					</Link>
-					<div>
-						<h1 className="flex items-center gap-3 text-3xl font-black uppercase tracking-[0.14em]">
-							<SlidersHorizontal className="h-6 w-6 text-amber-300" />
-							Radio Settings
-						</h1>
-						<p className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-white/35">
-							Inventory, models, ACE-Step, covers, and service endpoints
-						</p>
-					</div>
-				</div>
-			</header>
+			<OpsPageHeader
+				icon={SlidersHorizontal}
+				title="Radio Settings"
+				subtitle="Inventory, models, ACE-Step, covers, and service endpoints"
+				maxWidthClass="max-w-6xl"
+				right={
+					dirtyCount > 0 ? (
+						<div className="flex items-center gap-2 border border-amber-300/40 bg-amber-300/10 px-3 py-2 font-mono text-[10px] font-black uppercase tracking-[0.2em] text-amber-200">
+							<span className="h-2 w-2 animate-pulse rounded-full bg-amber-300" />
+							{dirtyCount} unsaved
+						</div>
+					) : undefined
+				}
+			/>
 
-			<main className="mx-auto max-w-6xl px-4 py-6">
+			<main className="mx-auto max-w-6xl px-4 py-6 pb-28">
 				<nav className="mb-6 grid gap-2 md:grid-cols-4">
-					{TABS.map((tab) => {
+					{TABS.map((tab, index) => {
 						const Icon = tab.icon;
 						const active = activeTab === tab.id;
 						return (
@@ -453,12 +427,19 @@ function SettingsPage() {
 								key={tab.id}
 								type="button"
 								onClick={() => setActiveTab(tab.id)}
-								className={`flex h-11 items-center justify-center gap-2 border font-mono text-xs font-black uppercase tracking-[0.18em] transition-colors ${
+								className={`group relative flex h-12 items-center gap-3 border px-4 font-mono text-xs font-black uppercase tracking-[0.18em] transition-colors ${
 									active
-										? "border-white bg-white text-black"
+										? "border-amber-300/60 bg-amber-300 text-black"
 										: "border-white/15 bg-black/25 text-white/55 hover:bg-white/10 hover:text-white"
 								}`}
 							>
+								<span
+									className={`text-[10px] tabular-nums ${
+										active ? "text-black/45" : "text-white/25"
+									}`}
+								>
+									{String(index + 1).padStart(2, "0")}
+								</span>
 								<Icon className="h-4 w-4" />
 								{tab.label}
 							</button>
@@ -468,7 +449,7 @@ function SettingsPage() {
 
 				{activeTab === "inventory" ? (
 					<div className="space-y-6">
-						<section className="grid gap-3 md:grid-cols-6">
+						<section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
 							<Stat label="Target" value={queue?.stats.inventoryTarget ?? 10} />
 							<Stat
 								label="Ready albums"
@@ -642,10 +623,22 @@ function SettingsPage() {
 						onTest={testConnection}
 					/>
 				) : null}
+			</main>
 
-				<div className="mt-8">
+			{/* Sticky save bar — always reachable, reflects unsaved draft state */}
+			<div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-black/90 backdrop-blur">
+				<div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+					<span className="hidden font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35 sm:block">
+						{dirtyCount > 0
+							? `${dirtyCount} setting${dirtyCount === 1 ? "" : "s"} modified`
+							: "All changes saved"}
+					</span>
 					<Button
-						className="h-12 w-full rounded-none border-4 border-white/20 bg-red-500 font-mono text-sm font-black uppercase text-white hover:bg-white hover:text-black"
+						className={`h-12 flex-1 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${
+							dirtyCount > 0
+								? "border-amber-300/50 bg-amber-300 text-black hover:bg-white hover:text-black"
+								: "border-white/20 bg-red-500 text-white hover:bg-white hover:text-black"
+						}`}
 						onClick={save}
 						disabled={saving}
 					>
@@ -657,7 +650,7 @@ function SettingsPage() {
 						{saving ? "Saving..." : "Save radio settings"}
 					</Button>
 				</div>
-			</main>
+			</div>
 		</div>
 	);
 }
