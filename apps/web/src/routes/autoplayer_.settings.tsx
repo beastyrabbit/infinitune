@@ -70,11 +70,10 @@ const TABS: { id: Tab; label: string; icon: typeof Disc3 }[] = [
 const DEFAULT_SETTINGS: Record<string, string> = {
 	ollamaUrl: "http://192.168.10.120:11434",
 	aceStepUrl: "http://192.168.10.120:8001",
-	comfyuiUrl: "http://192.168.10.120:8188",
 	textProvider: DEFAULT_TEXT_PROVIDER,
 	textModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-	imageProvider: "comfyui",
-	imageModel: "",
+	imageProvider: "inference-sh",
+	imageModel: DEFAULT_INFERENCE_SH_IMAGE_MODEL,
 	aceModel: "acestep-v15-xl-turbo",
 	aceVaeCheckpoint: ACE_VAE_DEFAULT,
 	aceInferenceSteps: "8",
@@ -186,7 +185,6 @@ function SettingsPage() {
 	const [codexImagegenTest, setCodexImagegenTest] = useState<TestStatus>({
 		state: "idle",
 	});
-	const [comfyuiTest, setComfyuiTest] = useState<TestStatus>({ state: "idle" });
 	const [aceTest, setAceTest] = useState<TestStatus>({ state: "idle" });
 	const [codexTest, setCodexTest] = useState<TestStatus>({ state: "idle" });
 
@@ -315,9 +313,7 @@ function SettingsPage() {
 						? setCodexImagegenTest
 						: provider === "openai-codex"
 							? setCodexTest
-							: provider === "comfyui"
-								? setComfyuiTest
-								: setAceTest;
+							: setAceTest;
 
 		setStatus({ state: "testing" });
 		try {
@@ -364,7 +360,6 @@ function SettingsPage() {
 			const payload: Record<string, string> = {
 				ollamaUrl: readSetting("ollamaUrl"),
 				aceStepUrl: readSetting("aceStepUrl"),
-				comfyuiUrl: readSetting("comfyuiUrl"),
 				textProvider,
 				textModel: readSetting("textModel") || DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 				imageProvider,
@@ -538,7 +533,7 @@ function SettingsPage() {
 							if (value === "inference-sh" && !readSetting("imageModel")) {
 								writeSetting("imageModel", DEFAULT_INFERENCE_SH_IMAGE_MODEL);
 							}
-							if (value === "codex-imagegen" || value === "comfyui") {
+							if (value === "codex-imagegen") {
 								writeSetting("imageModel", "");
 							}
 						}}
@@ -615,12 +610,9 @@ function SettingsPage() {
 						setOllamaUrl={(value) => writeSetting("ollamaUrl", value)}
 						aceStepUrl={readSetting("aceStepUrl")}
 						setAceStepUrl={(value) => writeSetting("aceStepUrl", value)}
-						comfyuiUrl={readSetting("comfyuiUrl")}
-						setComfyuiUrl={(value) => writeSetting("comfyuiUrl", value)}
 						imageProvider={imageProvider}
 						ollamaTest={ollamaTest}
 						aceTest={aceTest}
-						comfyuiTest={comfyuiTest}
 						inferenceShTest={inferenceShTest}
 						codexImagegenTest={codexImagegenTest}
 						codexTest={codexTest}

@@ -1,3 +1,15 @@
+export const IMAGE_PROVIDERS = ["inference-sh", "codex-imagegen"] as const;
+export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
+
+/**
+ * Normalizes a stored image provider value. Legacy providers
+ * (comfyui, ollama, openrouter) and unknown values degrade to inference-sh.
+ */
+export function normalizeImageProvider(value?: string | null): ImageProvider {
+	if (value === "codex-imagegen") return "codex-imagegen";
+	return "inference-sh";
+}
+
 export interface InferenceShImageModelOption {
 	id: string;
 	name: string;

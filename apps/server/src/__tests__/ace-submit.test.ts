@@ -4,7 +4,6 @@ vi.mock("../external/service-urls", () => ({
 	getServiceUrls: vi.fn(async () => ({
 		aceStepUrl: "http://ace.test",
 		ollamaUrl: "http://ollama.test",
-		comfyuiUrl: "http://comfy.test",
 	})),
 }));
 

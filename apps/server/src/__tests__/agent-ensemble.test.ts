@@ -22,6 +22,7 @@ vi.mock("../external/pi-runtime", () => ({
 	promptInfinituneAgent: vi.fn().mockResolvedValue("Director reply"),
 }));
 
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import {
 	normalizeLlmProvider,
 	resolveTextLlmProfile,
@@ -298,6 +299,14 @@ describe("agent ensemble", () => {
 			topicHint: "orbital club",
 			lyricTheme: "orbital club",
 		});
+	});
+
+	it("normalizes old image providers to inference-sh", () => {
+		expect(normalizeImageProvider("comfyui")).toBe("inference-sh");
+		expect(normalizeImageProvider("ollama")).toBe("inference-sh");
+		expect(normalizeImageProvider("openrouter")).toBe("inference-sh");
+		expect(normalizeImageProvider("")).toBe("inference-sh");
+		expect(normalizeImageProvider("codex-imagegen")).toBe("codex-imagegen");
 	});
 
 	it("normalizes old text providers to openai-codex", () => {

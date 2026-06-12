@@ -27,7 +27,7 @@ vi.mock("../services/settings-service", () => ({
 	getAll: vi.fn().mockResolvedValue({
 		textProvider: "ollama",
 		textModel: "llama3",
-		imageProvider: "comfyui",
+		imageProvider: "inference-sh",
 		personaProvider: "",
 		personaModel: "",
 	}),

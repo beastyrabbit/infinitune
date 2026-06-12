@@ -1,3 +1,4 @@
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistManagerPlanSlot } from "@infinitune/shared/types";
 import { batchPollAce, pollAce, submitToAce } from "../../external/ace";
@@ -176,8 +177,7 @@ async function generatePersonaWithProvider(
 async function generateCoverWithProvider(
 	input: ProviderTaskPorts["generateCover"],
 ): Promise<unknown> {
-	const normalizedProvider =
-		input.provider === "ollama" ? "comfyui" : input.provider;
+	const normalizedProvider = normalizeImageProvider(input.provider);
 	const result = await generateCover({
 		coverPrompt: input.coverPrompt,
 		provider: normalizedProvider,

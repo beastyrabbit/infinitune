@@ -8,12 +8,9 @@ export interface NetworkTabProps {
 	setOllamaUrl: (v: string) => void;
 	aceStepUrl: string;
 	setAceStepUrl: (v: string) => void;
-	comfyuiUrl: string;
-	setComfyuiUrl: (v: string) => void;
 	imageProvider: string;
 	ollamaTest: TestStatus;
 	aceTest: TestStatus;
-	comfyuiTest: TestStatus;
 	inferenceShTest: TestStatus;
 	codexImagegenTest: TestStatus;
 	codexTest: TestStatus;
@@ -41,12 +38,9 @@ export function SettingsTabNetwork({
 	setOllamaUrl,
 	aceStepUrl,
 	setAceStepUrl,
-	comfyuiUrl,
-	setComfyuiUrl,
 	imageProvider,
 	ollamaTest,
 	aceTest,
-	comfyuiTest,
 	inferenceShTest,
 	codexImagegenTest,
 	codexTest,
@@ -129,24 +123,6 @@ export function SettingsTabNetwork({
 						placeholder="http://192.168.10.120:8001"
 						value={aceStepUrl}
 						onChange={(e) => setAceStepUrl(e.target.value)}
-					/>
-				</SettingsField>
-
-				<SettingsField
-					label="ComfyUI URL"
-					trailing={
-						<TestButton
-							provider="comfyui"
-							status={comfyuiTest}
-							onTest={onTest}
-						/>
-					}
-				>
-					<Input
-						className={inputClass}
-						placeholder="http://192.168.10.120:8188"
-						value={comfyuiUrl}
-						onChange={(e) => setComfyuiUrl(e.target.value)}
 					/>
 				</SettingsField>
 			</SettingsPanel>

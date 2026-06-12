@@ -26,7 +26,6 @@ const INITIAL_STATE: ServiceState = {
 
 const SERVICES = [
 	"ollama",
-	"comfyui",
 	"ace-step",
 	"inference-sh",
 	"codex-imagegen",
@@ -35,7 +34,6 @@ type ServiceName = (typeof SERVICES)[number];
 
 const SERVICE_META: Record<ServiceName, { label: string; urlKey: string }> = {
 	ollama: { label: "OLLAMA", urlKey: "ollamaUrl" },
-	comfyui: { label: "COMFYUI", urlKey: "comfyuiUrl" },
 	"ace-step": { label: "ACE-STEP", urlKey: "aceStepUrl" },
 	"inference-sh": { label: "INFERENCE.SH", urlKey: "" },
 	"codex-imagegen": { label: "CODEX IMAGEGEN", urlKey: "" },
@@ -46,7 +44,6 @@ function ConnectionsTestPage() {
 
 	const [states, setStates] = useState<Record<ServiceName, ServiceState>>({
 		ollama: { ...INITIAL_STATE },
-		comfyui: { ...INITIAL_STATE },
 		"ace-step": { ...INITIAL_STATE },
 		"inference-sh": { ...INITIAL_STATE },
 		"codex-imagegen": { ...INITIAL_STATE },

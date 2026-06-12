@@ -4,6 +4,7 @@ import {
 	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import {
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -347,12 +348,7 @@ async function getSettings(): Promise<SongWorkerSettings> {
 	return {
 		textProvider,
 		textModel,
-		imageProvider:
-			all.imageProvider === "ollama"
-				? "comfyui"
-				: all.imageProvider === "openrouter"
-					? "inference-sh"
-					: all.imageProvider || "comfyui",
+		imageProvider: normalizeImageProvider(all.imageProvider),
 		imageModel: all.imageModel ?? undefined,
 		aceModel: aceModel || undefined,
 		aceInferenceSteps: parseOptionalIntegerSetting(all.aceInferenceSteps),

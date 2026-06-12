@@ -387,7 +387,6 @@ export function SettingsTabModels({
 				<SettingsField label="Provider">
 					<ProviderToggle
 						options={[
-							{ value: "comfyui", label: "COMFYUI" },
 							{ value: "inference-sh", label: "INFERENCE.SH" },
 							{ value: "codex-imagegen", label: "CODEX" },
 						]}
@@ -396,12 +395,7 @@ export function SettingsTabModels({
 					/>
 				</SettingsField>
 
-				{imageProvider === "comfyui" ? (
-					<p className="text-[10px] font-bold uppercase text-white/30">
-						USING BUILT-IN Z-IMAGE-TURBO (LUMINA2) WORKFLOW — 4 STEPS, 496x496,
-						WEBSOCKET
-					</p>
-				) : imageProvider === "codex-imagegen" ? (
+				{imageProvider === "codex-imagegen" ? (
 					<p className="text-[10px] font-bold uppercase text-white/30">
 						USES CODEX CLI $IMAGEGEN WITH GPT-IMAGE-2 — COUNTS AGAINST CODEX
 						USAGE LIMITS, NOT OPENAI API BILLING

@@ -1250,23 +1250,6 @@ app.post("/test-connection", async (c) => {
 			});
 		}
 
-		if (provider === "comfyui") {
-			const response = await fetch(`${urls.comfyuiUrl}/system_stats`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) {
-				logger.warn(
-					{ provider: "comfyui", status: response.status },
-					"Connection test failed",
-				);
-				return c.json({
-					ok: false,
-					error: `ComfyUI returned ${response.status}`,
-				});
-			}
-			return c.json({ ok: true, message: "Connected to ComfyUI" });
-		}
-
 		if (provider === "ace-step") {
 			const [inventoryResponse, healthResponse, modelsResponse] =
 				await Promise.all([

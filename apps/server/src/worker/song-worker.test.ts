@@ -5,7 +5,7 @@ import { buildAceSubmitInput, type SongWorkerSettings } from "./song-worker";
 const baseSettings: SongWorkerSettings = {
 	textProvider: "openai-codex",
 	textModel: "gpt-5.1",
-	imageProvider: "comfyui",
+	imageProvider: "inference-sh",
 	aceModel: "acestep-v15-xl-turbo",
 	aceInferenceSteps: 12,
 	aceLmTemperature: 1.1,

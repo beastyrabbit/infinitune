@@ -1,4 +1,5 @@
 import { normalizeAgentReasoningLevel } from "@infinitune/shared/agent-reasoning";
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index";
@@ -19,9 +20,11 @@ export async function set(key: string, value: string) {
 	const storedValue =
 		key === "textProvider" || key === "personaProvider"
 			? normalizeLlmProvider(value)
-			: key.startsWith("agentReasoning.")
-				? normalizeAgentReasoningLevel(value)
-				: value;
+			: key === "imageProvider"
+				? normalizeImageProvider(value)
+				: key.startsWith("agentReasoning.")
+					? normalizeAgentReasoningLevel(value)
+					: value;
 	await db
 		.insert(settings)
 		.values({ key, value: storedValue })

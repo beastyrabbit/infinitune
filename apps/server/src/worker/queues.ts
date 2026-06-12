@@ -1,3 +1,4 @@
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import type { AcePollResult } from "../external/ace";
 import { CODEX_LLM_CONCURRENCY } from "../external/codex-config";
 import type {
@@ -13,7 +14,6 @@ const LLM_CONCURRENCY: Record<string, number> = {
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {
-	comfyui: 1,
 	"inference-sh": 3,
 	"codex-imagegen": 1,
 };
@@ -39,7 +39,7 @@ export class EndpointQueues {
 		);
 		this.image = new RequestResponseQueue<CoverResult>(
 			"image",
-			IMAGE_CONCURRENCY.comfyui,
+			IMAGE_CONCURRENCY["inference-sh"],
 		);
 		this.audio = new AudioQueue(pollFn, DEFAULT_AUDIO_CONCURRENCY);
 	}
@@ -63,14 +63,8 @@ export class EndpointQueues {
 	}): void {
 		const llmConcurrency =
 			LLM_CONCURRENCY[settings.textProvider] || LLM_CONCURRENCY["openai-codex"];
-		const imageProvider =
-			settings.imageProvider === "ollama"
-				? "comfyui"
-				: settings.imageProvider === "openrouter"
-					? "inference-sh"
-					: settings.imageProvider;
-		const imageConcurrency =
-			IMAGE_CONCURRENCY[imageProvider] || IMAGE_CONCURRENCY.comfyui;
+		const imageProvider = normalizeImageProvider(settings.imageProvider);
+		const imageConcurrency = IMAGE_CONCURRENCY[imageProvider];
 
 		this.llm.refreshConcurrency(llmConcurrency);
 		this.image.refreshConcurrency(imageConcurrency);

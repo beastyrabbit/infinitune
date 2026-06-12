@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
@@ -935,12 +936,7 @@ export class SongWorker {
 		this.ctx
 			.getSettings()
 			.then((settings) => {
-				const imageProvider =
-					settings.imageProvider === "ollama"
-						? "comfyui"
-						: settings.imageProvider === "openrouter"
-							? "inference-sh"
-							: settings.imageProvider;
+				const imageProvider = normalizeImageProvider(settings.imageProvider);
 				const imageModel = settings.imageModel;
 
 				return this.ctx.queues.image.enqueue({
