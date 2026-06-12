@@ -139,7 +139,7 @@ function parseProvider(value: unknown): AutoplayerProvider | undefined {
 		value === "ollama" ||
 		value === "openrouter" ||
 		value === "openai-codex" ||
-		value === "anthropic"
+		value === "anthropic" // legacy value, normalizes to openai-codex
 	) {
 		return normalizeLlmProvider(value);
 	}
@@ -1247,13 +1247,6 @@ app.post("/test-connection", async (c) => {
 			return c.json({
 				ok: true,
 				message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
-			});
-		}
-
-		if (provider === "anthropic") {
-			return c.json({
-				ok: true,
-				message: "Anthropic text generation is managed by Pi auth storage",
 			});
 		}
 

@@ -3,6 +3,8 @@ import { ACE_DCW_MODES, isValidAceModel } from "../ace-settings";
 import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
 import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
 
+// Legacy providers stay accepted on update; the server normalizes them
+// to "openai-codex" via normalizeLlmProvider.
 const UPDATE_LLM_PROVIDERS = [
 	"openai-codex",
 	"anthropic",

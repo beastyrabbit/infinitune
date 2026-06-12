@@ -34,7 +34,6 @@ export type AgentToolName =
 
 export interface AgentModelPolicy {
 	primary: { provider: "openai-codex"; model: "gpt-5.2" };
-	fallback: { provider: "anthropic"; model: "claude-sonnet-4-6" };
 	thinkingLevel: AgentReasoningLevel;
 }
 
@@ -60,7 +59,6 @@ export interface AgentSpec {
 function modelPolicy(agentId: AgentId): AgentModelPolicy {
 	return {
 		primary: { provider: "openai-codex", model: "gpt-5.2" },
-		fallback: { provider: "anthropic", model: "claude-sonnet-4-6" },
 		thinkingLevel: DEFAULT_AGENT_REASONING_LEVELS[agentId],
 	};
 }

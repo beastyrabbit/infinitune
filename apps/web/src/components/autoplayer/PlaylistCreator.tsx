@@ -4,7 +4,6 @@ import {
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
 import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -174,10 +173,6 @@ export function PlaylistCreator({
 		}
 		if (provider === "openai-codex" && !model.trim()) {
 			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-			return;
-		}
-		if (provider === "anthropic" && !model.trim()) {
-			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
 		}
 	}, [provider, model, codexTextModels]);
 
@@ -444,29 +439,8 @@ export function PlaylistCreator({
 								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									PROVIDER
 								</p>
-								<div className="flex gap-0">
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "openai-codex"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setProvider("openai-codex")}
-									>
-										OPENAI CODEX
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "anthropic"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setProvider("anthropic")}
-									>
-										ANTHROPIC
-									</button>
+								<div className="flex h-10 items-center border-4 border-white/20 bg-white px-3 font-mono text-xs font-black uppercase text-black">
+									OPENAI CODEX
 								</div>
 							</div>
 
@@ -495,11 +469,7 @@ export function PlaylistCreator({
 								) : (
 									<Input
 										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-										placeholder={
-											provider === "openai-codex"
-												? DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()
-												: DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()
-										}
+										placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
 										value={model}
 										onChange={(e) => setModel(e.target.value)}
 									/>

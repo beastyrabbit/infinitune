@@ -13,10 +13,7 @@ import {
 	INFINITUNE_AGENT_IDS,
 	type InfinituneAgentId,
 } from "@infinitune/shared/agent-reasoning";
-import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
-	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-} from "@infinitune/shared/text-llm-profile";
+import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -48,8 +45,6 @@ export interface InferenceShImageModelOption {
 }
 
 export interface ModelsTabProps {
-	textProvider: string;
-	setTextProvider: (v: string) => void;
 	textModel: string;
 	setTextModel: (v: string) => void;
 	imageProvider: string;
@@ -60,8 +55,6 @@ export interface ModelsTabProps {
 	setAceModel: (v: string) => void;
 	aceVaeCheckpoint: string;
 	setAceVaeCheckpoint: (v: string) => void;
-	personaProvider: string;
-	setPersonaProvider: (v: string) => void;
 	personaModel: string;
 	setPersonaModel: (v: string) => void;
 	agentReasoning: Record<InfinituneAgentId, AgentReasoningLevel>;
@@ -119,13 +112,13 @@ function PriceStrip({ model }: { model: InferenceShImageModelOption }) {
 	);
 }
 
-function defaultTextModelForProvider(provider: string): string {
-	return provider === "anthropic"
-		? DEFAULT_ANTHROPIC_TEXT_MODEL
-		: DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+function StaticProviderLabel({ label }: { label: string }) {
+	return (
+		<div className="flex h-10 items-center border-4 border-white/20 bg-white px-3 font-mono text-xs font-black uppercase text-black">
+			{label}
+		</div>
+	);
 }
-
-const ANTHROPIC_MODEL_OPTIONS = [DEFAULT_ANTHROPIC_TEXT_MODEL];
 
 function InferenceShModelSelect({
 	models,
@@ -248,8 +241,6 @@ function InferenceShModelSelect({
 }
 
 export function SettingsTabModels({
-	textProvider,
-	setTextProvider,
 	textModel,
 	setTextModel,
 	imageProvider,
@@ -260,8 +251,6 @@ export function SettingsTabModels({
 	setAceModel,
 	aceVaeCheckpoint,
 	setAceVaeCheckpoint,
-	personaProvider,
-	setPersonaProvider,
 	personaModel,
 	setPersonaModel,
 	agentReasoning,
@@ -308,77 +297,46 @@ export function SettingsTabModels({
 			{/* TEXT MODEL */}
 			<SettingsPanel title="TEXT MODEL — LYRICS & METADATA">
 				<SettingsField label="Provider">
-					<ProviderToggle
-						options={[
-							{ value: "openai-codex", label: "OPENAI CODEX" },
-							{ value: "anthropic", label: "ANTHROPIC" },
-						]}
-						value={textProvider}
-						onChange={(nextProvider) => {
-							setTextProvider(nextProvider);
-							setTextModel(defaultTextModelForProvider(nextProvider));
-						}}
-					/>
+					<StaticProviderLabel label="OPENAI CODEX" />
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{textProvider === "openai-codex" ? (
-						codexLoading ? (
-							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
-								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
-									LOADING CODEX MODELS...
-								</span>
-							</div>
-						) : codexTextModels.length > 0 ? (
-							<Select value={textModel} onValueChange={setTextModel}>
-								<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-									<SelectValue placeholder="SELECT CODEX MODEL" />
-								</SelectTrigger>
-								<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-									{codexTextModels.map((m) => (
-										<SelectItem
-											key={m.name}
-											value={m.name}
-											className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-										>
-											{(m.displayName || m.name).toUpperCase()}
-											{m.is_default ? " (DEFAULT)" : ""}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						) : (
-							<div>
-								<Input
-									className={inputClass}
-									placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
-									value={textModel}
-									onChange={(e) => setTextModel(e.target.value)}
-								/>
-								<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
-									SIGN IN ON NETWORK TAB TO LOAD CODEX MODEL LIST
-								</p>
-							</div>
-						)
-					) : (
+					{codexLoading ? (
+						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+								LOADING CODEX MODELS...
+							</span>
+						</div>
+					) : codexTextModels.length > 0 ? (
 						<Select value={textModel} onValueChange={setTextModel}>
 							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue
-									placeholder={DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()}
-								/>
+								<SelectValue placeholder="SELECT CODEX MODEL" />
 							</SelectTrigger>
 							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								{ANTHROPIC_MODEL_OPTIONS.map((model) => (
+								{codexTextModels.map((m) => (
 									<SelectItem
-										key={model}
-										value={model}
+										key={m.name}
+										value={m.name}
 										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
 									>
-										{model.toUpperCase()}
+										{(m.displayName || m.name).toUpperCase()}
+										{m.is_default ? " (DEFAULT)" : ""}
 									</SelectItem>
 								))}
 							</SelectContent>
 						</Select>
+					) : (
+						<div>
+							<Input
+								className={inputClass}
+								placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
+								value={textModel}
+								onChange={(e) => setTextModel(e.target.value)}
+							/>
+							<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
+								SIGN IN ON NETWORK TAB TO LOAD CODEX MODEL LIST
+							</p>
+						</div>
 					)}
 				</SettingsField>
 			</SettingsPanel>
@@ -573,64 +531,17 @@ export function SettingsTabModels({
 			{/* PERSONA MODEL */}
 			<SettingsPanel title="PERSONA MODEL — SONG DNA EXTRACTION">
 				<SettingsField label="Provider">
-					<ProviderToggle
-						options={[
-							{ value: "openai-codex", label: "OPENAI CODEX" },
-							{ value: "anthropic", label: "ANTHROPIC" },
-						]}
-						value={personaProvider}
-						onChange={(nextProvider) => {
-							setPersonaProvider(nextProvider);
-							setPersonaModel("");
-						}}
-					/>
+					<StaticProviderLabel label="OPENAI CODEX" />
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{personaProvider === "openai-codex" ? (
-						codexLoading ? (
-							<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
-								<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
-									LOADING CODEX MODELS...
-								</span>
-							</div>
-						) : codexTextModels.length > 0 ? (
-							<Select
-								value={personaModel || "__fallback__"}
-								onValueChange={(value) =>
-									setPersonaModel(value === "__fallback__" ? "" : value)
-								}
-							>
-								<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-									<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
-								</SelectTrigger>
-								<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-									<SelectItem
-										value="__fallback__"
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										USE TEXT MODEL
-									</SelectItem>
-									{codexTextModels.map((m) => (
-										<SelectItem
-											key={m.name}
-											value={m.name}
-											className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-										>
-											{(m.displayName || m.name).toUpperCase()}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						) : (
-							<Input
-								className={inputClass}
-								placeholder="USES TEXT MODEL IF EMPTY"
-								value={personaModel}
-								onChange={(e) => setPersonaModel(e.target.value)}
-							/>
-						)
-					) : (
+					{codexLoading ? (
+						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+								LOADING CODEX MODELS...
+							</span>
+						</div>
+					) : codexTextModels.length > 0 ? (
 						<Select
 							value={personaModel || "__fallback__"}
 							onValueChange={(value) =>
@@ -647,17 +558,24 @@ export function SettingsTabModels({
 								>
 									USE TEXT MODEL
 								</SelectItem>
-								{ANTHROPIC_MODEL_OPTIONS.map((model) => (
+								{codexTextModels.map((m) => (
 									<SelectItem
-										key={model}
-										value={model}
+										key={m.name}
+										value={m.name}
 										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
 									>
-										{model.toUpperCase()}
+										{(m.displayName || m.name).toUpperCase()}
 									</SelectItem>
 								))}
 							</SelectContent>
 						</Select>
+					) : (
+						<Input
+							className={inputClass}
+							placeholder="USES TEXT MODEL IF EMPTY"
+							value={personaModel}
+							onChange={(e) => setPersonaModel(e.target.value)}
+						/>
 					)}
 				</SettingsField>
 

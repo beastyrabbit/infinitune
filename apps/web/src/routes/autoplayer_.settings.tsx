@@ -17,7 +17,6 @@ import {
 } from "@infinitune/shared/agent-reasoning";
 import { DEFAULT_INFERENCE_SH_IMAGE_MODEL } from "@infinitune/shared/inference-sh-image-models";
 import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -367,11 +366,7 @@ function SettingsPage() {
 				aceStepUrl: readSetting("aceStepUrl"),
 				comfyuiUrl: readSetting("comfyuiUrl"),
 				textProvider,
-				textModel:
-					readSetting("textModel") ||
-					(textProvider === "anthropic"
-						? DEFAULT_ANTHROPIC_TEXT_MODEL
-						: DEFAULT_OPENAI_CODEX_TEXT_MODEL),
+				textModel: readSetting("textModel") || DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 				imageProvider,
 				imageModel: readSetting("imageModel"),
 				personaProvider,
@@ -535,17 +530,6 @@ function SettingsPage() {
 
 				{activeTab === "models" ? (
 					<SettingsTabModels
-						textProvider={textProvider}
-						setTextProvider={(value) => {
-							const provider = normalizeProviderSetting(value);
-							writeSetting("textProvider", provider);
-							writeSetting(
-								"textModel",
-								provider === "anthropic"
-									? DEFAULT_ANTHROPIC_TEXT_MODEL
-									: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-							);
-						}}
 						textModel={readSetting("textModel")}
 						setTextModel={(value) => writeSetting("textModel", value)}
 						imageProvider={imageProvider}
@@ -570,13 +554,6 @@ function SettingsPage() {
 						)}
 						setAceVaeCheckpoint={(value) =>
 							writeSetting("aceVaeCheckpoint", value)
-						}
-						personaProvider={personaProvider}
-						setPersonaProvider={(value) =>
-							writeSetting(
-								"personaProvider",
-								normalizeProviderSetting(value, textProvider),
-							)
 						}
 						personaModel={readSetting("personaModel")}
 						setPersonaModel={(value) => writeSetting("personaModel", value)}

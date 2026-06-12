@@ -96,10 +96,6 @@ describe("agent ensemble", () => {
 				provider: "openai-codex",
 				model: "gpt-5.2",
 			});
-			expect(spec.modelPolicy.fallback).toEqual({
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
-			});
 			expect(spec.outputSchema).toHaveProperty("type", "json-object");
 		}
 		expect(getAgentSpec("playlist-director").modelPolicy.thinkingLevel).toBe(
@@ -307,10 +303,17 @@ describe("agent ensemble", () => {
 	it("normalizes old text providers to openai-codex", () => {
 		expect(normalizeLlmProvider("ollama")).toBe("openai-codex");
 		expect(normalizeLlmProvider("openrouter")).toBe("openai-codex");
+		expect(normalizeLlmProvider("anthropic")).toBe("openai-codex");
 		expect(resolveTextLlmProfile({ provider: "ollama", model: "" })).toEqual({
 			provider: "openai-codex",
 			model: "gpt-5.2",
 		});
+		expect(resolveTextLlmProfile({ provider: "anthropic", model: "" })).toEqual(
+			{
+				provider: "openai-codex",
+				model: "gpt-5.2",
+			},
+		);
 	});
 
 	it("only required director questions block generation state", async () => {
