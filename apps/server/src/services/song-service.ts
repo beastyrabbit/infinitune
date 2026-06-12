@@ -169,6 +169,10 @@ export async function createWithMetadata(
 		albumTrackNumber?: number;
 		radioEligible?: boolean;
 		requestId?: string | null;
+		aceTaskType?: string;
+		sourceSongId?: string;
+		sourceAudioPath?: string;
+		coverNoiseStrength?: number;
 	},
 ) {
 	const patch = buildMetadataPatch(metadata);
@@ -186,6 +190,10 @@ export async function createWithMetadata(
 			albumTrackNumber: opts?.albumTrackNumber,
 			radioEligible: opts?.radioEligible,
 			requestId: opts?.requestId,
+			aceTaskType: opts?.aceTaskType,
+			sourceSongId: opts?.sourceSongId,
+			sourceAudioPath: opts?.sourceAudioPath,
+			coverNoiseStrength: opts?.coverNoiseStrength,
 			...patch,
 		} as typeof songs.$inferInsert)
 		.returning();

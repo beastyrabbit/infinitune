@@ -15,6 +15,7 @@ import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
+import { Route as AutoplayerReimagineRouteImport } from './routes/autoplayer_.reimagine'
 import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
 import { Route as AutoplayerPlaylistsRouteImport } from './routes/autoplayer_.playlists'
 import { Route as AutoplayerOrchestratorRouteImport } from './routes/autoplayer_.orchestrator'
@@ -73,6 +74,11 @@ const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
 const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
   id: '/autoplayer_/settings',
   path: '/autoplayer/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerReimagineRoute = AutoplayerReimagineRouteImport.update({
+  id: '/autoplayer_/reimagine',
+  path: '/autoplayer/reimagine',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerQueueRoute = AutoplayerQueueRouteImport.update({
@@ -246,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer/orchestrator': typeof AutoplayerOrchestratorRoute
   '/autoplayer/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer/queue': typeof AutoplayerQueueRoute
+  '/autoplayer/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
@@ -283,6 +290,7 @@ export interface FileRoutesByTo {
   '/autoplayer/orchestrator': typeof AutoplayerOrchestratorRoute
   '/autoplayer/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer/queue': typeof AutoplayerQueueRoute
+  '/autoplayer/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
@@ -320,6 +328,7 @@ export interface FileRoutesById {
   '/autoplayer_/orchestrator': typeof AutoplayerOrchestratorRoute
   '/autoplayer_/playlists': typeof AutoplayerPlaylistsRoute
   '/autoplayer_/queue': typeof AutoplayerQueueRoute
+  '/autoplayer_/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
   '/autoplayer_/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
@@ -359,6 +368,7 @@ export interface FileRouteTypes {
     | '/autoplayer/orchestrator'
     | '/autoplayer/playlists'
     | '/autoplayer/queue'
+    | '/autoplayer/reimagine'
     | '/autoplayer/settings'
     | '/autoplayer/testlab'
     | '/api/autoplayer/ace-models'
@@ -396,6 +406,7 @@ export interface FileRouteTypes {
     | '/autoplayer/orchestrator'
     | '/autoplayer/playlists'
     | '/autoplayer/queue'
+    | '/autoplayer/reimagine'
     | '/autoplayer/settings'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
@@ -432,6 +443,7 @@ export interface FileRouteTypes {
     | '/autoplayer_/orchestrator'
     | '/autoplayer_/playlists'
     | '/autoplayer_/queue'
+    | '/autoplayer_/reimagine'
     | '/autoplayer_/settings'
     | '/autoplayer_/testlab'
     | '/api/autoplayer/ace-models'
@@ -470,6 +482,7 @@ export interface RootRouteChildren {
   AutoplayerOrchestratorRoute: typeof AutoplayerOrchestratorRoute
   AutoplayerPlaylistsRoute: typeof AutoplayerPlaylistsRoute
   AutoplayerQueueRoute: typeof AutoplayerQueueRoute
+  AutoplayerReimagineRoute: typeof AutoplayerReimagineRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
   AutoplayerTestlabRoute: typeof AutoplayerTestlabRouteWithChildren
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
@@ -533,6 +546,13 @@ declare module '@tanstack/react-router' {
       path: '/autoplayer/settings'
       fullPath: '/autoplayer/settings'
       preLoaderRoute: typeof AutoplayerSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/reimagine': {
+      id: '/autoplayer_/reimagine'
+      path: '/autoplayer/reimagine'
+      fullPath: '/autoplayer/reimagine'
+      preLoaderRoute: typeof AutoplayerReimagineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/queue': {
@@ -773,6 +793,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerOrchestratorRoute: AutoplayerOrchestratorRoute,
   AutoplayerPlaylistsRoute: AutoplayerPlaylistsRoute,
   AutoplayerQueueRoute: AutoplayerQueueRoute,
+  AutoplayerReimagineRoute: AutoplayerReimagineRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
   AutoplayerTestlabRoute: AutoplayerTestlabRouteWithChildren,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,

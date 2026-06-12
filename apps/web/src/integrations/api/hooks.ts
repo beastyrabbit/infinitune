@@ -1408,6 +1408,38 @@ export const useCreateRawOneshot = createMutation<
 	[["songs"], ["playlists"]],
 );
 
+export const useReimagineSong = createMutation<
+	{
+		sourceSongId: string;
+		style: string;
+		coverNoiseStrength?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>("/api/songs/reimagine", args),
+	[["songs"], ["playlists"]],
+);
+
+export const useReimagineFromUrl = createMutation<
+	{
+		url: string;
+		style: string;
+		lyrics?: string;
+		coverNoiseStrength?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>(
+			"/api/songs/reimagine-url",
+			args,
+		),
+	[["songs"], ["playlists"]],
+);
+
 export const useCreateSong = createMutation<Record<string, unknown>, Song>(
 	(args) => api.post<Song>("/api/songs", args).then(normalizeSongMedia),
 	[["songs"]],

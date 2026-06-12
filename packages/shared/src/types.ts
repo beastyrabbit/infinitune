@@ -150,6 +150,10 @@ export interface Song {
 	language: string | null;
 	description: string | null;
 	status: SongStatus;
+	aceTaskType: string | null;
+	sourceSongId: string | null;
+	sourceAudioPath: string | null;
+	coverNoiseStrength: number | null;
 	aceTaskId: string | null;
 	aceSubmittedAt: number | null;
 	audioUrl: string | null;

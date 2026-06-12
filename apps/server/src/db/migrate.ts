@@ -373,6 +373,10 @@ export function ensureSchema() {
 	addColumn("songs", "skip_count INTEGER NOT NULL DEFAULT 0");
 	addColumn("songs", "radio_play_count INTEGER NOT NULL DEFAULT 0");
 	addColumn("songs", "last_radio_played_at INTEGER");
+	addColumn("songs", "ace_task_type TEXT");
+	addColumn("songs", "source_song_id TEXT");
+	addColumn("songs", "source_audio_path TEXT");
+	addColumn("songs", "cover_noise_strength REAL");
 	addColumn(
 		"songs",
 		"request_id TEXT REFERENCES radio_requests(id) ON DELETE SET NULL",

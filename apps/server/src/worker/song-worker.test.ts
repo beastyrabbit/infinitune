@@ -82,6 +82,25 @@ describe("buildAceSubmitInput", () => {
 		expect(input.aceAutoDuration).toBe(false);
 	});
 
+	it("passes reimagine cover-task fields through to the ACE submit input", () => {
+		const song = {
+			...makeSong(),
+			aceTaskType: "cover",
+			sourceSongId: "src-1",
+			coverNoiseStrength: 0.7,
+		} as unknown as SongWire;
+		const input = buildAceSubmitInput({
+			song,
+			playlist: makePlaylist(),
+			settings: baseSettings,
+			srcAudioFile: "/music/src-1/audio.mp3",
+		});
+
+		expect(input.aceTaskType).toBe("cover");
+		expect(input.srcAudioFile).toBe("/music/src-1/audio.mp3");
+		expect(input.coverNoiseStrength).toBe(0.7);
+	});
+
 	it("uses explicit playlist ACE overrides ahead of global settings", () => {
 		const input = buildAceSubmitInput({
 			song: makeSong(),

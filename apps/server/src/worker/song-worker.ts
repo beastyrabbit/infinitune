@@ -17,6 +17,7 @@ import { tagMp3 } from "../external/tag-mp3";
 import { songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
+import { resolveSongAudioFile } from "../utils/song-audio-path";
 import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
@@ -160,16 +161,22 @@ export function buildAceSubmitInput({
 	song,
 	playlist,
 	settings,
+	srcAudioFile,
 	signal,
 }: {
 	song: SongWire;
 	playlist: PlaylistWire;
 	settings: SongWorkerSettings;
+	/** Resolved source audio path for reimagine (ACE cover) tasks */
+	srcAudioFile?: string;
 	signal?: AbortSignal;
 }): ProviderTaskPorts["submitAudio"] {
 	const playlistAceModel = playlist.aceModel;
 	const radioDuration = song.radioEligible ? 180 : undefined;
 	return {
+		aceTaskType: song.aceTaskType ?? undefined,
+		srcAudioFile,
+		coverNoiseStrength: song.coverNoiseStrength ?? undefined,
 		lyrics: song.lyrics || "",
 		caption: song.caption || "",
 		vocalStyle: song.vocalStyle ?? undefined,
@@ -1038,11 +1045,36 @@ export class SongWorker {
 					endpoint: "ace-step",
 					execute: async (signal) => {
 						const settings = await this.ctx.getSettings();
+
+						// Reimagine (cover) tasks upload the reference audio: either an
+						// external download (sourceAudioPath) or a library song's file.
+						let srcAudioFile: string | undefined;
+						if (this.song.sourceAudioPath) {
+							if (!fs.existsSync(this.song.sourceAudioPath)) {
+								throw new Error(
+									`Reference audio for reimagine not found (${this.song.sourceAudioPath})`,
+								);
+							}
+							srcAudioFile = this.song.sourceAudioPath;
+						} else if (this.song.sourceSongId) {
+							const sourceSong = await songService.getById(
+								this.song.sourceSongId,
+							);
+							srcAudioFile =
+								resolveSongAudioFile(sourceSong?.storagePath) ?? undefined;
+							if (!srcAudioFile) {
+								throw new Error(
+									`Source audio for reimagine not found (song ${this.song.sourceSongId})`,
+								);
+							}
+						}
+
 						const result = await this.ctx.capabilities.submitAudio(
 							buildAceSubmitInput({
 								song: this.song,
 								playlist: this.ctx.playlist,
 								settings,
+								srcAudioFile,
 								signal,
 							}),
 						);

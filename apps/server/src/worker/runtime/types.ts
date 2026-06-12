@@ -229,6 +229,9 @@ export interface ProviderTaskPorts {
 		aceDcwWavelet?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
+		aceTaskType?: string;
+		srcAudioFile?: string;
+		coverNoiseStrength?: number;
 		signal?: AbortSignal;
 	};
 	pollAudio: {

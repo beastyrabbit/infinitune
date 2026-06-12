@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
 	ACE_GENERATION_DEFAULTS,
 	normalizeAceModel,
@@ -97,6 +99,12 @@ export async function submitToAce(options: {
 	aceDcwWavelet?: string;
 	aceThinking?: boolean;
 	aceAutoDuration?: boolean;
+	/** ACE task type, e.g. "cover" for reimagine. Defaults to text2music. */
+	aceTaskType?: string;
+	/** Local path to the source audio file (uploaded for cover tasks). */
+	srcAudioFile?: string;
+	/** Cover blend: 0 = pure noise (loose), 1 = closest to source. */
+	coverNoiseStrength?: number;
 	signal?: AbortSignal;
 }): Promise<AceSubmitResult> {
 	const {
@@ -120,6 +128,9 @@ export async function submitToAce(options: {
 		aceDcwWavelet,
 		aceThinking,
 		aceAutoDuration,
+		aceTaskType,
+		srcAudioFile,
+		coverNoiseStrength,
 		signal,
 	} = options;
 
@@ -168,12 +179,40 @@ export async function submitToAce(options: {
 	}
 	if (aceDcwWavelet !== undefined) payload.dcw_wavelet = aceDcwWavelet;
 
-	const response = await fetch(`${aceUrl}/release_task`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-		signal,
-	});
+	if (aceTaskType && aceTaskType !== "text2music") {
+		payload.task_type = aceTaskType;
+		if (coverNoiseStrength !== undefined) {
+			payload.cover_noise_strength = coverNoiseStrength;
+		}
+	}
+
+	let response: Response;
+	if (srcAudioFile) {
+		// Cover/repaint tasks upload the source audio as multipart form data;
+		// ACE coerces stringified form values back to their typed params.
+		const form = new FormData();
+		for (const [key, value] of Object.entries(payload)) {
+			form.append(key, String(value));
+		}
+		const audioBuffer = await fs.promises.readFile(srcAudioFile);
+		form.append(
+			"src_audio",
+			new Blob([new Uint8Array(audioBuffer)], { type: "audio/mpeg" }),
+			path.basename(srcAudioFile),
+		);
+		response = await fetch(`${aceUrl}/release_task`, {
+			method: "POST",
+			body: form,
+			signal,
+		});
+	} else {
+		response = await fetch(`${aceUrl}/release_task`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload),
+			signal,
+		});
+	}
 
 	await assertOk(response, "ACE-Step submit");
 

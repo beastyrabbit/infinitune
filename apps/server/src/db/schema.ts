@@ -136,6 +136,12 @@ export const songs = sqliteTable(
 
 		// Status & processing
 		status: text("status").notNull().default("pending"),
+		// Reimagine (ACE "cover" task): re-render sourceSongId in a new style
+		aceTaskType: text("ace_task_type"),
+		sourceSongId: text("source_song_id"),
+		// External reference audio (e.g. YouTube download) for cover tasks
+		sourceAudioPath: text("source_audio_path"),
+		coverNoiseStrength: real("cover_noise_strength"),
 		aceTaskId: text("ace_task_id"),
 		aceSubmittedAt: integer("ace_submitted_at", { mode: "number" }),
 		audioUrl: text("audio_url"),

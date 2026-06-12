@@ -8,6 +8,7 @@ import {
 	Radio,
 	Settings,
 	SkipForward,
+	Sparkles,
 	ThumbsDown,
 	Zap,
 } from "lucide-react";
@@ -277,6 +278,12 @@ function AutoplayerPage() {
 							Oneshot
 						</Link>
 						<Link
+							to="/autoplayer/reimagine"
+							className="border border-fuchsia-500/30 px-3 py-2 text-fuchsia-400/70 hover:border-fuchsia-500/70 hover:text-fuchsia-400"
+						>
+							Reimagine
+						</Link>
+						<Link
 							to="/autoplayer/settings"
 							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
 						>
@@ -365,7 +372,7 @@ function AutoplayerPage() {
 						</div>
 					</div>
 
-					<div className="mt-6 grid gap-3 md:grid-cols-4">
+					<div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
 						<Link
 							to="/autoplayer/orchestrator"
 							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-emerald-300/50"
@@ -382,6 +389,15 @@ function AutoplayerPage() {
 							<Zap className="h-5 w-5 text-yellow-500" />
 							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
 								Oneshot
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/reimagine"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-fuchsia-500/50"
+						>
+							<Sparkles className="h-5 w-5 text-fuchsia-400" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Reimagine
 							</span>
 						</Link>
 						<Link

@@ -4,8 +4,10 @@ import {
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import z from "zod";
+import { downloadYoutubeAudio } from "../../external/youtube-audio";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
+import { resolveSongAudioFile } from "../../utils/song-audio-path";
 
 const app = new Hono();
 
@@ -99,6 +101,151 @@ app.post("/oneshot-raw", async (c) => {
 		timeSignature: "4/4",
 		audioDuration,
 	});
+
+	playlistService.announceCreated(playlist.id);
+
+	return c.json({ playlist, song });
+});
+
+const ReimagineSchema = z.object({
+	sourceSongId: z.string().min(1),
+	style: z.string().min(1).max(1000),
+	/** 0 = loose interpretation, 1 = closest to the source audio */
+	coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
+	playlistKey: z.string().min(1).max(64).optional(),
+});
+
+// POST /api/songs/reimagine — re-render an existing song in a new style via
+// the ACE "cover" task. The source song's audio is uploaded as the reference,
+// so structure/melody stay recognizable while the style follows the prompt.
+app.post("/reimagine", async (c) => {
+	const body = await c.req.json();
+	const result = ReimagineSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	const { sourceSongId, style, coverNoiseStrength, playlistKey } = result.data;
+
+	const source = await songService.getById(sourceSongId);
+	if (!source) {
+		return c.json({ error: "Source song not found" }, 404);
+	}
+	if (!resolveSongAudioFile(source.storagePath)) {
+		return c.json({ error: "Source song audio is not available" }, 400);
+	}
+
+	const title = `${source.title || "Untitled"} (Reimagined)`;
+	const genre = style.split(",")[0]?.trim() || source.genre || "electronic";
+	const audioDuration = source.audioDuration ?? 180;
+
+	const playlist = await playlistService.create({
+		name: `[REIMAGINE] ${title}`,
+		prompt: style,
+		llmProvider: "openai-codex",
+		llmModel: "",
+		mode: "oneshot",
+		playlistKey,
+		audioDuration,
+		// Match the source duration exactly — never let ACE auto-detect (-1)
+		aceAutoDuration: false,
+		isTemporary: true,
+		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
+		emitCreated: false,
+	});
+
+	const song = await songService.createWithMetadata(
+		playlist.id,
+		1,
+		{
+			title,
+			artistName: source.artistName || "Reimagined",
+			genre,
+			subGenre: genre,
+			lyrics: source.lyrics || "",
+			caption: style,
+			bpm: source.bpm || 120,
+			keyScale: source.keyScale || "C major",
+			timeSignature: source.timeSignature || "4/4",
+			audioDuration,
+		},
+		{
+			aceTaskType: "cover",
+			sourceSongId,
+			coverNoiseStrength,
+		},
+	);
+
+	playlistService.announceCreated(playlist.id);
+
+	return c.json({ playlist, song });
+});
+
+const ReimagineUrlSchema = z.object({
+	url: z.string().url().max(500),
+	style: z.string().min(1).max(1000),
+	lyrics: z.string().max(20000).optional().default(""),
+	coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
+	playlistKey: z.string().min(1).max(64).optional(),
+});
+
+// POST /api/songs/reimagine-url — reimagine an external source (YouTube etc.):
+// yt-dlp downloads the audio, which then drives the ACE cover task. Lyrics
+// can't be extracted from the source, so the caller supplies them (optional).
+app.post("/reimagine-url", async (c) => {
+	const body = await c.req.json();
+	const result = ReimagineUrlSchema.safeParse(body);
+	if (!result.success) {
+		return c.json({ error: result.error.message }, 400);
+	}
+	const { url, style, lyrics, coverNoiseStrength, playlistKey } = result.data;
+
+	let download: Awaited<ReturnType<typeof downloadYoutubeAudio>>;
+	try {
+		download = await downloadYoutubeAudio(url);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Download failed";
+		return c.json({ error: `Could not fetch source audio: ${message}` }, 400);
+	}
+
+	const title = `${download.title} (Reimagined)`;
+	const genre = style.split(",")[0]?.trim() || "electronic";
+	const audioDuration = Math.round(download.durationSeconds);
+
+	const playlist = await playlistService.create({
+		name: `[REIMAGINE] ${title}`,
+		prompt: style,
+		llmProvider: "openai-codex",
+		llmModel: "",
+		mode: "oneshot",
+		playlistKey,
+		audioDuration,
+		aceAutoDuration: false,
+		isTemporary: true,
+		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
+		emitCreated: false,
+	});
+
+	const song = await songService.createWithMetadata(
+		playlist.id,
+		1,
+		{
+			title,
+			artistName: "Reimagined",
+			genre,
+			subGenre: genre,
+			lyrics,
+			caption: style,
+			bpm: 120,
+			keyScale: "C major",
+			timeSignature: "4/4",
+			audioDuration,
+		},
+		{
+			aceTaskType: "cover",
+			sourceAudioPath: download.filePath,
+			coverNoiseStrength,
+		},
+	);
 
 	playlistService.announceCreated(playlist.id);
 

@@ -214,6 +214,9 @@ async function submitAudioWithProvider(
 		aceDcwWavelet: input.aceDcwWavelet,
 		aceThinking: input.aceThinking,
 		aceAutoDuration: input.aceAutoDuration,
+		aceTaskType: input.aceTaskType,
+		srcAudioFile: input.srcAudioFile,
+		coverNoiseStrength: input.coverNoiseStrength,
 		signal: input.signal,
 	});
 }
