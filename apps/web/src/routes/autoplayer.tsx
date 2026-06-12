@@ -9,6 +9,7 @@ import {
 	Settings,
 	SkipForward,
 	ThumbsDown,
+	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -270,6 +271,12 @@ function AutoplayerPage() {
 							Phone Line
 						</Link>
 						<Link
+							to="/autoplayer/oneshot"
+							className="border border-yellow-500/30 px-3 py-2 text-yellow-500/70 hover:border-yellow-500/70 hover:text-yellow-400"
+						>
+							Oneshot
+						</Link>
+						<Link
 							to="/autoplayer/settings"
 							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
 						>
@@ -358,7 +365,7 @@ function AutoplayerPage() {
 						</div>
 					</div>
 
-					<div className="mt-6 grid gap-3 md:grid-cols-3">
+					<div className="mt-6 grid gap-3 md:grid-cols-4">
 						<Link
 							to="/autoplayer/orchestrator"
 							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-emerald-300/50"
@@ -366,6 +373,15 @@ function AutoplayerPage() {
 							<MessageSquareText className="h-5 w-5 text-emerald-300" />
 							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
 								Request
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/oneshot"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-yellow-500/50"
+						>
+							<Zap className="h-5 w-5 text-yellow-500" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Oneshot
 							</span>
 						</Link>
 						<Link
