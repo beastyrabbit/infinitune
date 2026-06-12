@@ -1391,6 +1391,23 @@ export const useCreateMetadataReady = createMutation<
 	{ silent: true },
 );
 
+export const useCreateRawOneshot = createMutation<
+	{
+		lyrics: string;
+		style?: string;
+		audioDuration?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>(
+			"/api/songs/oneshot-raw",
+			args,
+		),
+	[["songs"], ["playlists"]],
+);
+
 export const useCreateSong = createMutation<Record<string, unknown>, Song>(
 	(args) => api.post<Song>("/api/songs", args).then(normalizeSongMedia),
 	[["songs"]],
