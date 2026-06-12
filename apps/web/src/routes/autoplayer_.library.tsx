@@ -1,766 +1,577 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useStore } from "@tanstack/react-store";
-import { Pause, Play, Search, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CoverArt } from "@/components/autoplayer/CoverArt";
-import { TrackDetail } from "@/components/autoplayer/TrackDetail";
-import ArrowBackIcon from "@/components/ui/arrow-back-icon";
-import VinylIcon from "@/components/ui/vinyl-icon";
-import Volume2Icon from "@/components/ui/volume-2-icon";
-import VolumeXIcon from "@/components/ui/volume-x-icon";
-import XIcon from "@/components/ui/x-icon";
-import { usePlaylistsAll, useSongsAll } from "@/integrations/api/hooks";
-import { formatTime } from "@/lib/format-time";
+import type { Song } from "@infinitune/shared/types";
+import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import {
-	getGlobalAudio,
-	playerStore,
-	setCurrentSong,
-	setDuration,
-	setPlaying,
-	setVolume,
-	toggleMute,
-} from "@/lib/player-store";
-import type { Song } from "@/types";
+	ArrowLeft,
+	Clock3,
+	Disc3,
+	FileText,
+	Info,
+	Music2,
+	Radio,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import {
+	type RadioAlbum,
+	type RadioAlbumTrack,
+	useRadioLibrary,
+} from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/library")({
 	component: LibraryPage,
 });
 
-// ─── Types ──────────────────────────────────────────────────────────
+type LibraryTab = "albums" | "legacy";
+type SelectedSong =
+	| { kind: "album"; song: RadioAlbumTrack; album: RadioAlbum }
+	| { kind: "legacy"; song: Song; album?: undefined };
 
-type RatingFilter = "liked" | "disliked" | "unrated";
-
-interface Filters {
-	genres: string[];
-	moods: string[];
-	energies: string[];
-	eras: string[];
-	languages: string[];
-	ratings: RatingFilter[];
-	playlists: string[];
+function formatDate(value: number | null | undefined): string {
+	if (!value) return "n/a";
+	return new Date(value).toLocaleString();
 }
 
-const EMPTY_FILTERS: Filters = {
-	genres: [],
-	moods: [],
-	energies: [],
-	eras: [],
-	languages: [],
-	ratings: [],
-	playlists: [],
-};
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-function unique(arr: (string | undefined | null)[]): string[] {
-	return [...new Set(arr.filter((v): v is string => !!v))].sort();
+function formatMs(value: number | null | undefined): string {
+	if (!value) return "n/a";
+	const seconds = Math.round(value / 1000);
+	const minutes = Math.floor(seconds / 60);
+	const remainder = seconds % 60;
+	return minutes > 0 ? `${minutes}m ${remainder}s` : `${seconds}s`;
 }
 
-function matchesSearch(song: Song, term: string): boolean {
-	if (!term) return true;
-	const lower = term.toLowerCase();
-	const fields = [
-		song.title,
-		song.artistName,
-		song.genre,
-		song.subGenre,
-		song.description,
-		song.lyrics,
-	];
-	return fields.some((f) => f && String(f).toLowerCase().includes(lower));
+function formatDuration(value: number | null | undefined): string {
+	if (!value) return "n/a";
+	const minutes = Math.floor(value / 60);
+	const seconds = Math.round(value % 60);
+	return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function matchesFilters(
-	song: Song,
-	filters: Filters,
-	playlistMap: Map<string, string>,
-): boolean {
-	const genre = song.genre as string | undefined;
-	const mood = song.mood as string | undefined;
-	const energy = song.energy as string | undefined;
-	const era = song.era as string | undefined;
-	const language = song.language as string | undefined;
-	const userRating = song.userRating as string | undefined;
-	const playlistId = song.playlistId;
-
-	if (filters.genres.length > 0 && (!genre || !filters.genres.includes(genre)))
-		return false;
-	if (filters.moods.length > 0 && (!mood || !filters.moods.includes(mood)))
-		return false;
-	if (
-		filters.energies.length > 0 &&
-		(!energy || !filters.energies.includes(energy))
-	)
-		return false;
-	if (filters.eras.length > 0 && (!era || !filters.eras.includes(era)))
-		return false;
-	if (
-		filters.languages.length > 0 &&
-		(!language || !filters.languages.includes(language))
-	)
-		return false;
-	if (filters.ratings.length > 0) {
-		const rating: RatingFilter =
-			userRating === "up"
-				? "liked"
-				: userRating === "down"
-					? "disliked"
-					: "unrated";
-		if (!filters.ratings.includes(rating)) return false;
-	}
-	if (filters.playlists.length > 0) {
-		const pid = playlistId as string;
-		const playlistName = playlistMap.get(pid) || pid;
-		if (!filters.playlists.includes(playlistName)) return false;
-	}
-	return true;
+function joinList(value: string[] | null | undefined): string {
+	return value?.length ? value.join(", ") : "n/a";
 }
 
-// ─── Mini Player ────────────────────────────────────────────────────
-
-function MiniPlayer({
-	currentSong,
-}: {
-	currentSong: {
-		id: string;
-		title?: string | null;
-		artistName?: string | null;
-	} | null;
-}) {
-	const { isPlaying, currentTime, duration, volume, isMuted } =
-		useStore(playerStore);
-
-	const handleToggle = useCallback(() => {
-		const audio = getGlobalAudio();
-		if (isPlaying) {
-			audio.pause();
-			setPlaying(false);
-		} else {
-			audio
-				.play()
-				.then(() => setPlaying(true))
-				.catch(() => {});
-		}
-	}, [isPlaying]);
-
-	const handleSeek = useCallback(
-		(e: React.MouseEvent<HTMLDivElement>) => {
-			const audio = getGlobalAudio();
-			const rect = e.currentTarget.getBoundingClientRect();
-			const pct = Math.max(
-				0,
-				Math.min(1, (e.clientX - rect.left) / rect.width),
-			);
-			audio.currentTime = pct * duration;
-		},
-		[duration],
-	);
-
-	if (!currentSong) return null;
-
-	const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-	return (
-		<div className="flex items-center gap-3 border-t-2 border-white/10 px-4 py-2 bg-black/60">
-			{/* Play/Pause */}
-			<button
-				type="button"
-				className="shrink-0 text-white hover:text-red-500 transition-colors"
-				onClick={handleToggle}
-			>
-				{isPlaying ? (
-					<Pause className="h-4 w-4" />
-				) : (
-					<Play className="h-4 w-4" />
-				)}
-			</button>
-
-			{/* Song info */}
-			<div className="shrink-0 min-w-0 max-w-[140px]">
-				<p className="text-[10px] font-black uppercase truncate">
-					{currentSong.title || "..."}
-				</p>
-				<p className="text-[9px] uppercase text-white/30 truncate">
-					{currentSong.artistName || "..."}
-				</p>
-			</div>
-
-			{/* Progress bar */}
-			<div className="flex-1 flex items-center gap-2 min-w-0">
-				<span className="text-[10px] font-bold text-white/40 shrink-0">
-					{formatTime(currentTime)}
-				</span>
-				{/* biome-ignore lint/a11y/useSemanticElements: div used for custom seek bar layout */}
-				<div
-					role="button"
-					tabIndex={0}
-					className="flex-1 h-1.5 border border-white/20 bg-black/40 cursor-pointer"
-					onClick={handleSeek}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" || e.key === " ") {
-							e.preventDefault();
-							handleSeek(e as unknown as React.MouseEvent<HTMLDivElement>);
-						}
-					}}
-				>
-					<div
-						className="h-full bg-red-500 transition-all"
-						style={{ width: `${progress}%` }}
-					/>
-				</div>
-				<span className="text-[10px] font-bold text-white/40 shrink-0">
-					{formatTime(duration)}
-				</span>
-			</div>
-
-			{/* Volume */}
-			<div className="hidden sm:flex items-center gap-1.5 shrink-0">
-				<button
-					type="button"
-					onClick={toggleMute}
-					className="text-white/50 hover:text-white"
-				>
-					{isMuted ? <VolumeXIcon size={14} /> : <Volume2Icon size={14} />}
-				</button>
-				{/* biome-ignore lint/a11y/useSemanticElements: div used for custom volume bar layout */}
-				<div
-					role="button"
-					tabIndex={0}
-					className="h-1.5 w-14 border border-white/20 bg-black/40 cursor-pointer"
-					onClick={(e) => {
-						const rect = e.currentTarget.getBoundingClientRect();
-						const pct = Math.max(
-							0,
-							Math.min(1, (e.clientX - rect.left) / rect.width),
-						);
-						setVolume(pct);
-					}}
-					onKeyDown={(e) => {
-						if (e.key === "Enter" || e.key === " ") {
-							e.preventDefault();
-						}
-					}}
-				>
-					<div
-						className="h-full bg-white"
-						style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-					/>
-				</div>
-			</div>
-		</div>
-	);
+function asText(value: unknown): string {
+	if (value === null || value === undefined || value === "") return "n/a";
+	if (Array.isArray(value)) return value.length ? value.join(", ") : "n/a";
+	if (typeof value === "object") return JSON.stringify(value, null, 2);
+	return String(value);
 }
 
-// ─── Filter Section Component ───────────────────────────────────────
-
-function FilterSection({
+function AlbumCover({
 	title,
-	options,
-	selected,
-	onToggle,
-	counts,
+	src,
+	size = "default",
 }: {
 	title: string;
-	options: string[];
-	selected: string[];
-	onToggle: (value: string) => void;
-	counts: Map<string, number>;
+	src: string | null | undefined;
+	size?: "default" | "large";
 }) {
-	const [collapsed, setCollapsed] = useState(false);
-	if (options.length === 0) return null;
-
 	return (
-		<div className="border-b-2 border-white/10">
-			<button
-				type="button"
-				className="w-full flex items-center justify-between px-3 py-2 text-xs font-black uppercase tracking-widest text-white/50 hover:text-white/80"
-				onClick={() => setCollapsed(!collapsed)}
-			>
-				<span>
-					{title} {selected.length > 0 && `(${selected.length})`}
-				</span>
-				<span>{collapsed ? "+" : "−"}</span>
-			</button>
-			{!collapsed && (
-				<div className="px-3 pb-3 space-y-1 max-h-48 overflow-y-auto">
-					{options.map((opt) => {
-						const active = selected.includes(opt);
-						const count = counts.get(opt) ?? 0;
-						return (
-							<button
-								type="button"
-								key={opt}
-								className={`w-full flex items-center justify-between px-2 py-1 text-xs font-bold uppercase transition-colors ${
-									active
-										? "bg-white text-black"
-										: "text-white/50 hover:text-white hover:bg-white/5"
-								}`}
-								onClick={() => onToggle(opt)}
-							>
-								<span className="truncate">{opt}</span>
-								<span className="ml-2 shrink-0 text-[10px]">{count}</span>
-							</button>
-						);
-					})}
+		<div
+			className={`aspect-square overflow-hidden border border-white/15 bg-zinc-950 ${
+				size === "large" ? "min-h-[260px]" : ""
+			}`}
+		>
+			{src ? (
+				<img src={src} alt={title} className="h-full w-full object-cover" />
+			) : (
+				<div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#151515,#20342f_45%,#d7b46a_45%,#d7b46a_48%,#101213_48%)]">
+					<Disc3
+						className={
+							size === "large"
+								? "h-20 w-20 text-white/65"
+								: "h-14 w-14 text-white/65"
+						}
+					/>
 				</div>
 			)}
 		</div>
 	);
 }
 
-// ─── Main Component ─────────────────────────────────────────────────
-
-function LibraryPage() {
-	const navigate = useNavigate();
-	const songs = useSongsAll();
-	const playlists = usePlaylistsAll();
-
-	const [search, setSearch] = useState("");
-	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-	const [detailSongId, setDetailSongId] = useState<string | null>(null);
-	const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-
-	const { currentSongId } = useStore(playerStore);
-
-	// Debounce search
-	const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-	useEffect(() => {
-		searchTimerRef.current = setTimeout(() => setDebouncedSearch(search), 300);
-		return () => clearTimeout(searchTimerRef.current);
-	}, [search]);
-
-	// Playlist ID → name map
-	const playlistMap = useMemo(() => {
-		const map = new Map<string, string>();
-		if (playlists) {
-			for (const s of playlists) {
-				map.set(s.id, s.name || s.id);
-			}
-		}
-		return map;
-	}, [playlists]);
-
-	// Extract unique filter options from all songs
-	const filterOptions = useMemo(() => {
-		if (!songs)
-			return {
-				genres: [],
-				moods: [],
-				energies: [],
-				eras: [],
-				languages: [],
-				playlists: [],
-			};
-		return {
-			genres: unique(songs.map((s) => s.genre)),
-			moods: unique(songs.map((s) => s.mood)),
-			energies: unique(songs.map((s) => s.energy)),
-			eras: unique(songs.map((s) => s.era)),
-			languages: unique(songs.map((s) => s.language)),
-			playlists: unique(
-				songs
-					.map(
-						(s) =>
-							playlistMap.get(s.playlistId as string) ||
-							(s.playlistId as string),
-					)
-					.filter(Boolean),
-			),
-		};
-	}, [songs, playlistMap]);
-
-	// Filter + search
-	const filtered = useMemo(() => {
-		if (!songs) return [];
-		return songs.filter(
-			(s) =>
-				matchesSearch(s, debouncedSearch) &&
-				matchesFilters(s, filters, playlistMap),
-		);
-	}, [songs, debouncedSearch, filters, playlistMap]);
-
-	// Counts per filter value (based on search + other filters, not this filter)
-	const filterCounts = useMemo(() => {
-		if (!songs)
-			return {
-				genres: new Map(),
-				moods: new Map(),
-				energies: new Map(),
-				eras: new Map(),
-				languages: new Map(),
-				ratings: new Map(),
-				playlists: new Map(),
-			};
-
-		function countFor(
-			key: keyof Filters,
-			valueExtractor: (s: Song) => string | undefined | null,
-		) {
-			const otherFilters = { ...filters, [key]: [] };
-			const base = (songs ?? []).filter(
-				(s) =>
-					matchesSearch(s, debouncedSearch) &&
-					matchesFilters(s, otherFilters, playlistMap),
-			);
-			const counts = new Map<string, number>();
-			for (const s of base) {
-				const val = valueExtractor(s);
-				if (val) counts.set(val, (counts.get(val) ?? 0) + 1);
-			}
-			return counts;
-		}
-
-		return {
-			genres: countFor("genres", (s) => s.genre as string | undefined),
-			moods: countFor("moods", (s) => s.mood as string | undefined),
-			energies: countFor("energies", (s) => s.energy as string | undefined),
-			eras: countFor("eras", (s) => s.era as string | undefined),
-			languages: countFor("languages", (s) => s.language as string | undefined),
-			ratings: countFor("ratings", (s) =>
-				s.userRating === "up"
-					? "liked"
-					: s.userRating === "down"
-						? "disliked"
-						: "unrated",
-			),
-			playlists: countFor(
-				"playlists",
-				(s) =>
-					playlistMap.get(s.playlistId as string) || (s.playlistId as string),
-			),
-		};
-	}, [songs, debouncedSearch, filters, playlistMap]);
-
-	const toggleFilter = useCallback((key: keyof Filters, value: string) => {
-		setFilters((prev) => {
-			const arr = prev[key] as string[];
-			return {
-				...prev,
-				[key]: arr.includes(value)
-					? arr.filter((v) => v !== value)
-					: [...arr, value],
-			};
-		});
-	}, []);
-
-	const clearFilters = useCallback(() => {
-		setFilters(EMPTY_FILTERS);
-		setSearch("");
-	}, []);
-
-	const hasActiveFilters =
-		search || Object.values(filters).some((arr) => arr.length > 0);
-
-	const currentSong = useMemo(() => {
-		if (!currentSongId || !songs) return null;
-		return songs.find((s) => s.id === currentSongId) ?? null;
-	}, [currentSongId, songs]);
-
-	const handlePlaySong = useCallback((song: Song) => {
-		if (!song.audioUrl) return;
-		const audio = getGlobalAudio();
-		setCurrentSong(song.id);
-		audio.src = song.audioUrl;
-		audio.load();
-		audio
-			.play()
-			.then(() => setPlaying(true))
-			.catch(() => {});
-		if (audio.duration && !Number.isNaN(audio.duration)) {
-			setDuration(audio.duration);
-		}
-	}, []);
-
-	// Loading
-	if (songs === undefined) {
-		return <div className="font-mono min-h-screen bg-gray-950" />;
-	}
-
-	const activeFilterCount =
-		Object.values(filters).reduce((sum, arr) => sum + arr.length, 0) +
-		(search ? 1 : 0);
-
-	const filterSidebar = (
-		<div className="space-y-0">
-			{/* Search */}
-			<div className="border-b-2 border-white/10 p-3">
-				<div className="relative">
-					<Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/30" />
-					<input
-						type="text"
-						className="w-full bg-gray-900 border-2 border-white/20 pl-8 pr-8 py-2 text-xs font-bold uppercase text-white placeholder:text-white/20 focus:outline-none focus:border-white/40"
-						placeholder="SEARCH SONGS..."
-						value={search}
-						onChange={(e) => setSearch(e.target.value.toUpperCase())}
-					/>
-					{search && (
-						<button
-							type="button"
-							className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
-							onClick={() => setSearch("")}
-						>
-							<XIcon size={14} />
-						</button>
-					)}
-				</div>
+function StatLine({ label, value }: { label: string; value: unknown }) {
+	return (
+		<div className="border-b border-white/10 py-2 last:border-b-0">
+			<div className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/30">
+				{label}
 			</div>
-
-			<FilterSection
-				title="GENRE"
-				options={filterOptions.genres}
-				selected={filters.genres}
-				onToggle={(v) => toggleFilter("genres", v)}
-				counts={filterCounts.genres}
-			/>
-			<FilterSection
-				title="MOOD"
-				options={filterOptions.moods}
-				selected={filters.moods}
-				onToggle={(v) => toggleFilter("moods", v)}
-				counts={filterCounts.moods}
-			/>
-			<FilterSection
-				title="ENERGY"
-				options={filterOptions.energies}
-				selected={filters.energies}
-				onToggle={(v) => toggleFilter("energies", v)}
-				counts={filterCounts.energies}
-			/>
-			<FilterSection
-				title="ERA"
-				options={filterOptions.eras}
-				selected={filters.eras}
-				onToggle={(v) => toggleFilter("eras", v)}
-				counts={filterCounts.eras}
-			/>
-			<FilterSection
-				title="LANGUAGE"
-				options={filterOptions.languages}
-				selected={filters.languages}
-				onToggle={(v) => toggleFilter("languages", v)}
-				counts={filterCounts.languages}
-			/>
-			<FilterSection
-				title="RATING"
-				options={["liked", "disliked", "unrated"]}
-				selected={filters.ratings}
-				onToggle={(v) => toggleFilter("ratings", v)}
-				counts={filterCounts.ratings}
-			/>
-			<FilterSection
-				title="PLAYLIST"
-				options={filterOptions.playlists}
-				selected={filters.playlists}
-				onToggle={(v) => toggleFilter("playlists", v)}
-				counts={filterCounts.playlists}
-			/>
-
-			{hasActiveFilters && (
-				<div className="p-3">
-					<button
-						type="button"
-						className="w-full border-2 border-red-500/40 px-3 py-2 text-xs font-black uppercase text-red-500 hover:bg-red-500 hover:text-black transition-colors"
-						onClick={clearFilters}
-					>
-						CLEAR ALL
-					</button>
-				</div>
-			)}
+			<div className="mt-1 break-words text-sm font-semibold text-white/85">
+				{asText(value)}
+			</div>
 		</div>
 	);
+}
+
+function JsonBlock({ label, value }: { label: string; value: unknown }) {
+	if (!value) return null;
+	return (
+		<section className="border border-white/10 bg-black/25 p-4">
+			<h3 className="mb-3 flex items-center gap-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/70">
+				<FileText className="h-4 w-4 text-amber-300" />
+				{label}
+			</h3>
+			<pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-white/65">
+				{typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+			</pre>
+		</section>
+	);
+}
+
+function songCover(song: RadioAlbumTrack | Song, album?: RadioAlbum) {
+	return (
+		song.cover?.webpUrl ||
+		song.cover?.pngUrl ||
+		album?.cover?.webpUrl ||
+		album?.cover?.pngUrl ||
+		null
+	);
+}
+
+function SongDetailDialog({
+	selected,
+	onOpenChange,
+}: {
+	selected: SelectedSong | null;
+	onOpenChange: (open: boolean) => void;
+}) {
+	const song = selected?.song;
+	const album = selected?.album;
+	const title = song?.title ?? "Untitled";
+	const artist = song?.artistName ?? album?.bandName ?? "Unknown";
+	const audioUrl = song?.audioUrl ?? null;
 
 	return (
-		<div className="font-mono min-h-screen bg-gray-950 text-white flex flex-col">
-			{/* HEADER */}
-			<header className="border-b-4 border-white/20 bg-black shrink-0">
-				<div className="flex items-center justify-between px-4 py-3">
-					<div className="flex items-center gap-4">
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-white"
-							onClick={() => navigate({ to: "/autoplayer" })}
-						>
-							<ArrowBackIcon size={20} />
-						</button>
-						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-							LIBRARY
-						</h1>
+		<Dialog open={Boolean(selected)} onOpenChange={onOpenChange}>
+			<DialogContent className="max-h-[92vh] overflow-hidden rounded-none border-white/15 bg-[#101213] p-0 text-stone-100 sm:max-w-5xl">
+				{song ? (
+					<div className="grid max-h-[92vh] overflow-hidden md:grid-cols-[320px_1fr]">
+						<aside className="border-b border-white/10 bg-black p-4 md:border-r md:border-b-0">
+							<AlbumCover title={title} src={songCover(song, album)} />
+							<div className="mt-4 space-y-2">
+								<div className="font-mono text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
+									{selected.kind === "album"
+										? "Radio Album Track"
+										: "Old Library Track"}
+								</div>
+								<h2 className="text-2xl font-black uppercase leading-tight text-white">
+									{title}
+								</h2>
+								<p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-white/45">
+									{artist}
+								</p>
+								{audioUrl ? (
+									<a
+										href={audioUrl}
+										target="_blank"
+										rel="noreferrer"
+										className="mt-3 inline-flex h-9 items-center border border-white/15 px-3 font-mono text-xs font-black uppercase tracking-[0.14em] text-white/65 hover:bg-white hover:text-black"
+									>
+										Open audio
+									</a>
+								) : null}
+							</div>
+						</aside>
+						<div className="overflow-auto p-5">
+							<DialogHeader>
+								<DialogTitle className="font-mono text-sm font-black uppercase tracking-[0.2em] text-white">
+									Song Details
+								</DialogTitle>
+								<DialogDescription className="font-mono text-xs uppercase tracking-[0.18em] text-white/40">
+									{song.id}
+								</DialogDescription>
+							</DialogHeader>
+
+							<div className="mt-5 grid gap-4 lg:grid-cols-3">
+								<section className="border border-white/10 bg-black/20 p-4">
+									<h3 className="mb-2 flex items-center gap-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/65">
+										<Info className="h-4 w-4 text-emerald-300" />
+										Identity
+									</h3>
+									<StatLine label="Album" value={album?.title ?? "legacy"} />
+									<StatLine label="Track" value={song.albumTrackNumber} />
+									<StatLine label="Status" value={song.status} />
+									<StatLine label="Genre" value={song.genre} />
+									<StatLine label="Subgenre" value={song.subGenre} />
+									<StatLine label="Vocal" value={song.vocalStyle} />
+									<StatLine label="Mood" value={song.mood} />
+									<StatLine label="Energy" value={song.energy} />
+								</section>
+
+								<section className="border border-white/10 bg-black/20 p-4">
+									<h3 className="mb-2 flex items-center gap-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/65">
+										<Clock3 className="h-4 w-4 text-sky-300" />
+										Timing
+									</h3>
+									<StatLine
+										label="Duration"
+										value={formatDuration(song.audioDuration)}
+									/>
+									<StatLine label="BPM" value={song.bpm} />
+									<StatLine label="Key" value={song.keyScale} />
+									<StatLine label="Signature" value={song.timeSignature} />
+									<StatLine
+										label="Created"
+										value={formatDate(song.createdAt)}
+									/>
+									<StatLine
+										label="Started"
+										value={formatDate(song.generationStartedAt)}
+									/>
+									<StatLine
+										label="Completed"
+										value={formatDate(song.generationCompletedAt)}
+									/>
+									<StatLine
+										label="Audio Time"
+										value={formatMs(song.audioProcessingMs)}
+									/>
+								</section>
+
+								<section className="border border-white/10 bg-black/20 p-4">
+									<h3 className="mb-2 flex items-center gap-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/65">
+										<Radio className="h-4 w-4 text-red-300" />
+										System
+									</h3>
+									<StatLine label="ACE Task" value={song.aceTaskId} />
+									<StatLine
+										label="ACE Submitted"
+										value={formatDate(song.aceSubmittedAt)}
+									/>
+									<StatLine
+										label="LLM"
+										value={`${song.llmProvider ?? "n/a"} / ${song.llmModel ?? "n/a"}`}
+									/>
+									<StatLine label="Retries" value={song.retryCount} />
+									<StatLine label="Error" value={song.errorMessage} />
+									<StatLine label="Likes" value={song.likeCount} />
+									<StatLine label="Dislikes" value={song.dislikeCount} />
+									<StatLine label="Skips" value={song.skipCount} />
+									<StatLine label="Radio Plays" value={song.radioPlayCount} />
+								</section>
+							</div>
+
+							<div className="mt-4 grid gap-4 lg:grid-cols-2">
+								<JsonBlock label="Caption" value={song.caption} />
+								<JsonBlock label="Lyrics" value={song.lyrics} />
+								<JsonBlock label="Description" value={song.description} />
+								<JsonBlock label="Cover Prompt" value={song.coverPrompt} />
+								<JsonBlock
+									label="Instruments"
+									value={joinList(song.instruments)}
+								/>
+								<JsonBlock label="Tags" value={joinList(song.tags)} />
+								<JsonBlock label="Themes" value={joinList(song.themes)} />
+								<JsonBlock
+									label="Persona Extract"
+									value={song.personaExtract}
+								/>
+								<JsonBlock label="Storage Path" value={song.storagePath} />
+								<JsonBlock label="ACE Audio Path" value={song.aceAudioPath} />
+							</div>
+						</div>
 					</div>
-					<div className="flex items-center gap-3">
-						{/* Mobile filter toggle */}
-						<button
-							type="button"
-							className="md:hidden flex items-center gap-1 font-mono text-sm font-bold uppercase text-white/60 hover:text-white"
-							onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
-						>
-							<SlidersHorizontal className="h-4 w-4" />
-							{activeFilterCount > 0 && (
-								<span className="bg-red-500 text-white text-[10px] font-black px-1.5 py-0.5">
-									{activeFilterCount}
-								</span>
-							)}
-						</button>
-						<span className="text-xs uppercase tracking-widest text-white/30">
-							{filtered.length} / {songs.length} SONGS
-						</span>
+				) : null}
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+function TrackRow({
+	track,
+	onClick,
+}: {
+	track: RadioAlbumTrack;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={(event) => {
+				event.stopPropagation();
+				onClick();
+			}}
+			className="grid w-full grid-cols-[2rem_1fr_auto] items-center gap-2 border-b border-white/10 px-2 py-1.5 text-left last:border-b-0 hover:bg-white/5"
+		>
+			<span className="font-mono text-[10px] text-white/30">
+				{track.albumTrackNumber}
+			</span>
+			<span className="truncate text-xs font-bold uppercase text-white/80">
+				{track.title ?? "Untitled"}
+			</span>
+			<span className="font-mono text-[10px] uppercase text-white/35">
+				{track.status}
+			</span>
+		</button>
+	);
+}
+
+function AlbumPage({
+	album,
+	onBack,
+	onSong,
+}: {
+	album: RadioAlbum;
+	onBack: () => void;
+	onSong: (song: RadioAlbumTrack) => void;
+}) {
+	return (
+		<div className="space-y-5">
+			<button
+				type="button"
+				onClick={onBack}
+				className="inline-flex items-center gap-2 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/50 hover:text-white"
+			>
+				<ArrowLeft className="h-4 w-4" />
+				Back to library
+			</button>
+
+			<section className="grid gap-5 lg:grid-cols-[360px_1fr]">
+				<div className="mx-auto w-full max-w-[360px] lg:max-w-none">
+					<AlbumCover
+						title={album.title}
+						src={album.cover?.webpUrl || album.cover?.pngUrl}
+						size="large"
+					/>
+				</div>
+				<div className="min-w-0">
+					<div className="font-mono text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
+						{album.generationKind} / {album.status}
+					</div>
+					<h2 className="mt-2 text-4xl font-black uppercase leading-none text-white">
+						{album.title}
+					</h2>
+					<p className="mt-2 font-mono text-sm font-bold uppercase tracking-[0.2em] text-white/45">
+						{album.bandName}
+					</p>
+
+					<div className="mt-5 grid gap-3 md:grid-cols-3">
+						<StatLine label="Theme" value={album.theme} />
+						<StatLine label="Tracks" value={album.tracks.length} />
+						<StatLine label="Created" value={formatDate(album.createdAt)} />
+						<StatLine
+							label="First Played"
+							value={formatDate(album.firstPlayedAt)}
+						/>
+						<StatLine label="Ready" value={formatDate(album.readyAt)} />
+						<StatLine label="Completed" value={formatDate(album.completedAt)} />
+						<StatLine label="Request" value={album.requestId} />
+						<StatLine label="Cover" value={album.coverPrompt} />
 					</div>
 				</div>
-				<MiniPlayer currentSong={currentSong} />
+			</section>
+
+			<section className="border border-white/10 bg-[#171a1b]">
+				<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.18em] text-white/55">
+					Tracks
+				</div>
+				<div className="divide-y divide-white/10">
+					{album.tracks.map((track) => (
+						<button
+							key={track.id}
+							type="button"
+							onClick={() => onSong(track)}
+							className="grid w-full gap-3 px-4 py-3 text-left hover:bg-white/5 md:grid-cols-[2rem_1.4fr_1fr_1fr_auto]"
+						>
+							<span className="font-mono text-xs text-white/35">
+								{track.albumTrackNumber}
+							</span>
+							<span className="min-w-0 truncate text-sm font-black uppercase text-white">
+								{track.title ?? "Untitled"}
+							</span>
+							<span className="min-w-0 truncate font-mono text-xs uppercase tracking-wider text-white/45">
+								{track.genre ?? "n/a"}
+							</span>
+							<span className="min-w-0 truncate font-mono text-xs uppercase tracking-wider text-white/45">
+								{track.vocalStyle ?? "n/a"}
+							</span>
+							<span className="font-mono text-xs uppercase text-white/35">
+								{track.status}
+							</span>
+						</button>
+					))}
+				</div>
+			</section>
+
+			<div className="grid gap-4 lg:grid-cols-2">
+				<JsonBlock label="Band Persona" value={album.bandPersona} />
+				<JsonBlock label="Trend Research" value={album.trendResearch} />
+				<JsonBlock label="Vocal Plan" value={album.vocalPlan} />
+			</div>
+		</div>
+	);
+}
+
+function LibraryPage() {
+	const library = useRadioLibrary();
+	const search = useRouterState({
+		select: (state) => state.location.search as Record<string, unknown>,
+	});
+	const navigate = Route.useNavigate();
+	const tab: LibraryTab = search.tab === "legacy" ? "legacy" : "albums";
+	const [selectedSong, setSelectedSong] = useState<SelectedSong | null>(null);
+	const selectedAlbum = useMemo(
+		() =>
+			library?.albums.find(
+				(album) =>
+					album.id === (typeof search.album === "string" ? search.album : ""),
+			),
+		[library?.albums, search.album],
+	);
+
+	function setTab(tabId: LibraryTab) {
+		void navigate({ search: { tab: tabId, album: undefined } });
+	}
+
+	function openAlbum(albumId: string) {
+		void navigate({ search: { tab: "albums", album: albumId } });
+	}
+
+	function closeAlbum() {
+		void navigate({ search: { tab: "albums", album: undefined } });
+	}
+
+	return (
+		<div className="min-h-screen bg-[#101213] text-stone-100">
+			<header className="border-b border-white/10 bg-black/70 px-4 py-4">
+				<div className="mx-auto flex max-w-7xl items-center gap-4">
+					<Link to="/autoplayer" className="text-white/55 hover:text-white">
+						<ArrowLeft className="h-5 w-5" />
+					</Link>
+					<div>
+						<h1 className="font-mono text-2xl font-black uppercase tracking-[0.18em]">
+							Radio Library
+						</h1>
+						<p className="mt-1 font-mono text-xs uppercase tracking-[0.2em] text-white/35">
+							{library?.albums.length ?? 0} albums /{" "}
+							{library?.legacySongs.length ?? 0} legacy tracks
+						</p>
+					</div>
+				</div>
 			</header>
 
-			{/* MAIN */}
-			<div className="flex flex-1 overflow-hidden">
-				{/* Filter sidebar — desktop */}
-				<aside className="hidden md:block w-64 shrink-0 border-r-4 border-white/20 bg-black overflow-y-auto">
-					{filterSidebar}
-				</aside>
-
-				{/* Mobile filter overlay */}
-				{mobileFiltersOpen && (
-					<div className="fixed inset-0 z-40 md:hidden">
-						{/* biome-ignore lint/a11y/useSemanticElements: backdrop overlay dismiss area */}
-						<div
-							role="button"
-							tabIndex={0}
-							className="absolute inset-0 bg-black/80"
-							onClick={() => setMobileFiltersOpen(false)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault();
-									setMobileFiltersOpen(false);
-								}
-							}}
-						/>
-						<div className="absolute left-0 top-0 bottom-0 w-72 bg-gray-950 border-r-4 border-white/20 overflow-y-auto z-50">
-							<div className="border-b-4 border-white/20 px-3 py-3 flex items-center justify-between bg-black">
-								<span className="text-sm font-black uppercase tracking-widest">
-									FILTERS
-								</span>
-								<button
-									type="button"
-									className="text-white/60 hover:text-white"
-									onClick={() => setMobileFiltersOpen(false)}
-								>
-									<XIcon size={20} />
-								</button>
-							</div>
-							{filterSidebar}
+			<main className="mx-auto max-w-7xl px-4 py-6">
+				{selectedAlbum ? (
+					<AlbumPage
+						album={selectedAlbum}
+						onBack={closeAlbum}
+						onSong={(song) =>
+							setSelectedSong({ kind: "album", song, album: selectedAlbum })
+						}
+					/>
+				) : (
+					<>
+						<div className="mb-5 flex gap-2 font-mono text-xs font-black uppercase tracking-widest">
+							<button
+								type="button"
+								onClick={() => setTab("albums")}
+								className={`border px-4 py-2 ${tab === "albums" ? "border-emerald-300 bg-emerald-300 text-black" : "border-white/15 text-white/55"}`}
+							>
+								Albums
+							</button>
+							<button
+								type="button"
+								onClick={() => setTab("legacy")}
+								className={`border px-4 py-2 ${tab === "legacy" ? "border-amber-300 bg-amber-300 text-black" : "border-white/15 text-white/55"}`}
+							>
+								Old Library
+							</button>
 						</div>
-					</div>
-				)}
 
-				{/* Song grid */}
-				<main className="flex-1 overflow-y-auto">
-					{filtered.length === 0 ? (
-						<div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center px-4">
-							<VinylIcon size={64} className="text-white/10 mb-4" />
-							<p className="text-lg font-black uppercase text-white/30">
-								{songs.length === 0 ? "NO SONGS YET" : "NO MATCHES"}
-							</p>
-							<p className="text-xs uppercase tracking-wider text-white/15 mt-2">
-								{songs.length === 0
-									? "START A PLAYLIST TO GENERATE MUSIC"
-									: "TRY DIFFERENT FILTERS OR SEARCH TERMS"}
-							</p>
-						</div>
-					) : (
-						<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-							{filtered.map((song) => {
-								const isCurrent = song.id === currentSongId;
-								const isPlayable = !!song.audioUrl;
-								return (
-									<div
-										key={song.id}
-										className={`border-r-2 border-b-2 border-white/10 transition-colors ${
-											isCurrent ? "bg-red-950/40" : "bg-gray-950"
-										}`}
+						{tab === "albums" ? (
+							<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+								{library?.albums.map((album) => (
+									<article
+										key={album.id}
+										className="grid grid-cols-[132px_1fr] gap-4 border border-white/10 bg-[#171a1b] p-3"
 									>
-										{/* Cover — click to play */}
-										{/* biome-ignore lint/a11y/useSemanticElements: div wraps cover art with overlay */}
-										<div
-											role="button"
-											tabIndex={0}
-											className={`relative ${isPlayable ? "cursor-pointer" : "opacity-50"}`}
-											onClick={() => isPlayable && handlePlaySong(song)}
-											onKeyDown={(e) => {
-												if (e.key === "Enter" || e.key === " ") {
-													e.preventDefault();
-													if (isPlayable) handlePlaySong(song);
-												}
-											}}
-										>
-											<CoverArt
-												title={song.title || "..."}
-												artistName={song.artistName || "..."}
-												cover={song.cover}
-												size="sm"
+										<button type="button" onClick={() => openAlbum(album.id)}>
+											<AlbumCover
+												title={album.title}
+												src={album.cover?.webpUrl || album.cover?.pngUrl}
 											/>
-											{isCurrent && (
-												<div className="absolute bottom-0 left-0 right-0 bg-red-500 text-white text-center text-[10px] font-black py-1 uppercase">
-													NOW PLAYING
-												</div>
-											)}
+										</button>
+										<div className="min-w-0">
+											<button
+												type="button"
+												onClick={() => openAlbum(album.id)}
+												className="mb-2 block w-full text-left"
+											>
+												<h2 className="truncate text-lg font-black uppercase text-white">
+													{album.title}
+												</h2>
+												<p className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
+													{album.bandName} / {album.generationKind} /{" "}
+													{album.status}
+												</p>
+											</button>
+											<div className="max-h-56 overflow-auto border border-white/10">
+												{album.tracks.map((track) => (
+													<TrackRow
+														key={track.id}
+														track={track}
+														onClick={() =>
+															setSelectedSong({
+																kind: "album",
+																song: track,
+																album,
+															})
+														}
+													/>
+												))}
+											</div>
 										</div>
-										{/* Info — click to open detail */}
-										{/* biome-ignore lint/a11y/useSemanticElements: div wraps song info with genre badge */}
-										<div
-											role="button"
-											tabIndex={0}
-											className="p-2 cursor-pointer hover:bg-gray-900 transition-colors"
-											onClick={() => setDetailSongId(song.id)}
-											onKeyDown={(e) => {
-												if (e.key === "Enter" || e.key === " ") {
-													e.preventDefault();
-													setDetailSongId(song.id);
-												}
-											}}
-										>
-											<p className="text-xs font-black uppercase truncate">
-												{song.title || "..."}
-											</p>
-											<p className="text-[10px] uppercase text-white/30 truncate">
-												{song.artistName || "..."}
-											</p>
-											{song.genre && (
-												<span className="inline-block mt-1 border border-white/15 px-1.5 py-0.5 text-[9px] font-black uppercase text-white/40 truncate max-w-full">
-													{song.genre}
-												</span>
-											)}
-										</div>
+									</article>
+								))}
+								{!library?.albums.length && (
+									<div className="border border-white/10 bg-black/30 p-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
+										No radio albums yet
 									</div>
-								);
-							})}
-						</div>
-					)}
-				</main>
-			</div>
-
-			{/* FOOTER */}
-			<footer className="bg-black px-4 py-2 border-t-4 border-white/20 shrink-0">
-				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
-					<span>{"LIBRARY // ALL PLAYLISTS"}</span>
-					<span className="flex items-center gap-2">
-						<VinylIcon size={12} />
-						{filtered.length} SHOWN / {songs.length} TOTAL
-					</span>
-				</div>
-			</footer>
-
-			{/* TRACK DETAIL MODAL */}
-			{detailSongId &&
-				songs &&
-				(() => {
-					const detailSong = songs.find((s) => s.id === detailSongId);
-					if (!detailSong) return null;
-					return (
-						<TrackDetail
-							song={detailSong}
-							onClose={() => setDetailSongId(null)}
-							onDeleted={() => setDetailSongId(null)}
-						/>
-					);
-				})()}
+								)}
+							</div>
+						) : (
+							<div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+								{library?.legacySongs.map((song) => (
+									<button
+										key={song.id}
+										type="button"
+										onClick={() => setSelectedSong({ kind: "legacy", song })}
+										className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-3 text-left hover:bg-white/5"
+									>
+										<div className="flex h-10 w-10 shrink-0 items-center justify-center border border-white/10 bg-black">
+											<Music2 className="h-4 w-4 text-white/45" />
+										</div>
+										<div className="min-w-0">
+											<div className="truncate text-sm font-bold uppercase text-white/85">
+												{song.title ?? "Untitled"}
+											</div>
+											<div className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
+												{song.artistName ?? "Unknown"} / {song.status}
+											</div>
+										</div>
+									</button>
+								))}
+								{!library?.legacySongs.length && (
+									<div className="border border-white/10 bg-black/30 p-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
+										No legacy tracks
+									</div>
+								)}
+							</div>
+						)}
+					</>
+				)}
+			</main>
+			<SongDetailDialog
+				selected={selectedSong}
+				onOpenChange={(open) => {
+					if (!open) setSelectedSong(null);
+				}}
+			/>
 		</div>
 	);
 }

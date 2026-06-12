@@ -3,7 +3,6 @@ import {
 	ACE_DCW_MODES,
 } from "@infinitune/shared/ace-settings";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -26,6 +25,8 @@ export interface AudioEngineTabProps {
 	setAceThinking: (v: boolean) => void;
 	aceAutoDuration: boolean;
 	setAceAutoDuration: (v: boolean) => void;
+	aceQueueDepth: string;
+	setAceQueueDepth: (v: string) => void;
 	aceDcwEnabled: boolean;
 	setAceDcwEnabled: (v: boolean) => void;
 	aceDcwMode: string;
@@ -41,6 +42,44 @@ export interface AudioEngineTabProps {
 
 const inputClass =
 	"h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0";
+
+const INFERENCE_STEP_OPTIONS = [
+	"4",
+	"6",
+	"8",
+	"10",
+	"12",
+	"14",
+	"16",
+	"20",
+	"24",
+	"28",
+	"32",
+];
+const LM_TEMPERATURE_OPTIONS = [
+	"0.35",
+	"0.5",
+	"0.65",
+	"0.75",
+	"0.85",
+	"1.0",
+	"1.15",
+	"1.3",
+	"1.5",
+];
+const LM_CFG_OPTIONS = ["1.0", "1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "5.0"];
+const ACE_QUEUE_DEPTH_OPTIONS = ["1", "4", "8", "12", "24", "36", "60", "120"];
+const DCW_SCALER_OPTIONS = ["0", "0.02", "0.05", "0.08", "0.1", "0.15", "0.2"];
+const DCW_HIGH_SCALER_OPTIONS = [
+	"0",
+	"0.01",
+	"0.02",
+	"0.03",
+	"0.05",
+	"0.08",
+	"0.1",
+];
+const WAVELET_OPTIONS = ["haar", "db2", "db4", "sym4", "coif1", "bior2.2"];
 
 interface ToggleOption<T> {
 	label: string;
@@ -90,8 +129,8 @@ export function SettingsTabAudioEngine({
 	setInferMethod,
 	aceThinking,
 	setAceThinking,
-	aceAutoDuration,
-	setAceAutoDuration,
+	aceQueueDepth,
+	setAceQueueDepth,
 	aceDcwEnabled,
 	setAceDcwEnabled,
 	aceDcwMode,
@@ -131,32 +170,59 @@ export function SettingsTabAudioEngine({
 				</SettingsField>
 
 				<SettingsField
-					label="Auto Duration"
-					hint="ON = ACE DECIDES SONG LENGTH FROM LYRICS, OFF = USE LLM-SPECIFIED DURATION"
+					label="Radio Duration Lock"
+					hint="GLOBAL RADIO ALWAYS SENDS AUDIO_DURATION=180 AND ACE AUTO DURATION=OFF"
 				>
-					<ToggleButtons
-						options={[
-							{ label: "AUTO (RECOMMENDED)", value: true },
-							{ label: "FIXED", value: false },
-						]}
-						value={aceAutoDuration}
-						onChange={setAceAutoDuration}
-					/>
+					<div className="flex h-10 items-center border-4 border-white/20 bg-black px-3 font-mono text-sm font-black uppercase text-emerald-200">
+						Fixed 3:00 / 180 seconds
+					</div>
+				</SettingsField>
+
+				<SettingsField
+					label="ACE Queue Depth"
+					hint="MAX SUBMITTED/POLLING ACE TASKS. 12 = ONE FULL RADIO ALBUM IN ACE'S QUEUE"
+				>
+					<Select
+						value={aceQueueDepth || "12"}
+						onValueChange={setAceQueueDepth}
+					>
+						<SelectTrigger className={inputClass}>
+							<SelectValue placeholder="12" />
+						</SelectTrigger>
+						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+							{ACE_QUEUE_DEPTH_OPTIONS.map((value) => (
+								<SelectItem
+									key={value}
+									value={value}
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									{value === "12" ? "12 TASKS / 1 ALBUM" : `${value} TASKS`}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</SettingsField>
 
 				<SettingsField
 					label="Inference Steps"
 					hint="4-16 — HIGHER = BETTER QUALITY, SLOWER"
 				>
-					<Input
-						className={inputClass}
-						placeholder="12"
-						value={inferSteps}
-						onChange={(e) => {
-							if (e.target.value === "" || /^\d+$/.test(e.target.value))
-								setInferSteps(e.target.value);
-						}}
-					/>
+					<Select value={inferSteps || "8"} onValueChange={setInferSteps}>
+						<SelectTrigger className={inputClass}>
+							<SelectValue placeholder="8" />
+						</SelectTrigger>
+						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+							{INFERENCE_STEP_OPTIONS.map((steps) => (
+								<SelectItem
+									key={steps}
+									value={steps}
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									{steps} STEPS
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</SettingsField>
 
 				<div className="grid grid-cols-2 gap-3">
@@ -164,30 +230,44 @@ export function SettingsTabAudioEngine({
 						label="LM Temperature"
 						hint="0.1-1.5 — HIGHER = MORE CREATIVE"
 					>
-						<Input
-							className={inputClass}
-							placeholder="0.85"
-							value={lmTemp}
-							onChange={(e) => {
-								if (e.target.value === "" || /^\d*\.?\d*$/.test(e.target.value))
-									setLmTemp(e.target.value);
-							}}
-						/>
+						<Select value={lmTemp || "0.85"} onValueChange={setLmTemp}>
+							<SelectTrigger className={inputClass}>
+								<SelectValue placeholder="0.85" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{LM_TEMPERATURE_OPTIONS.map((value) => (
+									<SelectItem
+										key={value}
+										value={value}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{value}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</SettingsField>
 
 					<SettingsField
 						label="LM CFG Scale"
 						hint="1.0-5.0 — HIGHER = FOLLOW PROMPT MORE"
 					>
-						<Input
-							className={inputClass}
-							placeholder="2.5"
-							value={lmCfg}
-							onChange={(e) => {
-								if (e.target.value === "" || /^\d*\.?\d*$/.test(e.target.value))
-									setLmCfg(e.target.value);
-							}}
-						/>
+						<Select value={lmCfg || "2.5"} onValueChange={setLmCfg}>
+							<SelectTrigger className={inputClass}>
+								<SelectValue placeholder="2.5" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{LM_CFG_OPTIONS.map((value) => (
+									<SelectItem
+										key={value}
+										value={value}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{value}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</SettingsField>
 				</div>
 
@@ -239,38 +319,71 @@ export function SettingsTabAudioEngine({
 					</SettingsField>
 
 					<SettingsField label="Wavelet">
-						<Input
-							className={inputClass}
-							placeholder="haar"
-							value={aceDcwWavelet}
-							onChange={(e) => setAceDcwWavelet(e.target.value)}
-						/>
+						<Select
+							value={aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet}
+							onValueChange={setAceDcwWavelet}
+						>
+							<SelectTrigger className={inputClass}>
+								<SelectValue placeholder="HAAR" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{WAVELET_OPTIONS.map((wavelet) => (
+									<SelectItem
+										key={wavelet}
+										value={wavelet}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{wavelet.toUpperCase()}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</SettingsField>
 				</div>
 
 				<div className="grid grid-cols-2 gap-3">
 					<SettingsField label="Scaler">
-						<Input
-							className={inputClass}
-							placeholder="0.05"
-							value={aceDcwScaler}
-							onChange={(e) => {
-								if (e.target.value === "" || /^\d*\.?\d*$/.test(e.target.value))
-									setAceDcwScaler(e.target.value);
-							}}
-						/>
+						<Select
+							value={aceDcwScaler || String(ACE_DCW_DEFAULTS.scaler)}
+							onValueChange={setAceDcwScaler}
+						>
+							<SelectTrigger className={inputClass}>
+								<SelectValue placeholder="0.05" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{DCW_SCALER_OPTIONS.map((value) => (
+									<SelectItem
+										key={value}
+										value={value}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{value}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</SettingsField>
 
 					<SettingsField label="High Scaler">
-						<Input
-							className={inputClass}
-							placeholder="0.02"
-							value={aceDcwHighScaler}
-							onChange={(e) => {
-								if (e.target.value === "" || /^\d*\.?\d*$/.test(e.target.value))
-									setAceDcwHighScaler(e.target.value);
-							}}
-						/>
+						<Select
+							value={aceDcwHighScaler || String(ACE_DCW_DEFAULTS.highScaler)}
+							onValueChange={setAceDcwHighScaler}
+						>
+							<SelectTrigger className={inputClass}>
+								<SelectValue placeholder="0.02" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{DCW_HIGH_SCALER_OPTIONS.map((value) => (
+									<SelectItem
+										key={value}
+										value={value}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{value}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</SettingsField>
 				</div>
 			</SettingsPanel>
@@ -279,11 +392,11 @@ export function SettingsTabAudioEngine({
 				className="w-full h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/60 hover:bg-white/10 hover:text-white"
 				onClick={() => {
 					setAceThinking(false);
-					setAceAutoDuration(true);
 					setInferSteps("8");
 					setLmTemp("0.85");
 					setLmCfg("2.5");
 					setInferMethod("ode");
+					setAceQueueDepth("12");
 					setAceDcwEnabled(ACE_DCW_DEFAULTS.enabled);
 					setAceDcwMode(ACE_DCW_DEFAULTS.mode);
 					setAceDcwScaler(String(ACE_DCW_DEFAULTS.scaler));

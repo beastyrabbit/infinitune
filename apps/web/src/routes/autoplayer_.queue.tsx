@@ -1,1420 +1,597 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { CoverImage } from "@/components/autoplayer/CoverImage";
-import { LiveTimer } from "@/components/autoplayer/LiveTimer";
-import { Badge } from "@/components/ui/badge";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-	type CompletionStats,
-	type EndpointStatus,
-	useWorkerInspect,
-	useWorkerStatus,
-	type WorkerInspect,
-	type WorkerStatus,
-} from "@/hooks/useWorkerStatus";
-import { useSongsBatch } from "@/integrations/api/hooks";
+	Activity,
+	ArrowLeft,
+	BarChart3,
+	Clock3,
+	Disc3,
+	ListMusic,
+	Loader2,
+	Radio,
+} from "lucide-react";
+import { useMemo } from "react";
+import { useWorkerStatus } from "@/hooks/useWorkerStatus";
 import {
-	getCoverColors,
-	getCoverPattern,
-	getInitials,
-	getPatternStyle,
-} from "@/lib/cover-utils";
-import { formatElapsed } from "@/lib/format-time";
-import { validatePlaylistKeySearch } from "@/lib/playlist-key";
-import type { Song } from "@/types";
+	type RadioAlbum,
+	type RadioAlbumTrack,
+	type RadioChartBucket,
+	useRadioLibrary,
+	useRadioQueue,
+} from "@/integrations/api/hooks";
 
 export const Route = createFileRoute("/autoplayer_/queue")({
 	component: QueuePage,
-	validateSearch: validatePlaylistKeySearch,
 });
 
-// ─── Song data types ────────────────────────────────────────────────
+const QUEUED_STATUSES = new Set([
+	"pending",
+	"generating_metadata",
+	"metadata_ready",
+	"submitting_to_ace",
+	"retry_pending",
+]);
+const AUDIO_STATUSES = new Set(["generating_audio", "saving"]);
 
-interface SongInfo {
-	title: string;
-	artistName: string;
-	genre: string;
-	cover?: Song["cover"];
-	status: string;
-	orderIndex: number;
-	promptEpoch: number;
-	isInterrupt: boolean;
-	playlistId: string;
+function formatDuration(ms: number | null | undefined): string {
+	if (!Number.isFinite(ms ?? Number.NaN) || !ms || ms <= 0) return "0s";
+	const totalSeconds = Math.floor(ms / 1000);
+	const seconds = totalSeconds % 60;
+	const minutes = Math.floor(totalSeconds / 60) % 60;
+	const hours = Math.floor(totalSeconds / 3600);
+	if (hours > 0) return `${hours}h ${minutes}m`;
+	if (minutes > 0) return `${minutes}m ${seconds}s`;
+	return `${seconds}s`;
 }
 
-interface QueueSnapshot {
-	at: number;
-	llmActive: number;
-	llmPending: number;
-	audioActive: number;
-	audioPending: number;
-	llmOldestActiveMs: number;
-	llmOldestPendingMs: number;
-	audioOldestActiveMs: number;
-	audioOldestPendingMs: number;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-// ─── Mini cover art (no disc effect, just raw art) ──────────────────
-
-function MiniCover({
-	title,
-	artistName,
-	cover,
-	size = 48,
-}: {
-	title: string;
-	artistName: string;
-	cover?: Song["cover"];
-	size?: number;
-}) {
-	if (cover) {
-		return (
-			<div
-				className="shrink-0 overflow-hidden border-2 border-white/20"
-				style={{ width: size, height: size }}
-			>
-				<CoverImage
-					cover={cover}
-					alt={title}
-					className="w-full h-full object-cover"
-				/>
-			</div>
-		);
-	}
-
-	const [bg, accent1] = getCoverColors(title, artistName);
-	const pattern = getCoverPattern(title);
-	const patternStyle = getPatternStyle(pattern);
-	const initials = getInitials(title);
-
-	return (
-		<div
-			className="shrink-0 overflow-hidden border-2 border-white/20 flex items-center justify-center relative"
-			style={{ width: size, height: size, backgroundColor: bg }}
-		>
-			<div className="absolute inset-0" style={patternStyle} />
-			<div
-				className="absolute inset-0 opacity-20"
-				style={{
-					background: `linear-gradient(135deg, ${accent1} 0%, transparent 60%)`,
-				}}
-			/>
-			<span className="text-sm font-black text-white relative z-10 select-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)]">
-				{initials}
-			</span>
-		</div>
-	);
-}
-
-// ─── Priority decoding ───────────────────────────────────────────────
-
-function decodePriority(p: number): { label: string; color: string } {
-	if (p >= 20000) return { label: "PERSONA", color: "text-pink-400/60" };
-	if (p >= 10000) return { label: "CLOSING", color: "text-white/20" };
-	if (p >= 5000) return { label: "OLD EPOCH", color: "text-orange-400/60" };
-	if (p >= 100) return { label: "NORMAL", color: "text-white/40" };
-	if (p === 1) return { label: "INTERRUPT", color: "text-cyan-400" };
-	if (p === 0) return { label: "ONESHOT", color: "text-yellow-400" };
-	return { label: "???", color: "text-white/20" };
-}
-
-function maxAgeFromItems(
-	items: Array<{ startedAt?: number; waitingSince?: number }>,
-	field: "startedAt" | "waitingSince",
-	now: number,
-) {
-	let maxAgeMs = 0;
-	for (const item of items) {
-		const timestamp = item[field];
-		if (typeof timestamp !== "number") continue;
-		maxAgeMs = Math.max(maxAgeMs, Math.max(0, now - timestamp));
-	}
-	return maxAgeMs;
-}
-
-function formatRuntime(ms: number) {
-	if (!Number.isFinite(ms) || ms <= 0) return "0s";
-	const totalSec = Math.floor(ms / 1000);
-	const min = Math.floor(totalSec / 60);
-	const sec = totalSec % 60;
-	if (min >= 60) {
-		const hours = Math.floor(min / 60);
-		const remMin = min % 60;
-		return `${hours}h ${remMin}m`;
-	}
-	if (min > 0) return `${min}m ${sec}s`;
-	return `${sec}s`;
-}
-
-function Sparkline({
-	values,
-	colorClass,
-}: {
-	values: number[];
-	colorClass: string;
-}) {
-	if (values.length < 2) {
-		return (
-			<div className="h-16 flex items-center justify-center text-xs text-white/25 uppercase tracking-widest">
-				NO TREND YET
-			</div>
-		);
-	}
-
-	const width = 220;
-	const height = 56;
-	const min = Math.min(...values);
-	const max = Math.max(...values);
-	const range = Math.max(1, max - min);
-	const stepX = width / Math.max(1, values.length - 1);
-	const points = values
-		.map((value, index) => {
-			const x = Math.round(index * stepX);
-			const y = Math.round(height - ((value - min) / range) * (height - 4) - 2);
-			return `${x},${y}`;
-		})
-		.join(" ");
-
-	return (
-		<div className="h-16">
-			<svg
-				viewBox={`0 0 ${width} ${height}`}
-				className="w-full h-full overflow-visible"
-				aria-label="Queue trend"
-			>
-				<title>Queue trend</title>
-				<polyline
-					points={points}
-					fill="none"
-					className={`${colorClass} stroke-current`}
-					strokeWidth="2.5"
-					strokeLinejoin="round"
-					strokeLinecap="round"
-				/>
-			</svg>
-		</div>
-	);
-}
-
-function getActorStateLabel(status: string): string {
-	return status === "running" ? "RUNNING" : "STOPPED";
-}
-
-function getActorStateClass(status: string): string {
-	return status === "running" ? "text-green-400" : "text-white/30";
-}
-
-function getActorStateDot(status: string): string {
-	return status === "running" ? "bg-green-400" : "bg-white/30";
-}
-
-function summarizeInspectEvent(event: unknown): {
-	eventType: string;
-	context: string;
-} {
-	if (event === null || event === undefined) {
-		return {
-			eventType: "UNKNOWN",
-			context: "No event payload",
-		};
-	}
-
-	if (typeof event !== "object") {
-		return {
-			eventType: "RAW",
-			context: String(event),
-		};
-	}
-
-	const payload = event as Record<string, unknown>;
-
-	let type = "EVENT";
-	if (typeof payload.type === "string") {
-		type = payload.type;
-	} else if (
-		typeof payload.event === "object" &&
-		payload.event !== null &&
-		typeof (payload.event as Record<string, unknown>).type === "string"
-	) {
-		type = `event:${String((payload.event as Record<string, unknown>).type)}`;
-	}
-
-	let context = "No context";
-	if (typeof payload.actorRef === "string") {
-		context = payload.actorRef;
-	} else if (
-		typeof payload.actor === "object" &&
-		payload.actor &&
-		typeof (payload.actor as Record<string, unknown>).id === "string"
-	) {
-		context = (payload.actor as Record<string, unknown>).id as string;
-	}
-
-	return { eventType: type, context };
-}
-
-function WorkerInspectPanel({
-	inspect,
-	error,
-}: {
-	inspect: WorkerInspect | null;
-	error: string | null;
-}) {
-	if (error) {
-		return (
-			<div className="border border-red-500/40 bg-red-950/30 p-3">
-				<div className="text-[11px] font-black uppercase tracking-widest text-red-400">
-					INSPECTOR ERROR
-				</div>
-				<div className="text-[11px] text-red-300 mt-1">{error}</div>
-			</div>
-		);
-	}
-
-	if (!inspect) {
-		return (
-			<div className="border border-white/15 bg-black/40 p-3 text-[11px] text-white/40">
-				Loading inspector...
-			</div>
-		);
-	}
-
-	if (!inspect.enabled) {
-		return (
-			<div className="border border-white/15 bg-black/40 p-3">
-				<div className="text-[11px] font-black uppercase tracking-widest text-white/60">
-					XSTATE INSPECT DISABLED
-				</div>
-				<div className="text-[11px] text-white/40 mt-1">
-					Set XSTATE_INSPECT_ENABLED=1 to stream runtime events.
-				</div>
-			</div>
-		);
-	}
-
-	const recentEvents = [...inspect.events].reverse().slice(0, 40);
-	return (
-		<div className="border-2 border-white/15 bg-black/40">
-			<div className="px-4 py-2 border-b border-white/10 flex justify-between items-center">
-				<div className="text-[11px] text-white/30 font-black uppercase tracking-widest">
-					XSTATE INSPECTOR
-				</div>
-				<div className="text-[11px] text-white/40">
-					{recentEvents.length}/{inspect.maxEvents}
-				</div>
-			</div>
-			<div className="border-b border-white/10 px-4 py-2 text-[11px] text-white/40">
-				Recent actor/runtime events
-			</div>
-			<div className="p-3">
-				<div className="max-h-56 overflow-auto border border-white/10">
-					{recentEvents.length === 0 ? (
-						<div className="p-2 text-[11px] text-white/20 uppercase tracking-widest">
-							No events yet
-						</div>
-					) : (
-						<div className="text-[11px]">
-							{recentEvents.map((row, i) => {
-								const info = summarizeInspectEvent(row.event);
-								return (
-									<div
-										key={`${row.at}-${info.context}-${i}`}
-										className="border-b border-white/5 px-2 py-2 space-y-1"
-									>
-										<div className="text-white/80 font-black uppercase">
-											{new Date(row.at).toLocaleTimeString()} · {info.eventType}
-										</div>
-										<div className="text-white/40 font-mono text-[10px]">
-											{info.context}
-										</div>
-										<pre className="text-[10px] text-white/30 font-mono overflow-x-auto">
-											{JSON.stringify(row.event)}
-										</pre>
-									</div>
-								);
-							})}
-						</div>
-					)}
-				</div>
-				<div className="text-[11px] text-white/30 mt-2 uppercase tracking-widest">
-					Buffer: {inspect.maxEvents} max events
-				</div>
-			</div>
-		</div>
-	);
-}
-
-function ActorRuntimePanel({
-	actorGraph,
-	songMap,
-}: {
-	actorGraph: NonNullable<WorkerStatus["actorGraph"]>;
-	songMap: Map<string, SongInfo>;
-}) {
-	const playlistsRunning = actorGraph.playlists.filter(
-		(item) => item.status === "running",
-	).length;
-	const songsRunning = actorGraph.songs.filter(
-		(item) => item.status === "running",
-	).length;
-
-	const sortedPlaylists = [...actorGraph.playlists].sort((a, b) =>
-		a.playlistId.localeCompare(b.playlistId),
-	);
-	const sortedSongs = [...actorGraph.songs].sort((a, b) =>
-		a.songId.localeCompare(b.songId),
-	);
-
-	return (
-		<div className="border-2 border-white/15 bg-black/40">
-			<div className="px-4 py-2 border-b border-white/10">
-				<div className="text-xs text-white/30 font-bold uppercase tracking-widest">
-					ACTOR RUNTIME
-				</div>
-			</div>
-			<div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-white/10">
-				<div className="p-3 space-y-2">
-					<div className="text-[11px] font-black uppercase tracking-widest text-white/60">
-						Playlist Actors ({actorGraph.playlists.length})
-					</div>
-					<div className="text-[11px] text-white/30">
-						RUNNING {playlistsRunning} / STOPPED{" "}
-						{actorGraph.playlists.length - playlistsRunning}
-					</div>
-					<div className="border border-white/10 p-2 max-h-48 overflow-auto space-y-1">
-						{sortedPlaylists.length === 0 ? (
-							<div className="text-[11px] text-white/20 uppercase tracking-widest">
-								No playlist actors
-							</div>
-						) : (
-							sortedPlaylists.map((item, index) => {
-								const isLast = index === sortedPlaylists.length - 1;
-								return (
-									<div key={item.playlistId} className="text-[11px]">
-										<div className="flex items-start gap-2">
-											<span className="text-white/20">├─</span>
-											<span
-												className={`h-2 w-2 rounded-full mt-1 shrink-0 ${getActorStateDot(item.status)} ${item.status === "running" ? "animate-pulse" : ""}`}
-											/>
-											<div className="min-w-0 flex-1">
-												<div className="font-black uppercase text-white/70 truncate">
-													playlist:{item.playlistId}
-												</div>
-												<div
-													className={`text-[10px] font-mono ${getActorStateClass(item.status)}`}
-												>
-													{isLast ? "└─ " : "├─ "}
-													{getActorStateLabel(item.status)}
-												</div>
-											</div>
-										</div>
-									</div>
-								);
-							})
-						)}
-					</div>
-				</div>
-
-				<div className="p-3 space-y-2">
-					<div className="text-[11px] font-black uppercase tracking-widest text-white/60">
-						Song Actors ({actorGraph.songs.length})
-					</div>
-					<div className="text-[11px] text-white/30">
-						RUNNING {songsRunning} / STOPPED{" "}
-						{actorGraph.songs.length - songsRunning}
-					</div>
-					<div className="border border-white/10 p-2 max-h-48 overflow-auto space-y-1">
-						{sortedSongs.length === 0 ? (
-							<div className="text-[11px] text-white/20 uppercase tracking-widest">
-								No song actors
-							</div>
-						) : (
-							sortedSongs.map((item, index) => {
-								const isLast = index === sortedSongs.length - 1;
-								const song = songMap.get(item.songId);
-								const label = song
-									? `${song.title} by ${song.artistName} · ${song.playlistId}`
-									: item.songId;
-								return (
-									<div key={item.songId} className="text-[11px]">
-										<div className="flex items-start gap-2">
-											<span className="text-white/20">├─</span>
-											<span
-												className={`h-2 w-2 rounded-full mt-1 shrink-0 ${getActorStateDot(item.status)} ${item.status === "running" ? "animate-pulse" : ""}`}
-											/>
-											<div className="min-w-0 flex-1">
-												<div className="font-black uppercase text-white/70 truncate">
-													{label}
-												</div>
-												<div
-													className={`text-[10px] font-mono truncate ${getActorStateClass(item.status)}`}
-												>
-													{isLast ? "└─ " : "├─ "}
-													{item.songId} • {getActorStateLabel(item.status)}
-												</div>
-											</div>
-										</div>
-									</div>
-								);
-							})
-						)}
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-}
-
-// ─── Song card for active/pending items ─────────────────────────────
-
-function SongCard({
-	songInfo,
-	timerStartedAt,
-	variant,
-	priority,
-	endpoint,
-	index,
-	playlistName,
-}: {
-	songInfo: SongInfo | null;
-	timerStartedAt: number;
-	variant: "active" | "pending";
-	priority?: number;
-	endpoint?: string;
-	index: number;
-	playlistName?: string;
-}) {
-	const title = songInfo?.title || "Generating...";
-	const artist = songInfo?.artistName || "...";
-	const genre = songInfo?.genre || "";
-
-	const isActive = variant === "active";
-	const isPersona = priority !== undefined && priority >= 20000;
-	const isOldEpoch =
-		priority !== undefined && priority >= 5000 && priority < 10000;
-
-	let borderColor: string;
-	let bgColor: string;
-	if (isActive && isPersona) {
-		borderColor = "border-pink-500/60";
-		bgColor = "bg-pink-950/20";
-	} else if (isActive) {
-		borderColor = "border-green-500/60";
-		bgColor = "bg-green-950/20";
-	} else if (isPersona) {
-		borderColor = "border-pink-500/20";
-		bgColor = "bg-pink-950/10";
-	} else if (isOldEpoch) {
-		borderColor = "border-orange-500/20";
-		bgColor = "bg-orange-950/10";
-	} else {
-		borderColor = "border-white/10";
-		bgColor = "bg-white/[0.02]";
-	}
-
-	const decoded = priority !== undefined ? decodePriority(priority) : null;
-
-	return (
-		<div
-			className={`group flex items-center gap-3 border-2 ${borderColor} ${bgColor} p-2.5 transition-colors hover:bg-white/[0.04]`}
-			style={{
-				animationDelay: `${index * 60}ms`,
-			}}
-		>
-			{/* Cover thumbnail */}
-			<MiniCover
-				title={title}
-				artistName={artist}
-				cover={songInfo?.cover}
-				size={44}
-			/>
-
-			{/* Song info */}
-			<div className="flex-1 min-w-0">
-				<div className="flex items-center gap-1.5">
-					<p
-						className={`text-sm font-black uppercase truncate leading-tight ${isOldEpoch ? "text-white/30" : ""}`}
-					>
-						{title}
-					</p>
-					{isPersona && (
-						<span className="shrink-0 text-[11px] font-black text-pink-400 border border-pink-400/40 px-1 leading-tight">
-							PERSONA
-						</span>
-					)}
-					{!isPersona && songInfo?.isInterrupt && (
-						<span className="shrink-0 text-[11px] font-black text-cyan-400 border border-cyan-400/40 px-1 leading-tight">
-							REQ
-						</span>
-					)}
-				</div>
-				<div className="flex items-center gap-2 mt-0.5">
-					<p
-						className={`text-xs uppercase truncate leading-tight ${isOldEpoch ? "text-white/20" : "text-white/40"}`}
-					>
-						{artist}
-						{genre && (
-							<>
-								{" "}
-								<span className="text-white/20">{"//"}</span> {genre}
-							</>
-						)}
-					</p>
-					{songInfo && (
-						<span className="shrink-0 text-[11px] font-mono text-white/15 tabular-nums">
-							#{String(Math.round(songInfo.orderIndex)).padStart(2, "0")}
-							{" E"}
-							{songInfo.promptEpoch}
-						</span>
-					)}
-				</div>
-				{playlistName && (
-					<p className="text-[11px] text-white/20 uppercase truncate mt-0.5">
-						{playlistName}
-					</p>
-				)}
-			</div>
-
-			{/* Priority + timer + endpoint */}
-			<div className="shrink-0 text-right flex flex-col items-end gap-0.5">
-				{isActive ? (
-					<>
-						<span
-							className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase ${isPersona ? "text-pink-400" : "text-green-400"}`}
-						>
-							<span
-								className={`h-1.5 w-1.5 rounded-full ${isPersona ? "bg-pink-400" : "bg-green-400"} animate-pulse`}
-							/>
-							{isPersona ? "EXTRACTING" : "PROCESSING"}
-						</span>
-						{endpoint && (
-							<span
-								className={`text-[11px] font-mono uppercase ${isPersona ? "text-pink-400/50" : "text-green-400/50"}`}
-							>
-								{endpoint}
-							</span>
-						)}
-						<LiveTimer
-							startedAt={timerStartedAt}
-							className={`text-sm font-mono tabular-nums ${isPersona ? "text-pink-400/80" : "text-green-400/80"}`}
-						/>
-					</>
-				) : (
-					<>
-						{decoded && (
-							<span
-								className={`text-[11px] font-bold uppercase ${decoded.color}`}
-							>
-								{decoded.label}
-							</span>
-						)}
-						{endpoint && (
-							<span className="text-[11px] font-mono text-white/20 uppercase">
-								{endpoint}
-							</span>
-						)}
-						{priority !== undefined && (
-							<span className="text-[11px] font-mono text-white/15 tabular-nums">
-								P{priority}
-							</span>
-						)}
-						<LiveTimer
-							startedAt={timerStartedAt}
-							className="text-[11px] font-mono text-yellow-500/50 tabular-nums"
-						/>
-					</>
-				)}
-			</div>
-		</div>
-	);
-}
-
-// ─── Endpoint panel ─────────────────────────────────────────────────
-
-function EndpointPanel({
-	label,
-	icon,
-	accentColor,
-	status,
-	songMap,
-	playlistNameMap,
-}: {
-	label: string;
-	icon: string;
-	accentColor: string;
-	status: EndpointStatus;
-	songMap: Map<string, SongInfo>;
-	playlistNameMap: Map<string, string>;
-}) {
-	const hasActivity = status.active > 0;
-	const hasErrors = status.errors > 0;
-
-	let stateLabel: string;
-	let stateColor: string;
-	let dotColor: string;
-	if (hasActivity) {
-		stateLabel = "ACTIVE";
-		stateColor = "text-green-400";
-		dotColor = "bg-green-500";
-	} else if (hasErrors) {
-		stateLabel = "ERROR";
-		stateColor = "text-red-400";
-		dotColor = "bg-red-500";
-	} else if (status.pending > 0) {
-		stateLabel = "QUEUED";
-		stateColor = "text-yellow-500";
-		dotColor = "bg-yellow-500";
-	} else {
-		stateLabel = "IDLE";
-		stateColor = "text-white/20";
-		dotColor = "bg-white/20";
-	}
-
-	const isEmpty =
-		status.activeItems.length === 0 && status.pendingItems.length === 0;
-
-	return (
-		<div className="border-2 border-white/15 bg-black/40">
-			{/* Panel header */}
-			<div
-				className="flex items-center justify-between px-4 py-3 border-b-2 border-white/10"
-				style={{
-					background: `linear-gradient(135deg, ${accentColor}08 0%, transparent 100%)`,
-				}}
-			>
-				<div className="flex items-center gap-3">
-					<span className="text-xl">{icon}</span>
-					<h3 className="text-lg font-black uppercase tracking-tight">
-						{label}
-					</h3>
-				</div>
-				<div className="flex items-center gap-2">
-					<div
-						className={`h-2.5 w-2.5 rounded-full ${dotColor} ${hasActivity ? "animate-pulse" : ""}`}
-					/>
-					<span className={`text-xs font-bold uppercase ${stateColor}`}>
-						{stateLabel}
-					</span>
-				</div>
-			</div>
-
-			{/* Stats strip */}
-			<div className="flex items-center border-b-2 border-white/10">
-				<div className="flex-1 text-center py-2 border-r border-white/5">
-					<span className="text-xl font-black tabular-nums">
-						{status.active}
-					</span>
-					<span className="text-xs text-white/30 uppercase ml-1.5">ACTIVE</span>
-				</div>
-				<div className="flex-1 text-center py-2 border-r border-white/5">
-					<span className="text-xl font-black tabular-nums text-white/70">
-						{status.pending}
-					</span>
-					<span className="text-xs text-white/30 uppercase ml-1.5">
-						WAITING
-					</span>
-				</div>
-				<div className="flex-1 text-center py-2">
-					<span
-						className={`text-xl font-black tabular-nums ${status.errors > 0 ? "text-red-400" : "text-white/30"}`}
-					>
-						{status.errors}
-					</span>
-					<span className="text-xs text-white/30 uppercase ml-1.5">ERRORS</span>
-				</div>
-			</div>
-
-			{/* Active items */}
-			{status.activeItems.length > 0 && (
-				<div className="p-2.5 space-y-1.5">
-					<div className="text-[11px] text-green-400/60 font-bold uppercase tracking-widest px-0.5 mb-1">
-						PROCESSING NOW
-					</div>
-					{status.activeItems.map((item, i) => {
-						const songInfo = songMap.get(item.songId) ?? null;
-						const plName = songInfo
-							? playlistNameMap.get(songInfo.playlistId)
-							: undefined;
-						return (
-							<SongCard
-								key={item.songId}
-								songInfo={songInfo}
-								timerStartedAt={item.startedAt}
-								variant="active"
-								priority={item.priority}
-								endpoint={item.endpoint}
-								index={i}
-								playlistName={plName}
-							/>
-						);
-					})}
-				</div>
-			)}
-
-			{/* Pending items */}
-			{status.pendingItems.length > 0 && (
-				<div
-					className={`p-2.5 space-y-1.5 ${status.activeItems.length > 0 ? "border-t border-white/5" : ""}`}
-				>
-					<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest px-0.5 mb-1">
-						WAITING ({status.pendingItems.length})
-					</div>
-					{status.pendingItems.map((item, i) => {
-						const songInfo = songMap.get(item.songId) ?? null;
-						const plName = songInfo
-							? playlistNameMap.get(songInfo.playlistId)
-							: undefined;
-						return (
-							<SongCard
-								key={item.songId}
-								songInfo={songInfo}
-								timerStartedAt={item.waitingSince}
-								variant="pending"
-								priority={item.priority}
-								endpoint={item.endpoint}
-								index={i}
-								playlistName={plName}
-							/>
-						);
-					})}
-				</div>
-			)}
-
-			{/* Empty state */}
-			{isEmpty && !hasErrors && (
-				<div className="px-4 py-6 text-center">
-					<span className="text-xs text-white/15 font-bold uppercase tracking-widest">
-						NO ITEMS IN QUEUE
-					</span>
-				</div>
-			)}
-
-			{/* Error message */}
-			{status.lastErrorMessage && (
-				<div className="border-t-2 border-red-500/30 px-3 py-2">
-					<div className="text-xs text-red-400/80 font-mono truncate">
-						{status.lastErrorMessage}
-					</div>
-				</div>
-			)}
-		</div>
-	);
-}
-
-// ─── Worker overview strip ──────────────────────────────────────────
-
-function WorkerOverview({ status }: { status: WorkerStatus }) {
-	const totalActive =
-		status.queues.llm.active +
-		status.queues.image.active +
-		status.queues.audio.active;
-	const totalPending =
-		status.queues.llm.pending +
-		status.queues.image.pending +
-		status.queues.audio.pending;
-	const totalErrors =
-		status.queues.llm.errors +
-		status.queues.image.errors +
-		status.queues.audio.errors;
-
-	return (
-		<div className="flex items-stretch border-2 border-white/15 bg-black/40 divide-x-2 divide-white/10">
-			<div className="flex-1 px-4 py-3 text-center">
-				<div className="text-3xl font-black tabular-nums">
-					{status.songWorkers}
-				</div>
-				<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest">
-					SONG WORKERS
-				</div>
-			</div>
-			<div className="flex-1 px-4 py-3 text-center">
-				<div className="text-3xl font-black tabular-nums text-green-400">
-					{totalActive}
-				</div>
-				<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest">
-					PROCESSING
-				</div>
-			</div>
-			<div className="flex-1 px-4 py-3 text-center">
-				<div className="text-3xl font-black tabular-nums text-white/60">
-					{totalPending}
-				</div>
-				<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest">
-					QUEUED
-				</div>
-			</div>
-			<div className="flex-1 px-4 py-3 text-center">
-				<div
-					className={`text-3xl font-black tabular-nums ${totalErrors > 0 ? "text-red-400" : "text-white/20"}`}
-				>
-					{totalErrors}
-				</div>
-				<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest">
-					ERRORS
-				</div>
-			</div>
-			<div className="flex-1 px-4 py-3 text-center">
-				<div className="text-3xl font-black tabular-nums text-white/40">
-					{formatElapsed(status.uptime * 1000)}
-				</div>
-				<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest">
-					UPTIME
-				</div>
-			</div>
-		</div>
-	);
-}
-
-// ─── Active playlists bar ───────────────────────────────────────────
-
-function ActivePlaylistsBar({
-	playlists,
-}: {
-	playlists: WorkerStatus["playlists"];
-}) {
-	if (playlists.length === 0) return null;
-
-	return (
-		<div className="border-2 border-white/15 bg-black/40 px-4 py-3">
-			<div className="text-[11px] text-white/30 font-bold uppercase tracking-widest mb-2">
-				ACTIVE PLAYLISTS
-			</div>
-			<div className="flex flex-wrap gap-2">
-				{playlists.map((pl) => (
-					<div
-						key={pl.id}
-						className="flex items-center gap-2 border border-white/15 bg-white/[0.03] px-3 py-1.5"
-					>
-						<span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-						<span className="text-sm font-black uppercase truncate max-w-48">
-							{pl.name}
-						</span>
-						<span className="text-xs text-white/30 tabular-nums">
-							{pl.activeSongWorkers} worker
-							{pl.activeSongWorkers !== 1 ? "s" : ""}
-						</span>
-					</div>
-				))}
-			</div>
-		</div>
-	);
-}
-
-// ─── Throughput stats bar ───────────────────────────────────────────
-
-function ThroughputStatCell({
+function Stat({
 	label,
 	value,
-	accentClass,
+	tone = "default",
 }: {
 	label: string;
-	value: string;
-	accentClass: string;
+	value: number | string;
+	tone?: "default" | "ready" | "active" | "warn";
 }) {
+	const valueClass =
+		tone === "ready"
+			? "text-emerald-200"
+			: tone === "active"
+				? "text-amber-200"
+				: tone === "warn"
+					? "text-red-200"
+					: "text-white";
 	return (
-		<div className="text-center">
-			<div className={`text-sm font-black tabular-nums ${accentClass}`}>
-				{value}
-			</div>
-			<div className="text-[11px] text-white/30 uppercase tracking-widest">
+		<div className="border border-white/10 bg-[#171a1b] p-4">
+			<div className="font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35">
 				{label}
 			</div>
+			<div className={`mt-2 text-3xl font-black ${valueClass}`}>{value}</div>
 		</div>
 	);
 }
 
-function ThroughputEndpoint({
-	label,
-	accentClass,
-	stats,
-	pending,
-	active,
+function Chart({
+	title,
+	buckets,
+	valueLabel = "count",
 }: {
-	label: string;
-	accentClass: string;
-	stats?: CompletionStats;
-	pending: number;
-	active: number;
+	title: string;
+	buckets: RadioChartBucket[];
+	valueLabel?: "count" | "ready" | "plays";
 }) {
-	const eta =
-		stats?.avgMs && pending > 0 && active > 0
-			? (pending * stats.avgMs) / active
-			: null;
-
+	const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
 	return (
-		<div className="flex-1 px-4 py-3 space-y-2">
-			<div
-				className={`text-xs font-black uppercase tracking-widest ${accentClass}`}
-			>
-				{label}
+		<section className="border border-white/10 bg-black/30">
+			<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+				{title}
 			</div>
-			<div className="grid grid-cols-4 gap-2">
-				<ThroughputStatCell
-					label="LAST"
-					value={stats?.lastMs != null ? formatRuntime(stats.lastMs) : "—"}
-					accentClass={accentClass}
-				/>
-				<ThroughputStatCell
-					label="AVG"
-					value={stats?.avgMs != null ? formatRuntime(stats.avgMs) : "—"}
-					accentClass="text-white/60"
-				/>
-				<ThroughputStatCell
-					label="MAX"
-					value={stats?.maxMs != null ? formatRuntime(stats.maxMs) : "—"}
-					accentClass="text-white/40"
-				/>
-				<ThroughputStatCell
-					label="ETA"
-					value={eta != null ? formatRuntime(eta) : "—"}
-					accentClass={eta != null ? "text-yellow-400" : "text-white/20"}
-				/>
+			<div className="space-y-2 p-4">
+				{buckets.slice(0, 10).map((bucket) => {
+					const value =
+						valueLabel === "ready"
+							? (bucket.readyCount ?? 0)
+							: valueLabel === "plays"
+								? (bucket.playCount ?? 0)
+								: bucket.count;
+					return (
+						<div key={bucket.label}>
+							<div className="mb-1 flex justify-between gap-3 font-mono text-[10px] font-bold uppercase tracking-widest text-white/55">
+								<span className="truncate">{bucket.label}</span>
+								<span>{value}</span>
+							</div>
+							<div className="h-2 bg-white/10">
+								<div
+									className="h-full bg-amber-300"
+									style={{
+										width: `${Math.max(4, (bucket.count / max) * 100)}%`,
+									}}
+								/>
+							</div>
+						</div>
+					);
+				})}
+				{buckets.length === 0 ? (
+					<div className="py-4 text-center font-mono text-xs font-black uppercase tracking-widest text-white/25">
+						No data
+					</div>
+				) : null}
 			</div>
-		</div>
+		</section>
 	);
 }
 
-function ThroughputStatsBar({ status }: { status: WorkerStatus }) {
-	return (
-		<div className="border-2 border-white/15 bg-black/40 flex items-stretch divide-x-2 divide-white/10">
-			<ThroughputEndpoint
-				label="LLM"
-				accentClass="text-cyan-300"
-				stats={status.queues.llm.completionStats}
-				pending={status.queues.llm.pending}
-				active={status.queues.llm.active}
-			/>
-			<ThroughputEndpoint
-				label="IMAGE"
-				accentClass="text-purple-400"
-				stats={status.queues.image.completionStats}
-				pending={status.queues.image.pending}
-				active={status.queues.image.active}
-			/>
-			<ThroughputEndpoint
-				label="AUDIO"
-				accentClass="text-amber-400"
-				stats={status.queues.audio.completionStats}
-				pending={status.queues.audio.pending}
-				active={status.queues.audio.active}
-			/>
-		</div>
-	);
+function countTracks(album: RadioAlbum) {
+	const ready = album.tracks.filter((track) => track.status === "ready").length;
+	const queued = album.tracks.filter((track) =>
+		QUEUED_STATUSES.has(track.status),
+	).length;
+	const audio = album.tracks.filter((track) =>
+		AUDIO_STATUSES.has(track.status),
+	).length;
+	const error = album.tracks.filter((track) => track.status === "error").length;
+	const played = album.tracks.filter(
+		(track) => track.status === "played",
+	).length;
+	const missing = Math.max(0, 12 - album.tracks.length);
+	return { ready, queued, audio, error, played, missing };
 }
 
-// ─── Queue monitoring panel ─────────────────────────────────────────
-
-function QueueMonitoringPanel({ history }: { history: QueueSnapshot[] }) {
-	const latest = history.at(-1);
-	if (!latest) return null;
-
-	const llmLongestObserved = Math.max(
-		...history.map((point) =>
-			Math.max(point.llmOldestActiveMs, point.llmOldestPendingMs),
-		),
-	);
-	const audioLongestObserved = Math.max(
-		...history.map((point) =>
-			Math.max(point.audioOldestActiveMs, point.audioOldestPendingMs),
-		),
-	);
-
-	return (
-		<div className="border-2 border-white/15 bg-black/40">
-			<div className="px-4 py-2 border-b border-white/10">
-				<div className="text-xs text-white/30 font-bold uppercase tracking-widest">
-					Runtime Monitoring
-				</div>
-			</div>
-			<div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/10">
-				<div className="p-3 space-y-2">
-					<div className="flex items-center justify-between text-xs uppercase tracking-widest">
-						<span className="font-black text-cyan-300">LLM Longest</span>
-						<span className="text-white/30">
-							Live Samples: {history.length}
-						</span>
-					</div>
-					<div className="grid grid-cols-3 gap-2">
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-cyan-300 tabular-nums">
-								{formatRuntime(latest.llmOldestActiveMs)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Active Now
-							</div>
-						</div>
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-yellow-400 tabular-nums">
-								{formatRuntime(latest.llmOldestPendingMs)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Waiting Now
-							</div>
-						</div>
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-white/80 tabular-nums">
-								{formatRuntime(llmLongestObserved)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Window Max
-							</div>
-						</div>
-					</div>
-					<div>
-						<div className="text-xs text-white/25 uppercase tracking-widest mb-1">
-							LLM Active Workers Trend
-						</div>
-						<Sparkline
-							values={history.map((point) => point.llmActive)}
-							colorClass="text-cyan-300"
-						/>
-					</div>
-				</div>
-				<div className="p-3 space-y-2">
-					<div className="flex items-center justify-between text-xs uppercase tracking-widest">
-						<span className="font-black text-amber-300">AUDIO Longest</span>
-						<span className="text-white/30">
-							Live Samples: {history.length}
-						</span>
-					</div>
-					<div className="grid grid-cols-3 gap-2">
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-amber-300 tabular-nums">
-								{formatRuntime(latest.audioOldestActiveMs)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Active Now
-							</div>
-						</div>
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-yellow-400 tabular-nums">
-								{formatRuntime(latest.audioOldestPendingMs)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Waiting Now
-							</div>
-						</div>
-						<div className="border border-white/10 p-2">
-							<div className="text-xl font-black text-white/80 tabular-nums">
-								{formatRuntime(audioLongestObserved)}
-							</div>
-							<div className="text-xs text-white/30 uppercase tracking-widest">
-								Window Max
-							</div>
-						</div>
-					</div>
-					<div>
-						<div className="text-xs text-white/25 uppercase tracking-widest mb-1">
-							AUDIO Queue Pressure Trend
-						</div>
-						<Sparkline
-							values={history.map(
-								(point) => point.audioActive + point.audioPending,
-							)}
-							colorClass="text-amber-300"
-						/>
-					</div>
-				</div>
-			</div>
-		</div>
-	);
+function albumElapsed(album: RadioAlbum, now: number) {
+	if (album.completedAt) return album.completedAt - album.createdAt;
+	return now - album.createdAt;
 }
 
-// ─── Developer Tools (collapsible) ──────────────────────────────────
-
-function DeveloperToolsSection({
-	actorGraph,
-	songMap,
-	inspect,
-	inspectError,
-}: {
-	actorGraph: WorkerStatus["actorGraph"];
-	songMap: Map<string, SongInfo>;
-	inspect: WorkerInspect | null;
-	inspectError: string | null;
-}) {
-	const [open, setOpen] = useState(false);
-	const [tab, setTab] = useState<"actors" | "inspector">("actors");
-
-	const actorCount = actorGraph
-		? actorGraph.playlists.length + actorGraph.songs.length
-		: 0;
-	const eventCount = inspect?.events.length ?? 0;
-
-	return (
-		<div className="border-2 border-white/15 bg-black/40">
-			<button
-				type="button"
-				className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/[0.02] transition-colors"
-				onClick={() => setOpen((prev) => !prev)}
-			>
-				<div className="flex items-center gap-2">
-					{open ? (
-						<ChevronDown className="h-4 w-4 text-white/40" />
-					) : (
-						<ChevronRight className="h-4 w-4 text-white/40" />
-					)}
-					<span className="text-xs font-black uppercase tracking-widest text-white/60">
-						DEVELOPER TOOLS
-					</span>
-				</div>
-				<div className="text-[11px] text-white/30 uppercase tracking-widest">
-					Actors: {actorCount} | Inspector: {eventCount} events
-				</div>
-			</button>
-
-			{open && (
-				<div className="border-t border-white/10">
-					{/* Tabs */}
-					<div className="flex border-b border-white/10">
-						<button
-							type="button"
-							className={`flex-1 px-4 py-2 text-xs font-black uppercase tracking-widest transition-colors ${
-								tab === "actors"
-									? "text-white bg-white/[0.05]"
-									: "text-white/30 hover:text-white/50"
-							}`}
-							onClick={() => setTab("actors")}
-						>
-							ACTORS
-						</button>
-						<button
-							type="button"
-							className={`flex-1 px-4 py-2 text-xs font-black uppercase tracking-widest transition-colors ${
-								tab === "inspector"
-									? "text-white bg-white/[0.05]"
-									: "text-white/30 hover:text-white/50"
-							}`}
-							onClick={() => setTab("inspector")}
-						>
-							INSPECTOR
-						</button>
-					</div>
-
-					{/* Tab content */}
-					<div className="p-3">
-						{tab === "actors" && actorGraph && (
-							<ActorRuntimePanel actorGraph={actorGraph} songMap={songMap} />
-						)}
-						{tab === "actors" && !actorGraph && (
-							<div className="text-xs text-white/30 uppercase tracking-widest py-4 text-center">
-								No actor graph available
-							</div>
-						)}
-						{tab === "inspector" && (
-							<WorkerInspectPanel inspect={inspect} error={inspectError} />
-						)}
-					</div>
-				</div>
-			)}
-		</div>
-	);
+function trackSort(a: RadioAlbumTrack, b: RadioAlbumTrack) {
+	return a.albumTrackNumber - b.albumTrackNumber;
 }
-
-// ─── Main page ──────────────────────────────────────────────────────
 
 function QueuePage() {
-	const navigate = useNavigate();
-	const { status, error } = useWorkerStatus();
-	const { inspect, error: inspectError } = useWorkerInspect(200);
-	const [history, setHistory] = useState<QueueSnapshot[]>([]);
+	const queue = useRadioQueue();
+	const library = useRadioLibrary();
+	const { status: workerStatus } = useWorkerStatus();
+	const now = Date.now();
 
-	// Collect all unique song IDs from the worker status
-	const songIds = useMemo(() => {
-		if (!status) return [];
-		const ids = new Set<string>();
-		for (const queue of Object.values(status.queues)) {
-			for (const item of queue.activeItems) ids.add(item.songId);
-			for (const item of queue.pendingItems) ids.add(item.songId);
-		}
-		if (status.actorGraph) {
-			for (const item of status.actorGraph.songs) ids.add(item.songId);
-		}
-		return [...ids];
-	}, [status]);
-
-	// Fetch song data from API
-	const songsData = useSongsBatch(songIds);
-
-	// Build a lookup map
-	const songMap = useMemo(() => {
-		const map = new Map<string, SongInfo>();
-		if (!songsData) return map;
-		for (const song of songsData as Song[]) {
-			map.set(song.id, {
-				title: song.title || "Generating...",
-				artistName: song.artistName || "...",
-				genre: song.genre || "",
-				cover: song.cover ?? undefined,
-				status: song.status,
-				orderIndex: song.orderIndex,
-				promptEpoch: song.promptEpoch ?? 0,
-				isInterrupt: !!song.isInterrupt,
-				playlistId: song.playlistId,
-			});
-		}
-		return map;
-	}, [songsData]);
-
-	// Build playlist name map from status.playlists
-	const playlistNameMap = useMemo(() => {
-		const map = new Map<string, string>();
-		if (!status) return map;
-		for (const pl of status.playlists) {
-			map.set(pl.id, pl.name);
-		}
-		return map;
-	}, [status]);
-
-	useEffect(() => {
-		if (!status) return;
-		const now = Date.now();
-		const snapshot: QueueSnapshot = {
-			at: now,
-			llmActive: status.queues.llm.active,
-			llmPending: status.queues.llm.pending,
-			audioActive: status.queues.audio.active,
-			audioPending: status.queues.audio.pending,
-			llmOldestActiveMs: maxAgeFromItems(
-				status.queues.llm.activeItems,
-				"startedAt",
-				now,
+	const albums = library?.albums ?? [];
+	const activeAudioBySong = useMemo(
+		() =>
+			new Map(
+				(workerStatus?.queues.audio.activeItems ?? []).map((item) => [
+					item.songId,
+					item,
+				]),
 			),
-			llmOldestPendingMs: maxAgeFromItems(
-				status.queues.llm.pendingItems,
-				"waitingSince",
-				now,
+		[workerStatus],
+	);
+	const pendingAudioBySong = useMemo(
+		() =>
+			new Map(
+				(workerStatus?.queues.audio.pendingItems ?? []).map((item) => [
+					item.songId,
+					item,
+				]),
 			),
-			audioOldestActiveMs: maxAgeFromItems(
-				status.queues.audio.activeItems,
-				"startedAt",
-				now,
-			),
-			audioOldestPendingMs: maxAgeFromItems(
-				status.queues.audio.pendingItems,
-				"waitingSince",
-				now,
-			),
-		};
-		setHistory((prev) => [...prev.slice(-59), snapshot]);
-	}, [status]);
+		[workerStatus],
+	);
+	const aceQueueTracks = useMemo(
+		() =>
+			albums
+				.flatMap((album) =>
+					album.tracks.map((track) => ({
+						album,
+						track,
+						active: activeAudioBySong.get(track.id),
+						pending: pendingAudioBySong.get(track.id),
+					})),
+				)
+				.filter(
+					(row) =>
+						row.active ||
+						row.pending ||
+						row.track.status === "submitting_to_ace" ||
+						row.track.status === "generating_audio" ||
+						row.track.status === "saving",
+				)
+				.sort((a, b) => {
+					const aPriority = a.active?.priority ?? a.pending?.priority ?? 99999;
+					const bPriority = b.active?.priority ?? b.pending?.priority ?? 99999;
+					return aPriority - bPriority || trackSort(a.track, b.track);
+				}),
+		[albums, activeAudioBySong, pendingAudioBySong],
+	);
+	const generatingAlbums = albums
+		.filter((album) => album.status === "generating")
+		.sort((a, b) => a.createdAt - b.createdAt);
+	const analytics = queue?.analytics;
 
 	return (
-		<div className="font-mono min-h-screen bg-gray-950 text-white">
-			{/* HEADER */}
-			<header className="border-b-4 border-white/20 bg-black">
-				<div className="flex items-center justify-between px-4 py-3">
-					<div className="flex items-center gap-4">
-						<button
-							type="button"
-							className="text-white/60 hover:text-white transition-colors"
-							onClick={() =>
-								navigate({ to: "/autoplayer", search: (prev) => prev })
-							}
-						>
-							<ArrowLeft className="h-5 w-5" />
-						</button>
-						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-							QUEUE
+		<div className="min-h-screen bg-[#101213] text-stone-100">
+			<header className="border-b border-white/10 bg-black/70 px-4 py-4">
+				<div className="mx-auto flex max-w-7xl items-center gap-4">
+					<Link to="/autoplayer" className="text-white/55 hover:text-white">
+						<ArrowLeft className="h-5 w-5" />
+					</Link>
+					<div>
+						<h1 className="flex items-center gap-3 font-mono text-2xl font-black uppercase tracking-[0.18em]">
+							<ListMusic className="h-6 w-6 text-amber-300" />
+							Radio Operations
 						</h1>
-						<Badge className="rounded-none border-2 border-green-500/50 bg-green-500/10 font-mono text-xs text-green-400 px-2 py-0.5">
-							<span className="inline-block h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse mr-1.5" />
-							LIVE
-						</Badge>
+						<p className="mt-1 font-mono text-xs uppercase tracking-[0.2em] text-white/35">
+							Schedule v{queue?.station.scheduleVersion ?? 0}
+						</p>
 					</div>
-					{status && (
-						<div className="hidden sm:flex items-center gap-3 text-xs text-white/30 font-bold uppercase tracking-widest">
-							<span>{status.songWorkers} WORKERS</span>
-							<span className="text-white/10">|</span>
-							<span>
-								{status.playlists.length} PLAYLIST
-								{status.playlists.length !== 1 ? "S" : ""}
-							</span>
-						</div>
-					)}
 				</div>
 			</header>
 
-			<div className="p-4 space-y-4">
-				{/* Error state */}
-				{error && (
-					<div className="border-2 border-red-500/40 bg-red-950/30 p-4 flex items-center gap-3">
-						<div className="h-3 w-3 rounded-full bg-red-500 animate-pulse shrink-0" />
-						<div>
-							<div className="text-sm font-black uppercase text-red-400">
-								WORKER UNREACHABLE
+			<main className="mx-auto max-w-7xl px-4 py-6">
+				<div className="mb-6 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+					<Stat
+						label="Ready albums"
+						value={queue?.stats.untouchedReadyAlbums ?? 0}
+						tone="ready"
+					/>
+					<Stat
+						label="Generating albums"
+						value={queue?.stats.untouchedGeneratingAlbums ?? 0}
+						tone="active"
+					/>
+					<Stat
+						label="Incomplete"
+						value={queue?.stats.incompleteAlbums ?? 0}
+						tone={(queue?.stats.incompleteAlbums ?? 0) > 0 ? "warn" : "default"}
+					/>
+					<Stat
+						label="Missing tracks"
+						value={queue?.stats.missingAlbumTracks ?? 0}
+						tone={
+							(queue?.stats.missingAlbumTracks ?? 0) > 0 ? "warn" : "default"
+						}
+					/>
+					<Stat
+						label="ACE pending"
+						value={workerStatus?.queues.audio.pending ?? 0}
+					/>
+					<Stat
+						label="ACE active"
+						value={workerStatus?.queues.audio.active ?? 0}
+						tone="active"
+					/>
+					<Stat
+						label="Last album"
+						value={formatDuration(analytics?.albumTiming.lastCompletedMs)}
+					/>
+					<Stat
+						label="Avg album"
+						value={formatDuration(analytics?.albumTiming.avgCompletedMs)}
+					/>
+				</div>
+
+				<div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_420px]">
+					<div className="space-y-6">
+						<section className="border border-white/10 bg-black/30">
+							<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+								<Activity className="h-4 w-4 text-amber-300" />
+								ACE album queue
 							</div>
-							<div className="text-xs text-red-400/60 font-mono mt-0.5">
-								{error}
+							<div className="divide-y divide-white/10">
+								{generatingAlbums.map((album) => {
+									const counts = countTracks(album);
+									const runningTracks = album.tracks
+										.filter(
+											(track) =>
+												activeAudioBySong.has(track.id) ||
+												AUDIO_STATUSES.has(track.status),
+										)
+										.sort(trackSort);
+									const pendingTracks = album.tracks
+										.filter(
+											(track) =>
+												pendingAudioBySong.has(track.id) ||
+												QUEUED_STATUSES.has(track.status),
+										)
+										.sort(trackSort);
+									return (
+										<div key={album.id} className="p-4">
+											<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+												<div className="min-w-0">
+													<div className="flex items-center gap-2">
+														<Loader2 className="h-4 w-4 animate-spin text-amber-300" />
+														<h2 className="truncate text-sm font-black uppercase text-white">
+															{album.title}
+														</h2>
+													</div>
+													<p className="mt-1 truncate font-mono text-[10px] font-bold uppercase tracking-widest text-white/35">
+														{album.bandName} / {album.generationKind} /{" "}
+														{album.status}
+													</p>
+													<p className="mt-3 text-sm leading-relaxed text-white/60">
+														{album.theme}
+													</p>
+												</div>
+												<div className="grid grid-cols-2 gap-2 font-mono text-[10px] font-black uppercase tracking-widest">
+													<div className="border border-white/10 p-2 text-white/55">
+														Elapsed
+														<div className="mt-1 text-lg text-white">
+															{formatDuration(albumElapsed(album, now))}
+														</div>
+													</div>
+													<div className="border border-white/10 p-2 text-white/55">
+														Ready
+														<div className="mt-1 text-lg text-emerald-200">
+															{counts.ready}/12
+														</div>
+													</div>
+													<div className="border border-white/10 p-2 text-white/55">
+														Queued
+														<div className="mt-1 text-lg text-white">
+															{counts.queued}
+														</div>
+													</div>
+													<div className="border border-white/10 p-2 text-white/55">
+														Missing
+														<div
+															className={`mt-1 text-lg ${
+																counts.missing > 0
+																	? "text-red-200"
+																	: "text-white"
+															}`}
+														>
+															{counts.missing}
+														</div>
+													</div>
+													<div className="border border-white/10 p-2 text-white/55">
+														Audio
+														<div className="mt-1 text-lg text-amber-200">
+															{counts.audio}
+														</div>
+													</div>
+												</div>
+											</div>
+
+											<div className="mt-4 grid gap-3 lg:grid-cols-2">
+												<div className="border border-white/10 bg-black/20 p-3">
+													<div className="mb-2 font-mono text-[10px] font-black uppercase tracking-widest text-amber-200">
+														Running ACE tracks
+													</div>
+													{runningTracks.slice(0, 6).map((track) => {
+														const runtime = activeAudioBySong.has(track.id)
+															? now -
+																(activeAudioBySong.get(track.id)?.startedAt ??
+																	now)
+															: now -
+																(track.aceSubmittedAt ??
+																	track.generationStartedAt ??
+																	track.createdAt);
+														return (
+															<div
+																key={track.id}
+																className="flex justify-between gap-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white/55"
+															>
+																<span className="truncate">
+																	{String(track.albumTrackNumber).padStart(
+																		2,
+																		"0",
+																	)}{" "}
+																	{track.title}
+																</span>
+																<span className="text-amber-200">
+																	{formatDuration(runtime)}
+																</span>
+															</div>
+														);
+													})}
+													{runningTracks.length === 0 ? (
+														<div className="py-2 font-mono text-[10px] uppercase tracking-widest text-white/25">
+															No running ACE tracks
+														</div>
+													) : null}
+												</div>
+
+												<div className="border border-white/10 bg-black/20 p-3">
+													<div className="mb-2 font-mono text-[10px] font-black uppercase tracking-widest text-white/40">
+														Next queued tracks
+													</div>
+													{pendingTracks.slice(0, 6).map((track) => {
+														const pending = pendingAudioBySong.get(track.id);
+														const waitMs = pending
+															? now - pending.waitingSince
+															: now -
+																(track.generationStartedAt ?? track.createdAt);
+														return (
+															<div
+																key={track.id}
+																className="flex justify-between gap-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white/55"
+															>
+																<span className="truncate">
+																	{String(track.albumTrackNumber).padStart(
+																		2,
+																		"0",
+																	)}{" "}
+																	{track.status}
+																</span>
+																<span>{formatDuration(waitMs)}</span>
+															</div>
+														);
+													})}
+													{pendingTracks.length === 0 ? (
+														<div className="py-2 font-mono text-[10px] uppercase tracking-widest text-white/25">
+															No queued tracks
+														</div>
+													) : null}
+												</div>
+											</div>
+										</div>
+									);
+								})}
+								{generatingAlbums.length === 0 ? (
+									<div className="p-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/25">
+										No active album jobs
+									</div>
+								) : null}
 							</div>
-						</div>
+						</section>
+
+						<section className="border border-white/10 bg-black/30">
+							<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+								<Radio className="h-4 w-4 text-sky-300" />
+								Radio mixer airing plan
+							</div>
+							<div className="divide-y divide-white/10">
+								{queue?.schedule.map((item) => (
+									<div
+										key={`${item.slotIndex}-${item.songId}`}
+										className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 px-4 py-4"
+									>
+										<div className="font-mono text-sm font-black text-sky-300">
+											{String(item.slotIndex + 1).padStart(2, "0")}
+										</div>
+										<div className="min-w-0">
+											<div className="truncate text-sm font-black uppercase text-white">
+												{item.title ?? "Untitled"}
+											</div>
+											<div className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
+												{item.albumTitle ?? "Album"} / {item.genre ?? "genre"} /{" "}
+												{item.reason}
+											</div>
+										</div>
+										{item.isRequest ? (
+											<span className="border border-emerald-300/40 px-2 py-1 font-mono text-[10px] font-black uppercase text-emerald-200">
+												Request
+											</span>
+										) : (
+											<Clock3 className="h-4 w-4 text-white/25" />
+										)}
+									</div>
+								))}
+								{!queue?.schedule.length ? (
+									<div className="p-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
+										No scheduled tracks
+									</div>
+								) : null}
+							</div>
+						</section>
 					</div>
-				)}
 
-				{/* Loading state */}
-				{!status && !error && (
-					<div className="flex items-center justify-center py-20 gap-3">
-						<Loader2 className="h-5 w-5 animate-spin text-white/30" />
-						<span className="text-sm text-white/30 font-bold uppercase tracking-widest">
-							CONNECTING TO WORKER
-						</span>
-					</div>
-				)}
+					<aside className="space-y-6">
+						<section className="border border-white/10 bg-black/30">
+							<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+								<Disc3 className="h-4 w-4 text-amber-300" />
+								ACE track queue
+							</div>
+							<div className="divide-y divide-white/10">
+								{aceQueueTracks
+									.slice(0, 24)
+									.map(({ album, track, active, pending }) => {
+										const queueMs = active
+											? now - active.startedAt
+											: pending
+												? now - pending.waitingSince
+												: now -
+													(track.aceSubmittedAt ??
+														track.generationStartedAt ??
+														track.createdAt);
+										return (
+											<div key={track.id} className="p-3">
+												<div className="flex justify-between gap-3 font-mono text-[10px] font-black uppercase tracking-widest">
+													<span className="truncate text-white">
+														{album.title}
+													</span>
+													<span
+														className={
+															active ? "text-amber-200" : "text-white/40"
+														}
+													>
+														{active
+															? "active"
+															: pending
+																? "pending"
+																: track.status}
+													</span>
+												</div>
+												<div className="mt-1 flex justify-between gap-3 font-mono text-[10px] uppercase tracking-widest text-white/45">
+													<span className="truncate">
+														{album.bandName} / #{track.albumTrackNumber} /{" "}
+														{track.title}
+													</span>
+													<span>{formatDuration(queueMs)}</span>
+												</div>
+											</div>
+										);
+									})}
+								{aceQueueTracks.length === 0 ? (
+									<div className="p-6 text-center font-mono text-xs font-black uppercase tracking-widest text-white/25">
+										No ACE queue items
+									</div>
+								) : null}
+							</div>
+						</section>
 
-				{status && (
-					<>
-						{/* 1. Worker overview strip */}
-						<WorkerOverview status={status} />
-
-						{/* 2. Active playlists bar */}
-						<ActivePlaylistsBar playlists={status.playlists} />
-
-						{/* 3. Throughput stats bar */}
-						<ThroughputStatsBar status={status} />
-
-						{/* 4. Endpoint panels (hero content) */}
-						<div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-							<EndpointPanel
-								label="LLM"
-								icon="&#x2726;"
-								accentColor="#22d3ee"
-								status={status.queues.llm}
-								songMap={songMap}
-								playlistNameMap={playlistNameMap}
+						<section className="grid grid-cols-2 gap-3">
+							<Stat
+								label="Album done"
+								value={analytics?.albumTiming.completedAlbums ?? 0}
+								tone="ready"
 							/>
-							<EndpointPanel
-								label="IMAGE"
-								icon="&#x25A0;"
-								accentColor="#a855f7"
-								status={status.queues.image}
-								songMap={songMap}
-								playlistNameMap={playlistNameMap}
+							<Stat
+								label="Oldest active"
+								value={formatDuration(analytics?.albumTiming.oldestActiveMs)}
+								tone="active"
 							/>
-							<EndpointPanel
-								label="AUDIO"
-								icon="&#x266B;"
-								accentColor="#f59e0b"
-								status={status.queues.audio}
-								songMap={songMap}
-								playlistNameMap={playlistNameMap}
+							<Stat
+								label="Likes"
+								value={analytics?.feedbackTotals.likes ?? 0}
+								tone="ready"
 							/>
-						</div>
+							<Stat
+								label="Skips"
+								value={analytics?.feedbackTotals.skips ?? 0}
+								tone="warn"
+							/>
+						</section>
 
-						{/* 5. Queue monitoring (sparklines) */}
-						<QueueMonitoringPanel history={history} />
-
-						{/* 6. Developer Tools (collapsible) */}
-						<DeveloperToolsSection
-							actorGraph={status.actorGraph}
-							songMap={songMap}
-							inspect={inspect}
-							inspectError={inspectError}
+						<Chart
+							title="Generated genre spread"
+							buckets={analytics?.generatedGenreSpread ?? []}
 						/>
-					</>
-				)}
-			</div>
+						<Chart
+							title="Ready genre spread"
+							buckets={analytics?.readyGenreSpread ?? []}
+						/>
+						<Chart
+							title="Vocal spread"
+							buckets={analytics?.vocalSpread ?? []}
+						/>
+						<Chart
+							title="Song status spread"
+							buckets={analytics?.statusSpread ?? []}
+						/>
+
+						<section className="border border-white/10 bg-black/30">
+							<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+								<BarChart3 className="h-4 w-4 text-emerald-300" />
+								Request readiness
+							</div>
+							<div className="divide-y divide-white/10">
+								{queue?.requests.slice(0, 10).map((request) => (
+									<div key={request.id} className="p-4">
+										<div className="flex justify-between gap-2 font-mono text-[10px] font-black uppercase tracking-widest">
+											<span className="text-emerald-300">{request.kind}</span>
+											<span className="text-white/35">{request.status}</span>
+										</div>
+										<p className="mt-2 text-sm text-white/70">
+											{request.prompt}
+										</p>
+									</div>
+								))}
+								{!queue?.requests.length ? (
+									<div className="p-6 text-center font-mono text-xs font-black uppercase tracking-widest text-white/25">
+										No requests
+									</div>
+								) : null}
+							</div>
+						</section>
+					</aside>
+				</div>
+			</main>
 		</div>
 	);
 }

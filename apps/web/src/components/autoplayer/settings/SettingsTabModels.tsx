@@ -125,6 +125,8 @@ function defaultTextModelForProvider(provider: string): string {
 		: DEFAULT_OPENAI_CODEX_TEXT_MODEL;
 }
 
+const ANTHROPIC_MODEL_OPTIONS = [DEFAULT_ANTHROPIC_TEXT_MODEL];
+
 function InferenceShModelSelect({
 	models,
 	value,
@@ -359,12 +361,24 @@ export function SettingsTabModels({
 							</div>
 						)
 					) : (
-						<Input
-							className={inputClass}
-							placeholder={DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()}
-							value={textModel}
-							onChange={(e) => setTextModel(e.target.value)}
-						/>
+						<Select value={textModel} onValueChange={setTextModel}>
+							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+								<SelectValue
+									placeholder={DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()}
+								/>
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								{ANTHROPIC_MODEL_OPTIONS.map((model) => (
+									<SelectItem
+										key={model}
+										value={model}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{model.toUpperCase()}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					)}
 				</SettingsField>
 			</SettingsPanel>
@@ -617,12 +631,33 @@ export function SettingsTabModels({
 							/>
 						)
 					) : (
-						<Input
-							className={inputClass}
-							placeholder="USES TEXT MODEL IF EMPTY"
-							value={personaModel}
-							onChange={(e) => setPersonaModel(e.target.value)}
-						/>
+						<Select
+							value={personaModel || "__fallback__"}
+							onValueChange={(value) =>
+								setPersonaModel(value === "__fallback__" ? "" : value)
+							}
+						>
+							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+								<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
+							</SelectTrigger>
+							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+								<SelectItem
+									value="__fallback__"
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									USE TEXT MODEL
+								</SelectItem>
+								{ANTHROPIC_MODEL_OPTIONS.map((model) => (
+									<SelectItem
+										key={model}
+										value={model}
+										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+									>
+										{model.toUpperCase()}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					)}
 				</SettingsField>
 

@@ -48,6 +48,9 @@ export const EVENT_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws`;
 /** WebSocket URL for the playlist-session protocol (/ws/playlist). */
 export const ROOM_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws/playlist`;
 
+/** WebSocket URL for the global radio protocol (/ws/radio). */
+export const RADIO_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws/radio`;
+
 /**
  * Resolves media URLs from API payloads.
  * Relative paths (e.g. `/api/songs/:id/audio`) are resolved against API_URL.
