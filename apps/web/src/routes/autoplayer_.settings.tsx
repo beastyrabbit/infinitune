@@ -1,5 +1,6 @@
 import {
 	ACE_DCW_DEFAULTS,
+	ACE_GENERATION_DEFAULTS,
 	ACE_VAE_DEFAULT,
 	normalizeAceDcwScaler,
 	normalizeAceModel,
@@ -77,10 +78,10 @@ const DEFAULT_SETTINGS: Record<string, string> = {
 	coversEnabled: "true",
 	aceModel: "acestep-v15-xl-turbo",
 	aceVaeCheckpoint: ACE_VAE_DEFAULT,
-	aceInferenceSteps: "8",
-	aceLmTemperature: "0.85",
-	aceLmCfgScale: "2.5",
-	aceInferMethod: "ode",
+	aceInferenceSteps: String(ACE_GENERATION_DEFAULTS.inferenceSteps),
+	aceLmTemperature: String(ACE_GENERATION_DEFAULTS.lmTemperature),
+	aceLmCfgScale: String(ACE_GENERATION_DEFAULTS.lmCfgScale),
+	aceInferMethod: ACE_GENERATION_DEFAULTS.inferMethod,
 	aceQueueDepth: "12",
 	aceDcwEnabled: String(ACE_DCW_DEFAULTS.enabled),
 	aceDcwMode: ACE_DCW_DEFAULTS.mode,
@@ -374,10 +375,17 @@ function SettingsPage() {
 				aceVaeCheckpoint: normalizeAceVaeCheckpoint(
 					readSetting("aceVaeCheckpoint"),
 				),
-				aceInferenceSteps: readSetting("aceInferenceSteps") || "8",
-				aceLmTemperature: readSetting("aceLmTemperature") || "0.85",
-				aceLmCfgScale: readSetting("aceLmCfgScale") || "2.5",
-				aceInferMethod: readSetting("aceInferMethod") || "ode",
+				aceInferenceSteps:
+					readSetting("aceInferenceSteps") ||
+					String(ACE_GENERATION_DEFAULTS.inferenceSteps),
+				aceLmTemperature:
+					readSetting("aceLmTemperature") ||
+					String(ACE_GENERATION_DEFAULTS.lmTemperature),
+				aceLmCfgScale:
+					readSetting("aceLmCfgScale") ||
+					String(ACE_GENERATION_DEFAULTS.lmCfgScale),
+				aceInferMethod:
+					readSetting("aceInferMethod") || ACE_GENERATION_DEFAULTS.inferMethod,
 				aceQueueDepth: readSetting("aceQueueDepth") || "12",
 				aceDcwEnabled: String(
 					parseBooleanSetting(

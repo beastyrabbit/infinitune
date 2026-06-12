@@ -1,6 +1,7 @@
 import {
 	ACE_DCW_DEFAULTS,
 	ACE_DCW_MODES,
+	ACE_GENERATION_DEFAULTS,
 } from "@infinitune/shared/ace-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +43,11 @@ export interface AudioEngineTabProps {
 
 const inputClass =
 	"h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0";
+
+const DEFAULT_INFER_STEPS = String(ACE_GENERATION_DEFAULTS.inferenceSteps);
+const DEFAULT_LM_TEMP = String(ACE_GENERATION_DEFAULTS.lmTemperature);
+const DEFAULT_LM_CFG = String(ACE_GENERATION_DEFAULTS.lmCfgScale);
+const DEFAULT_INFER_METHOD = ACE_GENERATION_DEFAULTS.inferMethod;
 
 const INFERENCE_STEP_OPTIONS = [
 	"4",
@@ -207,9 +213,12 @@ export function SettingsTabAudioEngine({
 					label="Inference Steps"
 					hint="4-16 — HIGHER = BETTER QUALITY, SLOWER"
 				>
-					<Select value={inferSteps || "8"} onValueChange={setInferSteps}>
+					<Select
+						value={inferSteps || DEFAULT_INFER_STEPS}
+						onValueChange={setInferSteps}
+					>
 						<SelectTrigger className={inputClass}>
-							<SelectValue placeholder="8" />
+							<SelectValue placeholder={DEFAULT_INFER_STEPS} />
 						</SelectTrigger>
 						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
 							{INFERENCE_STEP_OPTIONS.map((steps) => (
@@ -230,9 +239,9 @@ export function SettingsTabAudioEngine({
 						label="LM Temperature"
 						hint="0.1-1.5 — HIGHER = MORE CREATIVE"
 					>
-						<Select value={lmTemp || "0.85"} onValueChange={setLmTemp}>
+						<Select value={lmTemp || DEFAULT_LM_TEMP} onValueChange={setLmTemp}>
 							<SelectTrigger className={inputClass}>
-								<SelectValue placeholder="0.85" />
+								<SelectValue placeholder={DEFAULT_LM_TEMP} />
 							</SelectTrigger>
 							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
 								{LM_TEMPERATURE_OPTIONS.map((value) => (
@@ -252,9 +261,9 @@ export function SettingsTabAudioEngine({
 						label="LM CFG Scale"
 						hint="1.0-5.0 — HIGHER = FOLLOW PROMPT MORE"
 					>
-						<Select value={lmCfg || "2.5"} onValueChange={setLmCfg}>
+						<Select value={lmCfg || DEFAULT_LM_CFG} onValueChange={setLmCfg}>
 							<SelectTrigger className={inputClass}>
-								<SelectValue placeholder="2.5" />
+								<SelectValue placeholder={DEFAULT_LM_CFG} />
 							</SelectTrigger>
 							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
 								{LM_CFG_OPTIONS.map((value) => (
@@ -392,10 +401,10 @@ export function SettingsTabAudioEngine({
 				className="w-full h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/60 hover:bg-white/10 hover:text-white"
 				onClick={() => {
 					setAceThinking(false);
-					setInferSteps("8");
-					setLmTemp("0.85");
-					setLmCfg("2.5");
-					setInferMethod("ode");
+					setInferSteps(DEFAULT_INFER_STEPS);
+					setLmTemp(DEFAULT_LM_TEMP);
+					setLmCfg(DEFAULT_LM_CFG);
+					setInferMethod(DEFAULT_INFER_METHOD);
 					setAceQueueDepth("12");
 					setAceDcwEnabled(ACE_DCW_DEFAULTS.enabled);
 					setAceDcwMode(ACE_DCW_DEFAULTS.mode);

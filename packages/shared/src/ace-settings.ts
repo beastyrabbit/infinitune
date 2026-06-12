@@ -22,6 +22,18 @@ export const ACE_DCW_DEFAULTS = {
 	wavelet: "haar",
 } as const;
 
+/**
+ * Quality defaults for ACE generation, shared by server payloads,
+ * web payloads, and the Settings UI. Tuned so a 3-minute song
+ * generates in a bit under 3 minutes on the homelab GPU.
+ */
+export const ACE_GENERATION_DEFAULTS = {
+	inferenceSteps: 8,
+	lmTemperature: 0.85,
+	lmCfgScale: 2.5,
+	inferMethod: "ode",
+} as const;
+
 export const ACE_VAE_DEFAULT = "official";
 
 export const ACE_VAE_OPTIONS = [

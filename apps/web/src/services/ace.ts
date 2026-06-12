@@ -1,4 +1,7 @@
-import { normalizeAceModel } from "@infinitune/shared/ace-settings";
+import {
+	ACE_GENERATION_DEFAULTS,
+	normalizeAceModel,
+} from "@infinitune/shared/ace-settings";
 import { getServiceUrls } from "@/lib/server-settings";
 
 export interface AceSubmitResult {
@@ -86,16 +89,16 @@ export async function submitToAce(options: {
 		audio_duration: effectiveDuration,
 		thinking,
 		batch_size: 1,
-		inference_steps: inferenceSteps ?? 8,
+		inference_steps: inferenceSteps ?? ACE_GENERATION_DEFAULTS.inferenceSteps,
 		vocal_language: vocalLanguage || "en",
 		use_format: thinking,
 		use_cot_caption: thinking,
 		use_cot_metas: thinking,
 		use_cot_language: thinking,
 		constrained_decoding: true,
-		lm_temperature: lmTemperature ?? 0.85,
-		lm_cfg_scale: lmCfgScale ?? 2.5,
-		infer_method: inferMethod || "ode",
+		lm_temperature: lmTemperature ?? ACE_GENERATION_DEFAULTS.lmTemperature,
+		lm_cfg_scale: lmCfgScale ?? ACE_GENERATION_DEFAULTS.lmCfgScale,
+		infer_method: inferMethod || ACE_GENERATION_DEFAULTS.inferMethod,
 		shift: 3.0,
 		audio_format: "mp3",
 	};
