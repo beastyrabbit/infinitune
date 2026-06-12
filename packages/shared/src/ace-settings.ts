@@ -25,10 +25,14 @@ export const ACE_DCW_DEFAULTS = {
 /**
  * Quality defaults for ACE generation, shared by server payloads,
  * web payloads, and the Settings UI. Tuned so a 3-minute song
- * generates in a bit under 3 minutes on the homelab GPU.
+ * generates in a bit under 3 minutes on the homelab GPU: 12 steps is
+ * the quality ceiling of the step-distilled turbo models, and ODE
+ * with thinking off avoids the LM-rewrite overhead that pushed
+ * generation past realtime (steps 14 + SDE + thinking averaged ~287s
+ * per 180s song).
  */
 export const ACE_GENERATION_DEFAULTS = {
-	inferenceSteps: 8,
+	inferenceSteps: 12,
 	lmTemperature: 0.85,
 	lmCfgScale: 2.5,
 	inferMethod: "ode",
