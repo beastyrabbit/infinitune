@@ -47,6 +47,7 @@ export interface SongWorkerSettings {
 	aceDcwWavelet: string;
 	aceThinking: boolean;
 	aceAutoDuration: boolean;
+	aceQueueDepth: number;
 	personaProvider: string;
 	personaModel: string;
 }
@@ -165,6 +166,7 @@ export function buildAceSubmitInput({
 	signal?: AbortSignal;
 }): ProviderTaskPorts["submitAudio"] {
 	const playlistAceModel = playlist.aceModel;
+	const radioDuration = song.radioEligible ? 180 : undefined;
 	return {
 		lyrics: song.lyrics || "",
 		caption: song.caption || "",
@@ -172,7 +174,8 @@ export function buildAceSubmitInput({
 		bpm: song.bpm || 120,
 		keyScale: song.keyScale || "C major",
 		timeSignature: song.timeSignature || "4/4",
-		audioDuration: song.audioDuration || 240,
+		audioDuration:
+			radioDuration ?? song.audioDuration ?? playlist.audioDuration ?? 240,
 		aceModel: playlistAceModel === null ? settings.aceModel : playlistAceModel,
 		inferenceSteps: playlist.inferenceSteps ?? settings.aceInferenceSteps,
 		vocalLanguage: toAceVocalLanguageCode(playlist.lyricsLanguage),
@@ -185,7 +188,9 @@ export function buildAceSubmitInput({
 		aceDcwHighScaler: playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
 		aceDcwWavelet: playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
 		aceThinking: playlist.aceThinking ?? settings.aceThinking,
-		aceAutoDuration: playlist.aceAutoDuration ?? settings.aceAutoDuration,
+		aceAutoDuration: song.radioEligible
+			? false
+			: (playlist.aceAutoDuration ?? settings.aceAutoDuration),
 		signal,
 	};
 }
@@ -639,6 +644,9 @@ export class SongWorker {
 		) {
 			return "audio";
 		}
+		if (this.song.coverPrompt && !this.song.cover && status !== "error") {
+			return "metadata";
+		}
 		return "completed";
 	}
 
@@ -659,12 +667,20 @@ export class SongWorker {
 			case "metadata_ready":
 				this.startCover();
 				break;
+			case "ready":
+			case "played":
+			case "submitting_to_ace":
+			case "generating_audio":
+			case "saving":
+				this.startCover();
+				break;
 			default:
 				break;
 		}
 	}
 
 	private async runAudioStage(): Promise<void> {
+		this.startCover();
 		switch (this.song.status) {
 			case "pending":
 			case "metadata_ready":
@@ -1208,7 +1224,7 @@ export class SongWorker {
 				audioPath,
 			);
 			// Update duration if silence was trimmed
-			if (saveResult.effectiveDuration) {
+			if (saveResult.effectiveDuration && !this.song.radioEligible) {
 				await songService.updateAudioDuration(
 					this.songId,
 					saveResult.effectiveDuration,

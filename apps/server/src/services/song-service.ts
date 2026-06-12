@@ -7,7 +7,7 @@ import { validateSongTransition } from "@infinitune/shared/validation/song-statu
 import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, sqlite } from "../db/index";
 import type { Song } from "../db/schema";
-import { playlists, songs } from "../db/schema";
+import { albums, playlists, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
 import { songLogger } from "../logger";
 import { parseJsonField, songToWire } from "../wire";
@@ -164,8 +164,15 @@ export async function createWithMetadata(
 	playlistId: string,
 	orderIndex: number,
 	metadata: Record<string, unknown>,
+	opts?: {
+		albumId?: string;
+		albumTrackNumber?: number;
+		radioEligible?: boolean;
+		requestId?: string | null;
+	},
 ) {
 	const patch = buildMetadataPatch(metadata);
+	if (opts?.radioEligible) patch.audioDuration = 180;
 
 	const [row] = await db
 		.insert(songs)
@@ -175,6 +182,10 @@ export async function createWithMetadata(
 			status: "metadata_ready",
 			promptEpoch: metadata.promptEpoch as number | undefined,
 			generationStartedAt: Date.now(),
+			albumId: opts?.albumId,
+			albumTrackNumber: opts?.albumTrackNumber,
+			radioEligible: opts?.radioEligible,
+			requestId: opts?.requestId,
 			...patch,
 		} as typeof songs.$inferInsert)
 		.returning();
@@ -572,6 +583,7 @@ export async function updateMetadata(
 }
 
 export async function updateCover(id: string, cover: SongCover | null) {
+	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	await db
 		.update(songs)
 		.set({
@@ -580,6 +592,24 @@ export async function updateCover(id: string, cover: SongCover | null) {
 			coverJxlUrl: cover?.jxlUrl ?? null,
 		})
 		.where(eq(songs.id, id));
+	if (song?.albumId) {
+		await db
+			.update(albums)
+			.set({
+				coverUrl: cover?.pngUrl ?? null,
+				coverWebpUrl: cover?.webpUrl ?? null,
+				coverJxlUrl: cover?.jxlUrl ?? null,
+			})
+			.where(eq(albums.id, song.albumId));
+		await db
+			.update(songs)
+			.set({
+				coverUrl: cover?.pngUrl ?? null,
+				coverWebpUrl: cover?.webpUrl ?? null,
+				coverJxlUrl: cover?.jxlUrl ?? null,
+			})
+			.where(eq(songs.albumId, song.albumId));
+	}
 	const [row] = await db.select().from(songs).where(eq(songs.id, id));
 
 	if (row) {
@@ -605,6 +635,11 @@ export async function updateAceAudioPath(id: string, aceAudioPath: string) {
 }
 
 export async function updateAudioDuration(id: string, audioDuration: number) {
+	const [song] = await db.select().from(songs).where(eq(songs.id, id));
+	if (song?.radioEligible) {
+		await db.update(songs).set({ audioDuration: 180 }).where(eq(songs.id, id));
+		return;
+	}
 	await db.update(songs).set({ audioDuration }).where(eq(songs.id, id));
 }
 
@@ -624,6 +659,26 @@ export async function incrementListenCount(id: string) {
 		.update(songs)
 		.set({ listenCount: sql`coalesce(${songs.listenCount}, 0) + 1` })
 		.where(eq(songs.id, id));
+}
+
+export async function incrementRadioFeedback(
+	id: string,
+	kind: "like" | "dislike" | "skip",
+) {
+	const patch =
+		kind === "like"
+			? { likeCount: sql`coalesce(${songs.likeCount}, 0) + 1` }
+			: kind === "dislike"
+				? { dislikeCount: sql`coalesce(${songs.dislikeCount}, 0) + 1` }
+				: { skipCount: sql`coalesce(${songs.skipCount}, 0) + 1` };
+	await db.update(songs).set(patch).where(eq(songs.id, id));
+	const [row] = await db.select().from(songs).where(eq(songs.id, id));
+	if (row) {
+		emit("song.metadata_updated", {
+			songId: id,
+			playlistId: row.playlistId,
+		});
+	}
 }
 
 export async function addPlayDuration(id: string, durationMs: number) {
@@ -751,10 +806,19 @@ export async function getWorkQueue(playlistId: string) {
 		.filter((d): d is string => !!d);
 
 	const STALE_TIMEOUT_MS = 20 * 60 * 1000;
+	const RADIO_AUDIO_STALE_TIMEOUT_MS = Number(
+		process.env.WORKER_RADIO_AUDIO_STALE_TIMEOUT_MS ?? 2 * 60 * 60 * 1000,
+	);
 	const now = Date.now();
 	const staleSongs = allSongs
 		.filter((s) => {
 			if (!IN_FLIGHT_STATUSES.includes(s.status as SongStatus)) return false;
+			if (s.radioEligible && s.albumId) {
+				if (s.status === "submitting_to_ace") return false;
+				const radioStart =
+					s.aceSubmittedAt || s.generationStartedAt || s.createdAt;
+				return now - radioStart > RADIO_AUDIO_STALE_TIMEOUT_MS;
+			}
 			if (s.status === "generating_audio") {
 				const audioStart =
 					s.aceSubmittedAt || s.generationStartedAt || s.createdAt;
@@ -763,7 +827,13 @@ export async function getWorkQueue(playlistId: string) {
 			const startedAt = s.generationStartedAt || s.createdAt;
 			return now - startedAt > STALE_TIMEOUT_MS;
 		})
-		.map((s) => ({ id: s.id, status: s.status, title: s.title }));
+		.map((s) => ({
+			id: s.id,
+			status: s.status,
+			title: s.title,
+			radioEligible: Boolean(s.radioEligible),
+			albumId: s.albumId,
+		}));
 
 	return {
 		pending: pending.map(songToWire),

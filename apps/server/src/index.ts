@@ -15,6 +15,7 @@ import {
 	startWsBridge,
 } from "./events/ws-bridge";
 import { logger, loggingConfig } from "./logger";
+import { handleRadioConnection } from "./radio/radio-ws-handler";
 import { startRoomEventSync } from "./room/room-event-handler";
 import { RoomManager } from "./room/room-manager";
 import { handleRoomConnection } from "./room/room-ws-handler";
@@ -22,10 +23,12 @@ import agentMemoryRoutes from "./routes/agent-memory";
 import autoplayerRoutes from "./routes/autoplayer";
 import { createControlRoutes } from "./routes/control";
 import playlistsRoutes from "./routes/playlists";
+import radioRoutes from "./routes/radio";
 import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
 import songsRoutes from "./routes/songs/index";
 import * as playlistService from "./services/playlist-service";
+import { startRadioServiceEventSync } from "./services/radio-station-service";
 import {
 	getQueues,
 	getWorkerActorGraph,
@@ -353,6 +356,7 @@ app.route("/api/settings", settingsRoutes);
 app.route("/api/playlists", playlistsRoutes);
 app.route("/api/agent-memory", agentMemoryRoutes);
 app.route("/api/songs", songsRoutes);
+app.route("/api/radio", radioRoutes);
 app.route("/api/v1", createControlRoutes(roomManager));
 // Legacy compatibility endpoints (`/rooms`, `/now-playing`) while clients migrate.
 app.route("/api/v1", createRoomRoutes(roomManager));
@@ -409,7 +413,13 @@ const server = serve(
 	{ fetch: app.fetch, port: PORT },
 	(info: { port: number }) => {
 		logger.info(
-			{ port: info.port, rest: `/api/`, ws: `/ws`, playlist: `/ws/playlist` },
+			{
+				port: info.port,
+				rest: `/api/`,
+				ws: `/ws`,
+				playlist: `/ws/playlist`,
+				radio: `/ws/radio`,
+			},
 			`Server listening on http://localhost:${info.port}`,
 		);
 	},
@@ -421,9 +431,14 @@ injectWebSocket(server);
 // Room connections use a separate path-based WebSocket server on the same port.
 // The `ws` library handles upgrade for `/ws/playlist` while Hono handles `/ws`.
 const roomWss = new WebSocketServer({ noServer: true });
+const radioWss = new WebSocketServer({ noServer: true });
 
 roomWss.on("connection", (ws) => {
 	handleRoomConnection(ws, roomManager);
+});
+
+radioWss.on("connection", (ws) => {
+	handleRadioConnection(ws);
 });
 
 // Intercept HTTP upgrade requests: route /ws/playlist to `ws` library,
@@ -439,6 +454,10 @@ httpServer.on("upgrade", (request, socket, head) => {
 		roomWss.handleUpgrade(request, socket, head, (ws) => {
 			roomWss.emit("connection", ws, request);
 		});
+	} else if (url.pathname === "/ws/radio") {
+		radioWss.handleUpgrade(request, socket, head, (ws) => {
+			radioWss.emit("connection", ws, request);
+		});
 	} else {
 		// Let Hono's WebSocket handler deal with it
 		for (const listener of originalListeners) {
@@ -452,6 +471,9 @@ startWsBridge();
 
 // ─── Start room event sync ───────────────────────────────────────────
 startRoomEventSync(roomManager);
+
+// ─── Start global radio sync ────────────────────────────────────────
+startRadioServiceEventSync();
 
 // ─── Start worker ────────────────────────────────────────────────────
 startWorker().catch((err) => {
@@ -486,6 +508,11 @@ async function shutdown() {
 		roomWss.close();
 	} catch (err) {
 		logger.error({ err }, "Error closing room WSS");
+	}
+	try {
+		radioWss.close();
+	} catch (err) {
+		logger.error({ err }, "Error closing radio WSS");
 	}
 	try {
 		sqlite.close();

@@ -18,6 +18,7 @@ const IMAGE_CONCURRENCY: Record<string, number> = {
 	"inference-sh": 3,
 	"codex-imagegen": 1,
 };
+const DEFAULT_AUDIO_CONCURRENCY = 12;
 
 // ─── Cover generation result ─────────────────────────────────────────
 export interface CoverResult {
@@ -41,7 +42,7 @@ export class EndpointQueues {
 			"image",
 			IMAGE_CONCURRENCY.comfyui,
 		);
-		this.audio = new AudioQueue(pollFn);
+		this.audio = new AudioQueue(pollFn, DEFAULT_AUDIO_CONCURRENCY);
 	}
 
 	get(type: EndpointType): IEndpointQueue<unknown> {
@@ -56,7 +57,11 @@ export class EndpointQueues {
 	}
 
 	/** Update concurrency based on current provider settings */
-	refreshAll(settings: { textProvider: string; imageProvider: string }): void {
+	refreshAll(settings: {
+		textProvider: string;
+		imageProvider: string;
+		aceQueueDepth?: number;
+	}): void {
 		const llmConcurrency =
 			LLM_CONCURRENCY[settings.textProvider] || LLM_CONCURRENCY["openai-codex"];
 		const imageProvider =
@@ -70,7 +75,9 @@ export class EndpointQueues {
 
 		this.llm.refreshConcurrency(llmConcurrency);
 		this.image.refreshConcurrency(imageConcurrency);
-		// Audio submit concurrency is always 1
+		this.audio.refreshConcurrency(
+			settings.aceQueueDepth ?? DEFAULT_AUDIO_CONCURRENCY,
+		);
 	}
 
 	cancelAllForSong(songId: string): void {

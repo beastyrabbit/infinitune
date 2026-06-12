@@ -38,7 +38,7 @@ export const ACTIVE_STATUSES: SongStatus[] = [
 	"ready",
 ];
 
-export const PLAYLIST_MODES = ["endless", "oneshot"] as const;
+export const PLAYLIST_MODES = ["endless", "oneshot", "radio"] as const;
 export type PlaylistMode = (typeof PLAYLIST_MODES)[number];
 
 export const PLAYLIST_STATUSES = ["active", "closing", "closed"] as const;
@@ -173,6 +173,15 @@ export interface Song {
 	coverProcessingMs: number | null;
 	audioProcessingMs: number | null;
 	personaExtract: string | null;
+	albumId: string | null;
+	albumTrackNumber: number | null;
+	radioEligible: boolean;
+	likeCount: number;
+	dislikeCount: number;
+	skipCount: number;
+	radioPlayCount: number;
+	lastRadioPlayedAt: number | null;
+	requestId: string | null;
 }
 
 export interface Playlist {

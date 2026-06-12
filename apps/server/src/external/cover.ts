@@ -32,8 +32,12 @@ export async function generateCover(options: {
 }): Promise<CoverResult | null> {
 	const { coverPrompt, provider, model, signal } = options;
 
-	// Always frame the prompt as circular CD disc artwork
-	const fullPrompt = `Circular CD disc artwork, printed directly on a compact disc surface. ${coverPrompt}`;
+	const fullPrompt = [
+		"Square front album cover artwork for a physical CD jewel case.",
+		"Use a 1:1 composition with crisp release-art typography when the prompt names a band and album.",
+		"Render only the requested band and album title text; do not add extra words, logos, watermarks, UI, or case mockups.",
+		coverPrompt,
+	].join(" ");
 
 	if (provider === "comfyui" || provider === "ollama") {
 		const urls = await getServiceUrls();

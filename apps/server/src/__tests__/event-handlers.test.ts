@@ -77,6 +77,7 @@ const {
 	reset,
 	setQueues,
 	setPlaylistEpoch,
+	staleSongCleanup,
 } = _test;
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -429,6 +430,42 @@ describe("worker event handlers", () => {
 			vi.mocked(playlistService.updateStatus).mockClear();
 			await vi.advanceTimersByTimeAsync(100_000);
 			expect(playlistService.updateStatus).not.toHaveBeenCalled();
+		});
+	});
+
+	// ─── staleSongCleanup ────────────────────────────────────────────
+
+	describe("staleSongCleanup", () => {
+		it("retries stale radio album tracks instead of deleting them", async () => {
+			vi.mocked(playlistService.listActive).mockResolvedValue([
+				mockPlaylist() as never,
+			]);
+			vi.mocked(songService.getWorkQueue).mockResolvedValue(
+				mockWorkQueue({
+					staleSongs: [
+						{
+							id: "radio-stale",
+							status: "generating_audio",
+							title: "Radio Track",
+							radioEligible: true,
+							albumId: "album-1",
+						},
+						{
+							id: "legacy-stale",
+							status: "generating_audio",
+							title: "Legacy Track",
+							radioEligible: false,
+							albumId: null,
+						},
+					],
+				}),
+			);
+
+			await staleSongCleanup();
+
+			expect(songService.revertTransient).toHaveBeenCalledWith("radio-stale");
+			expect(songService.deleteSong).toHaveBeenCalledWith("legacy-stale");
+			expect(songService.deleteSong).not.toHaveBeenCalledWith("radio-stale");
 		});
 	});
 

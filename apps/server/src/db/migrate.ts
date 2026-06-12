@@ -142,6 +142,97 @@ export function ensureSchema() {
 		CREATE INDEX IF NOT EXISTS songs_by_playlist_order ON songs(playlist_id, order_index);
 		CREATE INDEX IF NOT EXISTS songs_by_user_rating ON songs(user_rating);
 
+		CREATE TABLE IF NOT EXISTS radio_stations (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			current_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+			current_play_id TEXT,
+			started_at INTEGER,
+			paused_at INTEGER,
+			paused_offset_ms INTEGER NOT NULL DEFAULT 0,
+			is_playing INTEGER NOT NULL DEFAULT 0,
+			active_listener_count INTEGER NOT NULL DEFAULT 0,
+			schedule_version INTEGER NOT NULL DEFAULT 0,
+			inventory_target INTEGER NOT NULL DEFAULT 10
+		);
+
+		CREATE TABLE IF NOT EXISTS albums (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			band_name TEXT,
+			theme TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'generating',
+			generation_kind TEXT NOT NULL DEFAULT 'default',
+			cover_prompt TEXT,
+			cover_url TEXT,
+			cover_webp_url TEXT,
+			cover_jxl_url TEXT,
+			trend_research_json TEXT,
+			band_persona_json TEXT,
+			vocal_plan_json TEXT,
+			request_id TEXT,
+			first_played_at INTEGER,
+			ready_at INTEGER,
+			completed_at INTEGER
+		);
+
+		CREATE INDEX IF NOT EXISTS albums_by_status_first_played
+			ON albums(status, first_played_at);
+		CREATE INDEX IF NOT EXISTS albums_by_generation_kind
+			ON albums(generation_kind);
+
+		CREATE TABLE IF NOT EXISTS radio_plays (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+			album_id TEXT REFERENCES albums(id) ON DELETE SET NULL,
+			started_at INTEGER NOT NULL,
+			ended_at INTEGER,
+			completed INTEGER NOT NULL DEFAULT 0,
+			skipped INTEGER NOT NULL DEFAULT 0,
+			listener_count_snapshot INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS radio_plays_by_started ON radio_plays(started_at);
+		CREATE INDEX IF NOT EXISTS radio_plays_by_song ON radio_plays(song_id);
+		CREATE INDEX IF NOT EXISTS radio_plays_by_album ON radio_plays(album_id);
+
+		CREATE TABLE IF NOT EXISTS radio_schedule (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			station_id TEXT NOT NULL REFERENCES radio_stations(id) ON DELETE CASCADE,
+			slot_index INTEGER NOT NULL,
+			song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+			reason TEXT NOT NULL,
+			score REAL NOT NULL DEFAULT 0,
+			locked INTEGER NOT NULL DEFAULT 0,
+			is_request INTEGER NOT NULL DEFAULT 0,
+			schedule_version INTEGER NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS radio_schedule_by_station_slot
+			ON radio_schedule(station_id, slot_index);
+		CREATE INDEX IF NOT EXISTS radio_schedule_by_version
+			ON radio_schedule(schedule_version);
+
+		CREATE TABLE IF NOT EXISTS radio_requests (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			prompt TEXT NOT NULL,
+			kind TEXT NOT NULL DEFAULT 'auto',
+			status TEXT NOT NULL DEFAULT 'pending',
+			matched_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+			album_id TEXT REFERENCES albums(id) ON DELETE SET NULL,
+			target_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+			schedule_slot INTEGER,
+			notification_state TEXT
+		);
+
+		CREATE INDEX IF NOT EXISTS radio_requests_by_status ON radio_requests(status);
+		CREATE INDEX IF NOT EXISTS radio_requests_by_kind ON radio_requests(kind);
+
 		CREATE TABLE IF NOT EXISTS settings (
 			id TEXT PRIMARY KEY,
 			created_at INTEGER NOT NULL,
@@ -270,12 +361,117 @@ export function ensureSchema() {
 	addColumn("playlists", "ace_dcw_scaler REAL");
 	addColumn("playlists", "ace_dcw_high_scaler REAL");
 	addColumn("playlists", "ace_dcw_wavelet TEXT");
+	addColumn("albums", "band_name TEXT");
+	addColumn("albums", "band_persona_json TEXT");
 	addColumn("songs", "cover_webp_url TEXT");
 	addColumn("songs", "cover_jxl_url TEXT");
+	addColumn("songs", "album_id TEXT REFERENCES albums(id) ON DELETE SET NULL");
+	addColumn("songs", "album_track_number INTEGER");
+	addColumn("songs", "radio_eligible INTEGER NOT NULL DEFAULT 0");
+	addColumn("songs", "like_count INTEGER NOT NULL DEFAULT 0");
+	addColumn("songs", "dislike_count INTEGER NOT NULL DEFAULT 0");
+	addColumn("songs", "skip_count INTEGER NOT NULL DEFAULT 0");
+	addColumn("songs", "radio_play_count INTEGER NOT NULL DEFAULT 0");
+	addColumn("songs", "last_radio_played_at INTEGER");
+	addColumn(
+		"songs",
+		"request_id TEXT REFERENCES radio_requests(id) ON DELETE SET NULL",
+	);
 
 	sqlite.exec(`
 		CREATE INDEX IF NOT EXISTS playlists_by_owner_user_id ON playlists(owner_user_id);
 		CREATE INDEX IF NOT EXISTS playlists_by_is_temporary ON playlists(is_temporary);
+		CREATE INDEX IF NOT EXISTS songs_by_album ON songs(album_id, album_track_number);
+		CREATE INDEX IF NOT EXISTS songs_by_radio_eligible_status ON songs(radio_eligible, status);
+		INSERT OR IGNORE INTO radio_stations (
+			id,
+			created_at,
+			updated_at,
+			paused_offset_ms,
+			is_playing,
+			active_listener_count,
+			schedule_version,
+			inventory_target
+		) VALUES (
+			'global',
+			strftime('%s','now') * 1000,
+			strftime('%s','now') * 1000,
+			0,
+			0,
+			0,
+			0,
+			10
+		);
+		UPDATE songs SET radio_eligible = 0 WHERE album_id IS NULL;
+		UPDATE albums
+		SET band_name = 'Infinitune Radio'
+		WHERE band_name IS NULL OR trim(band_name) = '';
+		UPDATE albums
+		SET band_persona_json = json_object(
+			'name',
+			band_name,
+			'origin',
+			'Global radio house band identity',
+			'sound',
+			theme,
+			'visualIdentity',
+			'Square CD-box album cover artwork with readable band and album text'
+		)
+		WHERE band_persona_json IS NULL OR trim(band_persona_json) = '';
+		UPDATE albums
+		SET cover_prompt =
+			'Square CD-box front album cover, 1:1 composition, designed for a physical jewel case. Album title "' ||
+			title ||
+			'" by band "' ||
+			band_name ||
+			'". Include only these readable words: "' ||
+			band_name ||
+			'" and "' ||
+			title ||
+			'". Bold music release artwork, strong thumbnail readability, no mockup, no plastic case, no extra text. Theme: ' ||
+			theme
+		WHERE cover_prompt IS NULL
+			OR cover_prompt LIKE '%no text%'
+			OR cover_prompt LIKE '%compact-disc%'
+			OR cover_prompt LIKE '%CD disc%';
+		UPDATE songs
+		SET artist_name = (
+			SELECT band_name FROM albums WHERE albums.id = songs.album_id
+		)
+		WHERE radio_eligible = 1
+			AND album_id IS NOT NULL
+			AND (artist_name IS NULL OR artist_name = 'Infinitune Radio');
+		UPDATE songs
+		SET cover_prompt = (
+			SELECT cover_prompt FROM albums WHERE albums.id = songs.album_id
+		)
+		WHERE radio_eligible = 1
+			AND album_id IS NOT NULL
+			AND album_track_number = 1
+			AND (
+				cover_prompt IS NULL
+				OR cover_prompt LIKE '%no text%'
+				OR cover_prompt LIKE '%compact-disc%'
+				OR cover_prompt LIKE '%CD disc%'
+			);
+		WITH radio_song_order AS (
+			SELECT
+				s.id,
+				ROW_NUMBER() OVER (
+					PARTITION BY s.playlist_id
+					ORDER BY s.created_at, COALESCE(s.album_track_number, s.order_index), s.id
+				) AS clean_order
+			FROM songs s
+			JOIN playlists p ON p.id = s.playlist_id
+			WHERE p.playlist_key = 'global-radio'
+		)
+		UPDATE songs
+		SET order_index = (
+			SELECT clean_order
+			FROM radio_song_order
+			WHERE radio_song_order.id = songs.id
+		)
+		WHERE id IN (SELECT id FROM radio_song_order);
 	`);
 
 	logger.info("Database schema ensured");

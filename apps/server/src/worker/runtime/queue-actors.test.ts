@@ -118,7 +118,7 @@ describe("queue actors", () => {
 				status: "running" as const,
 				submitProcessingMs: 1,
 			}));
-			const queue = new AudioQueue(pollAudio);
+			const queue = new AudioQueue(pollAudio, 1);
 
 			const first = queue.enqueue({
 				songId: "song-a",
@@ -148,7 +148,7 @@ describe("queue actors", () => {
 			expect(pollAudio).toHaveBeenCalledTimes(1);
 		});
 
-		it("holds a single active slot", async () => {
+		it("honors a configured single active slot", async () => {
 			const pollCount = new Map<string, number>();
 
 			const pollAudio = vi.fn(async (taskId: string) => {
@@ -192,7 +192,7 @@ describe("queue actors", () => {
 					submitProcessingMs: 1,
 				};
 			});
-			const queue = new AudioQueue(pollAudio);
+			const queue = new AudioQueue(pollAudio, 1);
 
 			const first = queue.enqueue({
 				songId: "song-a",
@@ -211,16 +211,63 @@ describe("queue actors", () => {
 
 			await Promise.resolve();
 			await queue.tickPolls();
+			await Promise.resolve();
 			await queue.tickPolls();
+			await Promise.resolve();
 
 			await expect(first).resolves.toMatchObject({
 				result: { status: "succeeded", taskId: "task-a" },
 			});
 			expect(executeB).toHaveBeenCalledOnce();
 			await queue.tickPolls();
+			await Promise.resolve();
 			await expect(second).resolves.toMatchObject({
 				result: { status: "succeeded", taskId: "task-b" },
 			});
+		});
+
+		it("submits multiple ACE tasks up to the configured queue depth", async () => {
+			const pollAudio = vi.fn(async (taskId: string) => ({
+				status: "succeeded" as const,
+				audioPath: `/tmp/${taskId}.mp3`,
+			}));
+			const executeA = vi.fn(async () => ({
+				taskId: "task-a",
+				status: "running" as const,
+				submitProcessingMs: 1,
+			}));
+			const executeB = vi.fn(async () => ({
+				taskId: "task-b",
+				status: "running" as const,
+				submitProcessingMs: 1,
+			}));
+			const queue = new AudioQueue(pollAudio, 2);
+
+			const first = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: executeA,
+			});
+			const second = queue.enqueue({
+				songId: "song-b",
+				priority: 2,
+				execute: executeB,
+			});
+
+			await Promise.resolve();
+			expect(executeA).toHaveBeenCalledOnce();
+			expect(executeB).toHaveBeenCalledOnce();
+			expect(queue.getStatus()).toMatchObject({ active: 2, pending: 0 });
+
+			await queue.tickPolls();
+			await Promise.resolve();
+			await expect(first).resolves.toMatchObject({
+				result: { status: "succeeded", taskId: "task-a" },
+			});
+			await expect(second).resolves.toMatchObject({
+				result: { status: "succeeded", taskId: "task-b" },
+			});
+			expect(pollAudio).toHaveBeenCalledTimes(2);
 		});
 	});
 });

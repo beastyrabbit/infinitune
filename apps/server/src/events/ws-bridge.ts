@@ -63,6 +63,9 @@ function eventToRoutingKey(
 	if (event === "agent.memory_updated") {
 		return data.playlistId ? `agent-memory.${data.playlistId}` : "agent-memory";
 	}
+	if (event.startsWith("radio.")) {
+		return "radio";
+	}
 	return event;
 }
 
@@ -87,6 +90,10 @@ export function startWsBridge(): void {
 		"agent.chat_message",
 		"agent.memory_updated",
 		"settings.changed",
+		"radio.state_changed",
+		"radio.schedule_changed",
+		"radio.album_ready",
+		"radio.request_updated",
 	];
 
 	for (const event of events) {

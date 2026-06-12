@@ -18,6 +18,7 @@ const baseSettings: SongWorkerSettings = {
 	aceDcwWavelet: "db4",
 	aceThinking: true,
 	aceAutoDuration: false,
+	aceQueueDepth: 12,
 	personaProvider: "openai-codex",
 	personaModel: "gpt-5.1",
 };
@@ -31,7 +32,7 @@ function makeSong(): SongWire {
 		keyScale: "D minor",
 		timeSignature: "3/4",
 		audioDuration: 192,
-	} as SongWire;
+	} as unknown as SongWire;
 }
 
 function makePlaylist(overrides: Partial<PlaylistWire> = {}): PlaylistWire {
