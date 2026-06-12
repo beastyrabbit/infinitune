@@ -748,6 +748,7 @@ function getWorkerRuntime() {
 					routeSongEventToActor({ type: "song.status_changed", ...event }),
 				);
 			},
+			handleSongDeleted,
 			handlePlaylistCreated: async (event) => {
 				await Promise.resolve(
 					routePlaylistEventToActor({ type: "playlist.created", ...event }),
@@ -821,6 +822,7 @@ function subscribeRuntimeEventBus() {
 		type: "song.status_changed",
 		...data,
 	}));
+	subscribe("song.deleted", (data) => ({ type: "song.deleted", ...data }));
 	subscribe("playlist.created", (data) => ({
 		type: "playlist.created",
 		...data,
@@ -1328,6 +1330,15 @@ async function handlePlaylistDeleted(data: { playlistId: string }) {
 	clearHeartbeatTimer(data.playlistId);
 	playlistEpochs.delete(data.playlistId);
 	bufferLocks.delete(data.playlistId);
+}
+
+async function handleSongDeleted(data: { songId: string; playlistId: string }) {
+	cancelSongWorker(data.songId);
+	// Queue items can exist without a registered SongWorker (e.g. audio
+	// tasks resumed at startup) — drop them from every queue explicitly.
+	queues?.cancelAllForSong(data.songId);
+	const actor = songActors.get(data.songId);
+	actor?.ref.send({ type: "song.actor.stop", songId: data.songId });
 }
 
 async function handlePlaylistStatusChanged(data: {

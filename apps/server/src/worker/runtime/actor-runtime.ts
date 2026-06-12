@@ -19,6 +19,10 @@ export interface WorkerRuntimeHandlers {
 		from: string;
 		to: string;
 	}): Promise<void>;
+	handleSongDeleted(data: {
+		songId: string;
+		playlistId: string;
+	}): Promise<void>;
 	handlePlaylistCreated(data: { playlistId: string }): Promise<void>;
 	handlePlaylistSteered(data: {
 		playlistId: string;
@@ -151,6 +155,9 @@ export function createWorkerRuntime(
 								break;
 							case "song.status_changed":
 								await handlers.handleSongStatusChanged(event);
+								break;
+							case "song.deleted":
+								await handlers.handleSongDeleted(event);
 								break;
 							case "playlist.created":
 								snapshot.playlistActors.add(event.playlistId);
