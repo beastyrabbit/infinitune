@@ -74,6 +74,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
 	textModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	imageProvider: "inference-sh",
 	imageModel: DEFAULT_INFERENCE_SH_IMAGE_MODEL,
+	coversEnabled: "true",
 	aceModel: "acestep-v15-xl-turbo",
 	aceVaeCheckpoint: ACE_VAE_DEFAULT,
 	aceInferenceSteps: "8",
@@ -364,6 +365,9 @@ function SettingsPage() {
 				textModel: readSetting("textModel") || DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 				imageProvider,
 				imageModel: readSetting("imageModel"),
+				coversEnabled: String(
+					parseBooleanSetting(readSetting("coversEnabled"), true),
+				),
 				personaProvider,
 				personaModel: normalizeFallbackModel(readSetting("personaModel")),
 				aceModel: normalizedAceModel,
@@ -539,6 +543,13 @@ function SettingsPage() {
 						}}
 						imageModel={readSetting("imageModel")}
 						setImageModel={(value) => writeSetting("imageModel", value)}
+						coversEnabled={parseBooleanSetting(
+							readSetting("coversEnabled"),
+							true,
+						)}
+						setCoversEnabled={(value) =>
+							writeSetting("coversEnabled", String(value))
+						}
 						aceModel={resolveAceModelSetting(
 							readSetting("aceModel"),
 							settings?.aceModel !== undefined || draft.aceModel !== undefined,

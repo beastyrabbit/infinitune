@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PlaylistWire, SongWire } from "../wire";
-import { buildAceSubmitInput, type SongWorkerSettings } from "./song-worker";
+import {
+	buildAceSubmitInput,
+	SongWorker,
+	type SongWorkerContext,
+	type SongWorkerSettings,
+} from "./song-worker";
 
 const baseSettings: SongWorkerSettings = {
 	textProvider: "openai-codex",
 	textModel: "gpt-5.1",
 	imageProvider: "inference-sh",
+	coversEnabled: true,
 	aceModel: "acestep-v15-xl-turbo",
 	aceInferenceSteps: 12,
 	aceLmTemperature: 1.1,
@@ -108,5 +114,57 @@ describe("buildAceSubmitInput", () => {
 		expect(input.aceDcwWavelet).toBe("haar");
 		expect(input.aceThinking).toBe(false);
 		expect(input.aceAutoDuration).toBe(true);
+	});
+});
+
+describe("startCover", () => {
+	function makeCoverContext(settings: SongWorkerSettings): {
+		ctx: SongWorkerContext;
+		enqueue: ReturnType<typeof vi.fn>;
+	} {
+		// Never-resolving enqueue keeps the fire-and-forget chain pending so
+		// the test only observes whether the image queue was reached.
+		const enqueue = vi.fn(() => new Promise(() => {}));
+		const ctx = {
+			queues: { image: { enqueue } },
+			playlist: makePlaylist(),
+			recentSongs: [],
+			recentDescriptions: [],
+			getPlaylistActive: async () => true,
+			getSettings: async () => settings,
+			capabilities: {},
+		} as unknown as SongWorkerContext;
+		return { ctx, enqueue };
+	}
+
+	function makeCoverSong(): SongWire {
+		return {
+			id: "song-cover-test",
+			coverPrompt: "neon skyline album art",
+			cover: null,
+		} as unknown as SongWire;
+	}
+
+	it("skips the image queue entirely when coversEnabled is false", async () => {
+		const { ctx, enqueue } = makeCoverContext({
+			...baseSettings,
+			coversEnabled: false,
+		});
+		const worker = new SongWorker(makeCoverSong(), ctx);
+		// biome-ignore lint/complexity/useLiteralKeys: bracket access reaches the private method under test
+		worker["startCover"]();
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(enqueue).not.toHaveBeenCalled();
+	});
+
+	it("enqueues cover generation when coversEnabled is true", async () => {
+		const { ctx, enqueue } = makeCoverContext(baseSettings);
+		const worker = new SongWorker(makeCoverSong(), ctx);
+		// biome-ignore lint/complexity/useLiteralKeys: bracket access reaches the private method under test
+		worker["startCover"]();
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(enqueue).toHaveBeenCalledTimes(1);
 	});
 });

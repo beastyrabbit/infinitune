@@ -51,6 +51,8 @@ export interface ModelsTabProps {
 	setImageProvider: (v: string) => void;
 	imageModel: string;
 	setImageModel: (v: string) => void;
+	coversEnabled: boolean;
+	setCoversEnabled: (v: boolean) => void;
 	aceModel: string;
 	setAceModel: (v: string) => void;
 	aceVaeCheckpoint: string;
@@ -247,6 +249,8 @@ export function SettingsTabModels({
 	setImageProvider,
 	imageModel,
 	setImageModel,
+	coversEnabled,
+	setCoversEnabled,
 	aceModel,
 	setAceModel,
 	aceVaeCheckpoint,
@@ -384,32 +388,51 @@ export function SettingsTabModels({
 
 			{/* IMAGE MODEL */}
 			<SettingsPanel title="IMAGE MODEL — COVER ART">
-				<SettingsField label="Provider">
+				<SettingsField label="Album Covers">
 					<ProviderToggle
 						options={[
-							{ value: "inference-sh", label: "INFERENCE.SH" },
-							{ value: "codex-imagegen", label: "CODEX" },
+							{ value: "true", label: "ENABLED" },
+							{ value: "false", label: "DISABLED" },
 						]}
-						value={imageProvider}
-						onChange={setImageProvider}
+						value={coversEnabled ? "true" : "false"}
+						onChange={(next) => setCoversEnabled(next === "true")}
 					/>
 				</SettingsField>
 
-				{imageProvider === "codex-imagegen" ? (
-					<p className="text-[10px] font-bold uppercase text-white/30">
-						USES CODEX CLI $IMAGEGEN WITH GPT-IMAGE-2 — COUNTS AGAINST CODEX
-						USAGE LIMITS, NOT OPENAI API BILLING
-					</p>
+				{coversEnabled ? (
+					<>
+						<SettingsField label="Provider">
+							<ProviderToggle
+								options={[
+									{ value: "inference-sh", label: "INFERENCE.SH" },
+									{ value: "codex-imagegen", label: "CODEX" },
+								]}
+								value={imageProvider}
+								onChange={setImageProvider}
+							/>
+						</SettingsField>
+
+						{imageProvider === "codex-imagegen" ? (
+							<p className="text-[10px] font-bold uppercase text-white/30">
+								USES CODEX CLI $IMAGEGEN WITH GPT-IMAGE-2 — COUNTS AGAINST CODEX
+								USAGE LIMITS, NOT OPENAI API BILLING
+							</p>
+						) : (
+							<SettingsField label="Model">
+								<InferenceShModelSelect
+									models={inferenceShImageModels}
+									value={imageModel}
+									onChange={setImageModel}
+									placeholder="PRUNA/FLUX-KLEIN-4B"
+									loading={inferenceShLoading}
+								/>
+							</SettingsField>
+						)}
+					</>
 				) : (
-					<SettingsField label="Model">
-						<InferenceShModelSelect
-							models={inferenceShImageModels}
-							value={imageModel}
-							onChange={setImageModel}
-							placeholder="PRUNA/FLUX-KLEIN-4B"
-							loading={inferenceShLoading}
-						/>
-					</SettingsField>
+					<p className="text-[10px] font-bold uppercase text-white/30">
+						COVER GENERATION IS OFF — SONGS ARE CREATED WITHOUT ALBUM ART
+					</p>
 				)}
 			</SettingsPanel>
 

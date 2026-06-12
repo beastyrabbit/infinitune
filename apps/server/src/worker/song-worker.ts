@@ -36,6 +36,7 @@ export interface SongWorkerSettings {
 	textModel: string;
 	imageProvider: string;
 	imageModel?: string;
+	coversEnabled: boolean;
 	aceModel?: string;
 	aceInferenceSteps?: number;
 	aceLmTemperature?: number;
@@ -936,6 +937,7 @@ export class SongWorker {
 		this.ctx
 			.getSettings()
 			.then((settings) => {
+				if (!settings.coversEnabled) return;
 				const imageProvider = normalizeImageProvider(settings.imageProvider);
 				const imageModel = settings.imageModel;
 
@@ -961,7 +963,9 @@ export class SongWorker {
 					},
 				});
 			})
-			.then(async ({ result, processingMs }) => {
+			.then(async (enqueued) => {
+				if (!enqueued) return; // covers disabled
+				const { result, processingMs } = enqueued;
 				const coverResult = result as { imageBase64: string; format: string };
 				// Capture base64 for NFS save in saveAndFinalize()
 				this.coverBase64 = coverResult.imageBase64;

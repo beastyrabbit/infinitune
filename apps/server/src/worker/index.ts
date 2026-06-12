@@ -350,6 +350,7 @@ async function getSettings(): Promise<SongWorkerSettings> {
 		textModel,
 		imageProvider: normalizeImageProvider(all.imageProvider),
 		imageModel: all.imageModel ?? undefined,
+		coversEnabled: parseBooleanSetting(all.coversEnabled, true),
 		aceModel: aceModel || undefined,
 		aceInferenceSteps: parseOptionalIntegerSetting(all.aceInferenceSteps),
 		aceLmTemperature: parseOptionalNumberSetting(all.aceLmTemperature),
