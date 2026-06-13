@@ -39,6 +39,12 @@ function filterAccessiblePlaylists<T extends PlaylistWire>(
 	return playlists.filter((playlist) => canAccessPlaylist(actor, playlist));
 }
 
+/** The global radio's hidden generation playlist must not surface in
+ *  normal playlist listings or as the user's "current" playlist. */
+function isHiddenRadioPlaylist(playlist: PlaylistWire): boolean {
+	return playlist.mode === "radio";
+}
+
 async function loadAccessiblePlaylist(
 	c: Context,
 ): Promise<{ playlist: PlaylistWire } | Response> {
@@ -58,7 +64,9 @@ async function loadAccessiblePlaylist(
 app.get("/", async (c) => {
 	const actor = await getRequestActor(c);
 	return c.json(
-		filterAccessiblePlaylists(actor, await playlistService.listAll()),
+		filterAccessiblePlaylists(actor, await playlistService.listAll()).filter(
+			(playlist) => !isHiddenRadioPlaylist(playlist),
+		),
 	);
 });
 
@@ -67,7 +75,10 @@ app.get("/current", async (c) => {
 	const actor = await getRequestActor(c);
 	const current =
 		filterAccessiblePlaylists(actor, await playlistService.listActive())
-			.filter((playlist) => playlist.mode !== "oneshot")
+			.filter(
+				(playlist) =>
+					playlist.mode !== "oneshot" && !isHiddenRadioPlaylist(playlist),
+			)
 			.sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 	return c.json(current);
 });

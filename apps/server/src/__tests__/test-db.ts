@@ -97,6 +97,11 @@ const SCHEMA_SQL = `
 		language TEXT,
 		description TEXT,
 		status TEXT NOT NULL DEFAULT 'pending',
+		ace_task_type TEXT,
+		source_song_id TEXT,
+		source_audio_path TEXT,
+		source_url TEXT,
+		cover_noise_strength REAL,
 		ace_task_id TEXT,
 		ace_submitted_at INTEGER,
 		audio_url TEXT,
@@ -119,7 +124,100 @@ const SCHEMA_SQL = `
 		metadata_processing_ms INTEGER,
 		cover_processing_ms INTEGER,
 		audio_processing_ms INTEGER,
-		persona_extract TEXT
+		persona_extract TEXT,
+		album_id TEXT REFERENCES albums(id) ON DELETE SET NULL,
+		album_track_number INTEGER,
+		radio_eligible INTEGER NOT NULL DEFAULT 0,
+		like_count INTEGER NOT NULL DEFAULT 0,
+		dislike_count INTEGER NOT NULL DEFAULT 0,
+		skip_count INTEGER NOT NULL DEFAULT 0,
+		radio_play_count INTEGER NOT NULL DEFAULT 0,
+		last_radio_played_at INTEGER,
+		request_id TEXT REFERENCES radio_requests(id) ON DELETE SET NULL
+	);
+
+	CREATE TABLE radio_stations (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		current_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+		current_play_id TEXT,
+		started_at INTEGER,
+		paused_at INTEGER,
+		paused_offset_ms INTEGER NOT NULL DEFAULT 0,
+		is_playing INTEGER NOT NULL DEFAULT 0,
+		active_listener_count INTEGER NOT NULL DEFAULT 0,
+		schedule_version INTEGER NOT NULL DEFAULT 0,
+		inventory_target INTEGER NOT NULL DEFAULT 10
+	);
+
+	CREATE TABLE albums (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		title TEXT NOT NULL,
+		band_name TEXT,
+		theme TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'generating',
+		generation_kind TEXT NOT NULL DEFAULT 'default',
+		cover_prompt TEXT,
+		cover_url TEXT,
+		cover_webp_url TEXT,
+		cover_jxl_url TEXT,
+		trend_research_json TEXT,
+		band_persona_json TEXT,
+		vocal_plan_json TEXT,
+		request_id TEXT REFERENCES radio_requests(id) ON DELETE SET NULL,
+		first_played_at INTEGER,
+		ready_at INTEGER,
+		completed_at INTEGER
+	);
+
+	CREATE TABLE radio_plays (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+		album_id TEXT REFERENCES albums(id) ON DELETE SET NULL,
+		started_at INTEGER NOT NULL,
+		ended_at INTEGER,
+		completed INTEGER NOT NULL DEFAULT 0,
+		skipped INTEGER NOT NULL DEFAULT 0,
+		listener_count_snapshot INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE TABLE radio_schedule (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		station_id TEXT NOT NULL REFERENCES radio_stations(id) ON DELETE CASCADE,
+		slot_index INTEGER NOT NULL,
+		song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+		reason TEXT NOT NULL,
+		score REAL NOT NULL DEFAULT 0,
+		locked INTEGER NOT NULL DEFAULT 0,
+		is_request INTEGER NOT NULL DEFAULT 0,
+		schedule_version INTEGER NOT NULL
+	);
+
+	CREATE TABLE radio_requests (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		prompt TEXT NOT NULL,
+		kind TEXT NOT NULL DEFAULT 'auto',
+		status TEXT NOT NULL DEFAULT 'pending',
+		matched_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+		album_id TEXT REFERENCES albums(id) ON DELETE SET NULL,
+		target_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
+		schedule_slot INTEGER,
+		notification_state TEXT
+	);
+
+	CREATE TABLE cover_sources (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		url TEXT NOT NULL,
+		genre_tag TEXT,
+		status TEXT NOT NULL DEFAULT 'pending',
+		last_used_at INTEGER,
+		resolved_audio_path TEXT
 	);
 
 	CREATE TABLE settings (

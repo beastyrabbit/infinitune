@@ -22,6 +22,20 @@ export const ACE_DCW_DEFAULTS = {
 	wavelet: "haar",
 } as const;
 
+/**
+ * Quality defaults for ACE generation, shared by server payloads,
+ * web payloads, and the Settings UI. The homelab ACE build clamps
+ * turbo (dmd_gan) inference to 8 steps and renders a 180s song in
+ * ~30s of GPU time at that setting, so 8 steps + ODE + thinking off
+ * is both the quality ceiling and comfortably sub-realtime.
+ */
+export const ACE_GENERATION_DEFAULTS = {
+	inferenceSteps: 8,
+	lmTemperature: 0.85,
+	lmCfgScale: 2.5,
+	inferMethod: "ode",
+} as const;
+
 export const ACE_VAE_DEFAULT = "official";
 
 export const ACE_VAE_OPTIONS = [

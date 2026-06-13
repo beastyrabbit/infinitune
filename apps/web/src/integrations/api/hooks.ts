@@ -89,6 +89,237 @@ function normalizeSongList(songs: Song[] | undefined): Song[] | undefined {
 	return songs?.map(normalizeSongMedia);
 }
 
+export interface RadioSong {
+	id: string;
+	title: string | null;
+	artistName: string | null;
+	albumId: string | null;
+	albumTitle: string | null;
+	albumTrackNumber: number | null;
+	genre: string | null;
+	vocalStyle: string | null;
+	audioUrl: string | null;
+	audioDuration: number | null;
+	durationMs?: number;
+	likeCount: number;
+	dislikeCount: number;
+	skipCount: number;
+	radioPlayCount: number;
+	cover?: Song["cover"];
+}
+
+export interface RadioScheduleItem {
+	slotIndex: number;
+	songId: string;
+	reason: string;
+	score: number;
+	locked: boolean;
+	isRequest: boolean;
+	title: string | null;
+	artistName: string | null;
+	albumId: string | null;
+	albumTitle: string | null;
+	albumTrackNumber: number | null;
+	genre: string | null;
+	vocalStyle: string | null;
+	audioDuration: number | null;
+	audioUrl: string | null;
+}
+
+export interface RadioSnapshot {
+	station: {
+		id: string;
+		isPlaying: boolean;
+		activeListenerCount: number;
+		scheduleVersion: number;
+		inventoryTarget: number;
+		serverTime: number;
+		offsetMs: number;
+		startedAt: number | null;
+		pausedAt: number | null;
+	};
+	currentSong: RadioSong | null;
+	schedule: RadioScheduleItem[];
+}
+
+export interface RadioInventoryStats {
+	activeListenerCount: number;
+	inventoryTarget: number;
+	untouchedReadyAlbums: number;
+	untouchedGeneratingAlbums: number;
+	untouchedActiveAlbums: number;
+	incompleteAlbums: number;
+	missingAlbumTracks: number;
+	inFlightTracks: number;
+	queuedRadioTracks: number;
+	activeAudioTracks: number;
+	readyRadioSongs: number;
+	legacySongs: number;
+}
+
+export interface RadioChartBucket {
+	label: string;
+	count: number;
+	readyCount?: number;
+	playCount?: number;
+	likeCount?: number;
+	dislikeCount?: number;
+	skipCount?: number;
+}
+
+export interface RadioAnalytics {
+	generatedGenreSpread: RadioChartBucket[];
+	readyGenreSpread: RadioChartBucket[];
+	vocalSpread: RadioChartBucket[];
+	statusSpread: RadioChartBucket[];
+	albumStatusSpread: RadioChartBucket[];
+	generationKindSpread: RadioChartBucket[];
+	feedbackTotals: {
+		likes: number;
+		dislikes: number;
+		skips: number;
+		radioPlays: number;
+	};
+	albumTiming: {
+		completedAlbums: number;
+		avgCompletedMs: number | null;
+		lastCompletedMs: number | null;
+		fastestCompletedMs: number | null;
+		slowestCompletedMs: number | null;
+		activeAlbums: number;
+		oldestActiveMs: number | null;
+	};
+}
+
+export interface RadioRequest {
+	id: string;
+	createdAt: number;
+	prompt: string;
+	kind: "song" | "album" | "auto";
+	status: string;
+	matchedSongId: string | null;
+	albumId: string | null;
+	targetSongId: string | null;
+	scheduleSlot: number | null;
+	notificationState: string | null;
+}
+
+export interface RadioAlbumTrack {
+	id: string;
+	createdAt: number;
+	playlistId: string;
+	orderIndex: number;
+	title: string | null;
+	artistName: string | null;
+	genre: string | null;
+	subGenre: string | null;
+	lyrics: string | null;
+	caption: string | null;
+	coverPrompt: string | null;
+	cover: Song["cover"];
+	bpm: number | null;
+	keyScale: string | null;
+	timeSignature: string | null;
+	vocalStyle: string | null;
+	mood: string | null;
+	energy: string | null;
+	era: string | null;
+	instruments: string[] | null;
+	tags: string[] | null;
+	themes: string[] | null;
+	language: string | null;
+	description: string | null;
+	status: string;
+	aceTaskId: string | null;
+	aceSubmittedAt: number | null;
+	aceAudioPath: string | null;
+	storagePath: string | null;
+	generationStartedAt: number | null;
+	generationCompletedAt: number | null;
+	metadataProcessingMs: number | null;
+	coverProcessingMs: number | null;
+	audioProcessingMs: number | null;
+	errorMessage: string | null;
+	retryCount: number | null;
+	erroredAtStatus: string | null;
+	cancelledAtStatus: string | null;
+	llmProvider: string | null;
+	llmModel: string | null;
+	personaExtract: string | null;
+	audioUrl: string | null;
+	audioDuration: number;
+	albumTrackNumber: number;
+	likeCount: number;
+	dislikeCount: number;
+	skipCount: number;
+	radioPlayCount: number;
+}
+
+export interface RadioAlbum {
+	id: string;
+	createdAt: number;
+	title: string;
+	bandName: string;
+	theme: string;
+	status: string;
+	generationKind: string;
+	coverPrompt: string | null;
+	cover: Song["cover"];
+	trendResearch?: unknown;
+	bandPersona?: unknown;
+	vocalPlan?: unknown;
+	requestId: string | null;
+	firstPlayedAt: number | null;
+	readyAt: number | null;
+	completedAt: number | null;
+	tracks: RadioAlbumTrack[];
+}
+
+export interface RadioQueueResponse extends RadioSnapshot {
+	stats: RadioInventoryStats;
+	analytics: RadioAnalytics;
+	requests: RadioRequest[];
+}
+
+export interface RadioLibraryResponse {
+	albums: RadioAlbum[];
+	legacySongs: Song[];
+}
+
+function normalizeRadioSnapshot<T extends RadioSnapshot>(snapshot: T): T {
+	return {
+		...snapshot,
+		currentSong: snapshot.currentSong
+			? {
+					...snapshot.currentSong,
+					audioUrl: resolveApiMediaUrl(snapshot.currentSong.audioUrl),
+					cover: resolveSongCover(snapshot.currentSong.cover),
+				}
+			: null,
+		schedule: snapshot.schedule.map((item) => ({
+			...item,
+			audioUrl: resolveApiMediaUrl(item.audioUrl),
+		})),
+	};
+}
+
+function normalizeRadioLibrary(
+	payload: RadioLibraryResponse,
+): RadioLibraryResponse {
+	return {
+		albums: payload.albums.map((album) => ({
+			...album,
+			cover: resolveSongCover(album.cover),
+			tracks: album.tracks.map((track) => ({
+				...track,
+				audioUrl: resolveApiMediaUrl(track.audioUrl),
+				cover: resolveSongCover(track.cover),
+			})),
+		})),
+		legacySongs: normalizeSongList(payload.legacySongs) ?? [],
+	};
+}
+
 type PromptContract = {
 	systemPrompt: string;
 	schema: unknown;
@@ -424,6 +655,159 @@ export function useCodexTextModels(
 export const useSetSetting = createMutation<{ key: string; value: string }>(
 	(args) => api.post("/api/settings", args),
 	[["settings"]],
+);
+
+// ─── Global Radio ───────────────────────────────────────────────────
+
+export function useRadioState(): RadioSnapshot | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "state"],
+		queryFn: async () =>
+			normalizeRadioSnapshot(await api.get<RadioSnapshot>("/api/radio/state")),
+		refetchInterval: 5000,
+	});
+	return data;
+}
+
+export function useRadioQueue(): RadioQueueResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "queue"],
+		queryFn: async () =>
+			normalizeRadioSnapshot(
+				await api.get<RadioQueueResponse>("/api/radio/queue"),
+			),
+		refetchInterval: 5000,
+	});
+	return data;
+}
+
+export function useRadioLibrary(): RadioLibraryResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "library"],
+		queryFn: async () =>
+			normalizeRadioLibrary(
+				await api.get<RadioLibraryResponse>("/api/radio/library"),
+			),
+	});
+	return data;
+}
+
+export const useRadioPlay = createMutation<
+	{ listenerId: string },
+	RadioSnapshot
+>(
+	async (args) =>
+		normalizeRadioSnapshot(
+			await api.post<RadioSnapshot>("/api/radio/play", args),
+		),
+	[["radio"]],
+	{ silent: true },
+);
+
+export const useRadioPause = createMutation<
+	{ listenerId: string },
+	RadioSnapshot
+>(
+	async (args) =>
+		normalizeRadioSnapshot(
+			await api.post<RadioSnapshot>("/api/radio/pause", args),
+		),
+	[["radio"]],
+	{ silent: true },
+);
+
+export const useRadioSkip = createMutation<
+	{ listenerId: string },
+	RadioSnapshot
+>(
+	async (args) =>
+		normalizeRadioSnapshot(
+			await api.post<RadioSnapshot>("/api/radio/skip", args),
+		),
+	[["radio"]],
+);
+
+export const useRadioSeek = createMutation<
+	{ listenerId: string; offsetSeconds: number },
+	RadioSnapshot
+>(
+	async (args) =>
+		normalizeRadioSnapshot(
+			await api.post<RadioSnapshot>("/api/radio/seek", args),
+		),
+	[["radio"]],
+	{ silent: true },
+);
+
+export const useRadioFeedback = createMutation<
+	{ songId: string; kind: "like" | "dislike" },
+	RadioSnapshot
+>(
+	async (args) =>
+		normalizeRadioSnapshot(
+			await api.post<RadioSnapshot>("/api/radio/feedback", args),
+		),
+	[["radio"]],
+);
+
+export const useSubmitRadioRequest = createMutation<
+	{ prompt: string },
+	RadioRequest
+>((args) => api.post<RadioRequest>("/api/radio/requests", args), [["radio"]]);
+
+export const useForceGenerateRadioAlbum = createMutation<
+	void,
+	{
+		created: number;
+		repairedAlbums: number;
+		repairedTracks: number;
+		stats: RadioInventoryStats;
+		skipped: string | null;
+	}
+>(() => api.post("/api/radio/force-generate-album"), [["radio"]]);
+
+// ─── Radio Cover Sources ────────────────────────────────────────────
+
+export interface RadioCoverSource {
+	id: string;
+	createdAt: number;
+	url: string;
+	genreTag: string | null;
+	status: "pending" | "used" | "failed";
+	lastUsedAt: number | null;
+	resolvedAudioPath: string | null;
+}
+
+export interface RadioSourcesResponse {
+	sources: RadioCoverSource[];
+	nas: {
+		configured: boolean;
+		exists: boolean;
+		fileCount: number;
+		error: string | null;
+	};
+}
+
+export function useRadioSources(): RadioSourcesResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "sources"],
+		queryFn: () => api.get<RadioSourcesResponse>("/api/radio/sources"),
+		refetchInterval: 10000,
+	});
+	return data;
+}
+
+export const useAddRadioSource = createMutation<
+	{ url: string; genreTag?: string },
+	RadioCoverSource
+>(
+	(args) => api.post<RadioCoverSource>("/api/radio/sources", args),
+	[["radio", "sources"]],
+);
+
+export const useDeleteRadioSource = createMutation<{ id: string }>(
+	(args) => api.del(`/api/radio/sources/${args.id}`),
+	[["radio", "sources"]],
 );
 
 // ─── Control Plane ────────────────────────────────────────────────────
@@ -1049,6 +1433,55 @@ export const useCreateMetadataReady = createMutation<
 			.then(normalizeSongMedia),
 	[["songs"]],
 	{ silent: true },
+);
+
+export const useCreateRawOneshot = createMutation<
+	{
+		lyrics: string;
+		style?: string;
+		audioDuration?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>(
+			"/api/songs/oneshot-raw",
+			args,
+		),
+	[["songs"], ["playlists"]],
+);
+
+export const useReimagineSong = createMutation<
+	{
+		sourceSongId: string;
+		style: string;
+		coverNoiseStrength?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>("/api/songs/reimagine", args),
+	[["songs"], ["playlists"]],
+);
+
+export const useReimagineFromUrl = createMutation<
+	{
+		url: string;
+		style: string;
+		lyrics?: string;
+		coverNoiseStrength?: number;
+		playlistKey?: string;
+	},
+	{ playlist: Playlist; song: Song }
+>(
+	(args) =>
+		api.post<{ playlist: Playlist; song: Song }>(
+			"/api/songs/reimagine-url",
+			args,
+		),
+	[["songs"], ["playlists"]],
 );
 
 export const useCreateSong = createMutation<Record<string, unknown>, Song>(

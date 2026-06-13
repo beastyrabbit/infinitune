@@ -21,6 +21,12 @@ export interface SongStatusChangedEvent extends WorkerBusEventCommon {
 	to: string;
 }
 
+export interface SongDeletedEvent extends WorkerBusEventCommon {
+	type: "song.deleted";
+	songId: string;
+	playlistId: string;
+}
+
 export interface PlaylistCreatedEvent extends WorkerBusEventCommon {
 	type: "playlist.created";
 	playlistId: string;
@@ -62,6 +68,7 @@ export interface SettingsChangedEvent {
 export type WorkerBusEvent =
 	| SongCreatedEvent
 	| SongStatusChangedEvent
+	| SongDeletedEvent
 	| PlaylistCreatedEvent
 	| PlaylistSteeredEvent
 	| PlaylistHeartbeatEvent
@@ -222,6 +229,9 @@ export interface ProviderTaskPorts {
 		aceDcwWavelet?: string;
 		aceThinking?: boolean;
 		aceAutoDuration?: boolean;
+		aceTaskType?: string;
+		srcAudioFile?: string;
+		coverNoiseStrength?: number;
 		signal?: AbortSignal;
 	};
 	pollAudio: {

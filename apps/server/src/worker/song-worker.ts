@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { toAceVocalLanguageCode } from "@infinitune/shared/lyrics-language";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
@@ -13,9 +14,19 @@ import { saveCover } from "../covers";
 import type { PromptDistance, RecentSong, SongMetadata } from "../external/llm";
 import { saveSongToNfs } from "../external/storage";
 import { tagMp3 } from "../external/tag-mp3";
+import {
+	downloadAudioBySearch,
+	downloadYoutubeAudio,
+	type YoutubeAudioResult,
+} from "../external/youtube-audio";
 import { songLogger } from "../logger";
+import {
+	markSourceFailed,
+	markSourceUsed,
+} from "../services/cover-source-service";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
+import { resolveSongAudioFile } from "../utils/song-audio-path";
 import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
 import { calculatePriority } from "./priority";
 import type { EndpointQueues } from "./queues";
@@ -35,6 +46,7 @@ export interface SongWorkerSettings {
 	textModel: string;
 	imageProvider: string;
 	imageModel?: string;
+	coversEnabled: boolean;
 	aceModel?: string;
 	aceInferenceSteps?: number;
 	aceLmTemperature?: number;
@@ -47,6 +59,7 @@ export interface SongWorkerSettings {
 	aceDcwWavelet: string;
 	aceThinking: boolean;
 	aceAutoDuration: boolean;
+	aceQueueDepth: number;
 	personaProvider: string;
 	personaModel: string;
 }
@@ -157,22 +170,30 @@ export function buildAceSubmitInput({
 	song,
 	playlist,
 	settings,
+	srcAudioFile,
 	signal,
 }: {
 	song: SongWire;
 	playlist: PlaylistWire;
 	settings: SongWorkerSettings;
+	/** Resolved source audio path for reimagine (ACE cover) tasks */
+	srcAudioFile?: string;
 	signal?: AbortSignal;
 }): ProviderTaskPorts["submitAudio"] {
 	const playlistAceModel = playlist.aceModel;
+	const radioDuration = song.radioEligible ? 180 : undefined;
 	return {
+		aceTaskType: song.aceTaskType ?? undefined,
+		srcAudioFile,
+		coverNoiseStrength: song.coverNoiseStrength ?? undefined,
 		lyrics: song.lyrics || "",
 		caption: song.caption || "",
 		vocalStyle: song.vocalStyle ?? undefined,
 		bpm: song.bpm || 120,
 		keyScale: song.keyScale || "C major",
 		timeSignature: song.timeSignature || "4/4",
-		audioDuration: song.audioDuration || 240,
+		audioDuration:
+			radioDuration ?? song.audioDuration ?? playlist.audioDuration ?? 240,
 		aceModel: playlistAceModel === null ? settings.aceModel : playlistAceModel,
 		inferenceSteps: playlist.inferenceSteps ?? settings.aceInferenceSteps,
 		vocalLanguage: toAceVocalLanguageCode(playlist.lyricsLanguage),
@@ -185,7 +206,9 @@ export function buildAceSubmitInput({
 		aceDcwHighScaler: playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
 		aceDcwWavelet: playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
 		aceThinking: playlist.aceThinking ?? settings.aceThinking,
-		aceAutoDuration: playlist.aceAutoDuration ?? settings.aceAutoDuration,
+		aceAutoDuration: song.radioEligible
+			? false
+			: (playlist.aceAutoDuration ?? settings.aceAutoDuration),
 		signal,
 	};
 }
@@ -639,6 +662,9 @@ export class SongWorker {
 		) {
 			return "audio";
 		}
+		if (this.song.coverPrompt && !this.song.cover && status !== "error") {
+			return "metadata";
+		}
 		return "completed";
 	}
 
@@ -659,12 +685,20 @@ export class SongWorker {
 			case "metadata_ready":
 				this.startCover();
 				break;
+			case "ready":
+			case "played":
+			case "submitting_to_ace":
+			case "generating_audio":
+			case "saving":
+				this.startCover();
+				break;
 			default:
 				break;
 		}
 	}
 
 	private async runAudioStage(): Promise<void> {
+		this.startCover();
 		switch (this.song.status) {
 			case "pending":
 			case "metadata_ready":
@@ -905,11 +939,19 @@ export class SongWorker {
 		}
 	}
 
+	/** True once a cover job was enqueued by this worker — the metadata and
+	 *  audio stages both call startCover(), and the in-flight job hasn't set
+	 *  song.cover yet, so without this guard the second call would enqueue a
+	 *  duplicate image generation. */
+	private coverStarted = false;
+
 	/** Fire-and-forget cover generation — best-effort, doesn't fail the song */
 	private startCover(): void {
 		if (this.aborted) return;
 		if (!this.song.coverPrompt) return;
 		if (this.song.cover) return; // Already has cover art
+		if (this.coverStarted) return;
+		this.coverStarted = true;
 
 		const songId = this.songId;
 		const coverPrompt = this.song.coverPrompt;
@@ -919,12 +961,8 @@ export class SongWorker {
 		this.ctx
 			.getSettings()
 			.then((settings) => {
-				const imageProvider =
-					settings.imageProvider === "ollama"
-						? "comfyui"
-						: settings.imageProvider === "openrouter"
-							? "inference-sh"
-							: settings.imageProvider;
+				if (!settings.coversEnabled) return;
+				const imageProvider = normalizeImageProvider(settings.imageProvider);
 				const imageModel = settings.imageModel;
 
 				return this.ctx.queues.image.enqueue({
@@ -949,7 +987,9 @@ export class SongWorker {
 					},
 				});
 			})
-			.then(async ({ result, processingMs }) => {
+			.then(async (enqueued) => {
+				if (!enqueued) return; // covers disabled
+				const { result, processingMs } = enqueued;
 				const coverResult = result as { imageBase64: string; format: string };
 				// Capture base64 for NFS save in saveAndFinalize()
 				this.coverBase64 = coverResult.imageBase64;
@@ -992,6 +1032,52 @@ export class SongWorker {
 			});
 	}
 
+	/**
+	 * Download a cover track's reference audio (sourceUrl: direct URL or
+	 * "ytsearchN:" query) and persist the resolved file path. On failure the
+	 * song is demoted to a plain text2music track so radio albums always
+	 * complete.
+	 */
+	private async acquireSourceAudio(): Promise<void> {
+		const sourceUrl = this.song.sourceUrl;
+		if (!sourceUrl || this.song.sourceAudioPath) return;
+
+		// Only the download itself triggers demotion. Persistence errors
+		// (DB locked, disk full) propagate to the normal error path — the
+		// downloaded reference is fine and a retry can still use it.
+		let result: YoutubeAudioResult;
+		try {
+			result = sourceUrl.startsWith("ytsearch")
+				? await downloadAudioBySearch(sourceUrl)
+				: await downloadYoutubeAudio(sourceUrl);
+		} catch (error: unknown) {
+			const msg = error instanceof Error ? error.message : String(error);
+			songLogger(this.songId).warn(
+				{ error: msg },
+				"Cover source download failed; demoting track to text2music",
+			);
+			await markSourceFailed(sourceUrl);
+			await songService.clearCoverSource(this.songId);
+			this.song = {
+				...this.song,
+				aceTaskType: null,
+				sourceUrl: null,
+				sourceSongId: null,
+				sourceAudioPath: null,
+				coverNoiseStrength: null,
+			};
+			return;
+		}
+
+		await songService.updateSourceAudioPath(this.songId, result.filePath);
+		await markSourceUsed(sourceUrl, result.filePath);
+		this.song = { ...this.song, sourceAudioPath: result.filePath };
+		songLogger(this.songId).info(
+			{ title: this.song.title, sourceTitle: result.title },
+			"Cover reference audio resolved",
+		);
+	}
+
 	private async submitAndPollAudio(): Promise<void> {
 		if (this.aborted) return;
 
@@ -1009,6 +1095,11 @@ export class SongWorker {
 		const claimed = songService.claimAudio(this.songId);
 		if (!claimed) return;
 
+		// Resolve a pending sourceUrl (cover reference) to a local file BEFORE
+		// taking an audio queue slot, so downloads never occupy ACE capacity.
+		await this.acquireSourceAudio();
+		if (this.aborted) return;
+
 		songLogger(this.songId).info(
 			{ title: this.song.title },
 			"Submitting to ACE-Step",
@@ -1022,11 +1113,36 @@ export class SongWorker {
 					endpoint: "ace-step",
 					execute: async (signal) => {
 						const settings = await this.ctx.getSettings();
+
+						// Reimagine (cover) tasks upload the reference audio: either an
+						// external download (sourceAudioPath) or a library song's file.
+						let srcAudioFile: string | undefined;
+						if (this.song.sourceAudioPath) {
+							if (!fs.existsSync(this.song.sourceAudioPath)) {
+								throw new Error(
+									`Reference audio for reimagine not found (${this.song.sourceAudioPath})`,
+								);
+							}
+							srcAudioFile = this.song.sourceAudioPath;
+						} else if (this.song.sourceSongId) {
+							const sourceSong = await songService.getById(
+								this.song.sourceSongId,
+							);
+							srcAudioFile =
+								resolveSongAudioFile(sourceSong?.storagePath) ?? undefined;
+							if (!srcAudioFile) {
+								throw new Error(
+									`Source audio for reimagine not found (song ${this.song.sourceSongId})`,
+								);
+							}
+						}
+
 						const result = await this.ctx.capabilities.submitAudio(
 							buildAceSubmitInput({
 								song: this.song,
 								playlist: this.ctx.playlist,
 								settings,
+								srcAudioFile,
 								signal,
 							}),
 						);
@@ -1208,7 +1324,7 @@ export class SongWorker {
 				audioPath,
 			);
 			// Update duration if silence was trimmed
-			if (saveResult.effectiveDuration) {
+			if (saveResult.effectiveDuration && !this.song.radioEligible) {
 				await songService.updateAudioDuration(
 					this.songId,
 					saveResult.effectiveDuration,

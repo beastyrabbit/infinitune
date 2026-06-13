@@ -1,3 +1,4 @@
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2, RotateCcw } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -121,12 +122,7 @@ function PipelineTestPage() {
 
 			const provider = settings?.textProvider || "ollama";
 			const model = settings?.textModel || "";
-			const imageProvider =
-				settings?.imageProvider === "ollama"
-					? "comfyui"
-					: settings?.imageProvider === "openrouter"
-						? "inference-sh"
-						: settings?.imageProvider || "comfyui";
+			const imageProvider = normalizeImageProvider(settings?.imageProvider);
 			const imageModel = settings?.imageModel || "";
 			const aceModel = settings?.aceModel || "";
 			const cd = collectedData.current;
@@ -595,7 +591,7 @@ function PipelineTestPage() {
 							{settings?.textModel || "default"}
 						</p>
 						<p>
-							IMAGE: {settings?.imageProvider || "comfyui"} | ACE:{" "}
+							IMAGE: {normalizeImageProvider(settings?.imageProvider)} | ACE:{" "}
 							{settings?.aceModel || "default"}
 						</p>
 						<p>PLAYLIST: {playlistId || "NONE"}</p>

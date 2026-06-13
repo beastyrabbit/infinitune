@@ -25,6 +25,10 @@ export type EventMap = {
 	"agent.chat_message": { playlistId: string; messageId: string };
 	"agent.memory_updated": { playlistId?: string | null; memoryId: string };
 	"settings.changed": { key: string };
+	"radio.state_changed": { stationId: string };
+	"radio.schedule_changed": { stationId: string; scheduleVersion: number };
+	"radio.album_ready": { albumId: string };
+	"radio.request_updated": { requestId: string };
 };
 
 type Handler<T> = (data: T) => void | Promise<void>;

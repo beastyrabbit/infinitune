@@ -4,6 +4,7 @@ import {
 	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import {
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
@@ -64,6 +65,17 @@ function parseOptionalIntegerSetting(
 	return parsed === undefined ? undefined : Math.trunc(parsed);
 }
 
+function parseBoundedIntegerSetting(
+	value: string | undefined,
+	defaultValue: number,
+	minimumValue: number,
+	maximumValue: number,
+): number {
+	const parsed = parseOptionalIntegerSetting(value);
+	if (parsed === undefined) return defaultValue;
+	return Math.min(maximumValue, Math.max(minimumValue, parsed));
+}
+
 const WORKER_DIAGNOSTICS_INTERVAL_MS = parsePositiveIntervalMs(
 	process.env.WORKER_DIAGNOSTICS_INTERVAL_MS,
 	30_000,
@@ -108,6 +120,16 @@ type SongActorHandle = ReturnType<typeof createSongActor>;
 
 const playlistActors = new Map<string, PlaylistActorHandle>();
 const songActors = new Map<string, SongActorHandle>();
+
+function uniqueSongWires(groups: SongWire[][]): SongWire[] {
+	const byId = new Map<string, SongWire>();
+	for (const group of groups) {
+		for (const song of group) {
+			if (!byId.has(song.id)) byId.set(song.id, song);
+		}
+	}
+	return Array.from(byId.values());
+}
 
 // ─── Persona scan state ─────────────────────────────────────────────
 
@@ -326,13 +348,9 @@ async function getSettings(): Promise<SongWorkerSettings> {
 	return {
 		textProvider,
 		textModel,
-		imageProvider:
-			all.imageProvider === "ollama"
-				? "comfyui"
-				: all.imageProvider === "openrouter"
-					? "inference-sh"
-					: all.imageProvider || "comfyui",
+		imageProvider: normalizeImageProvider(all.imageProvider),
 		imageModel: all.imageModel ?? undefined,
+		coversEnabled: parseBooleanSetting(all.coversEnabled, true),
 		aceModel: aceModel || undefined,
 		aceInferenceSteps: parseOptionalIntegerSetting(all.aceInferenceSteps),
 		aceLmTemperature: parseOptionalNumberSetting(all.aceLmTemperature),
@@ -348,6 +366,7 @@ async function getSettings(): Promise<SongWorkerSettings> {
 		aceDcwWavelet: all.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet,
 		aceThinking: parseBooleanSetting(all.aceThinking, false),
 		aceAutoDuration: parseBooleanSetting(all.aceAutoDuration, true),
+		aceQueueDepth: parseBoundedIntegerSetting(all.aceQueueDepth, 12, 1, 120),
 		personaProvider,
 		personaModel,
 	};
@@ -729,6 +748,7 @@ function getWorkerRuntime() {
 					routeSongEventToActor({ type: "song.status_changed", ...event }),
 				);
 			},
+			handleSongDeleted,
 			handlePlaylistCreated: async (event) => {
 				await Promise.resolve(
 					routePlaylistEventToActor({ type: "playlist.created", ...event }),
@@ -802,6 +822,7 @@ function subscribeRuntimeEventBus() {
 		type: "song.status_changed",
 		...data,
 	}));
+	subscribe("song.deleted", (data) => ({ type: "song.deleted", ...data }));
 	subscribe("playlist.created", (data) => ({
 		type: "playlist.created",
 		...data,
@@ -900,12 +921,13 @@ async function spawnActionableSongsForPlaylist(
 	playlistEpochs.set(playlistId, playlistWire.promptEpoch ?? 0);
 	const workQueue = await songService.getWorkQueue(playlistId);
 	const currentEpoch = playlistWire.promptEpoch ?? 0;
-	const actionableSongs = [
-		...workQueue.pending,
-		...workQueue.metadataReady,
-		...workQueue.generatingAudio,
-		...workQueue.needsRecovery,
-	].sort((a, b) => {
+	const actionableSongs = uniqueSongWires([
+		workQueue.pending,
+		workQueue.metadataReady,
+		workQueue.generatingAudio,
+		workQueue.needsRecovery,
+		workQueue.needsCover,
+	]).sort((a, b) => {
 		const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
 		const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
 		return aEpoch - bEpoch || a.orderIndex - b.orderIndex;
@@ -983,6 +1005,7 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 	try {
 		const playlist = await playlistService.getById(playlistId);
 		if (!playlist || playlist.status !== "active") return;
+		if (playlist.mode === "radio") return;
 
 		const isOneshot = playlist.mode === "oneshot";
 		const workQueue = await songService.getWorkQueue(playlistId);
@@ -1217,7 +1240,9 @@ async function handlePlaylistCreated(data: { playlistId: string }) {
 	playlistEpochs.set(data.playlistId, playlist.promptEpoch ?? 0);
 
 	// Start heartbeat timer
-	resetHeartbeatTimer(data.playlistId);
+	if (playlist.mode !== "radio") {
+		resetHeartbeatTimer(data.playlistId);
+	}
 
 	// Create initial buffer songs
 	await checkBufferDeficit(data.playlistId);
@@ -1260,12 +1285,13 @@ async function handlePlaylistSteered(data: {
 	}
 
 	// Recalculate priorities for remaining queued songs
-	const allSongs = [
-		...workQueue.pending,
-		...workQueue.metadataReady,
-		...workQueue.generatingAudio,
-		...workQueue.needsRecovery,
-	];
+	const allSongs = uniqueSongWires([
+		workQueue.pending,
+		workQueue.metadataReady,
+		workQueue.generatingAudio,
+		workQueue.needsRecovery,
+		workQueue.needsCover,
+	]);
 	const songMap = new Map(allSongs.map((s) => [s.id, s]));
 
 	queues.recalcPendingPriorities((songId) => {
@@ -1287,7 +1313,10 @@ async function handlePlaylistSteered(data: {
 }
 
 async function handlePlaylistHeartbeat(data: { playlistId: string }) {
-	resetHeartbeatTimer(data.playlistId);
+	const playlist = await playlistService.getById(data.playlistId);
+	if (playlist?.mode !== "radio") {
+		resetHeartbeatTimer(data.playlistId);
+	}
 }
 
 async function handlePlaylistUpdated(data: { playlistId: string }) {
@@ -1301,6 +1330,15 @@ async function handlePlaylistDeleted(data: { playlistId: string }) {
 	clearHeartbeatTimer(data.playlistId);
 	playlistEpochs.delete(data.playlistId);
 	bufferLocks.delete(data.playlistId);
+}
+
+async function handleSongDeleted(data: { songId: string; playlistId: string }) {
+	cancelSongWorker(data.songId);
+	// Queue items can exist without a registered SongWorker (e.g. audio
+	// tasks resumed at startup) — drop them from every queue explicitly.
+	queues?.cancelAllForSong(data.songId);
+	const actor = songActors.get(data.songId);
+	actor?.ref.send({ type: "song.actor.stop", songId: data.songId });
 }
 
 async function handlePlaylistStatusChanged(data: {
@@ -1334,7 +1372,10 @@ async function handlePlaylistStatusChanged(data: {
 
 	if (to === "active" && (from === "closing" || from === "closed")) {
 		// Re-activate heartbeat timer on reactivation
-		resetHeartbeatTimer(playlistId);
+		const playlist = await playlistService.getById(playlistId);
+		if (playlist?.mode !== "radio") {
+			resetHeartbeatTimer(playlistId);
+		}
 		// Resume existing actionable songs before adding new buffer items.
 		await spawnActionableSongsForPlaylist(playlistId);
 		await checkBufferDeficit(playlistId);
@@ -1360,13 +1401,25 @@ async function staleSongCleanup(): Promise<void> {
 			const workQueue = await songService.getWorkQueue(playlist.id);
 			if (workQueue.staleSongs.length > 0) {
 				for (const stale of workQueue.staleSongs) {
-					songLogger(stale.id, playlist.id).info(
-						{ title: stale.title, status: stale.status },
-						"Removing stuck song",
-					);
 					const w = songWorkers.get(stale.id);
 					if (w) w.cancel();
-					await songService.deleteSong(stale.id);
+					if (stale.radioEligible && stale.albumId) {
+						songLogger(stale.id, playlist.id).info(
+							{
+								title: stale.title,
+								status: stale.status,
+								albumId: stale.albumId,
+							},
+							"Resetting stale radio album track for retry",
+						);
+						await songService.revertTransient(stale.id);
+					} else {
+						songLogger(stale.id, playlist.id).info(
+							{ title: stale.title, status: stale.status },
+							"Removing stuck song",
+						);
+						await songService.deleteSong(stale.id);
+					}
 				}
 			}
 		}
@@ -1448,7 +1501,7 @@ async function startupSweep() {
 		playlistEpochs.set(playlist.id, playlist.promptEpoch ?? 0);
 
 		// Start heartbeat timer for active playlists
-		if (playlist.status === "active") {
+		if (playlist.status === "active" && playlist.mode !== "radio") {
 			resetHeartbeatTimer(playlist.id);
 		}
 
@@ -1456,12 +1509,13 @@ async function startupSweep() {
 		const currentEpoch = playlist.promptEpoch ?? 0;
 
 		// Spawn workers for actionable songs
-		const actionableSongs = [
-			...workQueue.pending,
-			...workQueue.metadataReady,
-			...workQueue.generatingAudio,
-			...workQueue.needsRecovery,
-		].sort((a, b) => {
+		const actionableSongs = uniqueSongWires([
+			workQueue.pending,
+			workQueue.metadataReady,
+			workQueue.generatingAudio,
+			workQueue.needsRecovery,
+			workQueue.needsCover,
+		]).sort((a, b) => {
 			// Prioritize current-epoch songs
 			const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
 			const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
@@ -1480,13 +1534,25 @@ async function startupSweep() {
 			);
 		} else if (workQueue.staleSongs.length > 0) {
 			for (const stale of workQueue.staleSongs) {
-				songLogger(stale.id, playlist.id).info(
-					{ title: stale.title, status: stale.status },
-					"[startup] Removing stuck song",
-				);
 				const w = songWorkers.get(stale.id);
 				if (w) w.cancel();
-				await songService.deleteSong(stale.id);
+				if (stale.radioEligible && stale.albumId) {
+					songLogger(stale.id, playlist.id).info(
+						{
+							title: stale.title,
+							status: stale.status,
+							albumId: stale.albumId,
+						},
+						"[startup] Resetting stale radio album track for retry",
+					);
+					await songService.revertTransient(stale.id);
+				} else {
+					songLogger(stale.id, playlist.id).info(
+						{ title: stale.title, status: stale.status },
+						"[startup] Removing stuck song",
+					);
+					await songService.deleteSong(stale.id);
+				}
 			}
 		}
 
@@ -1657,6 +1723,7 @@ export const _test = {
 	handlePlaylistStatusChanged,
 	handleSettingsChanged,
 	checkBufferDeficit,
+	staleSongCleanup,
 	setQueues(q: EndpointQueues) {
 		queues = q;
 	},

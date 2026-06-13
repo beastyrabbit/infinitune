@@ -1,1213 +1,497 @@
-import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
-import type { LlmProvider } from "@infinitune/shared/types";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useStore } from "@tanstack/react-store";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-	Disc3,
-	Menu,
-	MessageSquare,
-	Minimize2,
-	Plus,
+	HardDriveDownload,
+	Heart,
+	ListMusic,
+	MessageSquareText,
+	Pause,
+	Play,
 	Radio,
+	Settings,
+	SkipForward,
+	Sparkles,
+	ThumbsDown,
+	Zap,
 } from "lucide-react";
+import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DeviceControlPanel } from "@/components/autoplayer/DeviceControlPanel";
-import { GenerationBanner } from "@/components/autoplayer/GenerationBanner";
-import { GenerationControls } from "@/components/autoplayer/GenerationControls";
-import { NowPlaying } from "@/components/autoplayer/NowPlaying";
-import { PlaylistCreator } from "@/components/autoplayer/PlaylistCreator";
-
-import { QueueGrid } from "@/components/autoplayer/QueueGrid";
-import { QuickRequest } from "@/components/autoplayer/QuickRequest";
-import { TrackDetail } from "@/components/autoplayer/TrackDetail";
-import { UpNextBanner } from "@/components/autoplayer/UpNextBanner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-	Sheet,
-	SheetContent,
-	SheetTitle,
-	SheetTrigger,
-} from "@/components/ui/sheet";
-import VinylIcon from "@/components/ui/vinyl-icon";
-import { useAutoplayer } from "@/hooks/useAutoplayer";
-import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
-import { useRoomConnection } from "@/hooks/useRoomConnection";
-import { useRoomController } from "@/hooks/useRoomController";
-import { useRoomPlayer } from "@/hooks/useRoomPlayer";
-import { useVolumeSync } from "@/hooks/useVolumeSync";
-import type { EndpointStatus } from "@/hooks/useWorkerStatus";
-import { useWorkerStatus } from "@/hooks/useWorkerStatus";
-import {
-	useCreateMetadataReady,
-	useCreatePending,
-	useCreatePlaylist,
-	usePlaylist,
-	usePlaylistByKey,
-	useReindexPlaylist,
-	useReorderSong,
-	useSetRating,
-	useSettings,
-	useSongQueue,
-	useUpdatePersonaExtract,
-	useUpdatePlaylistStatus,
+	type RadioSnapshot,
+	useRadioFeedback,
+	useRadioPause,
+	useRadioPlay,
+	useRadioSkip,
+	useRadioState,
 } from "@/integrations/api/hooks";
-import { computePipelineTruth } from "@/lib/pipeline-truth";
-import { playerStore, setCurrentSong, stopPlayback } from "@/lib/player-store";
-import {
-	generatePlaylistKey,
-	validatePlaylistKeySearch,
-} from "@/lib/playlist-key";
-
-interface GeneratedSongMetadata {
-	title: string;
-	artistName: string;
-	genre: string;
-	subGenre: string;
-	vocalStyle: string;
-	lyrics: string;
-	caption: string;
-	coverPrompt?: string;
-	bpm: number;
-	keyScale: string;
-	timeSignature: string;
-	audioDuration: number;
-	mood: string;
-	energy: string;
-	era: string;
-	instruments: string[];
-	tags: string[];
-	themes: string[];
-	language: string;
-	description: string;
-}
-
-function getEndpointDotClass(status?: EndpointStatus | null): string {
-	if (status?.errors && status.errors > 0) return "bg-red-500";
-	if (status?.active && status.active > 0) return "bg-green-500";
-	return "bg-white/30";
-}
-
-function EndpointDot({
-	label,
-	status,
-}: {
-	label: string;
-	status?: EndpointStatus | null;
-}) {
-	return (
-		<span className="flex items-center gap-1">
-			{label}:
-			<span
-				className={`inline-block h-2 w-2 rounded-full ${getEndpointDotClass(status)}`}
-			/>
-		</span>
-	);
-}
-
-function getAlbumButtonStyle(generating: boolean, enabled: boolean): string {
-	if (generating)
-		return "border-purple-500 bg-purple-500/20 text-purple-300 animate-pulse";
-	if (enabled)
-		return "border-purple-500/60 bg-transparent text-purple-400 hover:bg-purple-500 hover:text-white";
-	return "border-white/20 bg-transparent text-white/30 cursor-not-allowed";
-}
-
-function getAlbumButtonLabel(
-	generating: boolean,
-	progress: { current: number; total: number },
-): string {
-	if (!generating) return "ADD ALBUM";
-	if (progress.current === 0) return "STARTING ALBUM...";
-	return `ALBUM ${progress.current}/${progress.total}`;
-}
-
-function AlbumButton({
-	generating,
-	enabled,
-	progress,
-	onClick,
-}: {
-	generating: boolean;
-	enabled: boolean;
-	progress: { current: number; total: number };
-	onClick: () => void;
-}) {
-	return (
-		<Button
-			className={`flex-1 h-10 rounded-none border-2 font-mono text-xs font-black uppercase transition-colors ${getAlbumButtonStyle(generating, enabled)}`}
-			disabled={!enabled}
-			onClick={onClick}
-		>
-			<Disc3
-				className={`h-3.5 w-3.5 mr-1.5 ${generating ? "animate-spin" : ""}`}
-			/>
-			{getAlbumButtonLabel(generating, progress)}
-		</Button>
-	);
-}
+import { API_URL, RADIO_WS_URL, resolveApiMediaUrl } from "@/lib/endpoints";
+import { formatTime } from "@/lib/format-time";
 
 export const Route = createFileRoute("/autoplayer")({
 	component: AutoplayerPage,
-	validateSearch: validatePlaylistKeySearch,
 });
 
-function AutoplayerPage() {
-	const navigate = useNavigate();
-	const { pl, room, role, name, dn } = Route.useSearch();
-	const isRoomMode = !!room;
-	const roomRole = role ?? "player";
-	const deviceName = dn || `autoplayer-${roomRole}`;
-	const [detailSongId, setDetailSongId] = useState<string | null>(null);
-	const [forceCloseArmed, setForceCloseArmed] = useState(false);
-	const forceCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+function getListenerId() {
+	if (typeof window === "undefined") return "server";
+	const key = "infinitune-radio-listener-id";
+	const existing = window.localStorage.getItem(key);
+	if (existing) return existing;
+	const next = crypto.randomUUID();
+	window.localStorage.setItem(key, next);
+	return next;
+}
 
-	const [albumGenerating, setAlbumGenerating] = useState(false);
-	const [albumProgress, setAlbumProgress] = useState({ current: 0, total: 0 });
-	const albumAbortRef = useRef<AbortController | null>(null);
+function coverUrl(song: RadioSnapshot["currentSong"]) {
+	return (
+		song?.cover?.webpUrl || song?.cover?.pngUrl || song?.cover?.jxlUrl || null
+	);
+}
+
+function RadioCover({ song }: { song: RadioSnapshot["currentSong"] }) {
+	const src = coverUrl(song);
+	return (
+		<div className="relative aspect-square overflow-hidden border border-white/15 bg-zinc-950 shadow-2xl shadow-black/40">
+			{src ? (
+				<img
+					src={src}
+					alt={song?.albumTitle ?? song?.title ?? "Album cover"}
+					className="h-full w-full object-cover"
+				/>
+			) : (
+				<div className="flex h-full w-full items-center justify-center bg-[linear-gradient(135deg,#101820,#243b35_45%,#d7b46a_45%,#d7b46a_48%,#151515_48%)]">
+					<Radio className="h-20 w-20 text-white/75" />
+				</div>
+			)}
+			<div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-black/70 px-4 py-3 backdrop-blur">
+				<div className="text-xs font-black uppercase tracking-[0.24em] text-amber-300">
+					{song?.albumTitle ?? "Global Radio"}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function useRadioSocket(
+	listenerId: string,
+	onSnapshot: (snapshot: RadioSnapshot) => void,
+	rejoinRef: RefObject<boolean>,
+) {
+	const wsRef = useRef<WebSocket | null>(null);
 
 	useEffect(() => {
-		return () => {
-			if (forceCloseTimerRef.current) clearTimeout(forceCloseTimerRef.current);
-			albumAbortRef.current?.abort();
-		};
-	}, []);
+		let disposed = false;
+		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Look up playlist by key from URL
-	const playlistByKey = usePlaylistByKey(pl ?? null);
-	const playlistId = playlistByKey?.id ?? null;
-
-	// Keep oneshot playlists on the dedicated oneshot route.
-	useEffect(() => {
-		if (isRoomMode) return;
-		if (!pl) return;
-		if (playlistByKey?.mode !== "oneshot") return;
-		navigate({ to: "/autoplayer/oneshot", search: { pl } });
-	}, [isRoomMode, pl, playlistByKey?.mode, navigate]);
-
-	const createPlaylist = useCreatePlaylist();
-	const updateStatus = useUpdatePlaylistStatus();
-	const setRatingMut = useSetRating();
-
-	// --- Room mode hooks (no-op when room is null) ---
-	const roomConnection = useRoomConnection(
-		room ?? null,
-		deviceName,
-		roomRole,
-		pl,
-		name,
-	);
-	const roomController = useRoomController(roomConnection);
-	const roomPlayer = useRoomPlayer(
-		isRoomMode && roomRole === "player" ? roomConnection : null,
-	);
-
-	// Room mode: query songs/playlist from API directly
-	const roomSongs = useSongQueue(isRoomMode && playlistId ? playlistId : null);
-	const roomPlaylist = usePlaylist(
-		isRoomMode && playlistId ? playlistId : null,
-	);
-
-	// Local mode hooks (no-op when in room mode)
-	const autoplayer = useAutoplayer(isRoomMode ? null : playlistId);
-
-	const { currentSongId: localCurrentSongId } = useStore(playerStore);
-
-	useVolumeSync();
-	usePlaylistHeartbeat(playlistId);
-	const { status: workerStatus } = useWorkerStatus();
-
-	// --- Derive effective state ---
-	const songs = isRoomMode ? roomSongs : autoplayer.songs;
-	const playlist = isRoomMode ? roomPlaylist : autoplayer.playlist;
-	const pipelineTruth = useMemo(
-		() => computePipelineTruth(songs, workerStatus),
-		[songs, workerStatus],
-	);
-	const currentSongId = isRoomMode
-		? roomConnection.playback.currentSongId
-		: localCurrentSongId;
-
-	// Navigate away when playlist transitions to closed (not on initial load)
-	const prevStatusRef = useRef<string | null>(null);
-	useEffect(() => {
-		const status = playlist?.status ?? null;
-		if (
-			prevStatusRef.current &&
-			prevStatusRef.current !== "closed" &&
-			status === "closed"
-		) {
-			navigate({ to: "/autoplayer" });
-		}
-		prevStatusRef.current = status;
-	}, [playlist?.status, navigate]);
-
-	const currentSong = songs?.find((s) => s.id === currentSongId) ?? null;
-
-	// Transition is complete once the currently playing song is from the current epoch
-	const playlistEpoch = playlist?.promptEpoch ?? 0;
-	const currentSongEpoch = currentSong ? (currentSong.promptEpoch ?? 0) : 0;
-	const transitionDismissed = isRoomMode
-		? false
-		: autoplayer.transitionDismissed;
-	const transitionComplete =
-		playlistEpoch === 0 ||
-		currentSongEpoch >= playlistEpoch ||
-		transitionDismissed;
-
-	// --- Unified action callbacks ---
-	const toggle = isRoomMode ? roomController.toggle : autoplayer.toggle;
-	const seek = isRoomMode ? roomController.seek : autoplayer.seek;
-	const skipToNext = isRoomMode ? roomController.skip : autoplayer.skipToNext;
-	const rateSong = useCallback(
-		(songId: string, rating: "up" | "down") => {
-			if (isRoomMode) {
-				roomController.rate(songId, rating);
-				setRatingMut({ id: songId, rating });
-			} else {
-				autoplayer.rateSong(songId, rating);
-			}
-		},
-		[isRoomMode, roomController, autoplayer, setRatingMut],
-	);
-	const requestSong = autoplayer.requestSong;
-	const loadAndPlay = autoplayer.loadAndPlay;
-	const dismissTransition = autoplayer.dismissTransition;
-
-	const createPending = useCreatePending();
-	const createMetadataReady = useCreateMetadataReady();
-	const updatePersonaExtract = useUpdatePersonaExtract();
-	const reorderSong = useReorderSong();
-	const reindexPlaylist = useReindexPlaylist();
-	const settings = useSettings();
-	const [albumSourceTitle, setAlbumSourceTitle] = useState<string | null>(null);
-
-	/** Shared playlist creation: generates key, calls API mutation, returns route state. */
-	const doCreatePlaylist = useCallback(
-		async (data: {
-			name: string;
-			prompt: string;
-			provider: LlmProvider;
-			model: string;
-			lyricsLanguage?: string;
-			targetBpm?: number;
-			targetKey?: string;
-			timeSignature?: string;
-			audioDuration?: number;
-			inferenceSteps?: number;
-			lmTemperature?: number;
-			lmCfgScale?: number;
-			inferMethod?: string;
-			aceModel?: string;
-			aceDcwEnabled?: boolean;
-			aceDcwMode?: string;
-			aceDcwScaler?: number;
-			aceDcwHighScaler?: number;
-			aceDcwWavelet?: string;
-			aceThinking?: boolean;
-			aceAutoDuration?: boolean;
-			initialDirectorPlan?: boolean;
-			roomSlug?: string;
-		}): Promise<{ key: string; playlistId: string; playlistName: string }> => {
-			const key = generatePlaylistKey();
-			const created = await createPlaylist({
-				name: data.name,
-				prompt: data.prompt,
-				llmProvider: data.provider,
-				llmModel: data.model,
-				playlistKey: key,
-				lyricsLanguage: data.lyricsLanguage,
-				targetBpm: data.targetBpm,
-				targetKey: data.targetKey,
-				timeSignature: data.timeSignature,
-				audioDuration: data.audioDuration,
-				inferenceSteps: data.inferenceSteps,
-				lmTemperature: data.lmTemperature,
-				lmCfgScale: data.lmCfgScale,
-				inferMethod: data.inferMethod,
-				aceModel: data.aceModel,
-				aceDcwEnabled: data.aceDcwEnabled,
-				aceDcwMode: data.aceDcwMode,
-				aceDcwScaler: data.aceDcwScaler,
-				aceDcwHighScaler: data.aceDcwHighScaler,
-				aceDcwWavelet: data.aceDcwWavelet,
-				aceThinking: data.aceThinking,
-				aceAutoDuration: data.aceAutoDuration,
-				initialDirectorPlan: data.initialDirectorPlan,
-			});
-			return {
-				key,
-				playlistId: created.id,
-				playlistName: created.name,
+		function connect() {
+			if (disposed) return;
+			const ws = new WebSocket(RADIO_WS_URL);
+			wsRef.current = ws;
+			ws.onopen = () => {
+				// The server deactivates this listener when the socket drops.
+				// If the user was playing, re-register on (re)connect so the
+				// station doesn't stay paused and heartbeats aren't ignored.
+				if (rejoinRef.current) {
+					ws.send(JSON.stringify({ listenerId, type: "play" }));
+				}
 			};
-		},
-		[createPlaylist],
-	);
-
-	const handleCreatePlaylist = useCallback(
-		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
-			const created = await doCreatePlaylist(data);
-			navigate({ to: "/autoplayer/orchestrator", search: { pl: created.key } });
-		},
-		[doCreatePlaylist, navigate],
-	);
-
-	const handleCreatePlaylistInRoom = useCallback(
-		async (data: Parameters<typeof doCreatePlaylist>[0]) => {
-			const created = await doCreatePlaylist(data);
-
-			navigate({
-				to: "/autoplayer/orchestrator",
-				search: {
-					pl: created.key,
-					room: data.roomSlug || room || created.key,
-					role: roomRole,
-					name: name || data.name,
-					dn,
-				},
-			});
-		},
-		[dn, doCreatePlaylist, name, navigate, room, roomRole],
-	);
-
-	const handleAddBatch = useCallback(async () => {
-		if (!playlistId || !songs) return;
-		const maxOrder = songs.reduce(
-			(max, s) => Math.max(max, s.orderIndex ?? 0),
-			0,
-		);
-		await Promise.all(
-			Array.from({ length: 5 }, (_, i) =>
-				createPending({
-					playlistId,
-					orderIndex: maxOrder + i + 1,
-					promptEpoch: playlist?.promptEpoch ?? 0,
-				}),
-			),
-		);
-	}, [playlistId, songs, playlist?.promptEpoch, createPending]);
-
-	const handleAddAlbum = useCallback(async () => {
-		if (!playlistId || !songs || !playlist || !currentSongId || albumGenerating)
-			return;
-		const sourceSong = songs.find((s) => s.id === currentSongId);
-		if (!sourceSong?.title) return;
-
-		const TOTAL_TRACKS = 15;
-		const BATCH_SIZE = 5;
-		const abortController = new AbortController();
-		albumAbortRef.current = abortController;
-
-		setAlbumGenerating(true);
-		setAlbumProgress({ current: 0, total: TOTAL_TRACKS });
-		setAlbumSourceTitle(sourceSong.title ?? null);
-
-		try {
-			const currentEpoch = playlist.promptEpoch ?? 0;
-
-			// Resolve persona provider + model:
-			// 1. Both explicitly set → use them
-			// 2. Neither set (or matches text provider) → fall back to text pair
-			// 3. Provider set but model empty + different from text → skip precheck
-			const explicitPP = settings?.personaProvider || "";
-			const explicitPM = settings?.personaModel || "";
-			let pProvider: LlmProvider;
-			let pModel: string;
-			if (explicitPM) {
-				pProvider = normalizeLlmProvider(explicitPP || settings?.textProvider);
-				pModel = explicitPM;
-			} else if (!explicitPP || explicitPP === settings?.textProvider) {
-				pProvider = normalizeLlmProvider(settings?.textProvider);
-				pModel = settings?.textModel || "";
-			} else {
-				pProvider = normalizeLlmProvider(explicitPP);
-				pModel = ""; // will skip precheck below
-			}
-
-			// Precheck: ensure source + rated songs have personas before starting
-			if (pModel) {
-				const likedSongDocs = songs.filter(
-					(s) => s.userRating && !s.personaExtract && s.title,
-				);
-				const songsNeedingPersona = [sourceSong, ...likedSongDocs].filter(
-					(s) => s.userRating && !s.personaExtract && s.title,
-				);
-				if (songsNeedingPersona.length > 0) {
-					const precheckPromises = songsNeedingPersona.map((s) =>
-						fetch("/api/autoplayer/extract-persona", {
-							method: "POST",
-							headers: { "Content-Type": "application/json" },
-							body: JSON.stringify({
-								song: {
-									title: s.title,
-									artistName: s.artistName,
-									genre: s.genre,
-									subGenre: s.subGenre,
-									mood: s.mood,
-									energy: s.energy,
-									era: s.era,
-									vocalStyle: s.vocalStyle,
-									instruments: s.instruments,
-									themes: s.themes,
-									description: s.description,
-									lyrics: s.lyrics?.slice(0, 500),
-								},
-								provider: pProvider,
-								model: pModel,
-							}),
-						})
-							.then(async (res) => {
-								if (!res.ok) return null;
-								const data = await res.json();
-								if (data.persona) {
-									await updatePersonaExtract({
-										id: s.id as Parameters<
-											typeof updatePersonaExtract
-										>[0]["id"],
-										personaExtract: data.persona,
-									});
+			ws.onmessage = (event) => {
+				try {
+					const payload = JSON.parse(event.data) as Partial<RadioSnapshot> & {
+						type?: string;
+					};
+					if (payload.station && payload.schedule) {
+						const currentSong = payload.currentSong
+							? {
+									...payload.currentSong,
+									audioUrl: resolveApiMediaUrl(payload.currentSong.audioUrl),
+									cover: payload.currentSong.cover
+										? {
+												pngUrl: resolveApiMediaUrl(
+													payload.currentSong.cover.pngUrl,
+												),
+												webpUrl: resolveApiMediaUrl(
+													payload.currentSong.cover.webpUrl,
+												),
+												jxlUrl: resolveApiMediaUrl(
+													payload.currentSong.cover.jxlUrl,
+												),
+											}
+										: null,
 								}
-								return data.persona;
-							})
-							.catch(() => null),
-					);
-					await Promise.allSettled(precheckPromises);
-				}
-			}
-
-			const likedSongs = songs
-				.filter((s) => s.userRating === "up" && s.title)
-				.map((s) => ({
-					title: s.title as string,
-					artistName: s.artistName as string,
-					genre: s.genre as string,
-					mood: s.mood,
-					vocalStyle: s.vocalStyle,
-				}));
-
-			// Gather persona extracts from current-epoch liked songs
-			const personaExtracts = songs
-				.filter(
-					(s) =>
-						s.userRating === "up" &&
-						s.personaExtract &&
-						(s.promptEpoch ?? 0) === currentEpoch,
-				)
-				.map((s) => s.personaExtract as string);
-
-			// Gather persona extracts from down-voted songs (avoid patterns)
-			const avoidPersonaExtracts = songs
-				.filter(
-					(s) =>
-						s.userRating === "down" &&
-						s.personaExtract &&
-						(s.promptEpoch ?? 0) === currentEpoch,
-				)
-				.map((s) => s.personaExtract as string);
-
-			const maxOrder = songs.reduce(
-				(max, s) => Math.max(max, s.orderIndex ?? 0),
-				0,
-			);
-			const epoch = playlist.promptEpoch ?? 0;
-
-			const previousAlbumTracks: GeneratedSongMetadata[] = [];
-			let completed = 0;
-
-			for (
-				let batchStart = 0;
-				batchStart < TOTAL_TRACKS;
-				batchStart += BATCH_SIZE
-			) {
-				if (abortController.signal.aborted) break;
-
-				const batchCount = Math.min(BATCH_SIZE, TOTAL_TRACKS - batchStart);
-				const batchPromises = Array.from({ length: batchCount }, (_, i) => {
-					const trackNumber = batchStart + i + 1;
-					return fetch("/api/autoplayer/generate-album-track", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							playlistPrompt: playlist.prompt,
-							provider: playlist.llmProvider,
-							model: playlist.llmModel,
-							sourceSong: {
-								title: sourceSong.title,
-								artistName: sourceSong.artistName,
-								genre: sourceSong.genre,
-								subGenre: sourceSong.subGenre,
-								mood: sourceSong.mood,
-								energy: sourceSong.energy,
-								era: sourceSong.era,
-								bpm: sourceSong.bpm,
-								keyScale: sourceSong.keyScale,
-								vocalStyle: sourceSong.vocalStyle,
-								instruments: sourceSong.instruments,
-								themes: sourceSong.themes,
-								description: sourceSong.description,
-								lyrics: sourceSong.lyrics,
-							},
-							likedSongs,
-							personaExtracts:
-								personaExtracts.length > 0 ? personaExtracts : undefined,
-							avoidPersonaExtracts:
-								avoidPersonaExtracts.length > 0
-									? avoidPersonaExtracts
-									: undefined,
-							previousAlbumTracks,
-							trackNumber,
-							totalTracks: TOTAL_TRACKS,
-							lyricsLanguage: playlist.lyricsLanguage,
-							targetKey: playlist.targetKey,
-							timeSignature: playlist.timeSignature,
-							audioDuration: playlist.audioDuration,
-						}),
-						signal: abortController.signal,
-					}).then(async (res) => {
-						if (!res.ok) throw new Error(await res.text());
-						const metadata = (await res.json()) as GeneratedSongMetadata;
-						await createMetadataReady({
-							playlistId,
-							orderIndex: maxOrder + batchStart + i + 1,
-							promptEpoch: epoch,
-							title: metadata.title,
-							artistName: metadata.artistName,
-							genre: metadata.genre,
-							subGenre: metadata.subGenre,
-							lyrics: metadata.lyrics,
-							caption: metadata.caption,
-							coverPrompt: metadata.coverPrompt,
-							bpm: metadata.bpm,
-							keyScale: metadata.keyScale,
-							timeSignature: metadata.timeSignature,
-							audioDuration: metadata.audioDuration,
-							vocalStyle: metadata.vocalStyle,
-							mood: metadata.mood,
-							energy: metadata.energy,
-							era: metadata.era,
-							instruments: metadata.instruments,
-							tags: metadata.tags,
-							themes: metadata.themes,
-							language: metadata.language,
-							description: metadata.description,
+							: null;
+						onSnapshot({
+							station: payload.station,
+							currentSong,
+							schedule: payload.schedule.map((item) => ({
+								...item,
+								audioUrl: resolveApiMediaUrl(item.audioUrl),
+							})),
 						});
-						completed++;
-						setAlbumProgress({ current: completed, total: TOTAL_TRACKS });
-						return metadata;
-					});
-				});
-
-				const results = await Promise.allSettled(batchPromises);
-				for (const r of results) {
-					if (r.status === "fulfilled") {
-						previousAlbumTracks.push(r.value);
 					}
+				} catch {
+					// Ignore non-state messages.
 				}
-			}
-		} finally {
-			setAlbumGenerating(false);
-			setAlbumSourceTitle(null);
-			albumAbortRef.current = null;
+			};
+			ws.onclose = () => {
+				wsRef.current = null;
+				if (!disposed) reconnectTimer = setTimeout(connect, 1500);
+			};
+			ws.onerror = () => ws.close();
 		}
-	}, [
-		playlistId,
-		songs,
-		playlist,
-		currentSongId,
-		albumGenerating,
-		createMetadataReady,
-		settings,
-		updatePersonaExtract,
-	]);
 
-	// Graceful close: stop new generations, let current song finish
-	const handleClosePlaylist = useCallback(async () => {
-		if (!playlistId) return;
-		stopPlayback();
-		await updateStatus({ id: playlistId, status: "closing" });
-	}, [playlistId, updateStatus]);
+		connect();
+		return () => {
+			disposed = true;
+			if (reconnectTimer) clearTimeout(reconnectTimer);
+			wsRef.current?.close();
+		};
+	}, [onSnapshot, listenerId, rejoinRef]);
 
-	// Force close: close immediately — worker will cancel in-flight work
-	const handleForceClose = useCallback(async () => {
-		if (!playlistId) return;
-		stopPlayback();
-		await updateStatus({ id: playlistId, status: "closed" });
-	}, [playlistId, updateStatus]);
-
-	const handleSelectSong = useCallback(
-		(songId: string) => {
-			if (isRoomMode) {
-				roomController.selectSong(songId);
-				return;
+	const send = useCallback(
+		(payload: Record<string, unknown>) => {
+			const ws = wsRef.current;
+			if (ws?.readyState === WebSocket.OPEN) {
+				ws.send(JSON.stringify({ listenerId, ...payload }));
+				return true;
 			}
-			const song = songs?.find((s) => s.id === songId);
-			if (song?.audioUrl) {
-				dismissTransition();
-				setCurrentSong(songId);
-				loadAndPlay(song.audioUrl);
-			}
+			return false;
 		},
-		[isRoomMode, roomController, songs, loadAndPlay, dismissTransition],
+		[listenerId],
 	);
 
-	const handleReorder = useCallback(
-		async (songId: string, newOrderIndex: number) => {
-			if (!playlistId) return;
-			await reorderSong({ id: songId, newOrderIndex });
-			await reindexPlaylist({ playlistId });
+	return send;
+}
+
+function AutoplayerPage() {
+	const listenerId = useMemo(getListenerId, []);
+	const initialState = useRadioState();
+	const [snapshot, setSnapshot] = useState<RadioSnapshot | null>(null);
+	const [joined, setJoined] = useState(false);
+	const [localTime, setLocalTime] = useState(0);
+	const audioRef = useRef<HTMLAudioElement | null>(null);
+	const playRadio = useRadioPlay();
+	const pauseRadio = useRadioPause();
+	const skipRadio = useRadioSkip();
+	const feedbackRadio = useRadioFeedback();
+
+	// Mirror `joined` into a ref so the socket's reconnect handler can read the
+	// latest intent without re-subscribing the socket on every toggle.
+	const joinedRef = useRef(false);
+	joinedRef.current = joined;
+	const send = useRadioSocket(listenerId, setSnapshot, joinedRef);
+	const state = snapshot ?? initialState ?? null;
+	const currentSong = state?.currentSong ?? null;
+	const durationSeconds = (currentSong?.durationMs ?? 180_000) / 1000;
+	const progress =
+		durationSeconds > 0
+			? Math.min(100, (localTime / durationSeconds) * 100)
+			: 0;
+	const audioSrc = currentSong?.audioUrl
+		? resolveApiMediaUrl(currentSong.audioUrl)
+		: null;
+
+	useEffect(() => {
+		const audio = audioRef.current;
+		if (!audio || !audioSrc) return;
+		if (audio.src !== audioSrc) audio.src = audioSrc;
+		const target = (state?.station.offsetMs ?? 0) / 1000;
+		if (
+			Number.isFinite(target) &&
+			Math.abs(audio.currentTime - target) > 1.25
+		) {
+			audio.currentTime = target;
+		}
+		if (joined && state?.station.isPlaying) {
+			audio.play().catch(() => {});
+		} else {
+			audio.pause();
+		}
+	}, [audioSrc, joined, state?.station.isPlaying, state?.station.offsetMs]);
+
+	useEffect(() => {
+		const timer = setInterval(() => {
+			const audio = audioRef.current;
+			setLocalTime(audio?.currentTime ?? (state?.station.offsetMs ?? 0) / 1000);
+			if (joined) send({ type: "heartbeat" });
+		}, 1000);
+		return () => clearInterval(timer);
+	}, [joined, send, state?.station.offsetMs]);
+
+	const handlePlay = useCallback(async () => {
+		setJoined(true);
+		if (!send({ type: "play" })) {
+			setSnapshot(await playRadio({ listenerId }));
+		}
+	}, [listenerId, playRadio, send]);
+
+	const handlePause = useCallback(async () => {
+		setJoined(false);
+		audioRef.current?.pause();
+		if (!send({ type: "pause" })) {
+			setSnapshot(await pauseRadio({ listenerId }));
+		}
+	}, [listenerId, pauseRadio, send]);
+
+	const handleSkip = useCallback(async () => {
+		if (!send({ type: "skip" })) {
+			setSnapshot(await skipRadio({ listenerId }));
+		}
+	}, [listenerId, send, skipRadio]);
+
+	const handleFeedback = useCallback(
+		async (kind: "like" | "dislike") => {
+			if (!currentSong) return;
+			if (!send({ type: "feedback", songId: currentSong.id, kind })) {
+				setSnapshot(await feedbackRadio({ songId: currentSong.id, kind }));
+			}
 		},
-		[playlistId, reorderSong, reindexPlaylist],
+		[currentSong, feedbackRadio, send],
 	);
-
-	// Loading state while query resolves
-	if (pl && playlistByKey === undefined) {
-		return (
-			<div
-				className="font-mono min-h-screen bg-gray-950"
-				suppressHydrationWarning
-			/>
-		);
-	}
-
-	// No pl param or playlist not found — show creator
-	if (!pl || !playlistId) {
-		return (
-			<PlaylistCreator
-				onCreatePlaylist={handleCreatePlaylist}
-				onCreatePlaylistInRoom={handleCreatePlaylistInRoom}
-				onOpenSettings={() => navigate({ to: "/autoplayer/settings" })}
-				onOpenLibrary={() => navigate({ to: "/autoplayer/library" })}
-				onOpenOneshot={() => navigate({ to: "/autoplayer/oneshot" })}
-				onOpenHouse={() => navigate({ to: "/house" })}
-				onOpenPlaylists={() => navigate({ to: "/autoplayer/playlists" })}
-			/>
-		);
-	}
 
 	return (
-		<div className="font-mono min-h-screen bg-gray-950 text-white">
-			{/* HEADER */}
-			<header className="border-b-4 border-white/20 bg-black">
-				<div className="flex items-center justify-between px-4 py-3">
-					<div className="flex items-center gap-4">
-						<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-							INFINITUNE
-						</h1>
-						{isRoomMode ? (
-							<Badge className="rounded-none border-2 border-green-500/60 bg-green-500/10 font-mono text-xs text-green-400">
-								ROOM: {(name ?? room ?? "").toUpperCase()}
-								{" // "}
-								{roomRole.toUpperCase()}
-							</Badge>
-						) : (
-							<Badge className="rounded-none border-2 border-white/40 bg-transparent font-mono text-xs text-white/60">
-								V1.0
-							</Badge>
-						)}
+		<div className="min-h-screen bg-[#101213] text-stone-100">
+			{/* biome-ignore lint/a11y/useMediaCaption: generated music has no caption track */}
+			<audio ref={audioRef} preload="auto" src={audioSrc ?? undefined} />
+			<header className="border-b border-white/10 bg-black/70">
+				<div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+					<div className="flex items-center gap-3">
+						<div className="flex h-10 w-10 items-center justify-center border border-emerald-400/40 bg-emerald-400/10">
+							<Radio className="h-5 w-5 text-emerald-300" />
+						</div>
+						<div>
+							<h1 className="font-mono text-xl font-black uppercase tracking-[0.18em]">
+								Infinitune Radio
+							</h1>
+							<p className="font-mono text-xs uppercase tracking-[0.22em] text-white/40">
+								{state?.station.activeListenerCount ?? 0} active listeners
+							</p>
+						</div>
 					</div>
-					<div className="flex items-center gap-4">
-						<span className="hidden sm:inline text-xs uppercase tracking-widest text-white/30">
-							{isRoomMode ? (
-								<>
-									{roomConnection.connected ? (
-										<span className="text-green-400">CONNECTED</span>
-									) : (
-										<span className="text-red-500 animate-pulse">
-											DISCONNECTED
-										</span>
-									)}
-									{" | "}
-									DEVICES:{roomConnection.devices.length}
-									{" | "}
-									QUEUE:{songs?.length ?? 0}
-								</>
-							) : playlist?.status === "closing" ? (
-								<span className="text-yellow-500 animate-pulse">
-									CLOSING — FINISHING CURRENT SONG...
-								</span>
-							) : (
-								<>MODE:AUTO | QUEUE:{songs?.length ?? 0}</>
-							)}
-						</span>
-						{/* Desktop nav (md+) */}
-						<nav className="hidden md:flex items-center gap-4">
-							{isRoomMode && (
-								<button
-									type="button"
-									className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500 flex items-center gap-1"
-									onClick={() =>
-										navigate({
-											to: "/autoplayer/mini",
-											search: {
-												room,
-												role: roomRole,
-												pl,
-												name,
-												dn,
-											},
-										})
-									}
-								>
-									<Minimize2 className="h-3.5 w-3.5" />
-									[MINI]
-								</button>
-							)}
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-green-500 flex items-center gap-1"
-								onClick={() => navigate({ to: "/house" })}
-							>
-								<Radio className="h-3.5 w-3.5" />
-								[HOUSE]
-							</button>
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500 flex items-center gap-1"
-								onClick={() =>
-									navigate({
-										to: "/autoplayer/orchestrator",
-										search: (prev) => prev,
-									})
-								}
-							>
-								<MessageSquare className="h-3.5 w-3.5" />
-								[ORCHESTRATOR]
-							</button>
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-								onClick={() => {
-									stopPlayback();
-									navigate({
-										to: "/autoplayer/library",
-										search: (prev) => prev,
-									});
-								}}
-							>
-								[LIBRARY]
-							</button>
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-cyan-500"
-								onClick={() =>
-									navigate({
-										to: "/autoplayer/queue",
-										search: (prev) => prev,
-									})
-								}
-							>
-								[QUEUE]
-							</button>
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-								onClick={() =>
-									navigate({
-										to: "/autoplayer/settings",
-										search: (prev) => prev,
-									})
-								}
-							>
-								[SETTINGS]
-							</button>
-							<button
-								type="button"
-								className="font-mono text-sm font-bold uppercase text-white/60 hover:text-yellow-500"
-								onClick={handleClosePlaylist}
-							>
-								[CLOSE]
-							</button>
-							<button
-								type="button"
-								className={`font-mono text-sm font-bold uppercase transition-colors ${
-									forceCloseArmed
-										? "text-red-500 animate-pulse"
-										: "text-white/60 hover:text-red-500"
-								}`}
-								onClick={() => {
-									if (forceCloseArmed) {
-										handleForceClose();
-										setForceCloseArmed(false);
-										if (forceCloseTimerRef.current)
-											clearTimeout(forceCloseTimerRef.current);
-									} else {
-										setForceCloseArmed(true);
-										forceCloseTimerRef.current = setTimeout(
-											() => setForceCloseArmed(false),
-											2000,
-										);
-									}
-								}}
-							>
-								{forceCloseArmed ? "[CONFIRM FORCE CLOSE]" : "[FORCE CLOSE]"}
-							</button>
-						</nav>
-						{/* Mobile hamburger (< md) */}
-						<Sheet
-							open={mobileMenuOpen}
-							onOpenChange={(open) => {
-								setMobileMenuOpen(open);
-								if (!open) {
-									setForceCloseArmed(false);
-									if (forceCloseTimerRef.current)
-										clearTimeout(forceCloseTimerRef.current);
-								}
-							}}
+					<nav className="flex flex-wrap gap-2 font-mono text-xs font-black uppercase tracking-widest">
+						<Link
+							to="/autoplayer/library"
+							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
 						>
-							<SheetTrigger asChild>
-								<button
-									type="button"
-									aria-label="Open navigation menu"
-									className="md:hidden font-mono text-white/60 hover:text-white"
-								>
-									<Menu className="h-6 w-6" />
-								</button>
-							</SheetTrigger>
-							<SheetContent
-								side="right"
-								className="border-white/20 font-mono"
-								aria-describedby={undefined}
-							>
-								<SheetTitle className="text-white text-sm font-black uppercase tracking-wider px-6 pt-6">
-									NAVIGATION
-								</SheetTitle>
-								<nav className="flex flex-col gap-1 px-6 pt-4">
-									{isRoomMode && (
-										<button
-											type="button"
-											className="text-left text-sm font-bold uppercase text-white/60 hover:text-cyan-500 py-2 flex items-center gap-2"
-											onClick={() => {
-												setMobileMenuOpen(false);
-												navigate({
-													to: "/autoplayer/mini",
-													search: {
-														room,
-														role: roomRole,
-														pl,
-														name,
-														dn,
-													},
-												});
-											}}
-										>
-											<Minimize2 className="h-3.5 w-3.5" />
-											MINI
-										</button>
-									)}
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-green-500 py-2 flex items-center gap-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											navigate({ to: "/house" });
-										}}
-									>
-										<Radio className="h-3.5 w-3.5" />
-										HOUSE
-									</button>
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-red-500 py-2 flex items-center gap-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											navigate({
-												to: "/autoplayer/orchestrator",
-												search: (prev) => prev,
-											});
-										}}
-									>
-										<MessageSquare className="h-3.5 w-3.5" />
-										ORCHESTRATOR
-									</button>
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-blue-500 py-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											stopPlayback();
-											navigate({
-												to: "/autoplayer/library",
-												search: (prev) => prev,
-											});
-										}}
-									>
-										LIBRARY
-									</button>
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-cyan-500 py-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											navigate({
-												to: "/autoplayer/queue",
-												search: (prev) => prev,
-											});
-										}}
-									>
-										QUEUE
-									</button>
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-red-500 py-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											navigate({
-												to: "/autoplayer/settings",
-												search: (prev) => prev,
-											});
-										}}
-									>
-										SETTINGS
-									</button>
-									<div className="border-t border-white/10 my-2" />
-									<button
-										type="button"
-										className="text-left text-sm font-bold uppercase text-white/60 hover:text-yellow-500 py-2"
-										onClick={() => {
-											setMobileMenuOpen(false);
-											handleClosePlaylist();
-										}}
-									>
-										CLOSE PLAYLIST
-									</button>
-									<button
-										type="button"
-										className={`text-left text-sm font-bold uppercase py-2 transition-colors ${
-											forceCloseArmed
-												? "text-red-500 animate-pulse"
-												: "text-red-400 hover:text-red-500"
-										}`}
-										onClick={() => {
-											if (forceCloseArmed) {
-												setMobileMenuOpen(false);
-												handleForceClose();
-												setForceCloseArmed(false);
-												if (forceCloseTimerRef.current)
-													clearTimeout(forceCloseTimerRef.current);
-											} else {
-												setForceCloseArmed(true);
-												forceCloseTimerRef.current = setTimeout(
-													() => setForceCloseArmed(false),
-													2000,
-												);
-											}
-										}}
-									>
-										{forceCloseArmed ? "CONFIRM FORCE CLOSE" : "FORCE CLOSE"}
-									</button>
-								</nav>
-							</SheetContent>
-						</Sheet>
-					</div>
+							Library
+						</Link>
+						<Link
+							to="/autoplayer/queue"
+							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+						>
+							Queue
+						</Link>
+						<Link
+							to="/autoplayer/orchestrator"
+							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+						>
+							Phone Line
+						</Link>
+						<Link
+							to="/autoplayer/oneshot"
+							className="border border-yellow-500/30 px-3 py-2 text-yellow-500/70 hover:border-yellow-500/70 hover:text-yellow-400"
+						>
+							Oneshot
+						</Link>
+						<Link
+							to="/autoplayer/reimagine"
+							className="border border-fuchsia-500/30 px-3 py-2 text-fuchsia-400/70 hover:border-fuchsia-500/70 hover:text-fuchsia-400"
+						>
+							Reimagine
+						</Link>
+						<Link
+							to="/autoplayer/sources"
+							className="border border-sky-500/30 px-3 py-2 text-sky-400/70 hover:border-sky-500/70 hover:text-sky-400"
+						>
+							Sources
+						</Link>
+						<Link
+							to="/autoplayer/settings"
+							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+						>
+							Settings
+						</Link>
+					</nav>
 				</div>
 			</header>
 
-			{/* AUTOPLAY UNLOCK BANNER (room player only) */}
-			{isRoomMode && roomRole === "player" && roomPlayer.needsUnlock && (
-				<div className="border-b-4 border-yellow-500/30 bg-yellow-950/40 px-6 py-4 text-center cursor-pointer hover:bg-yellow-900/40 transition-colors">
-					<p className="font-mono text-sm font-black uppercase text-yellow-300 animate-pulse">
-						CLICK ANYWHERE TO START AUDIO PLAYBACK
-					</p>
-					<p className="font-mono text-[10px] font-bold uppercase text-yellow-500/60 mt-1">
-						BROWSER REQUIRES USER INTERACTION BEFORE PLAYING AUDIO
-					</p>
-				</div>
-			)}
+			<main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(280px,440px)_1fr]">
+				<RadioCover song={currentSong} />
 
-			{/* NOW PLAYING / DEVICE CONTROL + RIGHT PANEL */}
-			<div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] border-b-4 border-white/20">
-				<div className="border-b-4 md:border-b-0 md:border-r-4 border-white/20">
-					{isRoomMode && roomRole === "controller" ? (
-						<DeviceControlPanel
-							devices={roomConnection.devices}
-							playback={roomConnection.playback}
-							currentSong={roomConnection.currentSong}
-							onToggle={toggle}
-							onSkip={skipToNext}
-							onRate={
-								currentSongId
-									? (rating) => rateSong(currentSongId, rating)
-									: undefined
-							}
-							onSetVolume={roomController.setVolume}
-							onSetDeviceVolume={roomController.setDeviceVolume}
-							onToggleDevicePlay={roomController.toggleDevicePlay}
-							onSyncAll={roomController.syncAll}
-							onRenameDevice={roomController.renameDevice}
-							onResetDeviceToDefault={roomController.resetDeviceToDefault}
-							onSeek={roomController.seek}
-						/>
-					) : (
-						<NowPlaying
-							song={currentSong}
-							onToggle={toggle}
-							onSkip={skipToNext}
-							onSeek={seek}
-							onRate={(rating) => {
-								if (currentSongId) {
-									rateSong(currentSongId, rating);
-								}
-							}}
-							{...(isRoomMode
-								? {
-										playbackOverride: {
-											isPlaying: roomConnection.playback.isPlaying,
-											currentTime: roomConnection.playback.currentTime,
-											duration: roomConnection.playback.duration,
-											volume: roomConnection.playback.volume,
-											isMuted: roomConnection.playback.isMuted,
-										},
-										onSetVolume: roomController.setVolume,
-										onToggleMute: roomController.toggleMute,
-									}
-								: {})}
-						/>
-					)}
-				</div>
-				<div className="flex flex-col bg-gray-950 overflow-y-auto">
-					{playlist && <GenerationControls playlist={playlist} />}
-					<QuickRequest
-						onRequest={requestSong}
-						disabled={!playlist || playlist.status !== "active"}
-						provider={playlist?.llmProvider as LlmProvider | undefined}
-						model={playlist?.llmModel}
-					/>
-					{/* Action buttons */}
-					<div className="flex gap-3 px-6 pb-6">
-						<AlbumButton
-							generating={albumGenerating}
-							enabled={
-								!!currentSongId && !!currentSong?.title && !albumGenerating
-							}
-							progress={albumProgress}
-							onClick={handleAddAlbum}
-						/>
-						<Button
-							className="flex-1 h-10 rounded-none border-2 border-white/20 bg-red-500 font-mono text-xs font-black uppercase text-white hover:bg-white hover:text-black hover:border-white"
-							onClick={handleAddBatch}
-							disabled={!playlistId || !songs}
+				<section className="min-w-0">
+					<div className="border border-white/10 bg-[#171a1b] p-5">
+						<div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+							<div className="min-w-0">
+								<p className="font-mono text-xs font-black uppercase tracking-[0.24em] text-emerald-300">
+									Global synced station
+								</p>
+								<h2 className="mt-2 break-words text-3xl font-black uppercase leading-none tracking-normal text-white sm:text-4xl md:text-6xl">
+									{currentSong?.title ?? "Waiting for signal"}
+								</h2>
+								<p className="mt-2 break-words font-mono text-sm uppercase tracking-[0.2em] text-white/45">
+									{currentSong?.artistName ?? "No ready radio song yet"}
+								</p>
+							</div>
+							<div className="border border-white/10 px-3 py-2 text-right font-mono">
+								<div className="text-2xl font-black text-amber-300">3:00</div>
+								<div className="text-[10px] uppercase tracking-[0.2em] text-white/35">
+									fixed
+								</div>
+							</div>
+						</div>
+
+						<div className="mb-5">
+							<div className="mb-2 flex justify-between font-mono text-xs text-white/45">
+								<span>{formatTime(localTime)}</span>
+								<span>{formatTime(durationSeconds)}</span>
+							</div>
+							<div className="h-2 border border-white/15 bg-black">
+								<div
+									className="h-full bg-amber-300"
+									style={{ width: `${progress}%` }}
+								/>
+							</div>
+						</div>
+
+						<div className="flex flex-wrap items-center gap-2">
+							<Button
+								onClick={joined ? handlePause : handlePlay}
+								className="h-12 rounded-none bg-emerald-300 px-6 font-mono font-black uppercase text-black hover:bg-emerald-200"
+							>
+								{joined ? (
+									<Pause className="mr-2 h-5 w-5" />
+								) : (
+									<Play className="mr-2 h-5 w-5" />
+								)}
+								{joined ? "Pause" : "Play"}
+							</Button>
+							<Button
+								variant="outline"
+								onClick={handleSkip}
+								className="h-12 rounded-none border-white/20 bg-transparent px-4 font-mono font-black uppercase text-white hover:bg-white hover:text-black"
+							>
+								<SkipForward className="mr-2 h-5 w-5" />
+								Skip
+							</Button>
+							<Button
+								variant="outline"
+								onClick={() => handleFeedback("like")}
+								disabled={!currentSong}
+								className="h-12 rounded-none border-white/20 bg-transparent px-4 font-mono font-black uppercase text-white hover:bg-white hover:text-black"
+							>
+								<Heart className="mr-2 h-5 w-5" />
+								{currentSong?.likeCount ?? 0}
+							</Button>
+							<Button
+								variant="outline"
+								onClick={() => handleFeedback("dislike")}
+								disabled={!currentSong}
+								className="h-12 rounded-none border-white/20 bg-transparent px-4 font-mono font-black uppercase text-white hover:bg-white hover:text-black"
+							>
+								<ThumbsDown className="mr-2 h-5 w-5" />
+								{currentSong?.dislikeCount ?? 0}
+							</Button>
+						</div>
+					</div>
+
+					<div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+						<Link
+							to="/autoplayer/orchestrator"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-emerald-300/50"
 						>
-							<Plus className="h-3.5 w-3.5 mr-1.5" />
-							ADD 5 MORE
-						</Button>
-					</div>
-				</div>
-			</div>
-
-			{/* ALBUM PROGRESS BANNER */}
-			{albumGenerating && (
-				<div className="border-b-4 border-purple-500/30 bg-purple-950/40 px-6 py-3">
-					<div className="flex items-center justify-between mb-2">
-						<span className="font-mono text-xs font-black uppercase text-purple-300 flex items-center gap-2">
-							<Disc3 className="h-3.5 w-3.5 animate-spin" />
-							GENERATING ALBUM FROM{" "}
-							{albumSourceTitle ? `"${albumSourceTitle}"` : "..."}
-						</span>
-						<span className="font-mono text-xs font-bold uppercase text-purple-400">
-							{albumProgress.current} / {albumProgress.total} TRACKS
-						</span>
-					</div>
-					<div className="h-2 w-full bg-purple-900/50 overflow-hidden">
-						<div
-							className="h-full bg-purple-500 transition-all duration-300"
-							style={{
-								width: `${albumProgress.total > 0 ? (albumProgress.current / albumProgress.total) * 100 : 0}%`,
-							}}
-						/>
-					</div>
-				</div>
-			)}
-
-			{/* GENERATION BANNER */}
-			{songs && <GenerationBanner songs={songs} />}
-
-			{/* UP NEXT BANNER */}
-			{songs && playlist && (
-				<UpNextBanner
-					songs={songs}
-					currentSongId={currentSongId}
-					playlist={playlist}
-					transitionComplete={transitionComplete}
-				/>
-			)}
-
-			{/* QUEUE GRID */}
-			{songs && songs.length > 0 && (
-				<QueueGrid
-					songs={songs}
-					currentSongId={currentSongId}
-					playlistEpoch={playlistEpoch}
-					transitionComplete={transitionComplete}
-					onSelectSong={handleSelectSong}
-					onOpenDetail={setDetailSongId}
-					onRate={rateSong}
-					onReorder={handleReorder}
-				/>
-			)}
-
-			{/* FOOTER */}
-			<footer className="bg-black px-4 py-2 border-t border-white/10">
-				<div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wider text-white/40 justify-between">
-					<span className="hidden sm:inline">
-						{"INFINITUNE V1.0 // INFINITE GENERATIVE MUSIC"}
-					</span>
-					<span className="flex items-center gap-3">
-						<EndpointDot label="LLM" status={workerStatus?.queues.llm} />
-						<EndpointDot label="IMG" status={workerStatus?.queues.image} />
-						<EndpointDot label="AUD" status={workerStatus?.queues.audio} />
-					</span>
-					<span className="flex items-center gap-2">
-						<VinylIcon size={12} />
-						{songs?.length ?? 0} {"TRACKS // "}
-						{songs?.filter((s) => s.status === "ready" || s.status === "played")
-							.length ?? 0}{" "}
-						{"READY"}
-					</span>
-					<span className="hidden md:flex items-center gap-2">
-						<span className="text-cyan-300">
-							LYRICS {pipelineTruth.lyricsInProgress}
-						</span>
-						<span className="text-white/20">{"("}</span>
-						<span className="text-green-400">
-							LLM {pipelineTruth.lyricsInQueue}
-						</span>
-						<span
-							className={
-								pipelineTruth.lyricsPreQueue > 0
-									? "text-yellow-400"
-									: "text-white/30"
-							}
-						>
-							PRE {pipelineTruth.lyricsPreQueue}
-						</span>
-						<span className="text-white/20">{")"}</span>
-						<span className="text-amber-300">
-							AUDIO {pipelineTruth.audioInProgress}
-						</span>
-						{pipelineTruth.personaLlmJobs > 0 && (
-							<span className="text-pink-400">
-								PERSONA {pipelineTruth.personaLlmJobs}
+							<MessageSquareText className="h-5 w-5 text-emerald-300" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Request
 							</span>
-						)}
-					</span>
-					<span className="animate-pulse text-red-500">[LIVE]</span>
-				</div>
-			</footer>
+						</Link>
+						<Link
+							to="/autoplayer/oneshot"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-yellow-500/50"
+						>
+							<Zap className="h-5 w-5 text-yellow-500" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Oneshot
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/reimagine"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-fuchsia-500/50"
+						>
+							<Sparkles className="h-5 w-5 text-fuchsia-400" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Reimagine
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/queue"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-amber-300/50"
+						>
+							<ListMusic className="h-5 w-5 text-amber-300" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Airing Plan
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/sources"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-sky-400/50"
+						>
+							<HardDriveDownload className="h-5 w-5 text-sky-400" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Sources
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/settings"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-sky-300/50"
+						>
+							<Settings className="h-5 w-5 text-sky-300" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Inventory
+							</span>
+						</Link>
+					</div>
 
-			{/* TRACK DETAIL */}
-			{detailSongId &&
-				songs &&
-				(() => {
-					const detailSong = songs.find((s) => s.id === detailSongId);
-					if (!detailSong) return null;
-					return (
-						<TrackDetail
-							song={detailSong}
-							onClose={() => setDetailSongId(null)}
-						/>
-					);
-				})()}
+					<section className="mt-6 border border-white/10 bg-black/30">
+						<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+							Radio airing plan
+						</div>
+						<div className="divide-y divide-white/10">
+							{state?.schedule.slice(0, 10).map((item) => (
+								<div
+									key={`${item.slotIndex}-${item.songId}`}
+									className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-4 py-3"
+								>
+									<div className="font-mono text-xs text-white/35">
+										{String(item.slotIndex + 1).padStart(2, "0")}
+									</div>
+									<div className="min-w-0">
+										<div className="truncate text-sm font-bold uppercase text-white">
+											{item.title ?? "Untitled"}
+										</div>
+										<div className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
+											{item.albumTitle ?? "Radio album"} /{" "}
+											{item.genre ?? "genre"} / {item.vocalStyle ?? "vocal"}
+										</div>
+									</div>
+									{item.isRequest && (
+										<span className="border border-emerald-300/40 px-2 py-1 font-mono text-[10px] font-black uppercase text-emerald-200">
+											Request
+										</span>
+									)}
+								</div>
+							))}
+							{!state?.schedule.length && (
+								<div className="px-4 py-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
+									No ready radio tracks
+								</div>
+							)}
+						</div>
+					</section>
+				</section>
+			</main>
+
+			<footer className="mx-auto max-w-7xl px-4 pb-6 font-mono text-[10px] uppercase tracking-[0.2em] text-white/25">
+				API {API_URL}
+			</footer>
 		</div>
 	);
 }

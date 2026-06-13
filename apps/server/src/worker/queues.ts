@@ -1,3 +1,4 @@
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import type { AcePollResult } from "../external/ace";
 import { CODEX_LLM_CONCURRENCY } from "../external/codex-config";
 import type {
@@ -10,14 +11,13 @@ import { AudioQueue, RequestResponseQueue } from "./runtime/queue-actors";
 // ─── Concurrency defaults by provider ────────────────────────────────
 const LLM_CONCURRENCY: Record<string, number> = {
 	"openai-codex": CODEX_LLM_CONCURRENCY,
-	anthropic: 20,
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {
-	comfyui: 1,
 	"inference-sh": 3,
 	"codex-imagegen": 1,
 };
+const DEFAULT_AUDIO_CONCURRENCY = 12;
 
 // ─── Cover generation result ─────────────────────────────────────────
 export interface CoverResult {
@@ -39,9 +39,9 @@ export class EndpointQueues {
 		);
 		this.image = new RequestResponseQueue<CoverResult>(
 			"image",
-			IMAGE_CONCURRENCY.comfyui,
+			IMAGE_CONCURRENCY["inference-sh"],
 		);
-		this.audio = new AudioQueue(pollFn);
+		this.audio = new AudioQueue(pollFn, DEFAULT_AUDIO_CONCURRENCY);
 	}
 
 	get(type: EndpointType): IEndpointQueue<unknown> {
@@ -56,21 +56,21 @@ export class EndpointQueues {
 	}
 
 	/** Update concurrency based on current provider settings */
-	refreshAll(settings: { textProvider: string; imageProvider: string }): void {
+	refreshAll(settings: {
+		textProvider: string;
+		imageProvider: string;
+		aceQueueDepth?: number;
+	}): void {
 		const llmConcurrency =
 			LLM_CONCURRENCY[settings.textProvider] || LLM_CONCURRENCY["openai-codex"];
-		const imageProvider =
-			settings.imageProvider === "ollama"
-				? "comfyui"
-				: settings.imageProvider === "openrouter"
-					? "inference-sh"
-					: settings.imageProvider;
-		const imageConcurrency =
-			IMAGE_CONCURRENCY[imageProvider] || IMAGE_CONCURRENCY.comfyui;
+		const imageProvider = normalizeImageProvider(settings.imageProvider);
+		const imageConcurrency = IMAGE_CONCURRENCY[imageProvider];
 
 		this.llm.refreshConcurrency(llmConcurrency);
 		this.image.refreshConcurrency(imageConcurrency);
-		// Audio submit concurrency is always 1
+		this.audio.refreshConcurrency(
+			settings.aceQueueDepth ?? DEFAULT_AUDIO_CONCURRENCY,
+		);
 	}
 
 	cancelAllForSong(songId: string): void {

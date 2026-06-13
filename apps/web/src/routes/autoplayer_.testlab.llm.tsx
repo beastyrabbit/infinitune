@@ -1,7 +1,4 @@
-import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
-	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-} from "@infinitune/shared/text-llm-profile";
+import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -33,23 +30,15 @@ interface Generation {
 const PROMPT_FIELD_ID = "llm-test-prompt";
 const MODEL_FIELD_ID = "llm-test-model";
 
-function defaultModelForProvider(
-	provider: "openai-codex" | "anthropic",
-	configuredModel: string | undefined,
-): string {
+function defaultModelForProvider(configuredModel: string | undefined): string {
 	const model = configuredModel?.trim() ?? "";
-	if (provider === "anthropic") {
-		return model.startsWith("claude-") ? model : DEFAULT_ANTHROPIC_TEXT_MODEL;
-	}
 	return model.startsWith("gpt-") ? model : DEFAULT_OPENAI_CODEX_TEXT_MODEL;
 }
 
 function LlmTestPage() {
 	const settings = useSettings();
-	const [provider, setProvider] = useState<"openai-codex" | "anthropic">(
-		"openai-codex",
-	);
-	const codexModels = useCodexTextModels(provider === "openai-codex") ?? [];
+	const provider = "openai-codex";
+	const codexModels = useCodexTextModels(true) ?? [];
 	const promptContract = useAutoplayerPromptContract();
 
 	const [prompt, setPrompt] = useState("upbeat electronic dance music");
@@ -58,34 +47,22 @@ function LlmTestPage() {
 	const [generations, setGenerations] = useState<Generation[]>([]);
 	const [expandedId, setExpandedId] = useState<number | null>(null);
 
-	// Sync provider/model from settings
+	// Sync model from settings
 	useEffect(() => {
 		if (settings) {
-			const p =
-				settings.textProvider === "anthropic" ? "anthropic" : "openai-codex";
-			setProvider(p);
-			setModel(defaultModelForProvider(p, settings.textModel));
+			setModel(defaultModelForProvider(settings.textModel));
 		}
 	}, [settings]);
 
 	useEffect(() => {
-		if (provider === "openai-codex") {
-			if (codexModels.length === 0) return;
-			setModel((current) => {
-				if (current && codexModels.some((item) => item.name === current)) {
-					return current;
-				}
-				return codexModels[0].name;
-			});
-			return;
-		}
-
-		setModel((current) =>
-			current && !current.startsWith("gpt-")
-				? current
-				: DEFAULT_ANTHROPIC_TEXT_MODEL,
-		);
-	}, [provider, codexModels]);
+		if (codexModels.length === 0) return;
+		setModel((current) => {
+			if (current && codexModels.some((item) => item.name === current)) {
+				return current;
+			}
+			return codexModels[0].name;
+		});
+	}, [codexModels]);
 
 	const handleGenerate = useCallback(async () => {
 		setIsRunning(true);
@@ -168,7 +145,7 @@ function LlmTestPage() {
 		} finally {
 			setIsRunning(false);
 		}
-	}, [provider, model, prompt]);
+	}, [model, prompt]);
 
 	return (
 		<div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -202,39 +179,8 @@ function LlmTestPage() {
 								<legend className="text-xs font-bold uppercase text-white/40 mb-1 block">
 									Provider
 								</legend>
-								<div className="flex gap-2">
-									<button
-										type="button"
-										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-											provider === "openai-codex"
-												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-												: "border-white/10 text-white/40"
-										}`}
-										onClick={() => {
-											setProvider("openai-codex");
-											setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-										}}
-										disabled={isRunning}
-										aria-pressed={provider === "openai-codex"}
-									>
-										OpenAI Codex
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-											provider === "anthropic"
-												? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-												: "border-white/10 text-white/40"
-										}`}
-										onClick={() => {
-											setProvider("anthropic");
-											setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
-										}}
-										disabled={isRunning}
-										aria-pressed={provider === "anthropic"}
-									>
-										Anthropic
-									</button>
+								<div className="flex h-8 items-center border-4 border-yellow-500 bg-yellow-500/10 px-3 font-mono text-[10px] font-black uppercase text-yellow-500">
+									OpenAI Codex
 								</div>
 							</fieldset>
 						</div>
@@ -246,7 +192,7 @@ function LlmTestPage() {
 							>
 								Model
 							</label>
-							{provider === "openai-codex" && codexModels.length > 0 ? (
+							{codexModels.length > 0 ? (
 								<select
 									id={MODEL_FIELD_ID}
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
@@ -266,11 +212,7 @@ function LlmTestPage() {
 									className="w-full h-8 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs text-white px-2 focus:outline-none focus:border-yellow-500"
 									value={model}
 									onChange={(e) => setModel(e.target.value)}
-									placeholder={
-										provider === "openai-codex"
-											? DEFAULT_OPENAI_CODEX_TEXT_MODEL
-											: DEFAULT_ANTHROPIC_TEXT_MODEL
-									}
+									placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL}
 									disabled={isRunning}
 								/>
 							)}
@@ -316,10 +258,7 @@ function LlmTestPage() {
 						data={promptContract?.schema ?? "Loading from backend..."}
 					/>
 					<div className="mt-2 text-[10px] font-bold uppercase text-white/20">
-						Structured output:{" "}
-						{provider === "openai-codex"
-							? "Codex outputSchema (json_schema)"
-							: "Anthropic JSON schema"}
+						Structured output: Codex outputSchema (json_schema)
 					</div>
 				</div>
 			</section>

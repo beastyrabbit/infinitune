@@ -6,7 +6,6 @@ import {
 	normalizeAgentReasoningLevel,
 } from "@infinitune/shared/agent-reasoning";
 import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
@@ -24,7 +23,6 @@ type Provider = LlmProvider;
 
 const LIMITS: Record<Provider, number> = {
 	"openai-codex": CODEX_LLM_CONCURRENCY,
-	anthropic: 20,
 };
 
 interface Waiter {
@@ -83,7 +81,6 @@ class ProviderSemaphore {
 
 const semaphores: Record<Provider, ProviderSemaphore> = {
 	"openai-codex": new ProviderSemaphore(LIMITS["openai-codex"]),
-	anthropic: new ProviderSemaphore(LIMITS.anthropic),
 };
 
 // ---------------------------------------------------------------------------
@@ -91,15 +88,11 @@ const semaphores: Record<Provider, ProviderSemaphore> = {
 // ---------------------------------------------------------------------------
 
 async function resolveModelForProvider(
-	provider: Provider,
+	_provider: Provider,
 	model: string,
 ): Promise<string> {
 	const explicitModel = model.trim();
 	if (explicitModel) return explicitModel;
-
-	if (provider === "anthropic") {
-		return DEFAULT_ANTHROPIC_TEXT_MODEL;
-	}
 
 	return DEFAULT_OPENAI_CODEX_TEXT_MODEL;
 }

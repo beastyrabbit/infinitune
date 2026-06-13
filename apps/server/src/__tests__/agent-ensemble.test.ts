@@ -22,6 +22,7 @@ vi.mock("../external/pi-runtime", () => ({
 	promptInfinituneAgent: vi.fn().mockResolvedValue("Director reply"),
 }));
 
+import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import {
 	normalizeLlmProvider,
 	resolveTextLlmProfile,
@@ -95,10 +96,6 @@ describe("agent ensemble", () => {
 			expect(spec.modelPolicy.primary).toEqual({
 				provider: "openai-codex",
 				model: "gpt-5.2",
-			});
-			expect(spec.modelPolicy.fallback).toEqual({
-				provider: "anthropic",
-				model: "claude-sonnet-4-6",
 			});
 			expect(spec.outputSchema).toHaveProperty("type", "json-object");
 		}
@@ -304,13 +301,28 @@ describe("agent ensemble", () => {
 		});
 	});
 
+	it("normalizes old image providers to inference-sh", () => {
+		expect(normalizeImageProvider("comfyui")).toBe("inference-sh");
+		expect(normalizeImageProvider("ollama")).toBe("inference-sh");
+		expect(normalizeImageProvider("openrouter")).toBe("inference-sh");
+		expect(normalizeImageProvider("")).toBe("inference-sh");
+		expect(normalizeImageProvider("codex-imagegen")).toBe("codex-imagegen");
+	});
+
 	it("normalizes old text providers to openai-codex", () => {
 		expect(normalizeLlmProvider("ollama")).toBe("openai-codex");
 		expect(normalizeLlmProvider("openrouter")).toBe("openai-codex");
+		expect(normalizeLlmProvider("anthropic")).toBe("openai-codex");
 		expect(resolveTextLlmProfile({ provider: "ollama", model: "" })).toEqual({
 			provider: "openai-codex",
 			model: "gpt-5.2",
 		});
+		expect(resolveTextLlmProfile({ provider: "anthropic", model: "" })).toEqual(
+			{
+				provider: "openai-codex",
+				model: "gpt-5.2",
+			},
+		);
 	});
 
 	it("only required director questions block generation state", async () => {

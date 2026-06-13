@@ -139,7 +139,7 @@ function parseProvider(value: unknown): AutoplayerProvider | undefined {
 		value === "ollama" ||
 		value === "openrouter" ||
 		value === "openai-codex" ||
-		value === "anthropic"
+		value === "anthropic" // legacy value, normalizes to openai-codex
 	) {
 		return normalizeLlmProvider(value);
 	}
@@ -1248,30 +1248,6 @@ app.post("/test-connection", async (c) => {
 				ok: true,
 				message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
 			});
-		}
-
-		if (provider === "anthropic") {
-			return c.json({
-				ok: true,
-				message: "Anthropic text generation is managed by Pi auth storage",
-			});
-		}
-
-		if (provider === "comfyui") {
-			const response = await fetch(`${urls.comfyuiUrl}/system_stats`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) {
-				logger.warn(
-					{ provider: "comfyui", status: response.status },
-					"Connection test failed",
-				);
-				return c.json({
-					ok: false,
-					error: `ComfyUI returned ${response.status}`,
-				});
-			}
-			return c.json({ ok: true, message: "Connected to ComfyUI" });
 		}
 
 		if (provider === "ace-step") {

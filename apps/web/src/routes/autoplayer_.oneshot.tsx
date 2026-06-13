@@ -1,38 +1,19 @@
-import {
-	ACE_DCW_DEFAULTS,
-	normalizeAceDcwScaler,
-	parseBooleanSetting,
-	resolveAceModelSetting,
-} from "@infinitune/shared/ace-settings";
-import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
-	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-	DEFAULT_TEXT_PROVIDER,
-	normalizeLlmProvider,
-} from "@infinitune/shared/text-llm-profile";
-import type { LlmProvider } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import {
 	AlertTriangle,
 	ArrowLeft,
-	BookOpen,
-	ChevronDown,
-	ChevronUp,
 	Download,
 	Pause,
 	Play,
 	RefreshCw,
-	Sparkles,
 	Volume2,
 	VolumeX,
 	Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -45,12 +26,9 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
-import { api, getRequestErrorMessage } from "@/integrations/api/client";
 import {
-	useAutoplayerCodexModels,
-	useCreatePlaylist,
+	useCreateRawOneshot,
 	usePlaylistByKey,
-	useSettings,
 } from "@/integrations/api/hooks";
 import { formatTime } from "@/lib/format-time";
 import {
@@ -69,85 +47,38 @@ import {
 import { STATUS_PROGRESS_TEXT } from "@/lib/song-status";
 
 export const Route = createFileRoute("/autoplayer_/oneshot")({
-	component: OneshotPage,
+	component: RawOneshotPage,
 	validateSearch: validatePlaylistKeySearch,
 });
 
-// ─── Constants ──────────────────────────────────────────────────────
-
-// Stored as constants to avoid TS/git merge-conflict-marker false positives
-const GENERATE_LABEL = "\u00BB\u00BB\u00BB GENERATE SONG \u00AB\u00AB\u00AB";
-const GENERATE_ANOTHER_LABEL =
-	"\u00BB\u00BB\u00BB GENERATE ANOTHER \u00AB\u00AB\u00AB";
-const DEFAULT_ENHANCE_TIMEOUT_MS = 15000;
-
-const LANGUAGES = [
-	{ value: "auto", label: "AUTO" },
-	{ value: "english", label: "ENGLISH" },
-	{ value: "german", label: "GERMAN" },
+const DURATION_OPTIONS = [
+	{ value: "60", label: "1:00" },
+	{ value: "120", label: "2:00" },
+	{ value: "180", label: "3:00" },
+	{ value: "240", label: "4:00" },
 ] as const;
 
-// ─── Main Component ─────────────────────────────────────────────────
+const GENERATE_LABEL = "»»» SEND TO ACE-STEP «««";
+const GENERATE_ANOTHER_LABEL = "»»» GENERATE ANOTHER «««";
 
-function OneshotPage() {
+function RawOneshotPage() {
 	const navigate = useNavigate();
 	const { pl } = Route.useSearch();
-	const createPlaylist = useCreatePlaylist();
-	const settings = useSettings();
+	const createRawOneshot = useCreateRawOneshot();
 
-	// Look up playlist by key from URL
+	// Restore an in-flight generation from the URL key
 	const playlistByKey = usePlaylistByKey(pl ?? null);
 	const playlistIdFromUrl = playlistByKey?.id ?? null;
-
-	// ── Local state ──
-	const [prompt, setPrompt] = useState("");
-	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
-	const [model, setModel] = useState(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-	const codexModels = useAutoplayerCodexModels() ?? [];
-	const [enhancing, setEnhancing] = useState(false);
-	const [generating, setGenerating] = useState(false);
-	const [advancedOpen, setAdvancedOpen] = useState(false);
-	const [lyricsOpen, setLyricsOpen] = useState(false);
 	const [localPlaylistId, setLocalPlaylistId] = useState<string | null>(null);
-
-	// Use URL-based playlist ID if available, otherwise local state
 	const playlistId = playlistIdFromUrl ?? localPlaylistId;
 
-	// Advanced settings — local state, passed to playlist create
-	const [language, setLanguage] = useState("auto");
-	const [bpm, setBpm] = useState("");
-	const [key, setKey] = useState("");
-	const [timeSig, setTimeSig] = useState("");
-	const [duration, setDuration_] = useState("");
-	const [steps, setSteps] = useState("8");
-	const [lmTemp, setLmTemp] = useState("0.85");
-	const [lmCfg, setLmCfg] = useState("2.5");
-	const [inferMeth, setInferMeth] = useState("ode");
-	const aceModel = resolveAceModelSetting(
-		settings?.aceModel,
-		settings?.aceModel !== undefined,
-	);
-	const aceDcwEnabled = parseBooleanSetting(
-		settings?.aceDcwEnabled,
-		ACE_DCW_DEFAULTS.enabled,
-	);
-	const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
-	const aceDcwScaler = normalizeAceDcwScaler(
-		settings?.aceDcwScaler,
-		ACE_DCW_DEFAULTS.scaler,
-	);
-	const aceDcwHighScaler = normalizeAceDcwScaler(
-		settings?.aceDcwHighScaler,
-		ACE_DCW_DEFAULTS.highScaler,
-	);
-	const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
+	const [lyrics, setLyrics] = useState("");
+	const [style, setStyle] = useState("");
+	const [duration, setDurationChoice] = useState("180");
+	const [submitting, setSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
 
-	const modelSetByUserOrSettings = useRef(false);
-
-	// ── Oneshot subscription ──
 	const { song, phase } = useOneshot(playlistId);
-
-	// ── Audio player ──
 	const { loadAndPlay, toggle, seek } = useAudioPlayer();
 	const {
 		isPlaying,
@@ -159,7 +90,7 @@ function OneshotPage() {
 	useVolumeSync();
 	usePlaylistHeartbeat(playlistId);
 
-	// Auto-play when song becomes ready
+	// Auto-play once the song is ready
 	const hasAutoPlayed = useRef(false);
 	useEffect(() => {
 		if (phase === "ready" && song?.audioUrl && !hasAutoPlayed.current) {
@@ -169,165 +100,38 @@ function OneshotPage() {
 		}
 	}, [phase, song, loadAndPlay]);
 
-	// ── Settings defaults ──
-	const settingsApplied = useRef(false);
-	useEffect(() => {
-		if (!settings || settingsApplied.current) return;
-		settingsApplied.current = true;
-		const configuredProvider = normalizeLlmProvider(settings.textProvider);
-		setProvider(configuredProvider);
-		if (settings.textModel) {
-			setModel(settings.textModel);
-		} else if (configuredProvider === "anthropic") {
-			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
-		} else {
-			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-		}
-		modelSetByUserOrSettings.current = true;
-	}, [settings]);
-
-	const codexTextModels = useMemo(
-		() =>
-			codexModels.filter(
-				(m) => m.type === "text" || m.inputModalities?.includes("text"),
-			),
-		[codexModels],
-	);
-
-	useEffect(() => {
-		if (provider === "openai-codex" && codexTextModels.length > 0) {
-			if (!codexTextModels.some((m) => m.name === model)) {
-				const preferred =
-					codexTextModels.find((m) => m.is_default) || codexTextModels[0];
-				setModel(preferred.name);
-			}
-			return;
-		}
-		if (provider === "openai-codex" && !model.trim()) {
-			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-			return;
-		}
-		if (provider === "anthropic" && !model.trim()) {
-			setModel(DEFAULT_ANTHROPIC_TEXT_MODEL);
-		}
-	}, [provider, model, codexTextModels]);
-
-	// ── Handlers ──
-	const handleEnhancePrompt = useCallback(async () => {
-		if (!prompt.trim() || !model.trim() || enhancing) return;
-		setEnhancing(true);
-		try {
-			const data = await api.post<{
-				result?: string;
-			}>(
-				"/api/autoplayer/enhance-prompt",
-				{ prompt: prompt.trim(), provider, model },
-				undefined,
-				{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
-			);
-			if (data.result) setPrompt(data.result);
-		} catch (error) {
-			console.warn(
-				`Oneshot enhance-prompt failed: ${getRequestErrorMessage(error)}`,
-			);
-		} finally {
-			setEnhancing(false);
-		}
-	}, [prompt, provider, model, enhancing]);
+	const generating =
+		submitting || phase === "creating" || phase === "generating";
 
 	const handleGenerate = useCallback(async () => {
-		if (!prompt.trim() || !model.trim() || generating) return;
-		setGenerating(true);
+		if (!lyrics.trim() || generating) return;
+		setSubmitting(true);
+		setSubmitError(null);
 		hasAutoPlayed.current = false;
 
 		try {
-			// Enhance playlist params
-			let playlistParams: Record<string, unknown> = {};
-			try {
-				playlistParams = await api.post<Record<string, unknown>>(
-					"/api/autoplayer/enhance-session",
-					{ prompt: prompt.trim(), provider, model },
-					undefined,
-					{ timeoutMs: DEFAULT_ENHANCE_TIMEOUT_MS },
-				);
-			} catch (error) {
-				console.warn(
-					`Oneshot enhance-session failed: ${getRequestErrorMessage(error)}`,
-				);
-			}
-
-			// Merge user overrides with AI params
-			const name = `[ONESHOT] ${prompt.trim().slice(0, 40)}`;
 			const playlistKey = generatePlaylistKey();
-			const result = await createPlaylist({
-				name,
-				prompt: prompt.trim(),
-				llmProvider: provider,
-				llmModel: model,
-				mode: "oneshot",
-				playlistKey: playlistKey,
-				lyricsLanguage:
-					language !== "auto"
-						? language
-						: (playlistParams.lyricsLanguage as string | undefined),
-				targetBpm: bpm
-					? Number.parseInt(bpm, 10)
-					: (playlistParams.targetBpm as number | undefined),
-				targetKey: key || (playlistParams.targetKey as string | undefined),
-				timeSignature:
-					timeSig || (playlistParams.timeSignature as string | undefined),
-				audioDuration: duration
-					? Number.parseInt(duration, 10)
-					: (playlistParams.audioDuration as number | undefined),
-				inferenceSteps: steps
-					? Number.parseInt(steps, 10)
-					: (playlistParams.inferenceSteps as number | undefined),
-				lmTemperature: lmTemp ? Number.parseFloat(lmTemp) : undefined,
-				lmCfgScale: lmCfg ? Number.parseFloat(lmCfg) : undefined,
-				inferMethod: inferMeth,
-				aceModel,
-				aceDcwEnabled,
-				aceDcwMode,
-				aceDcwScaler,
-				aceDcwHighScaler,
-				aceDcwWavelet,
+			const result = await createRawOneshot({
+				lyrics: lyrics.trim(),
+				style: style.trim(),
+				audioDuration: Number.parseInt(duration, 10),
+				playlistKey,
 			});
-			setLocalPlaylistId(result.id);
+			setLocalPlaylistId(result.playlist.id);
 			navigate({ to: "/autoplayer/oneshot", search: { pl: playlistKey } });
-		} catch {
-			// Fallback
+		} catch (error) {
+			setSubmitError(
+				error instanceof Error ? error.message : "Submission failed",
+			);
 		} finally {
-			setGenerating(false);
+			setSubmitting(false);
 		}
-	}, [
-		prompt,
-		provider,
-		model,
-		generating,
-		language,
-		bpm,
-		key,
-		timeSig,
-		duration,
-		steps,
-		lmTemp,
-		lmCfg,
-		inferMeth,
-		aceModel,
-		aceDcwEnabled,
-		aceDcwMode,
-		aceDcwScaler,
-		aceDcwHighScaler,
-		aceDcwWavelet,
-		createPlaylist,
-		navigate,
-	]);
+	}, [lyrics, style, duration, generating, createRawOneshot, navigate]);
 
 	const handleGenerateAnother = useCallback(() => {
 		setLocalPlaylistId(null);
-		setGenerating(false);
+		setSubmitError(null);
 		hasAutoPlayed.current = false;
-		setLyricsOpen(false);
 		navigate({ to: "/autoplayer/oneshot", search: {} });
 	}, [navigate]);
 
@@ -363,7 +167,7 @@ function OneshotPage() {
 	);
 
 	const isCurrentSong = song && playerStore.state.currentSongId === song.id;
-	const showOutput = phase !== "idle" || generating;
+	const showOutput = phase !== "idle" || submitting;
 	const progress =
 		audioDuration > 0 && isCurrentSong
 			? (currentTime / audioDuration) * 100
@@ -385,371 +189,104 @@ function OneshotPage() {
 						<div className="flex items-center gap-3">
 							<Zap className="h-5 w-5 text-yellow-500" />
 							<h1 className="text-3xl font-black tracking-tighter uppercase sm:text-5xl">
-								ONESHOT
+								RAW ONESHOT
 							</h1>
-							<Badge className="rounded-none border-2 border-yellow-500/40 bg-transparent font-mono text-xs text-yellow-500/60">
-								V1.0
-							</Badge>
 						</div>
 					</div>
-					<div className="flex items-center gap-4">
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-blue-500"
-							onClick={() =>
-								navigate({ to: "/autoplayer/library", search: (prev) => prev })
-							}
-						>
-							[LIBRARY]
-						</button>
-						<button
-							type="button"
-							className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
-							onClick={() =>
-								navigate({ to: "/autoplayer/settings", search: (prev) => prev })
-							}
-						>
-							[SETTINGS]
-						</button>
-					</div>
+					<button
+						type="button"
+						className="font-mono text-sm font-bold uppercase text-white/60 hover:text-red-500"
+						onClick={() =>
+							navigate({ to: "/autoplayer/settings", search: (prev) => prev })
+						}
+					>
+						[SETTINGS]
+					</button>
 				</div>
+				<p className="px-4 pb-3 text-[10px] font-bold uppercase tracking-widest text-yellow-500/50">
+					NO AI PROCESSING — YOUR TEXT GOES STRAIGHT INTO ACE-STEP
+				</p>
 			</header>
 
-			{/* ═══ MAIN CONTENT ═══ */}
+			{/* ═══ MAIN ═══ */}
 			<main className="flex-1 overflow-y-auto">
-				<div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-0">
-					{/* ─── INPUT SECTION ─── */}
+				<div className="max-w-3xl mx-auto p-4 sm:p-6">
+					{/* ─── INPUT ─── */}
 					<div className="border-4 border-yellow-500/20 bg-black">
-						{/* Card header */}
 						<div className="border-b-4 border-yellow-500/20 px-4 py-3 flex items-center gap-2">
 							<Zap className="h-4 w-4 text-yellow-500" />
 							<span className="text-sm font-black uppercase tracking-widest">
-								DESCRIBE YOUR SONG
+								LYRICS &amp; STYLE
 							</span>
 						</div>
 
 						<div className="p-6 space-y-5">
-							{/* Prompt */}
 							<div>
+								<p className="text-xs font-bold uppercase text-white/50 mb-1">
+									LYRICS — SENT VERBATIM
+								</p>
 								<Textarea
-									className="min-h-[100px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-yellow-500/50 resize-none"
-									placeholder="A MELANCHOLIC SYNTH BALLAD ABOUT FADING CITY LIGHTS WITH ETHEREAL VOCALS AND A SLOW BUILD TO A EUPHORIC DROP..."
-									value={prompt}
-									onChange={(e) => setPrompt(e.target.value)}
-									disabled={
-										generating && phase !== "ready" && phase !== "error"
+									className="min-h-[220px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-yellow-500/50 resize-y"
+									placeholder={
+										"[verse]\nYour lyrics here, exactly as ACE should sing them\n\n[chorus]\nSection tags like [verse] and [chorus] are supported"
 									}
+									value={lyrics}
+									onChange={(e) => setLyrics(e.target.value)}
+									disabled={generating}
 								/>
-								<button
-									type="button"
-									className={`mt-2 flex items-center gap-1 font-mono text-xs font-bold uppercase transition-colors ${
-										enhancing
-											? "text-yellow-500 animate-pulse"
-											: "text-white/40 hover:text-yellow-500"
-									}`}
-									onClick={handleEnhancePrompt}
-									disabled={
-										!prompt.trim() ||
-										!model.trim() ||
-										enhancing ||
-										(generating && phase !== "ready" && phase !== "error")
-									}
+							</div>
+
+							<div>
+								<p className="text-xs font-bold uppercase text-white/50 mb-1">
+									STYLE TAGS — ACE PROMPT (COMMA-SEPARATED)
+								</p>
+								<Textarea
+									className="min-h-[60px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-yellow-500/50 resize-y"
+									placeholder="synthwave, driving bass, female vocal, anthemic chorus"
+									value={style}
+									onChange={(e) => setStyle(e.target.value)}
+									disabled={generating}
+								/>
+							</div>
+
+							<div className="max-w-[200px]">
+								<p className="text-xs font-bold uppercase text-white/50 mb-1">
+									DURATION
+								</p>
+								<Select
+									value={duration}
+									onValueChange={setDurationChoice}
+									disabled={generating}
 								>
-									<Sparkles className="h-3 w-3" />
-									{enhancing ? "[ENHANCING...]" : "[ENHANCE PROMPT]"}
-								</button>
+									<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+										{DURATION_OPTIONS.map((opt) => (
+											<SelectItem
+												key={opt.value}
+												value={opt.value}
+												className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+											>
+												{opt.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 
-							{/* Provider + Model */}
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
-										PROVIDER
-									</p>
-									<div className="flex gap-0">
-										<button
-											type="button"
-											className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-												provider === "openai-codex"
-													? "bg-yellow-500 text-black border-yellow-500"
-													: "bg-transparent text-white hover:bg-white/10"
-											}`}
-											onClick={() => setProvider("openai-codex")}
-										>
-											OPENAI CODEX
-										</button>
-										<button
-											type="button"
-											className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-												provider === "anthropic"
-													? "bg-yellow-500 text-black border-yellow-500"
-													: "bg-transparent text-white hover:bg-white/10"
-											}`}
-											onClick={() => setProvider("anthropic")}
-										>
-											ANTHROPIC
-										</button>
-									</div>
-								</div>
-
-								<div>
-									<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
-										TEXT MODEL
-									</p>
-									{provider === "openai-codex" && codexTextModels.length > 0 ? (
-										<Select value={model} onValueChange={setModel}>
-											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-												<SelectValue placeholder="SELECT CODEX MODEL" />
-											</SelectTrigger>
-											<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-												{codexTextModels.map((m) => (
-													<SelectItem
-														key={m.name}
-														value={m.name}
-														className="font-mono text-sm font-bold uppercase text-white"
-													>
-														{(m.displayName || m.name).toUpperCase()}
-														{m.is_default ? " (DEFAULT)" : ""}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									) : (
-										<Input
-											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-											placeholder={
-												provider === "openai-codex"
-													? DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()
-													: DEFAULT_ANTHROPIC_TEXT_MODEL.toUpperCase()
-											}
-											value={model}
-											onChange={(e) => setModel(e.target.value)}
-										/>
-									)}
-								</div>
-							</div>
-
-							{/* Advanced Settings Toggle */}
-							<button
-								type="button"
-								className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-white/30 hover:text-white/60 transition-colors"
-								onClick={() => setAdvancedOpen(!advancedOpen)}
-							>
-								{advancedOpen ? (
-									<ChevronUp className="h-3 w-3" />
-								) : (
-									<ChevronDown className="h-3 w-3" />
-								)}
-								ADVANCED SETTINGS
-							</button>
-
-							{/* Advanced Settings Panel */}
-							{advancedOpen && (
-								<div className="border-4 border-white/10 bg-gray-900/50 p-4 space-y-4">
-									{/* Language */}
-									<div>
-										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-											LYRICS LANGUAGE
-										</p>
-										<select
-											value={language}
-											onChange={(e) => setLanguage(e.target.value)}
-											className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white focus:border-yellow-500 focus:outline-none"
-										>
-											{LANGUAGES.map((lang) => (
-												<option key={lang.value} value={lang.value}>
-													{lang.label}
-												</option>
-											))}
-										</select>
-									</div>
-
-									{/* BPM + Key */}
-									<div className="grid grid-cols-2 gap-3">
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												BPM
-											</p>
-											<input
-												type="text"
-												inputMode="numeric"
-												value={bpm}
-												onChange={(e) => {
-													if (
-														e.target.value === "" ||
-														/^\d+$/.test(e.target.value)
-													)
-														setBpm(e.target.value);
-												}}
-												placeholder="AUTO"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-										</div>
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												KEY
-											</p>
-											<input
-												type="text"
-												value={key}
-												onChange={(e) => setKey(e.target.value)}
-												placeholder="AUTO"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-										</div>
-									</div>
-
-									{/* Time Sig + Duration */}
-									<div className="grid grid-cols-2 gap-3">
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												TIME SIG
-											</p>
-											<input
-												type="text"
-												value={timeSig}
-												onChange={(e) => setTimeSig(e.target.value)}
-												placeholder="4/4"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-										</div>
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												DURATION (S)
-											</p>
-											<input
-												type="text"
-												inputMode="numeric"
-												value={duration}
-												onChange={(e) => {
-													if (
-														e.target.value === "" ||
-														/^\d+$/.test(e.target.value)
-													)
-														setDuration_(e.target.value);
-												}}
-												placeholder="AUTO"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-										</div>
-									</div>
-
-									{/* Inference Steps */}
-									<div>
-										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-											INFERENCE STEPS
-										</p>
-										<input
-											type="text"
-											inputMode="numeric"
-											value={steps}
-											onChange={(e) => {
-												if (
-													e.target.value === "" ||
-													/^\d+$/.test(e.target.value)
-												)
-													setSteps(e.target.value);
-											}}
-											placeholder="12"
-											className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-										/>
-										<p className="mt-1 text-[10px] text-white/20 uppercase">
-											4-16 — HIGHER = BETTER QUALITY, SLOWER
-										</p>
-									</div>
-
-									{/* LM Temp + CFG */}
-									<div className="grid grid-cols-2 gap-3">
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												LM TEMP
-											</p>
-											<input
-												type="text"
-												inputMode="decimal"
-												value={lmTemp}
-												onChange={(e) => {
-													if (
-														e.target.value === "" ||
-														/^\d*\.?\d*$/.test(e.target.value)
-													)
-														setLmTemp(e.target.value);
-												}}
-												placeholder="0.85"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-											<p className="mt-1 text-[10px] text-white/20 uppercase">
-												0.1-1.5
-											</p>
-										</div>
-										<div>
-											<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-												LM CFG
-											</p>
-											<input
-												type="text"
-												inputMode="decimal"
-												value={lmCfg}
-												onChange={(e) => {
-													if (
-														e.target.value === "" ||
-														/^\d*\.?\d*$/.test(e.target.value)
-													)
-														setLmCfg(e.target.value);
-												}}
-												placeholder="2.5"
-												className="w-full h-9 rounded-none border-2 border-white/20 bg-gray-900 px-2 font-mono text-xs font-bold uppercase text-white placeholder:text-white/20 focus:border-yellow-500 focus:outline-none"
-											/>
-											<p className="mt-1 text-[10px] text-white/20 uppercase">
-												1.0-5.0
-											</p>
-										</div>
-									</div>
-
-									{/* Diffusion Method */}
-									<div>
-										<p className="text-xs font-bold uppercase text-white/50 mb-1 block">
-											DIFFUSION METHOD
-										</p>
-										<div className="flex gap-0">
-											<button
-												type="button"
-												className={`flex-1 h-9 border-2 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-													inferMeth === "ode"
-														? "bg-yellow-500 text-black border-yellow-500"
-														: "bg-transparent text-white hover:bg-white/10"
-												}`}
-												onClick={() => setInferMeth("ode")}
-											>
-												ODE (FASTER)
-											</button>
-											<button
-												type="button"
-												className={`flex-1 h-9 border-2 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-													inferMeth === "sde"
-														? "bg-yellow-500 text-black border-yellow-500"
-														: "bg-transparent text-white hover:bg-white/10"
-												}`}
-												onClick={() => setInferMeth("sde")}
-											>
-												SDE (STOCHASTIC)
-											</button>
-										</div>
-									</div>
-								</div>
+							{submitError && (
+								<p className="text-xs font-bold uppercase text-red-400 border-2 border-red-500/30 bg-red-950/30 px-2 py-1">
+									{submitError}
+								</p>
 							)}
 
-							{/* Generate Button */}
 							<Button
 								className="w-full h-14 rounded-none border-4 border-yellow-500/30 bg-yellow-500 font-mono text-lg font-black uppercase text-black hover:bg-white hover:text-black hover:border-white disabled:opacity-30 disabled:hover:bg-yellow-500 disabled:hover:border-yellow-500/30"
 								onClick={handleGenerate}
-								disabled={
-									!prompt.trim() ||
-									!model.trim() ||
-									(generating && phase !== "ready" && phase !== "error")
-								}
+								disabled={!lyrics.trim() || generating}
 							>
-								{generating && phase !== "ready" && phase !== "error" ? (
+								{generating ? (
 									<span className="flex items-center gap-2">
 										<Zap className="h-5 w-5 animate-pulse" />
 										GENERATING...
@@ -761,15 +298,19 @@ function OneshotPage() {
 						</div>
 					</div>
 
-					{/* ─── OUTPUT SECTION ─── */}
+					{/* ─── OUTPUT ─── */}
 					{showOutput && (
 						<div className="border-4 border-t-0 border-yellow-500/20 bg-black">
-							{/* Generating state */}
 							{(phase === "creating" || phase === "generating") && (
-								<GeneratingDisplay song={song} />
+								<div className="p-6 flex items-center gap-3">
+									<Zap className="h-5 w-5 text-yellow-500 animate-pulse" />
+									<span className="text-sm font-black uppercase tracking-widest text-yellow-500/80">
+										{(song?.status && STATUS_PROGRESS_TEXT[song.status]) ||
+											"SUBMITTING..."}
+									</span>
+								</div>
 							)}
 
-							{/* Error state */}
 							{phase === "error" && (
 								<div className="p-6">
 									<div className="flex items-center gap-3 text-red-500 mb-3">
@@ -793,59 +334,30 @@ function OneshotPage() {
 								</div>
 							)}
 
-							{/* Ready state */}
 							{phase === "ready" && song && (
 								<div>
-									{/* Song result */}
 									<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">
-										{/* Cover art */}
 										<div className="border-b-4 sm:border-b-0 sm:border-r-4 border-white/10">
 											<CoverArt
 												title={song.title || "UNTITLED"}
-												artistName={song.artistName || "UNKNOWN"}
+												artistName={song.artistName || "ONESHOT"}
 												cover={song.cover}
 												size="md"
 												spinning={!!isCurrentSong && isPlaying}
 											/>
 										</div>
 
-										{/* Song info + player */}
 										<div className="flex flex-col">
-											{/* Metadata */}
 											<div className="p-4 border-b-2 border-white/10 flex-1">
 												<h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight">
 													{song.title || "UNTITLED"}
 												</h2>
 												<p className="text-sm font-bold uppercase text-white/50 mt-1">
-													{song.artistName || "UNKNOWN"}
+													{song.caption || "RAW ONESHOT"}
 												</p>
-												<div className="flex flex-wrap gap-2 mt-3">
-													{song.genre && (
-														<span className="border-2 border-yellow-500/30 px-2 py-0.5 text-[10px] font-black uppercase text-yellow-500/80">
-															{song.genre}
-														</span>
-													)}
-													{song.subGenre && song.subGenre !== song.genre && (
-														<span className="border-2 border-white/15 px-2 py-0.5 text-[10px] font-black uppercase text-white/40">
-															{song.subGenre}
-														</span>
-													)}
-													{song.mood && (
-														<span className="border-2 border-white/15 px-2 py-0.5 text-[10px] font-black uppercase text-white/40">
-															{song.mood}
-														</span>
-													)}
-													{song.bpm && (
-														<span className="border-2 border-white/15 px-2 py-0.5 text-[10px] font-black uppercase text-white/40">
-															{song.bpm} BPM
-														</span>
-													)}
-												</div>
 											</div>
 
-											{/* Player controls */}
 											<div className="p-4 space-y-3">
-												{/* Play + progress */}
 												<div className="flex items-center gap-3">
 													<button
 														type="button"
@@ -888,7 +400,6 @@ function OneshotPage() {
 													</div>
 												</div>
 
-												{/* Volume + actions */}
 												<div className="flex items-center justify-between">
 													<div className="flex items-center gap-2">
 														<button
@@ -933,52 +444,21 @@ function OneshotPage() {
 														</div>
 													</div>
 
-													<div className="flex items-center gap-2">
-														{/* Lyrics toggle */}
-														{song.lyrics && (
-															<button
-																type="button"
-																className={`flex items-center gap-1 text-xs font-bold uppercase transition-colors ${
-																	lyricsOpen
-																		? "text-yellow-500"
-																		: "text-white/40 hover:text-white"
-																}`}
-																onClick={() => setLyricsOpen(!lyricsOpen)}
-															>
-																<BookOpen className="h-3.5 w-3.5" />
-																LYRICS
-															</button>
-														)}
-														{/* Download */}
-														{song.audioUrl && (
-															<a
-																href={song.audioUrl}
-																download={`${song.title || "oneshot"}.mp3`}
-																className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
-															>
-																<Download className="h-3.5 w-3.5" />
-																DL
-															</a>
-														)}
-													</div>
+													{song.audioUrl && (
+														<a
+															href={song.audioUrl}
+															download={`${song.title || "oneshot"}.mp3`}
+															className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
+														>
+															<Download className="h-3.5 w-3.5" />
+															DOWNLOAD
+														</a>
+													)}
 												</div>
 											</div>
 										</div>
 									</div>
 
-									{/* Lyrics panel */}
-									{lyricsOpen && song.lyrics && (
-										<div className="border-b-4 border-white/10 p-6">
-											<div className="text-xs font-black uppercase tracking-widest text-white/30 mb-3">
-												LYRICS
-											</div>
-											<pre className="font-mono text-sm text-white/70 whitespace-pre-wrap leading-relaxed">
-												{song.lyrics}
-											</pre>
-										</div>
-									)}
-
-									{/* Generate Another */}
 									<div className="p-4">
 										<Button
 											className="w-full h-12 rounded-none border-4 border-yellow-500/30 bg-transparent font-mono text-base font-black uppercase text-yellow-500 hover:bg-yellow-500 hover:text-black hover:border-yellow-500"
@@ -1000,7 +480,7 @@ function OneshotPage() {
 				<div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/40">
 					<span className="flex items-center gap-2">
 						<Zap className="h-3 w-3 text-yellow-500/60" />
-						ONESHOT V1.0 {"//"} SINGLE TRACK GENERATOR
+						RAW ONESHOT {"//"} TEXT → ACE-STEP, NO LLM
 					</span>
 					<span className="text-yellow-500/40">
 						{phase === "idle"
@@ -1011,101 +491,6 @@ function OneshotPage() {
 					</span>
 				</div>
 			</footer>
-		</div>
-	);
-}
-
-// ─── Generating Animation Component ─────────────────────────────────
-
-function GeneratingDisplay({
-	song,
-}: {
-	song: { status: string; title?: string | null } | null;
-}) {
-	const [dots, setDots] = useState("");
-
-	useEffect(() => {
-		const interval = setInterval(() => {
-			setDots((d) => (d.length >= 3 ? "" : `${d}.`));
-		}, 400);
-		return () => clearInterval(interval);
-	}, []);
-
-	const statusText = song
-		? STATUS_PROGRESS_TEXT[song.status] || "PROCESSING..."
-		: "INITIALIZING...";
-
-	return (
-		<div className="p-8 flex flex-col items-center justify-center min-h-[200px] relative overflow-hidden">
-			{/* Scanner line animation */}
-			<div
-				className="absolute inset-0 pointer-events-none"
-				style={{
-					background:
-						"repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(234,179,8,0.03) 3px, rgba(234,179,8,0.03) 4px)",
-				}}
-			/>
-			<div className="absolute left-0 right-0 h-px bg-yellow-500/40 animate-[scanline_2s_ease-in-out_infinite]" />
-
-			{/* Status text */}
-			<div className="relative z-10 text-center">
-				<Zap className="h-8 w-8 text-yellow-500 mx-auto mb-4 animate-pulse" />
-				<p className="text-lg font-black uppercase tracking-widest text-yellow-500">
-					{statusText}
-					{dots}
-				</p>
-				{song?.title && (
-					<p className="mt-3 text-sm font-bold uppercase text-white/40">
-						{song.title}
-					</p>
-				)}
-				{/* Progress indicator */}
-				<div className="mt-4 flex items-center gap-1 justify-center">
-					{[
-						"pending",
-						"generating_metadata",
-						"metadata_ready",
-						"submitting_to_ace",
-						"generating_audio",
-						"saving",
-					].map((step, i) => {
-						const currentIndex = song
-							? [
-									"pending",
-									"generating_metadata",
-									"metadata_ready",
-									"submitting_to_ace",
-									"generating_audio",
-									"saving",
-								].indexOf(song.status)
-							: -1;
-						const isActive = i === currentIndex;
-						const isDone = i < currentIndex;
-						return (
-							<div
-								key={step}
-								className={`h-1.5 w-6 transition-colors ${
-									isActive
-										? "bg-yellow-500 animate-pulse"
-										: isDone
-											? "bg-yellow-500/60"
-											: "bg-white/10"
-								}`}
-							/>
-						);
-					})}
-				</div>
-			</div>
-
-			{/* Inline keyframes */}
-			<style>{`
-				@keyframes scanline {
-					0% { top: 0%; opacity: 0; }
-					10% { opacity: 1; }
-					90% { opacity: 1; }
-					100% { top: 100%; opacity: 0; }
-				}
-			`}</style>
 		</div>
 	);
 }

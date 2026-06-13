@@ -38,13 +38,13 @@ export const ACTIVE_STATUSES: SongStatus[] = [
 	"ready",
 ];
 
-export const PLAYLIST_MODES = ["endless", "oneshot"] as const;
+export const PLAYLIST_MODES = ["endless", "oneshot", "radio"] as const;
 export type PlaylistMode = (typeof PLAYLIST_MODES)[number];
 
 export const PLAYLIST_STATUSES = ["active", "closing", "closed"] as const;
 export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 
-export const LLM_PROVIDERS = ["openai-codex", "anthropic"] as const;
+export const LLM_PROVIDERS = ["openai-codex"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
 export type { SongCover } from "./protocol";
@@ -150,6 +150,11 @@ export interface Song {
 	language: string | null;
 	description: string | null;
 	status: SongStatus;
+	aceTaskType: string | null;
+	sourceSongId: string | null;
+	sourceAudioPath: string | null;
+	sourceUrl: string | null;
+	coverNoiseStrength: number | null;
 	aceTaskId: string | null;
 	aceSubmittedAt: number | null;
 	audioUrl: string | null;
@@ -173,6 +178,15 @@ export interface Song {
 	coverProcessingMs: number | null;
 	audioProcessingMs: number | null;
 	personaExtract: string | null;
+	albumId: string | null;
+	albumTrackNumber: number | null;
+	radioEligible: boolean;
+	likeCount: number;
+	dislikeCount: number;
+	skipCount: number;
+	radioPlayCount: number;
+	lastRadioPlayedAt: number | null;
+	requestId: string | null;
 }
 
 export interface Playlist {

@@ -191,18 +191,25 @@ function requestBufferPinned(
 		};
 		const pinnedLookup = ((
 			_hostname: string,
-			_options: unknown,
+			lookupOptions: unknown,
 			callback: (
 				err: NodeJS.ErrnoException | null,
-				address: string,
-				family: number,
+				address: string | { address: string; family: number }[],
+				family?: number,
 			) => void,
 		) => {
-			callback(
-				null,
-				options.resolvedAddress.address,
-				options.resolvedAddress.family,
-			);
+			const { address, family } = options.resolvedAddress;
+			// Node's multi-address (Happy Eyeballs) connect path passes
+			// { all: true } and expects an array of LookupAddress objects.
+			const wantsAll =
+				typeof lookupOptions === "object" &&
+				lookupOptions !== null &&
+				(lookupOptions as { all?: boolean }).all === true;
+			if (wantsAll) {
+				callback(null, [{ address, family }]);
+				return;
+			}
+			callback(null, address, family);
 		}) as RequestOptions["lookup"];
 		const req = client.request(
 			url,

@@ -1,5 +1,4 @@
 import {
-	DEFAULT_ANTHROPIC_TEXT_MODEL,
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
@@ -15,7 +14,6 @@ type Provider = LlmProvider;
 
 const LIMITS: Record<Provider, number> = {
 	"openai-codex": 2,
-	anthropic: 2,
 };
 
 interface Waiter {
@@ -74,7 +72,6 @@ class ProviderSemaphore {
 
 const semaphores: Record<Provider, ProviderSemaphore> = {
 	"openai-codex": new ProviderSemaphore(LIMITS["openai-codex"]),
-	anthropic: new ProviderSemaphore(LIMITS.anthropic),
 };
 
 // ---------------------------------------------------------------------------
@@ -82,16 +79,12 @@ const semaphores: Record<Provider, ProviderSemaphore> = {
 // ---------------------------------------------------------------------------
 
 async function resolveModelForProvider(
-	provider: Provider,
+	_provider: Provider,
 	model: string,
 	signal?: AbortSignal,
 ): Promise<string> {
 	const explicitModel = model.trim();
 	if (explicitModel) return explicitModel;
-
-	if (provider === "anthropic") {
-		return DEFAULT_ANTHROPIC_TEXT_MODEL;
-	}
 
 	const res = await fetch(`${API_URL}/api/autoplayer/codex-models`, {
 		signal,
@@ -217,19 +210,13 @@ export async function callLlmText(options: {
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
-		if (provider === "openai-codex") {
-			return await callCodexTextEndpoint({
-				model,
-				system,
-				prompt,
-				signal,
-			});
-		}
-
 		void temperature;
-		throw new Error(
-			"Anthropic text generation is handled by the API server Pi runtime.",
-		);
+		return await callCodexTextEndpoint({
+			model,
+			system,
+			prompt,
+			signal,
+		});
 	} finally {
 		sem.release();
 	}
@@ -266,22 +253,16 @@ export async function callLlmObject<T>(options: {
 	const sem = semaphores[provider];
 	await sem.acquire(signal);
 	try {
-		if (provider === "openai-codex") {
-			return await callCodexObjectEndpoint({
-				model,
-				system,
-				prompt,
-				schema,
-				signal,
-			});
-		}
-
 		void schemaName;
 		void temperature;
 		void seed;
-		throw new Error(
-			"Anthropic object generation is handled by the API server Pi runtime.",
-		);
+		return await callCodexObjectEndpoint({
+			model,
+			system,
+			prompt,
+			schema,
+			signal,
+		});
 	} finally {
 		sem.release();
 	}

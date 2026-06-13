@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { EVENT_WS_URL } from "@/lib/endpoints";
 
 const queryClient = new QueryClient({
@@ -29,7 +29,10 @@ function getBackoffDelay(attempt: number): number {
  */
 function useWsInvalidation() {
 	const wsRef = useRef<WebSocket | null>(null);
-	const [connected, setConnected] = useState(false);
+	const [connected, dispatchConnected] = useReducer(
+		(_current: boolean, next: boolean) => next,
+		false,
+	);
 	const attemptRef = useRef(0);
 
 	useEffect(() => {
@@ -44,7 +47,7 @@ function useWsInvalidation() {
 
 			ws.onopen = () => {
 				attemptRef.current = 0;
-				setConnected(true);
+				dispatchConnected(true);
 			};
 
 			ws.onmessage = (event) => {
@@ -95,12 +98,15 @@ function useWsInvalidation() {
 					});
 				} else if (routingKey === "agent-memory") {
 					queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
+				} else if (routingKey === "radio") {
+					queryClient.invalidateQueries({ queryKey: ["radio"] });
+					queryClient.invalidateQueries({ queryKey: ["songs", "all"] });
 				}
 			};
 
 			ws.onclose = () => {
 				wsRef.current = null;
-				setConnected(false);
+				dispatchConnected(false);
 				if (!disposed) {
 					const delay = getBackoffDelay(attemptRef.current);
 					attemptRef.current++;

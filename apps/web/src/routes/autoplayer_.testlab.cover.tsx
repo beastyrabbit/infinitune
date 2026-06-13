@@ -1,6 +1,7 @@
 import {
 	DEFAULT_INFERENCE_SH_IMAGE_MODEL,
 	INFERENCE_SH_IMAGE_MODELS,
+	normalizeImageProvider,
 } from "@infinitune/shared/inference-sh-image-models";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
@@ -10,7 +11,6 @@ import {
 	CollapsibleJson,
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
-import COMFYUI_WORKFLOW from "@/data/comfyui-workflow-z-image-turbo.json";
 import { useSettings } from "@/integrations/api/hooks";
 import type { SongCover } from "@/types";
 
@@ -36,9 +36,9 @@ function CoverTestPage() {
 	const [coverPrompt, setCoverPrompt] = useState(
 		"cinematic matte painting, neon-drenched cyberpunk cityscape at midnight, towering holographic advertisements reflecting off rain-slicked streets, moody blue and magenta lighting, atmospheric fog, dystopian beauty",
 	);
-	const [provider, setProvider] = useState<
-		"comfyui" | "inference-sh" | "codex-imagegen"
-	>("comfyui");
+	const [provider, setProvider] = useState<"inference-sh" | "codex-imagegen">(
+		"inference-sh",
+	);
 	const [model, setModel] = useState("");
 	const [isRunning, setIsRunning] = useState(false);
 	const [generations, setGenerations] = useState<CoverGeneration[]>([]);
@@ -46,13 +46,7 @@ function CoverTestPage() {
 	// Sync provider from settings
 	useEffect(() => {
 		if (settings) {
-			const p =
-				settings.imageProvider === "inference-sh" ||
-				settings.imageProvider === "openrouter"
-					? "inference-sh"
-					: settings.imageProvider === "codex-imagegen"
-						? "codex-imagegen"
-						: "comfyui";
+			const p = normalizeImageProvider(settings.imageProvider);
 			setProvider(p);
 			if (settings.imageModel) {
 				setModel(settings.imageModel);
@@ -171,18 +165,6 @@ function CoverTestPage() {
 								<button
 									type="button"
 									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
-										provider === "comfyui"
-											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
-											: "border-white/10 text-white/40"
-									}`}
-									onClick={() => setProvider("comfyui")}
-									disabled={isRunning}
-								>
-									ComfyUI
-								</button>
-								<button
-									type="button"
-									className={`flex-1 h-8 border-4 font-mono text-[10px] font-black uppercase ${
 										provider === "inference-sh"
 											? "border-yellow-500 bg-yellow-500/10 text-yellow-500"
 											: "border-white/10 text-white/40"
@@ -251,21 +233,6 @@ function CoverTestPage() {
 							"[GENERATE]"
 						)}
 					</button>
-				</div>
-			</section>
-
-			{/* WORKFLOW INFO */}
-			<section className="border-4 border-white/10 bg-black">
-				<div className="border-b-2 border-white/10 px-4 py-2">
-					<span className="text-xs font-black uppercase tracking-widest text-white/40">
-						WORKFLOW
-					</span>
-				</div>
-				<div className="p-4">
-					<CollapsibleJson
-						label="COMFYUI WORKFLOW (z-image-turbo)"
-						data={COMFYUI_WORKFLOW}
-					/>
 				</div>
 			</section>
 

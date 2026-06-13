@@ -343,12 +343,15 @@ interface AudioQueueEvent {
 		| "resume"
 		| "tickPolls"
 		| "cancelSong"
+		| "refreshConcurrency"
 		| "drain"
 		| "resortPending"
 		| "updatePendingPriority";
 	item?: AudioQueueItem;
 	songId?: string;
 	newPriority?: number;
+	maxConcurrency?: number;
+	done?: () => void;
 }
 
 export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
@@ -356,7 +359,8 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 	private readonly actor;
 	private readonly state = {
 		pending: [] as AudioQueueItem[],
-		active: null as AudioActiveSlot | null,
+		active: new Map<string, AudioActiveSlot>(),
+		maxConcurrency: 12,
 		errorCount: 0,
 		lastErrorMessage: undefined as string | undefined,
 		completionHistory: [] as number[],
@@ -380,13 +384,17 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 			audioPath?: string;
 			error?: string;
 		}>,
+		maxConcurrency = 12,
 	) {
 		this.pollFn = pollFn;
+		this.state.maxConcurrency = Math.max(1, Math.trunc(maxConcurrency));
 
 		this.actor = createActor(
 			fromCallback<AudioQueueEvent>(({ receive }) => {
-				const clearSlot = () => {
-					this.state.active = null;
+				let pollInFlight = false;
+
+				const clearSlot = (songId: string) => {
+					this.state.active.delete(songId);
 					this.actor.send({ type: "drain" });
 				};
 
@@ -396,7 +404,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 					const waitMs = startedAt - item.enqueuedAt;
 
 					if (item.resumeTaskId) {
-						this.state.active = {
+						this.state.active.set(item.songId, {
 							songId: item.songId,
 							taskId: item.resumeTaskId,
 							submittedAt: item.resumeSubmittedAt || Date.now(),
@@ -407,7 +415,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 							resolve: item.resolve,
 							reject: item.reject,
 							abortController,
-						};
+						});
 
 						logger.debug(
 							{
@@ -424,7 +432,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 					}
 
 					const submittedAt = Date.now();
-					this.state.active = {
+					const activeSlot: AudioActiveSlot = {
 						songId: item.songId,
 						taskId: "",
 						submittedAt,
@@ -436,6 +444,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 						reject: item.reject,
 						abortController,
 					};
+					this.state.active.set(item.songId, activeSlot);
 
 					logger.debug(
 						{
@@ -452,15 +461,11 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 						.execute(abortController.signal)
 						.then((result: AudioTaskResult) => {
 							if (abortController.signal.aborted) return;
-							if (
-								!this.state.active ||
-								this.state.active.songId !== item.songId
-							) {
-								return;
-							}
-							this.state.active.taskId = result.taskId;
-							this.state.active.submittedAt = Date.now();
-							this.state.active.submitProcessingMs = Date.now() - submittedAt;
+							const slot = this.state.active.get(item.songId);
+							if (!slot) return;
+							slot.taskId = result.taskId;
+							slot.submittedAt = Date.now();
+							slot.submitProcessingMs = Date.now() - submittedAt;
 							logger.debug(
 								{
 									queueType: this.type,
@@ -468,18 +473,14 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									taskId: result.taskId,
 									priority: item.priority,
 									waitMs,
-									submitProcessingMs: this.state.active.submitProcessingMs,
+									submitProcessingMs: slot.submitProcessingMs,
 								},
 								"Audio queue submission complete, polling started",
 							);
 						})
 						.catch((error: unknown) => {
-							if (
-								!this.state.active ||
-								this.state.active.songId !== item.songId
-							) {
-								return;
-							}
+							const slot = this.state.active.get(item.songId);
+							if (!slot) return;
 
 							const message =
 								error instanceof Error ? error.message : String(error);
@@ -516,22 +517,25 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								);
 							}
 
-							clearSlot();
+							clearSlot(item.songId);
 						});
 				};
 
 				const drain = () => {
-					if (this.state.active || this.state.pending.length === 0) return;
-					const item = this.state.pending.shift();
-					if (!item) return;
-					startSlot(item);
+					while (
+						this.state.active.size < this.state.maxConcurrency &&
+						this.state.pending.length > 0
+					) {
+						const item = this.state.pending.shift();
+						if (!item) return;
+						startSlot(item);
+					}
 				};
 
-				const pollActive = async () => {
-					const slot = this.state.active;
-					if (!slot) return;
+				const pollSlot = async (slot: AudioActiveSlot) => {
+					if (!slot.taskId) return;
 					if (slot.abortController.signal.aborted) {
-						clearSlot();
+						clearSlot(slot.songId);
 						return;
 					}
 
@@ -568,7 +572,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								processingMs: completionMs,
 							});
-							clearSlot();
+							clearSlot(slot.songId);
 						} else if (pollResult.status === "failed") {
 							const message = pollResult.error || "Audio generation failed";
 							this.state.errorCount += 1;
@@ -596,7 +600,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								processingMs: Date.now() - slot.submittedAt,
 							});
-							clearSlot();
+							clearSlot(slot.songId);
 						} else if (pollResult.status === "not_found") {
 							const elapsed = Date.now() - slot.submittedAt;
 							if (elapsed >= NOT_FOUND_GRACE_MS) {
@@ -621,7 +625,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									},
 									processingMs: elapsed,
 								});
-								clearSlot();
+								clearSlot(slot.songId);
 							}
 						}
 					} catch (error: unknown) {
@@ -630,6 +634,17 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 							{ err: error, taskId: slot.taskId },
 							"Audio queue poll error",
 						);
+					}
+				};
+
+				const pollActive = async () => {
+					if (pollInFlight) return;
+					pollInFlight = true;
+					try {
+						const activeSlots = Array.from(this.state.active.values());
+						await Promise.all(activeSlots.map((slot) => pollSlot(slot)));
+					} finally {
+						pollInFlight = false;
 					}
 				};
 
@@ -644,7 +659,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 							}
 							break;
 						case "tickPolls":
-							void pollActive();
+							void pollActive().finally(event.done);
 							break;
 						case "cancelSong":
 							if (!event.songId) return;
@@ -661,12 +676,21 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									}
 								}
 
-								const active = this.state.active;
-								if (active && active.songId === event.songId) {
+								const active = this.state.active.get(event.songId);
+								if (active) {
 									active.abortController.abort();
 									active.reject(new Error("Cancelled"));
-									clearSlot();
+									clearSlot(event.songId);
 								}
+							}
+							break;
+						case "refreshConcurrency":
+							if (event.maxConcurrency && event.maxConcurrency > 0) {
+								this.state.maxConcurrency = Math.max(
+									1,
+									Math.trunc(event.maxConcurrency),
+								);
+								drain();
 							}
 							break;
 						case "resortPending":
@@ -733,8 +757,9 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 	}
 
 	tickPolls(): Promise<void> {
-		this.actor.send({ type: "tickPolls" });
-		return Promise.resolve();
+		return new Promise((resolve) => {
+			this.actor.send({ type: "tickPolls", done: resolve });
+		});
 	}
 
 	cancelSong(songId: string): void {
@@ -745,23 +770,19 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 		return {
 			type: this.type,
 			pending: this.state.pending.length,
-			active: this.state.active ? 1 : 0,
+			active: this.state.active.size,
 			errors: this.state.errorCount,
 			lastErrorMessage: this.state.lastErrorMessage,
 			completionStats: computeCompletionStats(
 				this.state.completionHistory,
 				this.state.totalCompleted,
 			),
-			activeItems: this.state.active
-				? [
-						{
-							songId: this.state.active.songId,
-							startedAt: this.state.active.startedAt,
-							endpoint: "ace-step",
-							priority: this.state.active.priority,
-						},
-					]
-				: [],
+			activeItems: Array.from(this.state.active.values()).map((slot) => ({
+				songId: slot.songId,
+				startedAt: slot.startedAt,
+				endpoint: "ace-step",
+				priority: slot.priority,
+			})),
 			pendingItems: this.state.pending.map((item) => ({
 				songId: item.songId,
 				priority: item.priority,
@@ -779,7 +800,8 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 		this.actor.send({ type: "resortPending" });
 	}
 
-	refreshConcurrency(_maxConcurrency?: number): void {
-		// Audio queue intentionally remains single-slot.
+	refreshConcurrency(maxConcurrency?: number): void {
+		if (!maxConcurrency) return;
+		this.actor.send({ type: "refreshConcurrency", maxConcurrency });
 	}
 }

@@ -167,7 +167,7 @@ export function buildAgentSystemPrompt(agentId: AgentId): string {
 }
 
 type PiModelProfile = {
-	provider: "openai-codex" | "anthropic";
+	provider: "openai-codex";
 	model: string;
 };
 
@@ -186,11 +186,9 @@ function resolveAgentModel(
 	modelPolicy: AgentModelPolicy,
 	preferred?: PiModelProfile,
 ): { model: Model<Api>; provider: string; modelId: string } {
-	const candidates = [
-		preferred,
-		modelPolicy.primary,
-		modelPolicy.fallback,
-	].filter((candidate): candidate is PiModelProfile => !!candidate);
+	const candidates = [preferred, modelPolicy.primary].filter(
+		(candidate): candidate is PiModelProfile => !!candidate,
+	);
 	const seen = new Set<string>();
 	for (const candidate of candidates) {
 		const key = `${candidate.provider}/${candidate.model}`;
@@ -342,7 +340,7 @@ function extractText(
 }
 
 export async function piCompleteText(input: {
-	provider: "openai-codex" | "anthropic";
+	provider: "openai-codex";
 	model: string;
 	system: string;
 	prompt: string;
@@ -371,9 +369,6 @@ export async function piCompleteText(input: {
 	const message = await completeSimple(model, context, {
 		apiKey: auth.apiKey,
 		headers: auth.headers,
-		...(input.provider === "openai-codex"
-			? {}
-			: { temperature: input.temperature }),
 		reasoning: model.reasoning ? (input.reasoning ?? "medium") : undefined,
 		signal: input.signal,
 	});
@@ -396,7 +391,7 @@ function parseJsonFromText(text: string): unknown {
 }
 
 export async function piCompleteObject<T>(input: {
-	provider: "openai-codex" | "anthropic";
+	provider: "openai-codex";
 	model: string;
 	system: string;
 	prompt: string;
