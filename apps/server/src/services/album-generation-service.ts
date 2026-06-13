@@ -794,8 +794,11 @@ async function resolveTrackSourceOpts(
 			searchTarget = buildYtSearchTarget(
 				`${spec.searchTarget.title} ${spec.searchTarget.artist} official audio`,
 			);
-		} catch {
-			searchTarget = null;
+		} catch (err) {
+			logger.warn(
+				{ trackTitle: spec.title, searchTarget: spec.searchTarget, err },
+				"Planner search target unusable",
+			);
 		}
 	}
 	const sourceSpec = await resolveCoverSourceSpec({
@@ -810,6 +813,18 @@ async function resolveTrackSourceOpts(
 		case "nas":
 			return { ...coverOpts, sourceAudioPath: sourceSpec.sourceAudioPath };
 		case "none":
+			// If this fires on every album, cover-first has silently become
+			// all-new: check planner searchTargets, the seeded pool, NAS dir.
+			logger.warn(
+				{
+					trackTitle: spec.title,
+					type: spec.type,
+					albumGenre,
+					hadSearchTarget: !!searchTarget,
+					nasConfigured: !!sourceSettings.sourceLibraryDir,
+				},
+				"No cover source acquirable; track demoted to new",
+			);
 			return {};
 	}
 }
@@ -841,8 +856,10 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 			recentCoverTargets: listRecentCoverTargets(),
 		});
 	} catch (err) {
+		// Full error object on purpose: planner failures are schema/auth
+		// debugging cases and carry no remote-content risk (unlike yt-dlp).
 		logger.warn(
-			{ err: { message: err instanceof Error ? err.message : String(err) } },
+			{ err },
 			"Album planner LLM failed; falling back to deterministic album",
 		);
 	}

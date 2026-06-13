@@ -17,6 +17,7 @@ import { tagMp3 } from "../external/tag-mp3";
 import {
 	downloadAudioBySearch,
 	downloadYoutubeAudio,
+	type YoutubeAudioResult,
 } from "../external/youtube-audio";
 import { songLogger } from "../logger";
 import {
@@ -1033,25 +1034,22 @@ export class SongWorker {
 		const sourceUrl = this.song.sourceUrl;
 		if (!sourceUrl || this.song.sourceAudioPath) return;
 
+		// Only the download itself triggers demotion. Persistence errors
+		// (DB locked, disk full) propagate to the normal error path — the
+		// downloaded reference is fine and a retry can still use it.
+		let result: YoutubeAudioResult;
 		try {
-			const result = sourceUrl.startsWith("ytsearch")
+			result = sourceUrl.startsWith("ytsearch")
 				? await downloadAudioBySearch(sourceUrl)
 				: await downloadYoutubeAudio(sourceUrl);
-			await songService.updateSourceAudioPath(this.songId, result.filePath);
-			await markSourceUsed(sourceUrl, result.filePath);
-			this.song = { ...this.song, sourceAudioPath: result.filePath };
-			songLogger(this.songId).info(
-				{ title: this.song.title, sourceTitle: result.title },
-				"Cover reference audio resolved",
-			);
 		} catch (error: unknown) {
 			const msg = error instanceof Error ? error.message : String(error);
 			songLogger(this.songId).warn(
 				{ error: msg },
 				"Cover source download failed; demoting track to text2music",
 			);
-			await songService.clearCoverSource(this.songId);
 			await markSourceFailed(sourceUrl);
+			await songService.clearCoverSource(this.songId);
 			this.song = {
 				...this.song,
 				aceTaskType: null,
@@ -1060,7 +1058,16 @@ export class SongWorker {
 				sourceAudioPath: null,
 				coverNoiseStrength: null,
 			};
+			return;
 		}
+
+		await songService.updateSourceAudioPath(this.songId, result.filePath);
+		await markSourceUsed(sourceUrl, result.filePath);
+		this.song = { ...this.song, sourceAudioPath: result.filePath };
+		songLogger(this.songId).info(
+			{ title: this.song.title, sourceTitle: result.title },
+			"Cover reference audio resolved",
+		);
 	}
 
 	private async submitAndPollAudio(): Promise<void> {
@@ -1081,8 +1088,7 @@ export class SongWorker {
 		if (!claimed) return;
 
 		// Resolve a pending sourceUrl (cover reference) to a local file BEFORE
-		// taking an audio queue slot, so downloads run in parallel across songs
-		// and never hold the single ACE slot.
+		// taking an audio queue slot, so downloads never occupy ACE capacity.
 		await this.acquireSourceAudio();
 		if (this.aborted) return;
 

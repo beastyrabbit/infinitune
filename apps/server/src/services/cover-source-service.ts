@@ -129,17 +129,24 @@ export async function claimSeededSource(
 		.where(eq(coverSources.status, "pending"))
 		.orderBy(asc(coverSources.createdAt));
 	const genreLower = albumGenre.toLowerCase();
-	const match = pending.find(
+	const matches = pending.filter(
 		(row) =>
 			!row.genreTag?.trim() ||
 			genreLower.includes(row.genreTag.trim().toLowerCase()),
 	);
-	if (!match) return null;
-	await db
-		.update(coverSources)
-		.set({ status: "used", lastUsedAt: Date.now() })
-		.where(eq(coverSources.id, match.id));
-	return match;
+	for (const match of matches) {
+		// Conditional update makes the claim atomic against concurrent album
+		// creation; a row someone else claimed first is simply skipped.
+		const claimed = await db
+			.update(coverSources)
+			.set({ status: "used", lastUsedAt: Date.now() })
+			.where(
+				and(eq(coverSources.id, match.id), eq(coverSources.status, "pending")),
+			)
+			.returning({ id: coverSources.id });
+		if (claimed.length > 0) return match;
+	}
+	return null;
 }
 
 export async function markSourceUsed(url: string, resolvedAudioPath: string) {
@@ -162,34 +169,53 @@ export interface NasStatus {
 	configured: boolean;
 	exists: boolean;
 	fileCount: number;
+	/** Scan failure (permissions, stale mount, …) — distinct from "empty" */
+	error: string | null;
 }
 
-function listNasAudioFiles(libraryDir: string): string[] {
+function listNasAudioFiles(libraryDir: string): {
+	files: string[];
+	error: string | null;
+} {
 	try {
 		const entries = fs.readdirSync(libraryDir, {
 			recursive: true,
 			withFileTypes: true,
 		});
-		return entries
-			.filter(
-				(entry) =>
-					entry.isFile() &&
-					AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()),
-			)
-			.map((entry) => path.join(entry.parentPath, entry.name));
-	} catch {
-		return [];
+		return {
+			files: entries
+				.filter(
+					(entry) =>
+						entry.isFile() &&
+						AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()),
+				)
+				.map((entry) => path.resolve(entry.parentPath, entry.name)),
+			error: null,
+		};
+	} catch (err) {
+		// An unreadable library must be distinguishable from an empty one,
+		// otherwise a bad mount silently routes every cover to online search.
+		const message = err instanceof Error ? err.message : String(err);
+		logger.warn({ libraryDir, err: { message } }, "NAS library scan failed");
+		return { files: [], error: message };
 	}
 }
 
 export function getNasStatus(libraryDir: string): NasStatus {
 	const configured = !!libraryDir.trim();
-	if (!configured) return { configured: false, exists: false, fileCount: 0 };
+	if (!configured) {
+		return { configured: false, exists: false, fileCount: 0, error: null };
+	}
 	const exists = fs.existsSync(libraryDir);
+	if (!exists) {
+		return { configured, exists, fileCount: 0, error: null };
+	}
+	const scan = listNasAudioFiles(libraryDir);
 	return {
 		configured,
 		exists,
-		fileCount: exists ? listNasAudioFiles(libraryDir).length : 0,
+		fileCount: scan.files.length,
+		error: scan.error,
 	};
 }
 
@@ -200,7 +226,7 @@ export function getNasStatus(libraryDir: string): NasStatus {
  */
 export async function pickNasFile(libraryDir: string): Promise<string | null> {
 	if (!libraryDir.trim()) return null;
-	const files = listNasAudioFiles(libraryDir);
+	const { files } = listNasAudioFiles(libraryDir);
 	if (files.length === 0) return null;
 	const source = files[Math.floor(Math.random() * files.length)];
 	if (path.extname(source).toLowerCase() === ".mp3") return source;
@@ -227,10 +253,14 @@ export async function pickNasFile(libraryDir: string): Promise<string | null> {
 		);
 		return cached;
 	} catch (err) {
+		// Local NAS files carry no remote-content concern, so the ffmpeg
+		// stderr tail is safe and useful (codec/container detail).
+		const stderr = (err as { stderr?: string }).stderr;
 		logger.warn(
 			{
 				source,
 				err: { message: err instanceof Error ? err.message : String(err) },
+				stderrTail: typeof stderr === "string" ? stderr.slice(-500) : undefined,
 			},
 			"NAS audio transcode failed",
 		);
@@ -261,7 +291,17 @@ export async function pickCoverOfCoverSource(): Promise<string | null> {
 	const playable = candidates.filter((row) =>
 		resolveSongAudioFile(row.storagePath),
 	);
-	if (playable.length === 0) return null;
+	if (playable.length === 0) {
+		if (candidates.length > 0) {
+			// Covers exist but none of their audio files are reachable —
+			// likely a storage outage, not the benign "no covers yet" case.
+			logger.warn(
+				{ candidateCount: candidates.length },
+				"No cover-of-cover source: all cover audio files unreachable",
+			);
+		}
+		return null;
+	}
 	return playable[Math.floor(Math.random() * playable.length)].id;
 }
 

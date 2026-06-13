@@ -22,6 +22,13 @@ vi.mock("../events/event-bus", () => ({
 	removeAllListeners: vi.fn(),
 }));
 
+// These tests exercise the deterministic fallback path of createRadioAlbum;
+// the LLM planner (and mixer) must never make real network calls here.
+vi.mock("../external/llm-client", () => ({
+	callLlmObject: vi.fn().mockRejectedValue(new Error("llm disabled in test")),
+	callLlmText: vi.fn().mockRejectedValue(new Error("llm disabled in test")),
+}));
+
 import { albums, playlists, songs } from "../db/schema";
 import {
 	createRadioAlbum,

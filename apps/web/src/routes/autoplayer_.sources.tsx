@@ -96,6 +96,8 @@ function SourcesPage() {
 			setUrl("");
 			setGenreTag("");
 			toast.success("Source queued");
+		} catch {
+			// createMutation already surfaced the error toast
 		} finally {
 			setAdding(false);
 		}
@@ -106,9 +108,17 @@ function SourcesPage() {
 		try {
 			for (const [key, value] of Object.entries(draft)) {
 				await setSetting({ key, value });
+				// Drop saved keys as we go so a mid-loop failure leaves only
+				// the unsaved remainder in the draft.
+				setDraft((current) => {
+					const next = { ...current };
+					delete next[key];
+					return next;
+				});
 			}
-			setDraft({});
 			toast.success("Source settings saved");
+		} catch {
+			// createMutation already surfaced the error toast
 		} finally {
 			setSaving(false);
 		}
@@ -141,12 +151,16 @@ function SourcesPage() {
 						label="NAS files"
 						value={
 							nas?.configured
-								? nas.exists
-									? nas.fileCount
-									: "missing dir"
+								? nas.error
+									? "scan error"
+									: nas.exists
+										? nas.fileCount
+										: "missing dir"
 								: "off"
 						}
-						tone={nas?.configured && !nas.exists ? "warn" : "default"}
+						tone={
+							nas?.configured && (!nas.exists || nas.error) ? "warn" : "default"
+						}
 					/>
 				</div>
 

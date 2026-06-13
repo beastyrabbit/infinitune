@@ -780,7 +780,12 @@ export interface RadioCoverSource {
 
 export interface RadioSourcesResponse {
 	sources: RadioCoverSource[];
-	nas: { configured: boolean; exists: boolean; fileCount: number };
+	nas: {
+		configured: boolean;
+		exists: boolean;
+		fileCount: number;
+		error: string | null;
+	};
 }
 
 export function useRadioSources(): RadioSourcesResponse | undefined {

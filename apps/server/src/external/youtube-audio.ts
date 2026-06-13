@@ -64,19 +64,42 @@ interface CacheMeta {
 
 function readCachedResult(cacheKey: string): YoutubeAudioResult | null {
 	const filePath = path.join(DOWNLOAD_DIR, `${cacheKey}.mp3`);
-	if (!fs.existsSync(filePath)) return null;
-	let meta: CacheMeta | null = null;
+	let size = 0;
+	try {
+		size = fs.statSync(filePath).size;
+	} catch {
+		return null; // not cached
+	}
+	if (size === 0) {
+		// Zero-byte file from a crashed write would poison the cache forever
+		logger.warn({ cacheKey }, "Discarding empty cached download");
+		fs.rmSync(filePath, { force: true });
+		return null;
+	}
+	let meta: Partial<CacheMeta> | null = null;
 	try {
 		meta = JSON.parse(
 			fs.readFileSync(path.join(DOWNLOAD_DIR, `${cacheKey}.json`), "utf8"),
-		) as CacheMeta;
-	} catch {
+		) as Partial<CacheMeta>;
+	} catch (err) {
 		// Sidecar missing or corrupt — the audio file alone is still usable.
+		if ((err as { code?: string }).code !== "ENOENT") {
+			logger.warn(
+				{ cacheKey, err: errSummary(err) },
+				"Download cache meta unreadable; using defaults",
+			);
+		}
 	}
+	const durationSeconds = Number.isFinite(meta?.durationSeconds)
+		? (meta?.durationSeconds as number)
+		: 180;
 	return {
 		filePath,
-		durationSeconds: meta?.durationSeconds ?? 180,
-		title: meta?.title ?? "External Source",
+		durationSeconds,
+		title:
+			typeof meta?.title === "string" && meta.title
+				? meta.title
+				: "External Source",
 	};
 }
 
@@ -88,7 +111,7 @@ function writeCacheMeta(cacheKey: string, meta: CacheMeta): void {
 		);
 	} catch (err) {
 		logger.warn(
-			{ err: errSummary(err) },
+			{ cacheKey, err: errSummary(err) },
 			"Failed to write download cache meta",
 		);
 	}
