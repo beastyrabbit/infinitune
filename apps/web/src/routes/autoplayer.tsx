@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+	HardDriveDownload,
 	Heart,
 	ListMusic,
 	MessageSquareText,
@@ -284,6 +285,12 @@ function AutoplayerPage() {
 							Reimagine
 						</Link>
 						<Link
+							to="/autoplayer/sources"
+							className="border border-sky-500/30 px-3 py-2 text-sky-400/70 hover:border-sky-500/70 hover:text-sky-400"
+						>
+							Sources
+						</Link>
+						<Link
 							to="/autoplayer/settings"
 							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
 						>
@@ -372,7 +379,7 @@ function AutoplayerPage() {
 						</div>
 					</div>
 
-					<div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+					<div className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
 						<Link
 							to="/autoplayer/orchestrator"
 							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-emerald-300/50"
@@ -407,6 +414,15 @@ function AutoplayerPage() {
 							<ListMusic className="h-5 w-5 text-amber-300" />
 							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
 								Airing Plan
+							</span>
+						</Link>
+						<Link
+							to="/autoplayer/sources"
+							className="flex items-center gap-3 border border-white/10 bg-[#171a1b] p-4 hover:border-sky-400/50"
+						>
+							<HardDriveDownload className="h-5 w-5 text-sky-400" />
+							<span className="font-mono text-xs font-black uppercase tracking-widest text-white/70">
+								Sources
 							</span>
 						</Link>
 						<Link

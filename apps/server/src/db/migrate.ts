@@ -233,6 +233,18 @@ export function ensureSchema() {
 		CREATE INDEX IF NOT EXISTS radio_requests_by_status ON radio_requests(status);
 		CREATE INDEX IF NOT EXISTS radio_requests_by_kind ON radio_requests(kind);
 
+		CREATE TABLE IF NOT EXISTS cover_sources (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			url TEXT NOT NULL,
+			genre_tag TEXT,
+			status TEXT NOT NULL DEFAULT 'pending',
+			last_used_at INTEGER,
+			resolved_audio_path TEXT
+		);
+
+		CREATE INDEX IF NOT EXISTS cover_sources_by_status ON cover_sources(status);
+
 		CREATE TABLE IF NOT EXISTS settings (
 			id TEXT PRIMARY KEY,
 			created_at INTEGER NOT NULL,
@@ -376,6 +388,7 @@ export function ensureSchema() {
 	addColumn("songs", "ace_task_type TEXT");
 	addColumn("songs", "source_song_id TEXT");
 	addColumn("songs", "source_audio_path TEXT");
+	addColumn("songs", "source_url TEXT");
 	addColumn("songs", "cover_noise_strength REAL");
 	addColumn(
 		"songs",

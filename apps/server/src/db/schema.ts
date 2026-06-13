@@ -141,6 +141,9 @@ export const songs = sqliteTable(
 		sourceSongId: text("source_song_id"),
 		// External reference audio (e.g. YouTube download) for cover tasks
 		sourceAudioPath: text("source_audio_path"),
+		// Pending source spec the worker resolves to a file before ACE submit:
+		// a direct URL or a "ytsearchN:" query for yt-dlp
+		sourceUrl: text("source_url"),
 		coverNoiseStrength: real("cover_noise_strength"),
 		aceTaskId: text("ace_task_id"),
 		aceSubmittedAt: integer("ace_submitted_at", { mode: "number" }),
@@ -321,6 +324,26 @@ export const radioSchedule = sqliteTable(
 		),
 		index("radio_schedule_by_version").on(table.scheduleVersion),
 	],
+);
+
+// User-seeded source URLs for the cover-first radio: each row is one
+// external track the album planner can claim as cover reference audio.
+export const coverSources = sqliteTable(
+	"cover_sources",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		url: text("url").notNull(),
+		genreTag: text("genre_tag"),
+		status: text("status").notNull().default("pending"),
+		lastUsedAt: integer("last_used_at", { mode: "number" }),
+		resolvedAudioPath: text("resolved_audio_path"),
+	},
+	(table) => [index("cover_sources_by_status").on(table.status)],
 );
 
 export const radioRequests = sqliteTable(
@@ -535,6 +558,8 @@ export type RadioSchedule = typeof radioSchedule.$inferSelect;
 export type NewRadioSchedule = typeof radioSchedule.$inferInsert;
 export type RadioRequest = typeof radioRequests.$inferSelect;
 export type NewRadioRequest = typeof radioRequests.$inferInsert;
+export type CoverSource = typeof coverSources.$inferSelect;
+export type NewCoverSource = typeof coverSources.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;

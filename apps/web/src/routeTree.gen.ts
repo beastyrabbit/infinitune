@@ -14,6 +14,7 @@ import { Route as HouseRouteImport } from './routes/house'
 import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
+import { Route as AutoplayerSourcesRouteImport } from './routes/autoplayer_.sources'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
 import { Route as AutoplayerReimagineRouteImport } from './routes/autoplayer_.reimagine'
 import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
@@ -69,6 +70,11 @@ const IndexRoute = IndexRouteImport.update({
 const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
   id: '/autoplayer_/testlab',
   path: '/autoplayer/testlab',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerSourcesRoute = AutoplayerSourcesRouteImport.update({
+  id: '/autoplayer_/sources',
+  path: '/autoplayer/sources',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
@@ -254,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer/queue': typeof AutoplayerQueueRoute
   '/autoplayer/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
+  '/autoplayer/sources': typeof AutoplayerSourcesRoute
   '/autoplayer/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
@@ -292,6 +299,7 @@ export interface FileRoutesByTo {
   '/autoplayer/queue': typeof AutoplayerQueueRoute
   '/autoplayer/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
+  '/autoplayer/sources': typeof AutoplayerSourcesRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -330,6 +338,7 @@ export interface FileRoutesById {
   '/autoplayer_/queue': typeof AutoplayerQueueRoute
   '/autoplayer_/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
+  '/autoplayer_/sources': typeof AutoplayerSourcesRoute
   '/autoplayer_/testlab': typeof AutoplayerTestlabRouteWithChildren
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
@@ -370,6 +379,7 @@ export interface FileRouteTypes {
     | '/autoplayer/queue'
     | '/autoplayer/reimagine'
     | '/autoplayer/settings'
+    | '/autoplayer/sources'
     | '/autoplayer/testlab'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
@@ -408,6 +418,7 @@ export interface FileRouteTypes {
     | '/autoplayer/queue'
     | '/autoplayer/reimagine'
     | '/autoplayer/settings'
+    | '/autoplayer/sources'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -445,6 +456,7 @@ export interface FileRouteTypes {
     | '/autoplayer_/queue'
     | '/autoplayer_/reimagine'
     | '/autoplayer_/settings'
+    | '/autoplayer_/sources'
     | '/autoplayer_/testlab'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
@@ -484,6 +496,7 @@ export interface RootRouteChildren {
   AutoplayerQueueRoute: typeof AutoplayerQueueRoute
   AutoplayerReimagineRoute: typeof AutoplayerReimagineRoute
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
+  AutoplayerSourcesRoute: typeof AutoplayerSourcesRoute
   AutoplayerTestlabRoute: typeof AutoplayerTestlabRouteWithChildren
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
   ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
@@ -539,6 +552,13 @@ declare module '@tanstack/react-router' {
       path: '/autoplayer/testlab'
       fullPath: '/autoplayer/testlab'
       preLoaderRoute: typeof AutoplayerTestlabRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/sources': {
+      id: '/autoplayer_/sources'
+      path: '/autoplayer/sources'
+      fullPath: '/autoplayer/sources'
+      preLoaderRoute: typeof AutoplayerSourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/settings': {
@@ -795,6 +815,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerQueueRoute: AutoplayerQueueRoute,
   AutoplayerReimagineRoute: AutoplayerReimagineRoute,
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
+  AutoplayerSourcesRoute: AutoplayerSourcesRoute,
   AutoplayerTestlabRoute: AutoplayerTestlabRouteWithChildren,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,
   ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,

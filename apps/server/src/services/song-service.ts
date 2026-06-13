@@ -172,6 +172,7 @@ export async function createWithMetadata(
 		aceTaskType?: string;
 		sourceSongId?: string;
 		sourceAudioPath?: string;
+		sourceUrl?: string;
 		coverNoiseStrength?: number;
 	},
 ) {
@@ -193,6 +194,7 @@ export async function createWithMetadata(
 			aceTaskType: opts?.aceTaskType,
 			sourceSongId: opts?.sourceSongId,
 			sourceAudioPath: opts?.sourceAudioPath,
+			sourceUrl: opts?.sourceUrl,
 			coverNoiseStrength: opts?.coverNoiseStrength,
 			...patch,
 		} as typeof songs.$inferInsert)
@@ -640,6 +642,31 @@ export async function updateStoragePath(
 
 export async function updateAceAudioPath(id: string, aceAudioPath: string) {
 	await db.update(songs).set({ aceAudioPath }).where(eq(songs.id, id));
+}
+
+/** Persist the resolved cover reference file for a sourceUrl-based track. */
+export async function updateSourceAudioPath(
+	id: string,
+	sourceAudioPath: string,
+) {
+	await db.update(songs).set({ sourceAudioPath }).where(eq(songs.id, id));
+}
+
+/**
+ * Demote a cover track to plain text2music — used when its reference audio
+ * can't be acquired, so radio albums always complete.
+ */
+export async function clearCoverSource(id: string) {
+	await db
+		.update(songs)
+		.set({
+			aceTaskType: null,
+			sourceUrl: null,
+			sourceSongId: null,
+			sourceAudioPath: null,
+			coverNoiseStrength: null,
+		})
+		.where(eq(songs.id, id));
 }
 
 export async function updateAudioDuration(id: string, audioDuration: number) {

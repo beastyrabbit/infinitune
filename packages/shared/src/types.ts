@@ -153,6 +153,7 @@ export interface Song {
 	aceTaskType: string | null;
 	sourceSongId: string | null;
 	sourceAudioPath: string | null;
+	sourceUrl: string | null;
 	coverNoiseStrength: number | null;
 	aceTaskId: string | null;
 	aceSubmittedAt: number | null;

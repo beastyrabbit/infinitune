@@ -100,6 +100,7 @@ const SCHEMA_SQL = `
 		ace_task_type TEXT,
 		source_song_id TEXT,
 		source_audio_path TEXT,
+		source_url TEXT,
 		cover_noise_strength REAL,
 		ace_task_id TEXT,
 		ace_submitted_at INTEGER,
@@ -207,6 +208,16 @@ const SCHEMA_SQL = `
 		target_song_id TEXT REFERENCES songs(id) ON DELETE SET NULL,
 		schedule_slot INTEGER,
 		notification_state TEXT
+	);
+
+	CREATE TABLE cover_sources (
+		id TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		url TEXT NOT NULL,
+		genre_tag TEXT,
+		status TEXT NOT NULL DEFAULT 'pending',
+		last_used_at INTEGER,
+		resolved_audio_path TEXT
 	);
 
 	CREATE TABLE settings (

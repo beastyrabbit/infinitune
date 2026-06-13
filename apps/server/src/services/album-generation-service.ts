@@ -3,7 +3,21 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, sqlite } from "../db/index";
 import { albums, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
+import { buildYtSearchTarget } from "../external/youtube-audio";
 import { logger } from "../logger";
+import {
+	type AlbumPlan,
+	buildTrackTypeMix,
+	normalizeAlbumPlanTracks,
+	planAlbumWithLlm,
+	type TrackPlan,
+} from "./album-planner";
+import {
+	getRadioSourceSettings,
+	pickCoverOfCoverSource,
+	type RadioSourceSettings,
+	resolveCoverSourceSpec,
+} from "./cover-source-service";
 import * as playlistService from "./playlist-service";
 import * as settingsService from "./settings-service";
 import * as songService from "./song-service";
@@ -728,10 +742,239 @@ function buildTrackMetadata(input: {
 	};
 }
 
+/** Recently used cover search targets, so the planner avoids repeats. */
+function listRecentCoverTargets(limit = 40): string[] {
+	const rows = sqlite
+		.prepare(
+			`
+				SELECT source_url as sourceUrl
+				FROM songs
+				WHERE radio_eligible = 1 AND source_url LIKE 'ytsearch%'
+				ORDER BY created_at DESC
+				LIMIT ?
+			`,
+		)
+		.all(limit) as Array<{ sourceUrl: string }>;
+	return rows.map((row) => row.sourceUrl.replace(/^ytsearch\d*:/, ""));
+}
+
+interface TrackCreateOpts {
+	aceTaskType?: string;
+	sourceSongId?: string;
+	sourceAudioPath?: string;
+	sourceUrl?: string;
+	coverNoiseStrength?: number;
+}
+
+/**
+ * Resolve a planned track's reference audio. Cover-of-cover falls back to a
+ * normal cover when the station has no covers yet; a cover with no
+ * acquirable source falls back to a plain new track (empty opts).
+ */
+async function resolveTrackSourceOpts(
+	spec: TrackPlan,
+	albumGenre: string,
+	sourceSettings: RadioSourceSettings,
+): Promise<TrackCreateOpts> {
+	if (spec.type === "new") return {};
+
+	const coverOpts = {
+		aceTaskType: "cover",
+		coverNoiseStrength: sourceSettings.coverNoiseStrength,
+	};
+
+	if (spec.type === "cover-of-cover") {
+		const sourceSongId = await pickCoverOfCoverSource();
+		if (sourceSongId) return { ...coverOpts, sourceSongId };
+	}
+
+	let searchTarget: string | null = null;
+	if (spec.searchTarget) {
+		try {
+			searchTarget = buildYtSearchTarget(
+				`${spec.searchTarget.title} ${spec.searchTarget.artist} official audio`,
+			);
+		} catch {
+			searchTarget = null;
+		}
+	}
+	const sourceSpec = await resolveCoverSourceSpec({
+		albumGenre,
+		searchTarget,
+		settings: sourceSettings,
+	});
+	switch (sourceSpec.kind) {
+		case "seeded":
+		case "search":
+			return { ...coverOpts, sourceUrl: sourceSpec.sourceUrl };
+		case "nas":
+			return { ...coverOpts, sourceAudioPath: sourceSpec.sourceAudioPath };
+		case "none":
+			return {};
+	}
+}
+
 export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 	const playlist = await ensureRadioPlaylist();
 	const kind = input.kind ?? "default";
 	const theme = compactTheme(input.prompt);
+
+	const sourceSettings = await getRadioSourceSettings();
+	const trackTypes = buildTrackTypeMix(sourceSettings, RADIO_ALBUM_TRACK_COUNT);
+
+	let plan: AlbumPlan | null = null;
+	try {
+		plan = await planAlbumWithLlm({
+			theme,
+			kind,
+			trackTypes,
+			targetTrackPrompt: input.targetTrackPrompt,
+			recentAlbums: sqlite
+				.prepare(
+					"SELECT title, band_name as bandName, theme FROM albums ORDER BY created_at DESC LIMIT 10",
+				)
+				.all() as Array<{
+				title: string;
+				bandName: string | null;
+				theme: string;
+			}>,
+			recentCoverTargets: listRecentCoverTargets(),
+		});
+	} catch (err) {
+		logger.warn(
+			{ err: { message: err instanceof Error ? err.message : String(err) } },
+			"Album planner LLM failed; falling back to deterministic album",
+		);
+	}
+
+	if (!plan) {
+		return createRadioAlbumFallback(input, theme, kind);
+	}
+
+	const albumId = createId();
+	const now = Date.now();
+	const title = plan.album.albumTitle;
+	const bandName = plan.album.bandName;
+	const albumTheme = `${plan.album.targetGenre} · ${plan.album.vibe}`;
+	const bandPersona = buildBandPersona({ bandName, theme: albumTheme, kind });
+	const coverPrompt = buildAlbumCoverPrompt({
+		title,
+		bandName,
+		theme: albumTheme,
+	});
+	const research = {
+		...buildResearchContext(albumTheme),
+		plannerAlbum: plan.album,
+		trackTypes,
+	};
+	const firstOrderIndex = await songService.getNextOrderIndex(playlist.id);
+	const normalizedTracks = normalizeAlbumPlanTracks(plan, trackTypes);
+
+	const [album] = await db
+		.insert(albums)
+		.values({
+			id: albumId,
+			createdAt: now,
+			title,
+			bandName,
+			theme: albumTheme,
+			status: "generating",
+			generationKind: kind,
+			coverPrompt,
+			trendResearchJson: JSON.stringify(research),
+			bandPersonaJson: JSON.stringify(bandPersona),
+			vocalPlanJson: JSON.stringify(
+				normalizedTracks.map((track, index) => ({
+					track: index + 1,
+					texture: track?.vocalStyle ?? VOCAL_PLAN[index]?.texture,
+				})),
+			),
+			requestId: input.requestId ?? null,
+		})
+		.returning();
+
+	for (
+		let trackNumber = 1;
+		trackNumber <= RADIO_ALBUM_TRACK_COUNT;
+		trackNumber++
+	) {
+		const spec = normalizedTracks[trackNumber - 1];
+		const fallbackMetadata = buildTrackMetadata({
+			albumTitle: title,
+			bandName,
+			theme: albumTheme,
+			trackNumber,
+			kind,
+			targetTrackPrompt: input.targetTrackPrompt,
+			coverPrompt: trackNumber === 1 ? coverPrompt : undefined,
+		});
+
+		let metadata: Record<string, unknown> = fallbackMetadata;
+		let sourceOpts: TrackCreateOpts = {};
+		if (spec) {
+			sourceOpts = await resolveTrackSourceOpts(
+				spec,
+				plan.album.targetGenre,
+				sourceSettings,
+			);
+			const effectiveType = sourceOpts.aceTaskType ? spec.type : "new";
+			metadata = {
+				...fallbackMetadata,
+				title: spec.title,
+				genre: plan.album.targetGenre,
+				subGenre: plan.album.vibe,
+				lyrics: spec.lyrics,
+				caption: spec.caption,
+				vocalStyle: spec.vocalStyle,
+				bpm: spec.bpm ?? fallbackMetadata.bpm,
+				keyScale: spec.keyScale ?? fallbackMetadata.keyScale,
+				mood: spec.mood ?? fallbackMetadata.mood,
+				energy: spec.energy ?? fallbackMetadata.energy,
+				era: plan.album.era,
+				tags: ["global-radio", kind, `track-${trackNumber}`, effectiveType],
+				description: `${RADIO_TRACK_DURATION_SECONDS}-second ${effectiveType} track in ${plan.album.targetGenre}: ${spec.caption}`,
+			};
+		}
+
+		await songService.createWithMetadata(
+			playlist.id,
+			firstOrderIndex + trackNumber - 1,
+			metadata,
+			{
+				albumId,
+				albumTrackNumber: trackNumber,
+				radioEligible: true,
+				requestId: input.requestId ?? null,
+				...sourceOpts,
+			},
+		);
+	}
+
+	logger.info(
+		{
+			albumId,
+			title,
+			bandName,
+			kind,
+			targetGenre: plan.album.targetGenre,
+			trackTypes,
+		},
+		"Cover-first radio album generation job created",
+	);
+	return album;
+}
+
+/**
+ * Deterministic album path (pre-planner behavior): template metadata, all
+ * tracks text2music. Used when the LLM planner fails so the radio never
+ * stalls.
+ */
+async function createRadioAlbumFallback(
+	input: CreateRadioAlbumInput,
+	theme: string,
+	kind: AlbumGenerationKind,
+) {
+	const playlist = await ensureRadioPlaylist();
 	const title = buildAlbumTitle(theme);
 	const bandName = buildBandName(theme);
 	const albumId = createId();
@@ -788,7 +1031,7 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 
 	logger.info(
 		{ albumId, title, bandName, kind },
-		"Radio album generation job created",
+		"Radio album generation job created (fallback)",
 	);
 	return album;
 }

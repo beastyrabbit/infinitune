@@ -766,6 +766,45 @@ export const useForceGenerateRadioAlbum = createMutation<
 	}
 >(() => api.post("/api/radio/force-generate-album"), [["radio"]]);
 
+// ─── Radio Cover Sources ────────────────────────────────────────────
+
+export interface RadioCoverSource {
+	id: string;
+	createdAt: number;
+	url: string;
+	genreTag: string | null;
+	status: "pending" | "used" | "failed";
+	lastUsedAt: number | null;
+	resolvedAudioPath: string | null;
+}
+
+export interface RadioSourcesResponse {
+	sources: RadioCoverSource[];
+	nas: { configured: boolean; exists: boolean; fileCount: number };
+}
+
+export function useRadioSources(): RadioSourcesResponse | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "sources"],
+		queryFn: () => api.get<RadioSourcesResponse>("/api/radio/sources"),
+		refetchInterval: 10000,
+	});
+	return data;
+}
+
+export const useAddRadioSource = createMutation<
+	{ url: string; genreTag?: string },
+	RadioCoverSource
+>(
+	(args) => api.post<RadioCoverSource>("/api/radio/sources", args),
+	[["radio", "sources"]],
+);
+
+export const useDeleteRadioSource = createMutation<{ id: string }>(
+	(args) => api.del(`/api/radio/sources/${args.id}`),
+	[["radio", "sources"]],
+);
+
 // ─── Control Plane ────────────────────────────────────────────────────
 
 const OkResponseSchema = z.object({

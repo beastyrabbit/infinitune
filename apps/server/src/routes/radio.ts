@@ -7,6 +7,13 @@ import {
 	topUpInventory,
 } from "../services/album-generation-service";
 import {
+	addCoverSource,
+	deleteCoverSource,
+	getNasStatus,
+	getRadioSourceSettings,
+	listCoverSources,
+} from "../services/cover-source-service";
+import {
 	listRadioRequests,
 	submitRadioRequest,
 } from "../services/radio-request-service";
@@ -108,6 +115,35 @@ app.post("/requests", async (c) => {
 
 app.post("/force-generate-album", async (c) => {
 	return c.json(await topUpInventory({ force: true }));
+});
+
+const AddSourceSchema = z.object({
+	url: z.string().url().max(500),
+	genreTag: z.string().max(100).optional(),
+});
+
+app.get("/sources", async (c) => {
+	const settings = await getRadioSourceSettings();
+	return c.json({
+		sources: await listCoverSources(),
+		nas: getNasStatus(settings.sourceLibraryDir),
+	});
+});
+
+app.post("/sources", async (c) => {
+	const result = AddSourceSchema.safeParse(await c.req.json());
+	if (!result.success) return c.json({ error: result.error.message }, 400);
+	const parsed = new URL(result.data.url);
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+		return c.json({ error: "Only http(s) URLs are supported" }, 400);
+	}
+	return c.json(await addCoverSource(result.data.url, result.data.genreTag));
+});
+
+app.delete("/sources/:id", async (c) => {
+	const deleted = await deleteCoverSource(c.req.param("id"));
+	if (!deleted) return c.json({ error: "Source not found" }, 404);
+	return c.json({ ok: true });
 });
 
 export default app;

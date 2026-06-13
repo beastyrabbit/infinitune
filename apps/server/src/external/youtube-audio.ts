@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { createId } from "@paralleldrive/cuid2";
 import { logger } from "../logger";
 import { isPrivateIp } from "../utils/public-http";
 
@@ -14,6 +14,14 @@ const DOWNLOAD_DIR = path.resolve(
 );
 const DOWNLOAD_TIMEOUT_MS = 180_000;
 const MAX_DURATION_SECONDS = 600;
+const MAX_SEARCH_QUERY_LENGTH = 200;
+
+/**
+ * Bound yt-dlp to known media extractors. This kills the arbitrary-URL SSRF
+ * vector at the source: even a URL that passes the DNS pre-check (or a
+ * redirect/DNS-rebind after it) can't be fetched by the "generic" extractor.
+ */
+const EXTRACTOR_ALLOWLIST = "youtube.*,soundcloud.*,bandcamp.*";
 
 export interface YoutubeAudioResult {
 	filePath: string;
@@ -21,10 +29,76 @@ export interface YoutubeAudioResult {
 	title: string;
 }
 
+/** Strip credentials from a URL before it reaches logs. */
+function redactUrl(rawUrl: string): string {
+	try {
+		const parsed = new URL(rawUrl);
+		parsed.username = "";
+		parsed.password = "";
+		return parsed.toString();
+	} catch {
+		return rawUrl;
+	}
+}
+
+/**
+ * Reduce an error to message + code for logging. Never log the raw execFile
+ * error object — it carries stdout/stderr that can echo fetched-host content.
+ */
+function errSummary(err: unknown): { message: string; code?: unknown } {
+	if (err instanceof Error) {
+		return { message: err.message, code: (err as { code?: unknown }).code };
+	}
+	return { message: String(err) };
+}
+
+/** Stable cache key for a download target (URL or ytsearch query). */
+export function downloadCacheKey(target: string): string {
+	return createHash("sha256").update(target).digest("hex").slice(0, 32);
+}
+
+interface CacheMeta {
+	durationSeconds: number;
+	title: string;
+}
+
+function readCachedResult(cacheKey: string): YoutubeAudioResult | null {
+	const filePath = path.join(DOWNLOAD_DIR, `${cacheKey}.mp3`);
+	if (!fs.existsSync(filePath)) return null;
+	let meta: CacheMeta | null = null;
+	try {
+		meta = JSON.parse(
+			fs.readFileSync(path.join(DOWNLOAD_DIR, `${cacheKey}.json`), "utf8"),
+		) as CacheMeta;
+	} catch {
+		// Sidecar missing or corrupt — the audio file alone is still usable.
+	}
+	return {
+		filePath,
+		durationSeconds: meta?.durationSeconds ?? 180,
+		title: meta?.title ?? "External Source",
+	};
+}
+
+function writeCacheMeta(cacheKey: string, meta: CacheMeta): void {
+	try {
+		fs.writeFileSync(
+			path.join(DOWNLOAD_DIR, `${cacheKey}.json`),
+			JSON.stringify(meta),
+		);
+	} catch (err) {
+		logger.warn(
+			{ err: errSummary(err) },
+			"Failed to write download cache meta",
+		);
+	}
+}
+
 /**
  * SSRF guard: only public http(s) hosts may be fetched. Rejects URLs whose
  * hostname resolves to loopback, RFC1918, link-local, or other private
- * ranges, so the downloader can't be pointed at internal services.
+ * ranges, so the downloader can't be pointed at internal services. Defense in
+ * depth alongside the extractor allowlist.
  */
 async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
 	let parsed: URL;
@@ -48,21 +122,26 @@ async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
 }
 
 /**
- * Download the audio track of a YouTube (or other yt-dlp supported) URL as
- * MP3 for use as an ACE cover-task reference. Rejects sources longer than
- * 10 minutes. Files are kept under data/reimagine-sources.
+ * Run yt-dlp against a target (URL or ytsearch query) and cache the MP3 under
+ * DOWNLOAD_DIR keyed by the target hash, so repeat requests are free.
  */
-export async function downloadYoutubeAudio(
-	url: string,
+async function runYtDlp(
+	target: string,
+	logTarget: string,
 ): Promise<YoutubeAudioResult> {
-	await assertPublicHttpUrl(url);
-
 	fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-	const id = createId();
-	const outTemplate = path.join(DOWNLOAD_DIR, `${id}.%(ext)s`);
+	const cacheKey = downloadCacheKey(target);
+	const cached = readCachedResult(cacheKey);
+	if (cached) {
+		logger.info({ target: logTarget }, "Reference audio served from cache");
+		return cached;
+	}
 
+	const outTemplate = path.join(DOWNLOAD_DIR, `${cacheKey}.%(ext)s`);
 	const args = [
 		"--no-playlist",
+		"--use-extractors",
+		EXTRACTOR_ALLOWLIST,
 		"--extract-audio",
 		"--audio-format",
 		"mp3",
@@ -75,12 +154,12 @@ export async function downloadYoutubeAudio(
 		"after_move:%(duration)s\t%(title)s\t%(filepath)s",
 		"-o",
 		outTemplate,
-		// "--" prevents a URL from ever being parsed as a yt-dlp flag
+		// "--" prevents a target from ever being parsed as a yt-dlp flag
 		"--",
-		url,
+		target,
 	];
 
-	logger.info({ url }, "Downloading reference audio via yt-dlp");
+	logger.info({ target: logTarget }, "Downloading reference audio via yt-dlp");
 	let stdout: string;
 	let stderr: string;
 	try {
@@ -89,9 +168,12 @@ export async function downloadYoutubeAudio(
 			maxBuffer: 4 * 1024 * 1024,
 		}));
 	} catch (err) {
-		// Don't surface yt-dlp output to clients — it can echo response
-		// content from the fetched host. Log it, return a generic error.
-		logger.warn({ url, err }, "yt-dlp download failed");
+		// Don't surface yt-dlp output to clients or logs — it can echo response
+		// content from the fetched host.
+		logger.warn(
+			{ target: logTarget, err: errSummary(err) },
+			"yt-dlp download failed",
+		);
 		throw new Error("Download failed or source is unsupported");
 	}
 
@@ -112,11 +194,56 @@ export async function downloadYoutubeAudio(
 	}
 
 	const durationSeconds = Number.parseFloat(durationRaw);
-	return {
+	const result: YoutubeAudioResult = {
 		filePath,
 		durationSeconds: Number.isFinite(durationSeconds)
 			? Math.min(durationSeconds, MAX_DURATION_SECONDS)
 			: 180,
 		title: title?.trim() || "External Source",
 	};
+	writeCacheMeta(cacheKey, {
+		durationSeconds: result.durationSeconds,
+		title: result.title,
+	});
+	return result;
+}
+
+/**
+ * Download the audio track of a YouTube/SoundCloud/Bandcamp URL as MP3 for
+ * use as an ACE cover-task reference. Rejects sources longer than 10 minutes.
+ * Results are cached under data/reimagine-sources keyed by URL hash.
+ */
+export async function downloadYoutubeAudio(
+	url: string,
+): Promise<YoutubeAudioResult> {
+	await assertPublicHttpUrl(url);
+	return runYtDlp(url, redactUrl(url));
+}
+
+/** Normalize a free-text search query for yt-dlp's ytsearch extractor. */
+export function buildYtSearchTarget(query: string): string {
+	const cleaned = query
+		// Control chars would corrupt the yt-dlp target; strip them defensively.
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: intentional control-char strip
+		.replace(/[\u0000-\u001f\u007f]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, MAX_SEARCH_QUERY_LENGTH);
+	if (!cleaned) throw new Error("Empty search query");
+	return `ytsearch1:${cleaned}`;
+}
+
+/**
+ * Search YouTube for a track and download the first result's audio as MP3.
+ * Accepts either a plain query or a prebuilt "ytsearchN:" target. The search
+ * path never touches arbitrary hosts — it is bounded by the extractor
+ * allowlist, so no public-IP pre-check is needed.
+ */
+export async function downloadAudioBySearch(
+	query: string,
+): Promise<YoutubeAudioResult> {
+	const target = /^ytsearch\d*:/.test(query)
+		? buildYtSearchTarget(query.replace(/^ytsearch\d*:/, ""))
+		: buildYtSearchTarget(query);
+	return runYtDlp(target, target);
 }
