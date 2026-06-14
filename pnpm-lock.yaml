@@ -236,8 +236,8 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
       '@statelyai/inspect':
-        specifier: ^0.4.0
-        version: 0.4.0(ws@8.19.0)(xstate@5.28.0)
+        specifier: ^0.7.0
+        version: 0.7.1(xstate@5.28.0)
       better-sqlite3:
         specifier: ^12.10.0
         version: 12.10.0
@@ -3030,8 +3030,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@statelyai/inspect@0.4.0':
-    resolution: {integrity: sha512-VxQldRlKYcu6rzLY83RSXVwMYexkH6hNx85B89YWYyXYWtNGaWHFCwV7a/Kz8FFPeUz8EKVAnyMOg2kNpn07wQ==}
+  '@statelyai/inspect@0.7.1':
+    resolution: {integrity: sha512-UnMCwRaG71vJEA5mfjDh03w32+eMOuajgiwdWBQOyAla1o3nn4WLyqL3G3E7/4A/Fdp3mtFFxi0chR3ydI1hIA==}
     peerDependencies:
       xstate: ^5.5.1
 
@@ -6856,6 +6856,18 @@ packages:
       utf-8-validate:
         optional: true
 
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -10347,17 +10359,19 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@statelyai/inspect@0.4.0(ws@8.19.0)(xstate@5.28.0)':
+  '@statelyai/inspect@0.7.1(xstate@5.28.0)':
     dependencies:
       fast-safe-stringify: 2.1.1
-      isomorphic-ws: 5.0.0(ws@8.19.0)
+      isomorphic-ws: 5.0.0(ws@8.21.0)
       partysocket: 0.0.25
       safe-stable-stringify: 2.5.0
       superjson: 1.13.3
       uuid: 9.0.1
+      ws: 8.21.0
       xstate: 5.28.0
     transitivePeerDependencies:
-      - ws
+      - bufferutil
+      - utf-8-validate
 
   '@tailwindcss/node@4.1.18':
     dependencies:
@@ -12692,9 +12706,9 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isomorphic-ws@5.0.0(ws@8.19.0):
+  isomorphic-ws@5.0.0(ws@8.21.0):
     dependencies:
-      ws: 8.19.0
+      ws: 8.21.0
 
   jiti@2.6.1: {}
 
@@ -15147,6 +15161,8 @@ snapshots:
   wrappy@1.0.2: {}
 
   ws@8.19.0: {}
+
+  ws@8.21.0: {}
 
   xml-name-validator@5.0.0: {}
 
