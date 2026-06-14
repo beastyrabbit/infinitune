@@ -82,7 +82,7 @@
     "portless": "^0.4.2",
     "react-doctor": "^0.0.28",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^8.0.0",
     "vitest": "^3.2.4",
     "web-vitals": "^5.1.0"
   }
