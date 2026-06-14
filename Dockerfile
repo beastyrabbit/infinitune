@@ -1,5 +1,5 @@
 # ── Stage 1: base ──────────────────────────────────────────────
-FROM node:22-slim AS base
+FROM node:24-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
@@ -33,7 +33,7 @@ FROM base AS prod-deps
 RUN pnpm install --frozen-lockfile --prod
 
 # ── Stage 4: runtime ───────────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM node:24-slim AS runtime
 ENV NODE_ENV=production
 
 RUN apt-get update && \
