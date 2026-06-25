@@ -133,8 +133,8 @@ importers:
         specifier: 2.2.4
         version: 2.2.4
       '@tanstack/devtools-event-client':
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^0.5.0
+        version: 0.5.0
       '@tanstack/devtools-vite':
         specifier: ^0.3.12
         version: 0.3.12(vite@7.3.1(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.3))
@@ -385,8 +385,8 @@ importers:
         version: 4.2.1
     devDependencies:
       '@tanstack/devtools-event-client':
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^0.5.0
+        version: 0.5.0
       '@tanstack/devtools-vite':
         specifier: ^0.3.11
         version: 0.3.12(vite@7.3.1(@types/node@22.19.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.3))
@@ -3148,6 +3148,11 @@ packages:
   '@tanstack/devtools-event-client@0.4.0':
     resolution: {integrity: sha512-RPfGuk2bDZgcu9bAJodvO2lnZeHuz4/71HjZ0bGb/SPg8+lyTA+RLSKQvo7fSmPSi8/vcH3aKQ8EM9ywf1olaw==}
     engines: {node: '>=18'}
+
+  '@tanstack/devtools-event-client@0.5.0':
+    resolution: {integrity: sha512-H+OH3zC6Vhu/K0NaVfQKknEKawc/+2PT+D3SB3Ox0V8SiMlTo0abbmH2rH0721R2aNYbjdMXA1oENOd8E2UVoA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@tanstack/devtools-ui@0.4.4':
     resolution: {integrity: sha512-5xHXFyX3nom0UaNfiOM92o6ziaHjGo3mcSGe2HD5Xs8dWRZNpdZ0Smd0B9ddEhy0oB+gXyMzZgUJb9DmrZV0Mg==}
@@ -6444,6 +6449,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -10452,6 +10458,8 @@ snapshots:
   '@tanstack/devtools-event-client@0.3.5': {}
 
   '@tanstack/devtools-event-client@0.4.0': {}
+
+  '@tanstack/devtools-event-client@0.5.0': {}
 
   '@tanstack/devtools-ui@0.4.4(csstype@3.2.3)(solid-js@1.9.11)':
     dependencies:
