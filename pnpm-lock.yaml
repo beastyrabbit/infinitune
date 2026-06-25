@@ -175,8 +175,8 @@ importers:
         specifier: ^27.4.0
         version: 27.4.0(@noble/hashes@2.0.1)
       portless:
-        specifier: ^0.4.2
-        version: 0.4.2
+        specifier: ^0.15.0
+        version: 0.15.0
       react-doctor:
         specifier: ^0.0.28
         version: 0.0.28(@types/node@22.19.11)(eslint@9.39.2(jiti@2.6.1))
@@ -5799,10 +5799,10 @@ packages:
   points-on-path@0.2.1:
     resolution: {integrity: sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==}
 
-  portless@0.4.2:
-    resolution: {integrity: sha512-/G3jIeD1XokoO9KY/lUGTV9irKz3tgx8yqHkz+hvj/86QeR219GvYFB+QEfpvjRlvvLVJa5vE7BkRfBZBe/lQg==}
-    engines: {node: '>=20'}
-    os: [darwin, linux]
+  portless@0.15.0:
+    resolution: {integrity: sha512-GCrWz4GFPe4vbkGmDvXK78bGaKrVnIN2H6De3kAtoCfv1+CddaUaqPmA/hBzxQjGHbj+MpQMJEQ187tVqMtw2Q==}
+    engines: {node: '>=24'}
+    os: [darwin, linux, win32]
     hasBin: true
 
   postcss@8.5.6:
@@ -6444,6 +6444,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
@@ -13806,9 +13807,7 @@ snapshots:
       path-data-parser: 0.1.0
       points-on-curve: 0.2.0
 
-  portless@0.4.2:
-    dependencies:
-      chalk: 5.6.2
+  portless@0.15.0: {}
 
   postcss@8.5.6:
     dependencies:

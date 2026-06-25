@@ -79,7 +79,7 @@
     "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.9",
     "jsdom": "^27.4.0",
-    "portless": "^0.4.2",
+    "portless": "^0.15.0",
     "react-doctor": "^0.0.28",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
