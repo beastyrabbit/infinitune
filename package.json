@@ -48,7 +48,7 @@
     "hono": "^4.11.9",
     "lucide-react": "^0.561.0",
     "motion": "^12.34.0",
-    "nitro": "npm:nitro-nightly@3.0.1-20260213-154614-f663e76d",
+    "nitro": "npm:nitro-nightly@3.0.1-20260731-205209-52abde8a",
     "ollama-ai-provider-v2": "^3.3.1",
     "radix-ui": "^1.4.3",
     "react": "^19.2.4",
