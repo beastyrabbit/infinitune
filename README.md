@@ -270,11 +270,11 @@ RATE_LIMIT_LLM_GLOBAL_PER_MIN=200
 RATE_LIMIT_RADIO_REQUESTS_GLOBAL_PER_MIN=50
 ```
 
-Every production frontend process requires `APP_ORIGIN`. Set it to the public
-web origin, such as `https://music.example.com`, even when the frontend and API
-share one public origin. The container entrypoint refuses to start a production
-frontend without it. You may also set `INTERNAL_API_URL` on the frontend process
-to a private backend origin, such as
+Every production frontend and server process requires `APP_ORIGIN`. Set it to
+the public web origin, such as `https://music.example.com`, even when the
+frontend and API share one public origin. The container entrypoint refuses to
+start either process without it. You may also set `INTERNAL_API_URL` on the
+frontend process to a private backend origin, such as
 `http://infinitune-api:5175`; it is used only for server-side API fetches.
 Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
 requests remain same-origin when production builds leave `VITE_API_URL` empty.
@@ -298,6 +298,13 @@ after multiple links, ownership changes, or later edits, the service cannot
 safely reconstruct the original cleanup deadline without risking deletion of
 music the user expected to keep. Timed links extend a temporary playlist only to
 the link expiry.
+
+Revoking or expiring a link removes access to its shared page and public
+metadata. Audio delivery keeps Infinitune's existing public-by-song-ID contract
+so native browser media elements, downloads, and room playback work without an
+authorization header. A shared song ID does not grant access to private metadata
+or mutations, but audio that a recipient has already opened or downloaded cannot
+be revoked.
 
 ### OpenAI Codex (ChatGPT Subscription) Setup
 

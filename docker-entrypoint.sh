@@ -3,6 +3,10 @@ set -e
 
 case "$PROCESS_TYPE" in
   server)
+    if [ -z "${APP_ORIGIN:-}" ]; then
+      echo "ERROR: APP_ORIGIN is required for the production server process."
+      exit 1
+    fi
     exec node_modules/.bin/tsx apps/server/src/index.ts
     ;;
   frontend)
