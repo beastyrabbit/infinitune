@@ -110,6 +110,17 @@ function getNoisyRoute(method: string, path: string): string | undefined {
 	return undefined;
 }
 
+function getRequestLogPath(method: string, path: string): string {
+	const sharePathPrefix = "/api/share/";
+	if (
+		!path.startsWith(sharePathPrefix) ||
+		path.length === sharePathPrefix.length
+	) {
+		return path;
+	}
+	return method === "DELETE" ? "/api/share/:id" : "/api/share/:token";
+}
+
 function recordNoisyRequest(route: string, durationMs: number): void {
 	const current = noisyRequestAggregates.get(route);
 	if (!current) {
@@ -197,7 +208,11 @@ app.onError((err, c) => {
 		return c.json({ error: err.message }, 422);
 	}
 	logger.error(
-		{ err, method: c.req.method, path: c.req.path },
+		{
+			err,
+			method: c.req.method,
+			path: getRequestLogPath(c.req.method, c.req.path),
+		},
 		"Unhandled request error",
 	);
 	return c.json(
@@ -242,8 +257,9 @@ app.use("*", async (c, next) => {
 	c.header("x-request-id", requestId);
 	const startedAt = performance.now();
 	const method = c.req.method;
-	const path = c.req.path;
-	const noisyRoute = getNoisyRoute(method, path);
+	const requestPath = c.req.path;
+	const path = getRequestLogPath(method, requestPath);
+	const noisyRoute = getNoisyRoute(method, requestPath);
 	const requestLogger = logger.child({
 		requestId,
 		method,

@@ -552,6 +552,53 @@ describe("share-link-service", () => {
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
 	});
 
+	it("rolls over an aged anonymous link and reuses the new link", async () => {
+		const firstResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+		expect(firstResponse.status).toBe(201);
+		const first = (await firstResponse.json()) as { id: string; token: string };
+		await getTestDb()
+			.update(shareLinks)
+			.set({
+				expiresAt: Date.now() + shareService.ANONYMOUS_SHARE_TTL_MS / 2 - 1,
+			})
+			.where(eq(shareLinks.id, first.id));
+
+		const replacementResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+		expect(replacementResponse.status).toBe(201);
+		const replacement = (await replacementResponse.json()) as {
+			token: string;
+		};
+		expect(replacement.token).not.toBe(first.token);
+
+		const repeatedResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+		expect(repeatedResponse.status).toBe(201);
+		expect((await repeatedResponse.json()) as { token: string }).toMatchObject({
+			token: replacement.token,
+		});
+		expect(await getTestDb().select().from(shareLinks)).toHaveLength(2);
+	});
+
 	it("clamps anonymous shares to temporary resource retention", async () => {
 		const db = getTestDb();
 		const resourceExpiry = Date.now() + 60 * 60 * 1000;
@@ -571,9 +618,26 @@ describe("share-link-service", () => {
 		});
 
 		expect(response.status).toBe(201);
-		expect((await response.json()) as { expiresAt: number }).toMatchObject({
+		const link = (await response.json()) as {
+			expiresAt: number;
+			token: string;
+		};
+		expect(link).toMatchObject({
 			expiresAt: resourceExpiry,
 		});
+		const repeatedResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "song",
+				resourceId: "song-1",
+			}),
+		});
+		expect(repeatedResponse.status).toBe(201);
+		expect((await repeatedResponse.json()) as { token: string }).toMatchObject({
+			token: link.token,
+		});
+		expect(await db.select().from(shareLinks)).toHaveLength(1);
 		const [playlist] = await db
 			.select()
 			.from(playlists)

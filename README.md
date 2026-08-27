@@ -109,6 +109,11 @@ Each song flows through: `pending` → `generating_metadata` → `metadata_ready
 
 The unified server runs a per-song worker pipeline with concurrency queues managing throughput across three lanes: **LLM** (metadata/lyrics), **Image** (cover art), and **Audio** (ACE-Step synthesis).
 
+ACE queue depth is the number of submitted tasks Infinitune keeps in ACE-Step's
+backlog; it does not create ACE workers or guarantee parallel synthesis. Match
+the depth to the worker capacity configured in ACE-Step when responsive
+prioritization matters.
+
 ### Multi-Device Playback
 
 Infinitune includes integrated room management for synchronized playback — think Sonos or Spotify Connect, but for AI-generated music.

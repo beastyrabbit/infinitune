@@ -48,6 +48,10 @@ export function StationPresets() {
 					</span>
 				)}
 			</div>
+			<p className="mb-4 font-mono text-[10px] uppercase tracking-widest text-white/40">
+				The active station guides future albums. Playback and in-flight songs
+				stay unchanged.
+			</p>
 
 			{canManage && creating && (
 				<StationPresetForm
@@ -102,7 +106,7 @@ export function StationPresets() {
 								{activatingId === preset.id ? (
 									<Loader2 className="h-3 w-3 animate-spin" />
 								) : (
-									"Play this"
+									"Use for next albums"
 								)}
 							</button>
 						)}

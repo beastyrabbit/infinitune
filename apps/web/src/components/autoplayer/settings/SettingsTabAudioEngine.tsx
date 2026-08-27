@@ -186,7 +186,7 @@ export function SettingsTabAudioEngine({
 
 				<SettingsField
 					label="ACE Queue Depth"
-					hint="MAX SUBMITTED/POLLING ACE TASKS. 12 = ONE FULL RADIO ALBUM IN ACE'S QUEUE"
+					hint="SUBMITTED/POLLING BACKLOG, NOT GPU PARALLELISM. MATCH ACE WORKER CAPACITY FOR RESPONSIVE PRIORITIES"
 				>
 					<Select
 						value={aceQueueDepth || "12"}
@@ -202,7 +202,7 @@ export function SettingsTabAudioEngine({
 									value={value}
 									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
 								>
-									{value === "12" ? "12 TASKS / 1 ALBUM" : `${value} TASKS`}
+									{value === "12" ? "12 TASKS (DEFAULT)" : `${value} TASKS`}
 								</SelectItem>
 							))}
 						</SelectContent>

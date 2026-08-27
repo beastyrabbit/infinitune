@@ -101,6 +101,37 @@ describe("queue actors", () => {
 	});
 
 	describe("AudioQueue", () => {
+		it("releases the poll gate after a rejected poll", async () => {
+			const pollAudio = vi
+				.fn()
+				.mockRejectedValueOnce(new Error("ACE poll timed out"))
+				.mockResolvedValueOnce({
+					status: "succeeded" as const,
+					audioPath: "/tmp/task-audio.mp3",
+				});
+			const queue = new AudioQueue(pollAudio, 1);
+			const result = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => ({
+					taskId: "task-a",
+					status: "running" as const,
+					submitProcessingMs: 1,
+				}),
+			});
+
+			await Promise.resolve();
+			await queue.tickPolls();
+			expect(queue.getStatus()).toMatchObject({ active: 1 });
+
+			await queue.tickPolls();
+
+			await expect(result).resolves.toMatchObject({
+				result: { status: "succeeded", taskId: "task-a" },
+			});
+			expect(pollAudio).toHaveBeenCalledTimes(2);
+		});
+
 		it("rejects active item and advances pending item on song cancel", async () => {
 			const pollAudio = vi.fn(async () => {
 				return {

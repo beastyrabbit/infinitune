@@ -180,9 +180,17 @@ async function createShareLinkWithPolicy(
 			.all()
 			.map(toShareLink);
 
-		if (reuseAnonymousTimedLink) {
+		if (reuseAnonymousTimedLink && expiresAt !== null) {
+			const anonymousExpiresAt = expiresAt;
+			const minimumReusableExpiry = Math.min(
+				anonymousExpiresAt,
+				now + ANONYMOUS_SHARE_TTL_MS / 2,
+			);
 			const reusable = liveLinks.find(
-				(link) => link.expiresAt !== null && link.expiresAt <= (expiresAt ?? 0),
+				(link) =>
+					link.expiresAt !== null &&
+					link.expiresAt >= minimumReusableExpiry &&
+					link.expiresAt <= anonymousExpiresAt,
 			);
 			if (reusable) return reusable;
 		}

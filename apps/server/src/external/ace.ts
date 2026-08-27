@@ -36,6 +36,45 @@ interface AceRawTask {
 	extra_outputs?: Record<string, unknown>;
 }
 
+// Status reads should be quick even when generation itself takes a long time.
+// This deadline keeps an unreachable ACE endpoint from wedging the audio queue.
+export const ACE_POLL_TIMEOUT_MS = 10_000;
+
+async function queryAceTasks(
+	aceUrl: string,
+	taskIds: string[],
+	label: string,
+	callerSignal?: AbortSignal,
+): Promise<AceRawTask[] | undefined> {
+	const timeoutController = new AbortController();
+	const timeoutHandle = setTimeout(() => {
+		timeoutController.abort(
+			new DOMException(
+				`ACE-Step status poll timed out after ${ACE_POLL_TIMEOUT_MS}ms`,
+				"TimeoutError",
+			),
+		);
+	}, ACE_POLL_TIMEOUT_MS);
+	const signal = callerSignal
+		? AbortSignal.any([callerSignal, timeoutController.signal])
+		: timeoutController.signal;
+
+	try {
+		const response = await fetch(`${aceUrl}/query_result`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ task_id_list: taskIds }),
+			signal,
+		});
+
+		await assertOk(response, label);
+		const data = (await response.json()) as { data?: AceRawTask[] };
+		return data.data;
+	} finally {
+		clearTimeout(timeoutHandle);
+	}
+}
+
 function extractTimeCosts(
 	task: AceRawTask,
 ): Record<string, number> | undefined {
@@ -234,18 +273,12 @@ export async function batchPollAce(
 ): Promise<Map<string, AcePollResult>> {
 	const urls = await getServiceUrls();
 	const aceUrl = urls.aceStepUrl;
-
-	const response = await fetch(`${aceUrl}/query_result`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ task_id_list: taskIds }),
+	const results = await queryAceTasks(
+		aceUrl,
+		taskIds,
+		"ACE-Step batch poll",
 		signal,
-	});
-
-	await assertOk(response, "ACE-Step batch poll");
-
-	const data = (await response.json()) as { data?: AceRawTask[] };
-	const results = data.data;
+	);
 	const resultMap = new Map<string, AcePollResult>();
 
 	if (!results || !Array.isArray(results)) {
@@ -316,18 +349,12 @@ export async function pollAce(
 ): Promise<AcePollResult> {
 	const urls = await getServiceUrls();
 	const aceUrl = urls.aceStepUrl;
-
-	const response = await fetch(`${aceUrl}/query_result`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ task_id_list: [taskId] }),
+	const results = await queryAceTasks(
+		aceUrl,
+		[taskId],
+		"ACE-Step poll",
 		signal,
-	});
-
-	await assertOk(response, "ACE-Step poll");
-
-	const data = (await response.json()) as { data?: AceRawTask[] };
-	const results = data.data;
+	);
 	if (!results || !Array.isArray(results) || results.length === 0) {
 		return { status: "not_found" };
 	}
