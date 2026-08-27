@@ -22,7 +22,7 @@ const CreateSchema = z.object({
 	expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
-async function canManageResource(
+async function canCreateShareForResource(
 	c: Context,
 	resourceType: ShareResourceType,
 	resourceId: string,
@@ -34,12 +34,23 @@ async function canManageResource(
 	return actor.kind === "user" && actor.userId === resource.ownerUserId;
 }
 
+async function canManageShareForResource(
+	c: Context,
+	resourceType: ShareResourceType,
+	resourceId: string,
+): Promise<boolean> {
+	const resource = await getShareResource(resourceType, resourceId);
+	if (!resource?.ownerUserId) return false;
+	const actor = await getRequestActor(c);
+	return actor.kind === "user" && actor.userId === resource.ownerUserId;
+}
+
 // POST /api/share — create a share link
 app.post("/", shareLinkLimiter, async (c) => {
 	const result = CreateSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	if (
-		!(await canManageResource(
+		!(await canCreateShareForResource(
 			c,
 			result.data.resourceType,
 			result.data.resourceId,
@@ -67,7 +78,7 @@ app.get("/", shareLinkLimiter, async (c) => {
 	if (!isShareResourceType(resourceType) || !resourceId) {
 		return c.json({ error: "resourceType and resourceId are required" }, 400);
 	}
-	if (!(await canManageResource(c, resourceType, resourceId))) {
+	if (!(await canManageShareForResource(c, resourceType, resourceId))) {
 		return c.json({ error: "Resource not found" }, 404);
 	}
 	return c.json({
@@ -88,7 +99,7 @@ app.delete("/:id", shareLinkLimiter, async (c) => {
 	const link = await getShareLinkById(id);
 	if (
 		!link ||
-		!(await canManageResource(c, link.resourceType, link.resourceId))
+		!(await canManageShareForResource(c, link.resourceType, link.resourceId))
 	) {
 		return c.json({ error: "Share link not found" }, 404);
 	}

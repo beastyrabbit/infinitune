@@ -296,7 +296,9 @@ the link later does not make that playlist temporary again. This is deliberate:
 after multiple links, ownership changes, or later edits, the service cannot
 safely reconstruct the original cleanup deadline without risking deletion of
 music the user expected to keep. Timed links extend a temporary playlist only to
-the link expiry.
+the link expiry. Anonymous users can create permanent links for ownerless music,
+but cannot list or revoke them because the service has no anonymous identity to
+prove who created the link.
 
 Revoking or expiring a link removes access to its shared page and public
 metadata. Audio delivery keeps Infinitune's existing public-by-song-ID contract

@@ -530,6 +530,30 @@ describe("share-link-service", () => {
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
 	});
 
+	it("does not let anonymous callers list or revoke ownerless shares", async () => {
+		const createResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+		expect(createResponse.status).toBe(201);
+		const link = (await createResponse.json()) as { id: string; token: string };
+
+		const listResponse = await shareRoutes.request(
+			"/?resourceType=playlist&resourceId=pl-1",
+		);
+		expect(listResponse.status).toBe(404);
+
+		const deleteResponse = await shareRoutes.request(`/${link.id}`, {
+			method: "DELETE",
+		});
+		expect(deleteResponse.status).toBe(404);
+		expect(await shareService.resolveShareLink(link.token)).not.toBeNull();
+	});
+
 	it("rejects zero-day expiry instead of creating a permanent link", async () => {
 		const response = await shareRoutes.request("/", {
 			method: "POST",
@@ -546,6 +570,20 @@ describe("share-link-service", () => {
 	});
 
 	it("rate-limits share-link listing", async () => {
+		const db = getTestDb();
+		await db.insert(users).values({
+			id: "user-1",
+			createdAt: Date.now(),
+			shooSubject: "shoo-user-1",
+		});
+		await db
+			.update(playlists)
+			.set({ ownerUserId: "user-1" })
+			.where(eq(playlists.id, "pl-1"));
+		vi.mocked(getRequestActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
 		const path = "/?resourceType=playlist&resourceId=pl-1";
 		for (let index = 0; index < 20; index++) {
 			expect((await shareRoutes.request(path)).status).toBe(200);

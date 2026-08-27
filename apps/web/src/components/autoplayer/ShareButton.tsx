@@ -2,11 +2,11 @@ import { Link2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/integrations/api/client";
-import {
-	findReusablePermanentShareLink,
-	type ShareLinkResponse,
-} from "@/lib/share-links";
 import { cn } from "@/lib/utils";
+
+interface ShareLinkResponse {
+	token: string;
+}
 
 interface ShareButtonProps {
 	resourceType: "playlist" | "song";
@@ -37,16 +37,10 @@ export function ShareButton({
 		if (busy) return;
 		setBusy(true);
 		try {
-			const query = new URLSearchParams({ resourceType, resourceId });
-			const existing = await api.get<{ links: ShareLinkResponse[] }>(
-				`/api/share?${query}`,
-			);
-			const link =
-				findReusablePermanentShareLink(existing.links) ??
-				(await api.post<ShareLinkResponse>("/api/share", {
-					resourceType,
-					resourceId,
-				}));
+			const link = await api.post<ShareLinkResponse>("/api/share", {
+				resourceType,
+				resourceId,
+			});
 			const url = buildShareUrl(link.token);
 			try {
 				await navigator.clipboard.writeText(url);
