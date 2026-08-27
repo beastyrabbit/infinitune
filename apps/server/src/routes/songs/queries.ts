@@ -7,6 +7,7 @@ import { logger } from "../../logger";
 import * as songService from "../../services/song-service";
 import { songToWire } from "../../wire";
 import {
+	requirePlaybackPlaylistAccess,
 	requirePlaylistAccess,
 	requireSongAccess,
 	songReadAccess,
@@ -19,9 +20,10 @@ app.get("/", async (c) => {
 	return c.json(await songService.listAll(200, await songReadAccess(c)));
 });
 
+for (const path of ["/by-playlist/:playlistId", "/queue/:playlistId"]) {
+	app.use(path, requirePlaybackPlaylistAccess);
+}
 for (const path of [
-	"/by-playlist/:playlistId",
-	"/queue/:playlistId",
 	"/next-order-index/:playlistId",
 	"/work-queue/:playlistId",
 ]) {

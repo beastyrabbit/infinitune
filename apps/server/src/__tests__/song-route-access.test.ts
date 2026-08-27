@@ -11,6 +11,10 @@ vi.mock("../auth/actor", () => ({
 	getRequestActor: vi.fn(),
 }));
 
+vi.mock("../auth/device", () => ({
+	getDeviceActor: vi.fn(),
+}));
+
 vi.mock("../db/index", () => ({
 	get db() {
 		return getTestDb();
@@ -33,8 +37,11 @@ vi.mock("../utils/song-audio-path", () => ({
 }));
 
 import { getRequestActor } from "../auth/actor";
+import { getDeviceActor } from "../auth/device";
 import { playlists, songs, users } from "../db/schema";
 import { resetRateLimiters } from "../middleware/rate-limit";
+import agentMemoryRoutes from "../routes/agent-memory";
+import playlistsRoutes from "../routes/playlists";
 import songsRoutes from "../routes/songs/index";
 
 async function seedOwnedSongs() {
@@ -57,6 +64,7 @@ async function seedOwnedSongs() {
 			id: "public-playlist",
 			createdAt: now,
 			name: "Public",
+			playlistKey: "public",
 			prompt: "public",
 			llmProvider: "openai-codex",
 			llmModel: "",
@@ -65,6 +73,7 @@ async function seedOwnedSongs() {
 			id: "owned-playlist",
 			createdAt: now + 1,
 			name: "Owned",
+			playlistKey: "owned",
 			prompt: "private",
 			llmProvider: "openai-codex",
 			llmModel: "",
@@ -74,6 +83,7 @@ async function seedOwnedSongs() {
 			id: "other-playlist",
 			createdAt: now + 2,
 			name: "Other",
+			playlistKey: "other",
 			prompt: "other private",
 			llmProvider: "openai-codex",
 			llmModel: "",
@@ -96,7 +106,7 @@ async function seedOwnedSongs() {
 			createdAt: now + 1,
 			playlistId: "owned-playlist",
 			orderIndex: 1,
-			status: "generating_audio",
+			status: "ready",
 			title: "Owned Song",
 			userRating: "up",
 			storagePath: "/music/owned",
@@ -127,6 +137,14 @@ function postJson(path: string, body: unknown) {
 	});
 }
 
+function patchJson(app: typeof songsRoutes, path: string, body: unknown) {
+	return app.request(path, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
 const completeMetadata = {
 	title: "New Song",
 	artistName: "Tester",
@@ -146,6 +164,7 @@ describe("song route ownership", () => {
 		setupTestDb();
 		await seedOwnedSongs();
 		vi.mocked(getRequestActor).mockResolvedValue({ kind: "anonymous" });
+		vi.mocked(getDeviceActor).mockResolvedValue(null);
 	});
 
 	afterEach(() => {
@@ -289,5 +308,195 @@ describe("song route ownership", () => {
 					.where(eq(playlists.id, oneshot.playlist.id))
 			)[0]?.ownerUserId,
 		).toBe("user-1");
+	});
+
+	it("limits owner devices to local playback operations", async () => {
+		vi.mocked(getDeviceActor).mockResolvedValue({
+			kind: "device",
+			deviceId: "device-1",
+			ownerUserId: "user-1",
+		});
+
+		expect(
+			await responseIds(
+				await songsRoutes.request("/by-playlist/owned-playlist"),
+			),
+		).toEqual(["owned-song"]);
+		expect(
+			await responseIds(await songsRoutes.request("/queue/owned-playlist")),
+		).toEqual(["owned-song"]);
+		expect(
+			(
+				await patchJson(songsRoutes, "/owned-song/status", {
+					status: "played",
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await songsRoutes.request("/owned-song/rating", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ rating: "down" }),
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await getTestDb()
+					.select({
+						status: songs.status,
+						userRating: songs.userRating,
+						errorMessage: songs.errorMessage,
+					})
+					.from(songs)
+					.where(eq(songs.id, "owned-song"))
+			)[0],
+		).toEqual({
+			status: "played",
+			userRating: "down",
+			errorMessage: null,
+		});
+
+		for (const request of [
+			patchJson(songsRoutes, "/owned-song/status", { status: "ready" }),
+			patchJson(songsRoutes, "/owned-song/status", {
+				status: "played",
+				errorMessage: "device-injected error",
+			}),
+			patchJson(songsRoutes, "/owned-song/metadata", { title: "Changed" }),
+			songsRoutes.request("/owned-song/claim-metadata", { method: "POST" }),
+			songsRoutes.request("/owned-song/retry", { method: "POST" }),
+			postJson("/create-pending", {
+				playlistId: "owned-playlist",
+				orderIndex: 2,
+			}),
+		]) {
+			expect((await request).status).toBe(404);
+		}
+		expect(
+			(
+				await getTestDb()
+					.select({ errorMessage: songs.errorMessage })
+					.from(songs)
+					.where(eq(songs.id, "owned-song"))
+			)[0]?.errorMessage,
+		).toBeNull();
+
+		vi.mocked(getDeviceActor).mockResolvedValue({
+			kind: "device",
+			deviceId: "device-2",
+			ownerUserId: "user-2",
+		});
+		expect((await songsRoutes.request("/queue/owned-playlist")).status).toBe(
+			404,
+		);
+		expect(
+			(
+				await patchJson(songsRoutes, "/owned-song/status", {
+					status: "played",
+				})
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await songsRoutes.request("/owned-song/rating", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ rating: "up" }),
+				})
+			).status,
+		).toBe(404);
+	});
+
+	it("allows owner-device playlist discovery and playback state only", async () => {
+		vi.mocked(getDeviceActor).mockResolvedValue({
+			kind: "device",
+			deviceId: "device-1",
+			ownerUserId: "user-1",
+		});
+
+		expect(await responseIds(await playlistsRoutes.request("/"))).toEqual([
+			"owned-playlist",
+			"public-playlist",
+		]);
+		expect((await playlistsRoutes.request("/owned-playlist")).status).toBe(200);
+		expect((await playlistsRoutes.request("/by-key/owned")).status).toBe(200);
+		expect((await playlistsRoutes.request("/other-playlist")).status).toBe(404);
+		expect(
+			(
+				await playlistsRoutes.request("/owned-playlist/heartbeat", {
+					method: "POST",
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await patchJson(playlistsRoutes, "/owned-playlist/position", {
+					currentOrderIndex: 1,
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await getTestDb()
+					.select({
+						currentOrderIndex: playlists.currentOrderIndex,
+						lastSeenAt: playlists.lastSeenAt,
+					})
+					.from(playlists)
+					.where(eq(playlists.id, "owned-playlist"))
+			)[0],
+		).toEqual({
+			currentOrderIndex: 1,
+			lastSeenAt: expect.any(Number),
+		});
+
+		for (const request of [
+			patchJson(playlistsRoutes, "/owned-playlist/prompt", {
+				prompt: "Device rewrite",
+			}),
+			playlistsRoutes.request("/owned-playlist", { method: "DELETE" }),
+			playlistsRoutes.request("/owned-playlist/agent-chat/messages", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ content: "Device chat" }),
+			}),
+		]) {
+			expect((await request).status).toBe(404);
+		}
+
+		expect(
+			(await agentMemoryRoutes.request("/?playlistId=owned-playlist")).status,
+		).toBe(404);
+
+		vi.mocked(getDeviceActor).mockResolvedValue({
+			kind: "device",
+			deviceId: "device-2",
+			ownerUserId: "user-2",
+		});
+		expect((await playlistsRoutes.request("/owned-playlist")).status).toBe(404);
+		expect(
+			(
+				await playlistsRoutes.request("/owned-playlist/heartbeat", {
+					method: "POST",
+				})
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await patchJson(playlistsRoutes, "/owned-playlist/position", {
+					currentOrderIndex: 2,
+				})
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await getTestDb()
+					.select({ currentOrderIndex: playlists.currentOrderIndex })
+					.from(playlists)
+					.where(eq(playlists.id, "owned-playlist"))
+			)[0]?.currentOrderIndex,
+		).toBe(1);
 	});
 });

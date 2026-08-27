@@ -645,6 +645,7 @@ async function cmdPlay(args: string[]): Promise<void> {
 			explicitPlaylistKey: getFlagString(parsed, "playlist-key"),
 			defaultPlaylistKey: config.defaultPlaylistKey,
 			interactivePlaylist: true,
+			deviceToken: config.deviceToken ?? undefined,
 		});
 
 		const startLocalResponse = await sendDaemonRequest("startLocal", {
@@ -743,6 +744,7 @@ async function cmdPlay(args: string[]): Promise<void> {
 		defaultRoomId: config.defaultRoomId,
 		defaultPlaylistKey: config.defaultPlaylistKey,
 		interactivePlaylist: true,
+		deviceToken: config.deviceToken ?? undefined,
 	});
 
 	await playInRoomSession(sendDaemonRequest, {
@@ -981,7 +983,9 @@ async function cmdRoom(args: string[]): Promise<void> {
 			return;
 		}
 		case "pick": {
-			const room = await pickExistingRoom(serverUrl);
+			const room = await pickExistingRoom(serverUrl, {
+				deviceToken: config.deviceToken ?? undefined,
+			});
 			const response = await sendDaemonRequest("joinRoom", {
 				serverUrl,
 				roomId: room.id,
@@ -1394,10 +1398,11 @@ async function pickModeInteractive(
 async function pickDefaultPlaylistKeyInteractive(
 	serverUrl: string,
 	current: string | null,
+	deviceToken?: string,
 ): Promise<string | null> {
 	let playlists: Awaited<ReturnType<typeof listPlaylists>>;
 	try {
-		playlists = await listPlaylists(serverUrl);
+		playlists = await listPlaylists(serverUrl, { deviceToken });
 	} catch {
 		return current;
 	}
@@ -1484,6 +1489,7 @@ async function runConfigWizard(
 		patch.defaultPlaylistKey = await pickDefaultPlaylistKeyInteractive(
 			patch.serverUrl,
 			current.defaultPlaylistKey,
+			current.deviceToken ?? undefined,
 		);
 
 		return patch;

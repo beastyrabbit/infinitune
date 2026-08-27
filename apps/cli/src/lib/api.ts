@@ -63,6 +63,22 @@ const OkResponseSchema = z.object({
 	ok: z.boolean(),
 });
 
+type AuthHeaders = {
+	idToken?: string;
+	deviceToken?: string;
+};
+
+function resolveAuthHeaders(headers?: AuthHeaders): Record<string, string> {
+	const resolved: Record<string, string> = {};
+	if (headers?.idToken) {
+		resolved.Authorization = `Bearer ${headers.idToken}`;
+	}
+	if (headers?.deviceToken) {
+		resolved["x-device-token"] = headers.deviceToken;
+	}
+	return resolved;
+}
+
 async function requestJson<T>(
 	serverUrl: string,
 	pathname: string,
@@ -109,49 +125,59 @@ async function requestJson<T>(
 	return parsed.data;
 }
 
-export function listPlaylists(serverUrl: string): Promise<Playlist[]> {
-	return requestJson(serverUrl, "/api/playlists", z.array(PlaylistSchema)).then(
-		(value) => value as unknown as Playlist[],
-	);
+export function listPlaylists(
+	serverUrl: string,
+	headers?: AuthHeaders,
+): Promise<Playlist[]> {
+	return requestJson(serverUrl, "/api/playlists", z.array(PlaylistSchema), {
+		headers: resolveAuthHeaders(headers),
+	}).then((value) => value as unknown as Playlist[]);
 }
 
 export function getCurrentPlaylist(
 	serverUrl: string,
+	headers?: AuthHeaders,
 ): Promise<Playlist | null> {
 	return requestJson(
 		serverUrl,
 		"/api/playlists/current",
 		PlaylistSchema.nullable(),
+		{ headers: resolveAuthHeaders(headers) },
 	).then((value) => value as Playlist | null);
 }
 
 export function getPlaylistByKey(
 	serverUrl: string,
 	playlistKey: string,
+	headers?: AuthHeaders,
 ): Promise<Playlist | null> {
 	const encoded = encodeURIComponent(playlistKey);
 	return requestJson(
 		serverUrl,
 		`/api/playlists/by-key/${encoded}`,
 		PlaylistSchema.nullable(),
+		{ headers: resolveAuthHeaders(headers) },
 	).then((value) => value as Playlist | null);
 }
 
 export function listSongsByPlaylist(
 	serverUrl: string,
 	playlistId: string,
+	headers?: AuthHeaders,
 ): Promise<Song[]> {
 	const encoded = encodeURIComponent(playlistId);
 	return requestJson(
 		serverUrl,
 		`/api/songs/by-playlist/${encoded}`,
 		z.array(SongSchema),
+		{ headers: resolveAuthHeaders(headers) },
 	).then((value) => value as unknown as Song[]);
 }
 
 export function heartbeatPlaylist(
 	serverUrl: string,
 	playlistId: string,
+	headers?: AuthHeaders,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(playlistId);
 	return requestJson(
@@ -160,6 +186,7 @@ export function heartbeatPlaylist(
 		OkResponseSchema,
 		{
 			method: "POST",
+			headers: resolveAuthHeaders(headers),
 		},
 	);
 }
@@ -168,6 +195,7 @@ export function updatePlaylistPosition(
 	serverUrl: string,
 	playlistId: string,
 	currentOrderIndex: number,
+	headers?: AuthHeaders,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(playlistId);
 	return requestJson(
@@ -176,6 +204,7 @@ export function updatePlaylistPosition(
 		OkResponseSchema,
 		{
 			method: "PATCH",
+			headers: resolveAuthHeaders(headers),
 			body: JSON.stringify({ currentOrderIndex }),
 		},
 	);
@@ -186,6 +215,7 @@ export function updateSongStatus(
 	songId: string,
 	status: SongStatus,
 	errorMessage?: string,
+	headers?: AuthHeaders,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(songId);
 	return requestJson(
@@ -194,6 +224,7 @@ export function updateSongStatus(
 		OkResponseSchema,
 		{
 			method: "PATCH",
+			headers: resolveAuthHeaders(headers),
 			body: JSON.stringify({
 				status,
 				...(typeof errorMessage === "string" ? { errorMessage } : {}),
@@ -206,6 +237,7 @@ export function rateSong(
 	serverUrl: string,
 	songId: string,
 	rating: "up" | "down",
+	headers?: AuthHeaders,
 ): Promise<{ ok: boolean }> {
 	const encoded = encodeURIComponent(songId);
 	return requestJson(
@@ -214,25 +246,10 @@ export function rateSong(
 		OkResponseSchema,
 		{
 			method: "POST",
+			headers: resolveAuthHeaders(headers),
 			body: JSON.stringify({ rating }),
 		},
 	);
-}
-
-type AuthHeaders = {
-	idToken?: string;
-	deviceToken?: string;
-};
-
-function resolveAuthHeaders(headers?: AuthHeaders): Record<string, string> {
-	const resolved: Record<string, string> = {};
-	if (headers?.idToken) {
-		resolved.Authorization = `Bearer ${headers.idToken}`;
-	}
-	if (headers?.deviceToken) {
-		resolved["x-device-token"] = headers.deviceToken;
-	}
-	return resolved;
 }
 
 export function getPlaylistSession(

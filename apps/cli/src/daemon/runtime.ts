@@ -565,7 +565,9 @@ export class DaemonRuntime {
 				if (!songId) {
 					throw new Error("No current song to rate.");
 				}
-				await rateSong(this.serverUrl, songId, rating);
+				await rateSong(this.serverUrl, songId, rating, {
+					deviceToken: this.deviceToken ?? undefined,
+				});
 				return {
 					ok: true,
 					songId,
@@ -1367,6 +1369,7 @@ export class DaemonRuntime {
 			const songs = await listSongsByPlaylist(
 				this.serverUrl,
 				this.localPlaylistId,
+				{ deviceToken: this.deviceToken ?? undefined },
 			);
 			const playable = songs
 				.filter((song) => song.status === "ready" && Boolean(song.audioUrl))
@@ -1505,7 +1508,9 @@ export class DaemonRuntime {
 		}
 		const song = this.currentSong;
 		await Promise.allSettled([
-			updateSongStatus(this.serverUrl, song.id, "played"),
+			updateSongStatus(this.serverUrl, song.id, "played", undefined, {
+				deviceToken: this.deviceToken ?? undefined,
+			}),
 			this.reportLocalPlaylistPosition(song.orderIndex),
 		]);
 	}
@@ -1517,6 +1522,7 @@ export class DaemonRuntime {
 				this.serverUrl,
 				this.localPlaylistId,
 				Math.max(0, orderIndex),
+				{ deviceToken: this.deviceToken ?? undefined },
 			);
 		} catch {
 			// Keep local playback resilient if position updates fail.
@@ -1533,7 +1539,9 @@ export class DaemonRuntime {
 			return;
 		}
 		try {
-			await heartbeatPlaylist(this.serverUrl, this.localPlaylistId);
+			await heartbeatPlaylist(this.serverUrl, this.localPlaylistId, {
+				deviceToken: this.deviceToken ?? undefined,
+			});
 		} catch {
 			// Heartbeat failures should not interrupt local playback.
 		}

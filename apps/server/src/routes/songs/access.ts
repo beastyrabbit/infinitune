@@ -1,5 +1,6 @@
 import type { Context, Next } from "hono";
 import { getRequestActor, type RequestActor } from "../../auth/actor";
+import { getDeviceActor } from "../../auth/device";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
 
@@ -25,8 +26,33 @@ export async function canAccessPlaylist(
 	return canActorAccessPlaylist(await getRequestActor(c), playlistId);
 }
 
+export async function canPlaybackAccessPlaylist(
+	c: Context,
+	playlistId: string,
+): Promise<boolean> {
+	const [actor, device, playlist] = await Promise.all([
+		getRequestActor(c),
+		getDeviceActor(c),
+		playlistService.getById(playlistId),
+	]);
+	if (!playlist) return false;
+	if (!playlist.ownerUserId) return true;
+	if (actor.kind === "user" && actor.userId === playlist.ownerUserId)
+		return true;
+	return Boolean(
+		playlist.ownerUserId && playlist.ownerUserId === device?.ownerUserId,
+	);
+}
+
 export async function requirePlaylistAccess(c: Context, next: Next) {
 	if (!(await canAccessPlaylist(c, c.req.param("playlistId")))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
+	await next();
+}
+
+export async function requirePlaybackPlaylistAccess(c: Context, next: Next) {
+	if (!(await canPlaybackAccessPlaylist(c, c.req.param("playlistId")))) {
 		return c.json({ error: "Playlist not found" }, 404);
 	}
 	await next();
@@ -35,6 +61,14 @@ export async function requirePlaylistAccess(c: Context, next: Next) {
 export async function requireSongAccess(c: Context, next: Next) {
 	const song = await songService.getById(c.req.param("id"));
 	if (!song || !(await canAccessPlaylist(c, song.playlistId))) {
+		return c.json({ error: "Song not found" }, 404);
+	}
+	await next();
+}
+
+export async function requirePlaybackSongAccess(c: Context, next: Next) {
+	const song = await songService.getById(c.req.param("id"));
+	if (!song || !(await canPlaybackAccessPlaylist(c, song.playlistId))) {
 		return c.json({ error: "Song not found" }, 404);
 	}
 	await next();

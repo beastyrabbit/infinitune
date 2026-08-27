@@ -7,12 +7,17 @@ import {
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import * as songService from "../../services/song-service";
-import { requirePlaylistAccess, requireSongAccess } from "./access";
+import {
+	canAccessPlaylist,
+	requirePlaybackSongAccess,
+	requirePlaylistAccess,
+	requireSongAccess,
+} from "./access";
 
 const app = new Hono();
 
+app.use("/:id/status", requirePlaybackSongAccess);
 for (const path of [
-	"/:id/status",
 	"/:id/claim-metadata",
 	"/:id/claim-audio",
 	"/:id/complete-metadata",
@@ -36,9 +41,21 @@ app.patch("/:id/status", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	await songService.updateStatus(c.req.param("id"), result.data.status, {
-		errorMessage: result.data.errorMessage,
-	});
+	const isPlaybackOnlyUpdate =
+		result.data.status === "played" && result.data.errorMessage === undefined;
+	if (!isPlaybackOnlyUpdate) {
+		const song = await songService.getById(c.req.param("id"));
+		if (!song || !(await canAccessPlaylist(c, song.playlistId))) {
+			return c.json({ error: "Song not found" }, 404);
+		}
+	}
+	await songService.updateStatus(
+		c.req.param("id"),
+		result.data.status,
+		isPlaybackOnlyUpdate
+			? undefined
+			: { errorMessage: result.data.errorMessage },
+	);
 	return c.json({ ok: true });
 });
 

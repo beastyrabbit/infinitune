@@ -9,17 +9,26 @@ require_app_origin() {
     exit 1
   fi
 
+  case "$APP_ORIGIN" in
+    *\?*|*\#*)
+      echo "ERROR: APP_ORIGIN must be an absolute HTTP(S) origin for the production $process_name process (for example, https://music.example.com)."
+      exit 1
+      ;;
+  esac
+
   if ! node -e '
     try {
-      const url = new URL(process.env.APP_ORIGIN);
+      const raw = process.env.APP_ORIGIN;
+      const url = new URL(raw);
       const isHttp = url.protocol === "http:" || url.protocol === "https:";
+      const hasOriginOnlySyntax = /^https?:\/\/[^\s/?#@\\]+\/?$/i.test(raw);
       const isOriginOnly =
         !url.username &&
         !url.password &&
         url.pathname === "/" &&
         !url.search &&
         !url.hash;
-      if (!isHttp || !isOriginOnly) process.exit(1);
+      if (!isHttp || !hasOriginOnlySyntax || !isOriginOnly) process.exit(1);
     } catch {
       process.exit(1);
     }

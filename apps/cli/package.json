@@ -5,6 +5,7 @@
 	"scripts": {
 		"infi": "tsx src/cli.ts",
 		"dev": "tsx src/cli.ts",
+		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

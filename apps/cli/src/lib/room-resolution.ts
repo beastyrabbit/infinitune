@@ -6,6 +6,7 @@ export type ResolvePlaylistOptions = {
 	explicitPlaylistKey?: string;
 	defaultPlaylistKey?: string | null;
 	interactivePlaylist?: boolean;
+	deviceToken?: string;
 };
 
 export type PlaylistRoom = {
@@ -28,6 +29,7 @@ export type ResolveRoomOptions = {
 	defaultRoomId?: string | null;
 	defaultPlaylistKey?: string | null;
 	interactivePlaylist?: boolean;
+	deviceToken?: string;
 };
 
 function toPlaylistRoom(playlist: Playlist): PlaylistRoom {
@@ -43,8 +45,9 @@ function toPlaylistRoom(playlist: Playlist): PlaylistRoom {
 
 export async function pickPlaylistInteractive(
 	serverUrl: string,
+	options: { deviceToken?: string } = {},
 ): Promise<Playlist> {
-	const playlists = await listPlaylists(serverUrl);
+	const playlists = await listPlaylists(serverUrl, options);
 	if (playlists.length === 0) {
 		throw new Error("No playlists found on server.");
 	}
@@ -77,7 +80,7 @@ export async function resolvePlaylist(
 	serverUrl: string,
 	options: ResolvePlaylistOptions,
 ): Promise<Playlist> {
-	const playlists = await listPlaylists(serverUrl);
+	const playlists = await listPlaylists(serverUrl, options);
 	if (playlists.length === 0) {
 		throw new Error("No playlists found on server.");
 	}
@@ -104,7 +107,7 @@ export async function resolvePlaylist(
 	}
 
 	if (options.interactivePlaylist === false) {
-		const current = await getCurrentPlaylist(serverUrl);
+		const current = await getCurrentPlaylist(serverUrl, options);
 		if (!current) {
 			throw new Error(
 				"No current playlist found and interactive mode is disabled.",
@@ -113,7 +116,7 @@ export async function resolvePlaylist(
 		return current;
 	}
 
-	return pickPlaylistInteractive(serverUrl);
+	return pickPlaylistInteractive(serverUrl, options);
 }
 
 async function pickRoomInteractive(
@@ -152,8 +155,9 @@ async function ensureRoomForPlaylist(
 async function resolveByRoomId(
 	serverUrl: string,
 	roomId: string,
+	options: { deviceToken?: string },
 ): Promise<ResolvedRoom> {
-	const playlists = await listPlaylists(serverUrl);
+	const playlists = await listPlaylists(serverUrl, options);
 	const playlist =
 		playlists.find((entry) => entry.id === roomId) ??
 		playlists.find((entry) => entry.playlistKey === roomId) ??
@@ -167,8 +171,9 @@ async function resolveByRoomId(
 async function resolveByPlaylistKey(
 	serverUrl: string,
 	playlistKey: string,
+	options: { deviceToken?: string },
 ): Promise<ResolvedRoom> {
-	const playlists = await listPlaylists(serverUrl);
+	const playlists = await listPlaylists(serverUrl, options);
 	const playlist =
 		playlists.find((entry) => entry.playlistKey === playlistKey) ?? null;
 	if (!playlist) {
@@ -182,16 +187,20 @@ export async function resolveRoom(
 	options: ResolveRoomOptions,
 ): Promise<ResolvedRoom> {
 	if (options.explicitRoomId) {
-		return resolveByRoomId(serverUrl, options.explicitRoomId);
+		return resolveByRoomId(serverUrl, options.explicitRoomId, options);
 	}
 
 	if (options.explicitPlaylistKey) {
-		return resolveByPlaylistKey(serverUrl, options.explicitPlaylistKey);
+		return resolveByPlaylistKey(
+			serverUrl,
+			options.explicitPlaylistKey,
+			options,
+		);
 	}
 
 	if (options.defaultRoomId) {
 		try {
-			return await resolveByRoomId(serverUrl, options.defaultRoomId);
+			return await resolveByRoomId(serverUrl, options.defaultRoomId, options);
 		} catch {
 			// Fallback below.
 		}
@@ -199,14 +208,18 @@ export async function resolveRoom(
 
 	if (options.defaultPlaylistKey) {
 		try {
-			return await resolveByPlaylistKey(serverUrl, options.defaultPlaylistKey);
+			return await resolveByPlaylistKey(
+				serverUrl,
+				options.defaultPlaylistKey,
+				options,
+			);
 		} catch {
 			// Fallback below.
 		}
 	}
 
 	if (options.interactivePlaylist === false) {
-		const current = await getCurrentPlaylist(serverUrl);
+		const current = await getCurrentPlaylist(serverUrl, options);
 		if (!current) {
 			throw new Error(
 				"No current playlist found and interactive mode is disabled.",
@@ -215,14 +228,15 @@ export async function resolveRoom(
 		return ensureRoomForPlaylist(current);
 	}
 
-	const playlist = await pickPlaylistInteractive(serverUrl);
+	const playlist = await pickPlaylistInteractive(serverUrl, options);
 	return ensureRoomForPlaylist(playlist);
 }
 
 export async function pickExistingRoom(
 	serverUrl: string,
+	options: { deviceToken?: string } = {},
 ): Promise<PlaylistRoom> {
-	const playlists = await listPlaylists(serverUrl);
+	const playlists = await listPlaylists(serverUrl, options);
 	if (playlists.length === 0) {
 		throw new Error("No playlists available.");
 	}
