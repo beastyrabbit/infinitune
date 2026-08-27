@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getRequestActor } from "../auth/actor";
 import { shareLinkLimiter, shareReadLimiter } from "../middleware/limiters";
 import {
-	createShareLink,
+	createShareLinkForRequest,
 	getShareLinkById,
 	getShareResource,
 	isShareResourceType,
@@ -22,18 +22,6 @@ const CreateSchema = z.object({
 	expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
-async function canCreateShareForResource(
-	c: Context,
-	resourceType: ShareResourceType,
-	resourceId: string,
-): Promise<boolean> {
-	const resource = await getShareResource(resourceType, resourceId);
-	if (!resource) return false;
-	if (!resource.ownerUserId) return true;
-	const actor = await getRequestActor(c);
-	return actor.kind === "user" && actor.userId === resource.ownerUserId;
-}
-
 async function canManageShareForResource(
 	c: Context,
 	resourceType: ShareResourceType,
@@ -49,18 +37,13 @@ async function canManageShareForResource(
 app.post("/", shareLinkLimiter, async (c) => {
 	const result = CreateSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
-	if (
-		!(await canCreateShareForResource(
-			c,
-			result.data.resourceType,
-			result.data.resourceId,
-		))
-	) {
-		return c.json({ error: "Resource not found" }, 404);
-	}
-	let link: Awaited<ReturnType<typeof createShareLink>>;
+	const actor = await getRequestActor(c);
+	let link: Awaited<ReturnType<typeof createShareLinkForRequest>>;
 	try {
-		link = await createShareLink(result.data);
+		link = await createShareLinkForRequest(
+			result.data,
+			actor.kind === "user" ? actor.userId : null,
+		);
 	} catch (error) {
 		if (error instanceof ShareLinkLimitError) {
 			return c.json({ error: error.message }, 409);

@@ -287,9 +287,8 @@ describe("share-link-service", () => {
 		expect(links).toHaveLength(2);
 	});
 
-	it("caps concurrent timed links per resource", async () => {
-		const tokens = new Set<string>();
-		const created = await Promise.all(
+	it("rejects concurrent timed links beyond the cap without eviction", async () => {
+		const created = await Promise.allSettled(
 			Array.from(
 				{ length: shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE + 10 },
 				(_, index) =>
@@ -300,18 +299,15 @@ describe("share-link-service", () => {
 					}),
 			),
 		);
-		for (const link of created) {
-			if (link) tokens.add(link.token);
-		}
-
-		expect(tokens.size).toBe(
-			shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE + 10,
-		);
 		expect(
-			(await getTestDb().select().from(shareLinks)).filter(
-				(link) => link.revokedAt === null,
-			),
+			created.filter((result) => result.status === "fulfilled"),
 		).toHaveLength(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
+		expect(
+			created.filter((result) => result.status === "rejected"),
+		).toHaveLength(10);
+		const rows = await getTestDb().select().from(shareLinks);
+		expect(rows).toHaveLength(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
+		expect(rows.every((link) => link.revokedAt === null)).toBe(true);
 	});
 
 	it("rejects a timed-link request when the cap has no compatible link", async () => {
@@ -348,7 +344,7 @@ describe("share-link-service", () => {
 		expect(response.status).toBe(409);
 	});
 
-	it("replaces only the soonest-expiring link when timed links reach the cap", async () => {
+	it("preserves timed links when the cap is reached", async () => {
 		const created: Array<
 			Awaited<ReturnType<typeof shareService.createShareLink>>
 		> = [];
@@ -366,15 +362,16 @@ describe("share-link-service", () => {
 			);
 		}
 
-		const replacement = await shareService.createShareLink({
-			resourceType: "playlist",
-			resourceId: "pl-1",
-			expiresInDays: 30,
-		});
+		await expect(
+			shareService.createShareLink({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 30,
+			}),
+		).rejects.toBeInstanceOf(shareService.ShareLinkLimitError);
 		const rows = await getTestDb().select().from(shareLinks);
 		const first = rows.find((row) => row.id === created[0]?.id);
-		expect(replacement?.id).not.toBe(created[0]?.id);
-		expect(first?.revokedAt).not.toBeNull();
+		expect(first?.revokedAt).toBeNull();
 		expect(rows.filter((row) => row.revokedAt === null)).toHaveLength(
 			shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE,
 		);
@@ -517,6 +514,7 @@ describe("share-link-service", () => {
 	});
 
 	it("allows anonymous link creation for an ownerless playlist", async () => {
+		const before = Date.now();
 		const response = await shareRoutes.request("/", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -527,7 +525,133 @@ describe("share-link-service", () => {
 		});
 
 		expect(response.status).toBe(201);
+		const link = (await response.json()) as {
+			token: string;
+			expiresAt: number | null;
+		};
+		expect(link.expiresAt).not.toBeNull();
+		expect(link.expiresAt).toBeGreaterThanOrEqual(
+			before + shareService.ANONYMOUS_SHARE_TTL_MS,
+		);
+		expect(link.expiresAt).toBeLessThanOrEqual(
+			Date.now() + shareService.ANONYMOUS_SHARE_TTL_MS,
+		);
+
+		const repeatedResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+		expect(repeatedResponse.status).toBe(201);
+		expect((await repeatedResponse.json()) as { token: string }).toMatchObject({
+			token: link.token,
+		});
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
+	});
+
+	it("clamps anonymous shares to temporary resource retention", async () => {
+		const db = getTestDb();
+		const resourceExpiry = Date.now() + 60 * 60 * 1000;
+		await db
+			.update(playlists)
+			.set({ isTemporary: true, expiresAt: resourceExpiry })
+			.where(eq(playlists.id, "pl-1"));
+
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "song",
+				resourceId: "song-1",
+				expiresInDays: 365,
+			}),
+		});
+
+		expect(response.status).toBe(201);
+		expect((await response.json()) as { expiresAt: number }).toMatchObject({
+			expiresAt: resourceExpiry,
+		});
+		const [playlist] = await db
+			.select()
+			.from(playlists)
+			.where(eq(playlists.id, "pl-1"));
+		expect(playlist.isTemporary).toBe(true);
+		expect(playlist.expiresAt).toBe(resourceExpiry);
+	});
+
+	it("returns 409 instead of evicting ownerless links at the cap", async () => {
+		await getTestDb()
+			.insert(shareLinks)
+			.values(
+				Array.from(
+					{ length: shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE },
+					(_, index) => ({
+						token: `existing-permanent-${index}`,
+						resourceType: "playlist",
+						resourceId: "pl-1",
+					}),
+				),
+			);
+
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+
+		expect(response.status).toBe(409);
+		const rows = await getTestDb().select().from(shareLinks);
+		expect(rows).toHaveLength(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
+		expect(rows.every((link) => link.revokedAt === null)).toBe(true);
+	});
+
+	it("does not evict links when an authenticated owner reaches the cap", async () => {
+		const db = getTestDb();
+		await db.insert(users).values({
+			id: "user-1",
+			createdAt: Date.now(),
+			shooSubject: "shoo-user-1",
+		});
+		await db
+			.update(playlists)
+			.set({ ownerUserId: "user-1" })
+			.where(eq(playlists.id, "pl-1"));
+		vi.mocked(getRequestActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		for (
+			let index = 0;
+			index < shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE;
+			index++
+		) {
+			await shareService.createShareLink({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: index + 1,
+			});
+		}
+
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 365,
+			}),
+		});
+
+		expect(response.status).toBe(409);
+		const rows = await db.select().from(shareLinks);
+		expect(rows).toHaveLength(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
+		expect(rows.every((link) => link.revokedAt === null)).toBe(true);
 	});
 
 	it("does not let anonymous callers list or revoke ownerless shares", async () => {
@@ -684,15 +808,36 @@ describe("share-link-service", () => {
 			}),
 		});
 		expect(createResponse.status).toBe(201);
-		const created = (await createResponse.json()) as { id: string };
+		const created = (await createResponse.json()) as {
+			id: string;
+			expiresAt: number | null;
+		};
+		expect(created.expiresAt).toBeNull();
+
+		const timedResponse = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 1,
+			}),
+		});
+		expect(timedResponse.status).toBe(201);
+		expect(
+			((await timedResponse.json()) as { expiresAt: number | null }).expiresAt,
+		).not.toBeNull();
 
 		const listResponse = await shareRoutes.request(
 			"/?resourceType=playlist&resourceId=pl-1",
 		);
 		expect(listResponse.status).toBe(200);
-		expect((await listResponse.json()) as { links: unknown[] }).toMatchObject({
-			links: [{ id: created.id }],
-		});
+		const listed = (await listResponse.json()) as {
+			links: Array<{ id: string }>;
+		};
+		expect(listed.links.map((link) => link.id)).toEqual(
+			expect.arrayContaining([created.id]),
+		);
 
 		const deleteResponse = await shareRoutes.request(`/${created.id}`, {
 			method: "DELETE",

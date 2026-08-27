@@ -19,9 +19,42 @@ export interface ApiUrlSources {
 	browserOrigin?: string;
 }
 
+export interface ProductionOriginSources {
+	nodeEnv?: string;
+	appOrigin?: string;
+}
+
+const APP_ORIGIN_ERROR =
+	"APP_ORIGIN must be an absolute HTTP(S) origin in production (for example, https://music.example.com).";
+
 function cleanBaseUrl(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed.replace(/\/+$/, "") : undefined;
+}
+
+export function assertProductionAppOrigin(
+	sources: ProductionOriginSources,
+): void {
+	if (sources.nodeEnv !== "production") return;
+	const raw = sources.appOrigin;
+	try {
+		if (!raw || !/^https?:\/\/[^\s/?#@\\]+\/?$/i.test(raw)) {
+			throw new Error(APP_ORIGIN_ERROR);
+		}
+		const url = new URL(raw);
+		if (
+			(url.protocol !== "http:" && url.protocol !== "https:") ||
+			url.username ||
+			url.password ||
+			url.pathname !== "/" ||
+			url.search ||
+			url.hash
+		) {
+			throw new Error(APP_ORIGIN_ERROR);
+		}
+	} catch {
+		throw new Error(APP_ORIGIN_ERROR);
+	}
 }
 
 /** Pure URL selection kept separate so SSR and browser behavior stay tested. */

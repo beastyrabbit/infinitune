@@ -287,18 +287,19 @@ the edge proxy to overwrite `X-Forwarded-For`. Infinitune walks that chain from
 the right and uses the first untrusted address as the client. Requests containing
 `X-Forwarded-For` are rejected with 503 when no trust list is configured, and
 the production server refuses to start without one. Do not expose the frontend
-around an edge proxy that is responsible for overwriting `X-Forwarded-For`.
+without an edge proxy that is responsible for overwriting `X-Forwarded-For`.
 Infinitune ignores `X-Real-IP` for rate limiting.
 
-Share links created without an expiry are permanent. Creating one for temporary
-music permanently promotes its playlist by clearing the cleanup expiry. Revoking
-the link later does not make that playlist temporary again. This is deliberate:
-after multiple links, ownership changes, or later edits, the service cannot
-safely reconstruct the original cleanup deadline without risking deletion of
-music the user expected to keep. Timed links extend a temporary playlist only to
-the link expiry. Anonymous users can create permanent links for ownerless music,
-but cannot list or revoke them because the service has no anonymous identity to
-prove who created the link.
+Authenticated owners can create permanent or timed share links. A permanent link
+for temporary music promotes its playlist by clearing the cleanup expiry. Later
+revocation does not make that playlist temporary again because the service cannot
+safely reconstruct the original cleanup deadline. Timed owner links extend a
+temporary playlist only to the link expiry.
+
+Ownerless music receives a server-forced share expiry of at most 24 hours. If the
+music has an earlier cleanup deadline, the link uses that deadline and never
+extends or disables cleanup. Anonymous users cannot list or revoke these links
+because the service has no anonymous identity to prove who created the link.
 
 Revoking or expiring a link removes access to its shared page and public
 metadata. Audio delivery keeps Infinitune's existing public-by-song-ID contract

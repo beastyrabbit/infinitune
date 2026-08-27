@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectApiUrls } from "../lib/endpoints";
+import { assertProductionAppOrigin, selectApiUrls } from "../lib/endpoints";
 
 describe("API URL selection", () => {
 	it("keeps browser requests and media URLs on the browser origin", () => {
@@ -51,5 +51,35 @@ describe("API URL selection", () => {
 			publicApiUrl: "http://localhost:5175",
 			fetchApiUrl: "http://localhost:5175",
 		});
+	});
+});
+
+describe("production APP_ORIGIN validation", () => {
+	it("allows an origin-only HTTP(S) URL", () => {
+		expect(() =>
+			assertProductionAppOrigin({
+				nodeEnv: "production",
+				appOrigin: "https://music.example.com/",
+			}),
+		).not.toThrow();
+	});
+
+	it.each([
+		undefined,
+		"",
+		"music.example.com",
+		"https://music.example.com/path",
+		"https://music.example.com?",
+		"https://user@music.example.com",
+	])("rejects an invalid production origin: %s", (appOrigin) => {
+		expect(() =>
+			assertProductionAppOrigin({ nodeEnv: "production", appOrigin }),
+		).toThrow(/APP_ORIGIN must be an absolute HTTP\(S\) origin/);
+	});
+
+	it("keeps the local fallback available outside production", () => {
+		expect(() =>
+			assertProductionAppOrigin({ nodeEnv: "development" }),
+		).not.toThrow();
 	});
 });

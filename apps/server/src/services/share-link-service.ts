@@ -21,6 +21,7 @@ export const SHARE_RESOURCE_TYPES = ["playlist", "song"] as const;
 export type ShareResourceType = (typeof SHARE_RESOURCE_TYPES)[number];
 export const MAX_LIVE_SHARE_LINKS_PER_RESOURCE = 20;
 export const MAX_PUBLIC_SHARE_SONGS = 100;
+export const ANONYMOUS_SHARE_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface ShareLink {
 	id: string;
@@ -94,13 +95,22 @@ export async function getShareResource(
 		: null;
 }
 
-export async function createShareLink(input: {
+interface CreateShareLinkInput {
 	resourceType: ShareResourceType;
 	resourceId: string;
 	expiresInDays?: number;
-}): Promise<ShareLink | null> {
+}
+
+type ShareCreationPolicy =
+	| { kind: "trusted" }
+	| { kind: "request"; actorUserId: string | null };
+
+async function createShareLinkWithPolicy(
+	input: CreateShareLinkInput,
+	policy: ShareCreationPolicy,
+): Promise<ShareLink | null> {
 	const now = Date.now();
-	const expiresAt =
+	let expiresAt =
 		input.expiresInDays && input.expiresInDays > 0
 			? now + input.expiresInDays * 24 * 60 * 60 * 1000
 			: null;
@@ -110,7 +120,9 @@ export async function createShareLink(input: {
 				? tx
 						.select({
 							playlistId: playlists.id,
+							ownerUserId: playlists.ownerUserId,
 							isTemporary: playlists.isTemporary,
+							expiresAt: playlists.expiresAt,
 						})
 						.from(playlists)
 						.where(eq(playlists.id, input.resourceId))
@@ -118,13 +130,32 @@ export async function createShareLink(input: {
 				: tx
 						.select({
 							playlistId: playlists.id,
+							ownerUserId: playlists.ownerUserId,
 							isTemporary: playlists.isTemporary,
+							expiresAt: playlists.expiresAt,
 						})
 						.from(songs)
 						.innerJoin(playlists, eq(songs.playlistId, playlists.id))
 						.where(eq(songs.id, input.resourceId))
 						.get();
 		if (!resource) return null;
+
+		let preserveResourceRetention = true;
+		let reuseAnonymousTimedLink = false;
+		if (policy.kind === "request") {
+			if (resource.ownerUserId) {
+				if (resource.ownerUserId !== policy.actorUserId) return null;
+			} else {
+				const anonymousExpiry = now + ANONYMOUS_SHARE_TTL_MS;
+				expiresAt =
+					resource.expiresAt !== null
+						? Math.min(anonymousExpiry, resource.expiresAt)
+						: anonymousExpiry;
+				if (expiresAt <= now) return null;
+				preserveResourceRetention = false;
+				reuseAnonymousTimedLink = true;
+			}
+		}
 
 		tx.delete(shareLinks)
 			.where(
@@ -149,8 +180,15 @@ export async function createShareLink(input: {
 			.all()
 			.map(toShareLink);
 
+		if (reuseAnonymousTimedLink) {
+			const reusable = liveLinks.find(
+				(link) => link.expiresAt !== null && link.expiresAt <= (expiresAt ?? 0),
+			);
+			if (reusable) return reusable;
+		}
+
 		const preserveTemporaryResource = (linkExpiry: number | null) => {
-			if (!resource.isTemporary) return;
+			if (!preserveResourceRetention || !resource.isTemporary) return;
 			if (linkExpiry === null) {
 				tx.update(playlists)
 					.set({ isTemporary: false, expiresAt: null })
@@ -180,20 +218,7 @@ export async function createShareLink(input: {
 		}
 
 		if (liveLinks.length >= MAX_LIVE_SHARE_LINKS_PER_RESOURCE) {
-			const expiringLink = liveLinks
-				.filter(
-					(link): link is ShareLink & { expiresAt: number } =>
-						link.expiresAt !== null,
-				)
-				.sort((a, b) => a.expiresAt - b.expiresAt)[0];
-			if (!expiringLink) throw new ShareLinkLimitError();
-
-			tx.update(shareLinks)
-				.set({ revokedAt: now })
-				.where(
-					and(eq(shareLinks.id, expiringLink.id), isNull(shareLinks.revokedAt)),
-				)
-				.run();
+			throw new ShareLinkLimitError();
 		}
 
 		const row = tx
@@ -209,6 +234,19 @@ export async function createShareLink(input: {
 		preserveTemporaryResource(expiresAt);
 		return toShareLink(row);
 	});
+}
+
+export async function createShareLink(
+	input: CreateShareLinkInput,
+): Promise<ShareLink | null> {
+	return createShareLinkWithPolicy(input, { kind: "trusted" });
+}
+
+export async function createShareLinkForRequest(
+	input: CreateShareLinkInput,
+	actorUserId: string | null,
+): Promise<ShareLink | null> {
+	return createShareLinkWithPolicy(input, { kind: "request", actorUserId });
 }
 
 export async function listShareLinksForResource(
