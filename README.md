@@ -285,10 +285,10 @@ share loader forwards client addresses to the API. The list must include the
 frontend container or network and every trusted reverse-proxy hop. Configure
 the edge proxy to overwrite `X-Forwarded-For`. Infinitune walks that chain from
 the right and uses the first untrusted address as the client. Requests containing
-`X-Forwarded-For` are rejected with 503 when no trust list is configured. Only
-API-only deployments whose clients never send that header may leave the list
-empty. Do not expose the frontend around an edge proxy that is responsible for
-overwriting `X-Forwarded-For`. Infinitune ignores `X-Real-IP` for rate limiting.
+`X-Forwarded-For` are rejected with 503 when no trust list is configured, and
+the production server refuses to start without one. Do not expose the frontend
+around an edge proxy that is responsible for overwriting `X-Forwarded-For`.
+Infinitune ignores `X-Real-IP` for rate limiting.
 
 Share links created without an expiry are permanent. Creating one for temporary
 music permanently promotes its playlist by clearing the cleanup expiry. Revoking

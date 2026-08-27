@@ -38,9 +38,50 @@ require_app_origin() {
   fi
 }
 
+require_trusted_proxy_ips() {
+  if ! node -e '
+    const { BlockList, isIP } = require("node:net");
+    const entries = (process.env.RATE_LIMIT_TRUSTED_PROXY_IPS || "")
+      .split(",")
+      .map((entry) => entry.trim());
+    if (entries.some((entry) => !entry)) process.exit(1);
+
+    const blockList = new BlockList();
+    for (const entry of entries) {
+      const parts = entry.split("/");
+      const rawAddress = parts[0].trim();
+      const address = rawAddress.startsWith("::ffff:")
+        ? rawAddress.slice(7)
+        : rawAddress;
+      const version = isIP(address);
+      if (!version || parts.length > 2) process.exit(1);
+      const family = version === 6 ? "ipv6" : "ipv4";
+      try {
+        if (parts.length === 1) {
+          blockList.addAddress(address, family);
+          continue;
+        }
+        if (!parts[1].trim()) process.exit(1);
+        const prefix = Number(parts[1]);
+        const maxPrefix = version === 6 ? 128 : 32;
+        if (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) {
+          process.exit(1);
+        }
+        blockList.addSubnet(address, prefix, family);
+      } catch {
+        process.exit(1);
+      }
+    }
+  '; then
+    echo "ERROR: RATE_LIMIT_TRUSTED_PROXY_IPS must contain valid comma-separated IP addresses or CIDRs for the production server process."
+    exit 1
+  fi
+}
+
 case "$PROCESS_TYPE" in
   server)
     require_app_origin server
+    require_trusted_proxy_ips
     exec node_modules/.bin/tsx apps/server/src/index.ts
     ;;
   frontend)

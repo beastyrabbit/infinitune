@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -18,7 +19,13 @@ const workspacePackageJson = new URL(
 ).pathname;
 const temporaryDirectories: string[] = [];
 
-function runEntrypoint(appOrigin: string): number {
+function runEntrypoint(
+	appOrigin: string,
+	options: {
+		processType?: "frontend" | "server";
+		trustedProxyIps?: string;
+	} = {},
+): number {
 	const directory = mkdtempSync(join(tmpdir(), "infinitune-entrypoint-"));
 	temporaryDirectories.push(directory);
 	const nodeShim = join(directory, "node");
@@ -27,15 +34,27 @@ function runEntrypoint(appOrigin: string): number {
 		`#!/bin/sh\nif [ "$1" = "-e" ]; then\n  exec ${JSON.stringify(process.execPath)} "$@"\nfi\nexit 0\n`,
 	);
 	chmodSync(nodeShim, 0o755);
+	const binaryDirectory = join(directory, "node_modules", ".bin");
+	mkdirSync(binaryDirectory, { recursive: true });
+	const tsxShim = join(binaryDirectory, "tsx");
+	writeFileSync(tsxShim, "#!/bin/sh\nexit 0\n");
+	chmodSync(tsxShim, 0o755);
+
+	const env: NodeJS.ProcessEnv = {
+		...process.env,
+		APP_ORIGIN: appOrigin,
+		PATH: `${directory}:${process.env.PATH ?? ""}`,
+		PROCESS_TYPE: options.processType ?? "frontend",
+	};
+	delete env.RATE_LIMIT_TRUSTED_PROXY_IPS;
+	if (options.trustedProxyIps !== undefined) {
+		env.RATE_LIMIT_TRUSTED_PROXY_IPS = options.trustedProxyIps;
+	}
 
 	try {
 		execFileSync(entrypoint, {
-			env: {
-				...process.env,
-				APP_ORIGIN: appOrigin,
-				PATH: `${directory}:${process.env.PATH ?? ""}`,
-				PROCESS_TYPE: "frontend",
-			},
+			cwd: directory,
+			env,
 			stdio: "ignore",
 		});
 		return 0;
@@ -84,4 +103,36 @@ describe("development proxy trust", () => {
 			);
 		}
 	});
+});
+
+describe("production proxy trust", () => {
+	it.each([
+		undefined,
+		"   ",
+		"garbage",
+		"10.0.0.999/8",
+		"127.0.0.1,",
+		"127.0.0.1/",
+		"127.0.0.1/33",
+		"fd00::/129",
+	])("rejects an invalid server trust list: %s", (trustedProxyIps) => {
+		expect(
+			runEntrypoint("https://music.example.com", {
+				processType: "server",
+				trustedProxyIps,
+			}),
+		).toBe(1);
+	});
+
+	it.each(["127.0.0.1", "127.0.0.1,10.42.0.0/16", "::1,fd00::/8"])(
+		"accepts a valid server trust list: %s",
+		(trustedProxyIps) => {
+			expect(
+				runEntrypoint("https://music.example.com", {
+					processType: "server",
+					trustedProxyIps,
+				}),
+			).toBe(0);
+		},
+	);
 });

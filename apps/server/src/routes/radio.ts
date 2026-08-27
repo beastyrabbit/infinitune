@@ -34,6 +34,7 @@ import {
 	skipStation,
 } from "../services/radio-station-service";
 import * as songService from "../services/song-service";
+import { songReadAccess } from "./songs/access";
 
 const app = new Hono();
 
@@ -73,7 +74,7 @@ app.get("/library", async (c) => {
 			: 300;
 	return c.json({
 		albums: await listRadioAlbums(),
-		legacySongs: await songService.listLegacy(limit, { ownerUserId: null }),
+		legacySongs: await songService.listLegacy(limit, await songReadAccess(c)),
 	});
 });
 

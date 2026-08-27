@@ -42,6 +42,7 @@ import { playlists, songs, users } from "../db/schema";
 import { resetRateLimiters } from "../middleware/rate-limit";
 import agentMemoryRoutes from "../routes/agent-memory";
 import playlistsRoutes from "../routes/playlists";
+import radioRoutes from "../routes/radio";
 import songsRoutes from "../routes/songs/index";
 
 async function seedOwnedSongs() {
@@ -129,6 +130,13 @@ async function responseIds(response: Response): Promise<string[]> {
 	return body.map(({ id }) => id).sort();
 }
 
+async function radioLibraryIds(response: Response): Promise<string[]> {
+	const body = (await response.json()) as {
+		legacySongs: Array<{ id: string }>;
+	};
+	return body.legacySongs.map(({ id }) => id).sort();
+}
+
 function postJson(path: string, body: unknown) {
 	return songsRoutes.request(path, {
 		method: "POST",
@@ -189,6 +197,9 @@ describe("song route ownership", () => {
 		expect(
 			await responseIds(await songsRoutes.request("/needs-persona")),
 		).toEqual(["public-song"]);
+		expect(
+			await radioLibraryIds(await radioRoutes.request("/library")),
+		).toEqual(["public-song"]);
 
 		for (const path of [
 			"/by-playlist/owned-playlist",
@@ -217,6 +228,9 @@ describe("song route ownership", () => {
 		expect((await songsRoutes.request("/queue/owned-playlist")).status).toBe(
 			200,
 		);
+		expect(
+			await radioLibraryIds(await radioRoutes.request("/library")),
+		).toEqual(["owned-song", "public-song"]);
 	});
 
 	it("prevents callers from inserting songs into another user's playlist", async () => {
