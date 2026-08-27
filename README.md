@@ -256,8 +256,8 @@ CODEX_TURN_TIMEOUT_MS=360000
 # Where to store generated audio files
 MUSIC_STORAGE_PATH=/path/to/your/music/storage
 
-# Required behind a reverse proxy: comma-separated IPs or CIDRs allowed to
-# supply X-Forwarded-For. Leave empty only when serving directly.
+# Required for SSR share pages and reverse proxies: comma-separated IPs or
+# CIDRs for the frontend server and proxy hops allowed to supply X-Forwarded-For.
 RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
 
 # Optional public-share read cap per client and minute (default: 120)
@@ -280,17 +280,15 @@ origin, such as
 Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
 requests remain same-origin when production builds leave `VITE_API_URL` empty.
 
-When a reverse proxy is present, list every trusted proxy network in
-`RATE_LIMIT_TRUSTED_PROXY_IPS` and configure the edge proxy to overwrite
-`X-Forwarded-For`. Infinitune walks that chain from the right and uses the first
-untrusted address as the client. Requests containing `X-Forwarded-For` are
-rejected with 503 when no trust list is configured, so direct deployments remain
-supported without silently collapsing proxied clients into one rate-limit
-bucket. In a split deployment, the backend trust list
-must include the frontend container or network because the SSR loader appends
-its direct peer to the forwarded chain. Do not expose the frontend around an
-edge proxy that is responsible for overwriting `X-Forwarded-For`. Infinitune
-ignores `X-Real-IP` for rate limiting.
+Set `RATE_LIMIT_TRUSTED_PROXY_IPS` for every standard deployment because the SSR
+share loader forwards client addresses to the API. The list must include the
+frontend container or network and every trusted reverse-proxy hop. Configure
+the edge proxy to overwrite `X-Forwarded-For`. Infinitune walks that chain from
+the right and uses the first untrusted address as the client. Requests containing
+`X-Forwarded-For` are rejected with 503 when no trust list is configured. Only
+API-only deployments whose clients never send that header may leave the list
+empty. Do not expose the frontend around an edge proxy that is responsible for
+overwriting `X-Forwarded-For`. Infinitune ignores `X-Real-IP` for rate limiting.
 
 Share links created without an expiry are permanent. Creating one for temporary
 music permanently promotes its playlist by clearing the cleanup expiry. Revoking

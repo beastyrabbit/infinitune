@@ -101,6 +101,23 @@ export async function listAll(limit = 200, access?: SongReadAccess) {
 	return rows.map(({ song }) => songToWire(song));
 }
 
+export async function listLegacy(limit = 200, access?: SongReadAccess) {
+	const rows = await db
+		.select({ song: songs })
+		.from(songs)
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(
+			and(
+				isNotNull(songs.title),
+				playlistAccessCondition(access),
+				or(eq(songs.radioEligible, false), isNull(songs.albumId)),
+			),
+		)
+		.orderBy(desc(songs.createdAt))
+		.limit(limit);
+	return rows.map(({ song }) => songToWire(song));
+}
+
 export async function getNextOrderIndex(playlistId: string): Promise<number> {
 	const rows = await db
 		.select({ orderIndex: songs.orderIndex })

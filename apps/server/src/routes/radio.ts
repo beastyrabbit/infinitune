@@ -71,12 +71,9 @@ app.get("/library", async (c) => {
 		Number.isFinite(limitParam) && limitParam > 0
 			? Math.min(Math.floor(limitParam), 1000)
 			: 300;
-	const allSongs = await songService.listAll(limit, { ownerUserId: null });
 	return c.json({
 		albums: await listRadioAlbums(),
-		legacySongs: allSongs.filter(
-			(song) => !song.radioEligible || !song.albumId,
-		),
+		legacySongs: await songService.listLegacy(limit, { ownerUserId: null }),
 	});
 });
 

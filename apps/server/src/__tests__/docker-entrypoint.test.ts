@@ -1,11 +1,21 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const entrypoint = new URL("../../../../docker-entrypoint.sh", import.meta.url)
 	.pathname;
+const workspacePackageJson = new URL(
+	"../../../../package.json",
+	import.meta.url,
+).pathname;
 const temporaryDirectories: string[] = [];
 
 function runEntrypoint(appOrigin: string): number {
@@ -59,5 +69,19 @@ describe("production APP_ORIGIN validation", () => {
 		"https://music.example.com/path",
 	])("rejects a raw value that is not only an origin: %s", (origin) => {
 		expect(runEntrypoint(origin)).toBe(1);
+	});
+});
+
+describe("development proxy trust", () => {
+	it("trusts loopback hops used by the SSR share loader", () => {
+		const packageJson = JSON.parse(
+			readFileSync(workspacePackageJson, "utf8"),
+		) as { scripts: Record<string, string> };
+
+		for (const scriptName of ["dev:server", "dev:server:fallback"]) {
+			expect(packageJson.scripts[scriptName]).toContain(
+				"RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,::1",
+			);
+		}
 	});
 });
