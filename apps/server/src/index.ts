@@ -26,6 +26,7 @@ import playlistsRoutes from "./routes/playlists";
 import radioRoutes from "./routes/radio";
 import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
+import shareRoutes from "./routes/share";
 import songsRoutes from "./routes/songs/index";
 import * as playlistService from "./services/playlist-service";
 import { startRadioServiceEventSync } from "./services/radio-station-service";
@@ -231,6 +232,7 @@ app.use(
 			"x-device-token",
 			"x-admin-token",
 		],
+		exposeHeaders: ["retry-after", "x-request-id"],
 	}),
 );
 
@@ -357,6 +359,7 @@ app.route("/api/playlists", playlistsRoutes);
 app.route("/api/agent-memory", agentMemoryRoutes);
 app.route("/api/songs", songsRoutes);
 app.route("/api/radio", radioRoutes);
+app.route("/api/share", shareRoutes);
 app.route("/api/v1", createControlRoutes(roomManager));
 // Legacy compatibility endpoints (`/rooms`, `/now-playing`) while clients migrate.
 app.route("/api/v1", createRoomRoutes(roomManager));

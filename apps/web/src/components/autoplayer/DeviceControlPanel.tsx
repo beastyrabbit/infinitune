@@ -19,6 +19,7 @@ import {
 	X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ShareButton } from "@/components/autoplayer/ShareButton";
 
 function formatTime(seconds: number): string {
 	if (!seconds || !Number.isFinite(seconds)) return "0:00";
@@ -486,6 +487,9 @@ export function DeviceControlPanel({
 						>
 							<Download className="h-3.5 w-3.5" />
 						</a>
+					)}
+					{currentSong?.id && (
+						<ShareButton resourceType="song" resourceId={currentSong.id} />
 					)}
 				</div>
 

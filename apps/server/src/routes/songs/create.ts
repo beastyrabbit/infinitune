@@ -5,6 +5,7 @@ import {
 import { Hono } from "hono";
 import z from "zod";
 import { downloadYoutubeAudio } from "../../external/youtube-audio";
+import { generationLimiter } from "../../middleware/limiters";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
 import { resolveSongAudioFile } from "../../utils/song-audio-path";
@@ -18,7 +19,7 @@ const CreateWithMetadataSchema = CompleteSongMetadataSchema.extend({
 });
 
 // POST /api/songs — create a song with full metadata (status=generating_metadata)
-app.post("/", async (c) => {
+app.post("/", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreateWithMetadataSchema.safeParse(body);
 	if (!result.success) {
@@ -31,7 +32,7 @@ app.post("/", async (c) => {
 });
 
 // POST /api/songs/create-pending — create a pending song
-app.post("/create-pending", async (c) => {
+app.post("/create-pending", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreatePendingSongSchema.safeParse(body);
 	if (!result.success) {
@@ -63,7 +64,7 @@ function deriveOneshotTitle(lyrics: string): string {
 // Text goes straight to ACE-Step with zero LLM processing. The playlist is
 // created without emitting playlist.created until the song row exists, so the
 // worker's oneshot buffer check never auto-creates a pending (LLM) song.
-app.post("/oneshot-raw", async (c) => {
+app.post("/oneshot-raw", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = OneshotRawSchema.safeParse(body);
 	if (!result.success) {
@@ -118,7 +119,7 @@ const ReimagineSchema = z.object({
 // POST /api/songs/reimagine — re-render an existing song in a new style via
 // the ACE "cover" task. The source song's audio is uploaded as the reference,
 // so structure/melody stay recognizable while the style follows the prompt.
-app.post("/reimagine", async (c) => {
+app.post("/reimagine", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = ReimagineSchema.safeParse(body);
 	if (!result.success) {
@@ -191,7 +192,7 @@ const ReimagineUrlSchema = z.object({
 // POST /api/songs/reimagine-url — reimagine an external source (YouTube etc.):
 // yt-dlp downloads the audio, which then drives the ACE cover task. Lyrics
 // can't be extracted from the source, so the caller supplies them (optional).
-app.post("/reimagine-url", async (c) => {
+app.post("/reimagine-url", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = ReimagineUrlSchema.safeParse(body);
 	if (!result.success) {
@@ -253,7 +254,7 @@ app.post("/reimagine-url", async (c) => {
 });
 
 // POST /api/songs/create-metadata-ready — create with metadata already done
-app.post("/create-metadata-ready", async (c) => {
+app.post("/create-metadata-ready", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreateWithMetadataSchema.safeParse(body);
 	if (!result.success) {

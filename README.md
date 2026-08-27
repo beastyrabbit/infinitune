@@ -80,7 +80,7 @@ Live dashboard showing LLM, image, and audio pipeline status with active/waiting
 <summary><strong>More screenshots</strong></summary>
 
 #### Settings
-Configure service endpoints (Ollama, ACE-Step, ComfyUI), API keys, model preferences, and ACE-Step audio defaults.
+Configure AI runtimes and service endpoints (Ollama, ACE-Step, Inference.sh), API keys, model preferences, and ACE-Step audio defaults.
 
 <div align="center">
 <img src="docs/screenshots/settings-page.png" alt="Settings page" width="100%">
@@ -99,7 +99,7 @@ Create rooms for synchronized multi-device playback. Name your devices, join as 
 
 > **1.** Describe your music — *"2010 techno beats with English lyrics, S3RL energy, heavy 808 bass"*
 >
-> **2.** Hit Start — the unified backend kicks off the pipeline: LLM writes metadata + lyrics, ComfyUI renders cover art, ACE-Step synthesizes audio
+> **2.** Hit Start — the unified backend kicks off the pipeline: LLM writes metadata + lyrics, Inference.sh renders cover art, ACE-Step synthesizes audio
 >
 > **3.** Listen endlessly — songs appear in real-time. Rate them up/down to steer the direction. Request one-offs or generate entire albums from a single track.
 
@@ -195,7 +195,7 @@ pnpm infi service uninstall
 | **Rooms** | Integrated WebSocket room service · multi-device sync · REST API |
 | **Worker Pipeline** | Event-driven background pipeline · per-song workers · concurrency queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
-| **Cover Art** | ComfyUI (image generation) |
+| **Cover Art** | Inference.sh (image generation) |
 | **LLM** | Vercel AI SDK (Ollama/OpenRouter) + Codex App Server (`openai-codex`, ChatGPT subscription auth) |
 | **Build** | Vite 7 · TypeScript 5.7 · Biome (lint/format) · pnpm monorepo |
 
@@ -232,7 +232,7 @@ Infinitune requires external AI services running on your network:
 |:--------|:-----|:-------------|
 | **ACE-Step 1.5** | Text-to-music synthesis | `:8001` |
 | **Ollama** | Local LLM (metadata, lyrics) | `:11434` |
-| **ComfyUI** | Cover art generation | `:8188` |
+| **Inference.sh CLI** | Cover art generation | local CLI |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
 | **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
 
@@ -246,7 +246,6 @@ Configure in `apps/server/.env.local`:
 # AI service endpoints (replace with your server addresses)
 OLLAMA_URL=http://<your-server>:11434
 ACE_STEP_URL=http://<your-server>:8001
-COMFYUI_URL=http://<your-server>:8188
 
 # Optional — cloud LLM via OpenRouter
 OPENROUTER_API_KEY=sk-or-v1-...
@@ -256,7 +255,27 @@ CODEX_TURN_TIMEOUT_MS=360000
 
 # Where to store generated audio files
 MUSIC_STORAGE_PATH=/path/to/your/music/storage
+
+# Optional comma-separated proxy IPs or CIDRs allowed to supply
+# X-Forwarded-For. Leave empty when serving directly.
+RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
+
+# Optional public-share read cap per client and minute (default: 120)
+RATE_LIMIT_SHARE_READS_PER_MIN=120
 ```
+
+For a split production deployment, set `APP_ORIGIN` on the frontend process to
+the public web origin, such as `https://music.example.com`. The share-page SSR
+loader uses that origin by default. You may also set `INTERNAL_API_URL` on the
+frontend process to a private backend origin, such as
+`http://infinitune-api:5175`; it is used only for server-side API fetches.
+Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
+requests remain same-origin when production builds leave `VITE_API_URL` empty.
+
+When a reverse proxy is present, list every trusted proxy network in
+`RATE_LIMIT_TRUSTED_PROXY_IPS` and configure the edge proxy to overwrite
+`X-Forwarded-For`. Infinitune walks that chain from the right and uses the first
+untrusted address as the client. It ignores `X-Real-IP` for rate limiting.
 
 ### OpenAI Codex (ChatGPT Subscription) Setup
 
@@ -270,7 +289,7 @@ Use this when you want LLM generation to run through your ChatGPT subscription i
 
 Notes:
 - This project uses `codex app-server` for the `openai-codex` provider (not the Vercel AI SDK transport).
-- `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio still use ComfyUI + ACE-Step.
+- `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio use Inference.sh + ACE-Step.
 
 ### Playlist Lifecycle
 
@@ -293,7 +312,7 @@ Unified Server (Hono on :5175)
   ├── WebSocket bridge → Browser (event invalidation)
   └── External services:
       ├── LLM (Ollama/OpenRouter via Vercel AI SDK + OpenAI Codex via Codex App Server)
-      ├── ComfyUI → cover art
+      ├── Inference.sh → cover art
       └── ACE-Step 1.5 → audio synthesis
 ```
 

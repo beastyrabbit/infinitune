@@ -18,6 +18,7 @@ import {
 } from "../agents/playlist-director-service";
 import { getRequestActor, type RequestActor } from "../auth/actor";
 import { logger } from "../logger";
+import { generationLimiter, llmLimiter } from "../middleware/limiters";
 import * as playlistService from "../services/playlist-service";
 import { type PlaylistWire, playlistToWire } from "../wire";
 
@@ -147,21 +148,26 @@ app.get("/:id/agent-chat/messages", async (c) => {
 });
 
 // POST /api/playlists/:id/agent-chat/messages
-app.post("/:id/agent-chat/messages", async (c) => {
-	const access = await loadAccessiblePlaylist(c);
-	if (access instanceof Response) return access;
-	const body = await c.req.json();
-	const result = ChatMessageSchema.safeParse(body);
-	if (!result.success) return c.json({ error: result.error.message }, 400);
-	return c.json(
-		await postHumanChat({
-			playlistId: c.req.param("id"),
-			content: result.data.content,
-			threadId: result.data.threadId,
-			commitDirection: result.data.commitDirection,
-		}),
-	);
-});
+app.post(
+	"/:id/agent-chat/messages",
+	llmLimiter,
+	generationLimiter,
+	async (c) => {
+		const access = await loadAccessiblePlaylist(c);
+		if (access instanceof Response) return access;
+		const body = await c.req.json();
+		const result = ChatMessageSchema.safeParse(body);
+		if (!result.success) return c.json({ error: result.error.message }, 400);
+		return c.json(
+			await postHumanChat({
+				playlistId: c.req.param("id"),
+				content: result.data.content,
+				threadId: result.data.threadId,
+				commitDirection: result.data.commitDirection,
+			}),
+		);
+	},
+);
 
 // GET /api/playlists/:id/agent-chat/state
 app.get("/:id/agent-chat/state", async (c) => {
@@ -171,7 +177,7 @@ app.get("/:id/agent-chat/state", async (c) => {
 });
 
 // POST /api/playlists/:id/agent-chat/answer
-app.post("/:id/agent-chat/answer", async (c) => {
+app.post("/:id/agent-chat/answer", llmLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	const body = await c.req.json();
@@ -194,7 +200,7 @@ app.post("/:id/agent-chat/answer", async (c) => {
 // ─── Mutations ──────────────────────────────────────────────────────
 
 // POST /api/playlists
-app.post("/", async (c) => {
+app.post("/", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreatePlaylistSchema.safeParse(body);
 	if (!result.success) {
@@ -305,7 +311,7 @@ app.post("/:id/reset-defaults", async (c) => {
 });
 
 // PATCH /api/playlists/:id/prompt — steering
-app.patch("/:id/prompt", async (c) => {
+app.patch("/:id/prompt", generationLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	const body = await c.req.json();

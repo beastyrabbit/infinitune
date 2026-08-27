@@ -129,6 +129,7 @@ export interface RadioScheduleItem {
 export interface RadioSnapshot {
 	station: {
 		id: string;
+		name?: string;
 		isPlaying: boolean;
 		activeListenerCount: number;
 		scheduleVersion: number;
@@ -668,6 +669,48 @@ export function useRadioState(): RadioSnapshot | undefined {
 	});
 	return data;
 }
+
+// ─── Station presets ────────────────────────────────────────────────
+
+export interface StationPreset {
+	id: string;
+	name: string;
+	description: string | null;
+	genrePrompt: string;
+	vocalStyle: string | null;
+	isActive: boolean;
+}
+
+export function useStationPresets(): StationPreset[] | undefined {
+	const { data } = useQuery({
+		queryKey: ["radio", "presets"],
+		queryFn: async () =>
+			(await api.get<{ presets: StationPreset[] }>("/api/radio/presets"))
+				.presets,
+	});
+	return data;
+}
+
+export const useCreateStationPreset = createMutation<
+	{ name: string; genrePrompt: string; vocalStyle?: string },
+	StationPreset
+>(
+	(input) => api.post<StationPreset>("/api/radio/presets", input),
+	[["radio", "presets"]],
+);
+
+export const useActivateStationPreset = createMutation<string, StationPreset>(
+	(id) => api.post<StationPreset>(`/api/radio/presets/${id}/activate`),
+	[
+		["radio", "presets"],
+		["radio", "state"],
+	],
+);
+
+export const useDeleteStationPreset = createMutation<string, { ok: boolean }>(
+	(id) => api.del<{ ok: boolean }>(`/api/radio/presets/${id}`),
+	[["radio", "presets"]],
+);
 
 export function useRadioQueue(): RadioQueueResponse | undefined {
 	const { data } = useQuery({

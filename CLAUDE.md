@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Infinitune is an AI-powered infinite music generator. Users describe a vibe via prompt, and a background worker orchestrates a pipeline (LLM → ComfyUI → ACE-Step) to generate songs with metadata, lyrics, cover art, and audio in real-time. The browser displays songs as they're generated via React Query + WebSocket event invalidation.
+Infinitune is an AI-powered infinite music generator. Users describe a vibe via prompt, and a background worker orchestrates a pipeline (LLM → Inference.sh → ACE-Step) to generate songs with metadata, lyrics, cover art, and audio in real-time. The browser displays songs as they're generated via React Query + WebSocket event invalidation.
 
 ## Commands
 
@@ -55,7 +55,7 @@ Unified Server (Hono on :5175)
   ├── WebSocket bridge → Browser (event invalidation)
   └── External services:
       ├── LLM (Ollama/OpenRouter via Vercel AI SDK)
-      ├── ComfyUI → cover art
+      ├── Inference.sh → cover art
       └── ACE-Step 1.5 → audio synthesis
 ```
 

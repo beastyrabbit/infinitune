@@ -116,6 +116,8 @@ export function normalizeAlbumPlanTracks(
 
 export interface PlanAlbumInput {
 	theme: string;
+	stationGenrePrompt?: string;
+	stationVocalStyle?: string;
 	kind: string;
 	trackTypes: RadioTrackType[];
 	targetTrackPrompt?: string;
@@ -135,6 +137,12 @@ function buildPlannerPrompt(input: PlanAlbumInput): string {
 	return [
 		`Design one radio album of exactly ${input.trackTypes.length} three-minute tracks.`,
 		`Album theme seed: ${input.theme}`,
+		input.stationGenrePrompt
+			? `Active station genre and mood direction: ${input.stationGenrePrompt}`
+			: "",
+		input.stationVocalStyle
+			? `Active station vocal direction: ${input.stationVocalStyle}`
+			: "",
 		input.targetTrackPrompt
 			? `One track should honor this listener request: ${input.targetTrackPrompt}`
 			: "",

@@ -292,6 +292,46 @@ const SCHEMA_SQL = `
 			output_json TEXT,
 			error TEXT
 		);
+
+		CREATE TABLE radio_station_presets (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			genre_prompt TEXT NOT NULL,
+			vocal_style TEXT,
+			is_active INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE share_links (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			token TEXT NOT NULL UNIQUE,
+			resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL,
+			expires_at INTEGER,
+			revoked_at INTEGER
+		);
+
+		CREATE TRIGGER share_links_cleanup_playlist
+			BEFORE DELETE ON playlists
+			BEGIN
+				DELETE FROM share_links
+					WHERE resource_type = 'playlist' AND resource_id = OLD.id;
+				DELETE FROM share_links
+					WHERE resource_type = 'song'
+						AND resource_id IN (
+							SELECT id FROM songs WHERE playlist_id = OLD.id
+						);
+			END;
+
+		CREATE TRIGGER share_links_cleanup_song
+			AFTER DELETE ON songs
+			BEGIN
+				DELETE FROM share_links
+					WHERE resource_type = 'song' AND resource_id = OLD.id;
+			END;
 	`;
 
 export function setupTestDb() {

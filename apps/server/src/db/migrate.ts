@@ -344,11 +344,57 @@ export function ensureSchema() {
 				error TEXT
 			);
 
-			CREATE INDEX IF NOT EXISTS agent_runs_by_playlist
-				ON agent_runs(playlist_id, created_at);
-			CREATE INDEX IF NOT EXISTS agent_runs_by_agent
-				ON agent_runs(agent_id, created_at);
-		`);
+		CREATE INDEX IF NOT EXISTS agent_runs_by_playlist
+			ON agent_runs(playlist_id, created_at);
+		CREATE INDEX IF NOT EXISTS agent_runs_by_agent
+			ON agent_runs(agent_id, created_at);
+
+		CREATE TABLE IF NOT EXISTS radio_station_presets (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			genre_prompt TEXT NOT NULL,
+			vocal_style TEXT,
+			is_active INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS radio_station_presets_by_active
+			ON radio_station_presets(is_active);
+
+		CREATE TABLE IF NOT EXISTS share_links (
+			id TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL,
+			token TEXT NOT NULL UNIQUE,
+			resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL,
+			expires_at INTEGER,
+			revoked_at INTEGER
+		);
+
+		CREATE INDEX IF NOT EXISTS share_links_by_resource
+			ON share_links(resource_type, resource_id);
+
+		CREATE TRIGGER IF NOT EXISTS share_links_cleanup_playlist
+			BEFORE DELETE ON playlists
+			BEGIN
+				DELETE FROM share_links
+					WHERE resource_type = 'playlist' AND resource_id = OLD.id;
+				DELETE FROM share_links
+					WHERE resource_type = 'song'
+						AND resource_id IN (
+							SELECT id FROM songs WHERE playlist_id = OLD.id
+						);
+			END;
+
+		CREATE TRIGGER IF NOT EXISTS share_links_cleanup_song
+			AFTER DELETE ON songs
+			BEGIN
+				DELETE FROM share_links
+					WHERE resource_type = 'song' AND resource_id = OLD.id;
+			END;
+	`);
 
 	// Additive column migrations (idempotent — ignores "duplicate column" errors).
 	// SQLite only supports one ADD COLUMN per ALTER TABLE statement.

@@ -94,6 +94,7 @@ export function startWsBridge(): void {
 		"radio.schedule_changed",
 		"radio.album_ready",
 		"radio.request_updated",
+		"radio.presets.changed",
 	];
 
 	for (const event of events) {

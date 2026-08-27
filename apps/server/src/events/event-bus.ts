@@ -29,6 +29,7 @@ export type EventMap = {
 	"radio.schedule_changed": { stationId: string; scheduleVersion: number };
 	"radio.album_ready": { albumId: string };
 	"radio.request_updated": { requestId: string };
+	"radio.presets.changed": { stationId: string };
 };
 
 type Handler<T> = (data: T) => void | Promise<void>;

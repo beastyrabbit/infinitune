@@ -7,11 +7,43 @@ import { settings } from "../db/schema";
 import { emit } from "../events/event-bus";
 
 export async function getAll(): Promise<Record<string, string>> {
+	const cached = readCache();
+	if (cached) return cached;
 	const rows = await db.select().from(settings);
-	return Object.fromEntries(rows.map((s) => [s.key, s.value]));
+	const all = Object.fromEntries(rows.map((s) => [s.key, s.value]));
+	writeCache(all);
+	return all;
+}
+
+// ─── Short-TTL cache ─────────────────────────────────────────────────
+// getAll() is read in hot paths (per-request service URL resolution).
+// Writes invalidate immediately; reads fall back to the DB after the TTL.
+
+const CACHE_TTL_MS = 2_000;
+
+let cache: {
+	value: Record<string, string>;
+	expiresAt: number;
+	database: unknown;
+} | null = null;
+
+function readCache(): Record<string, string> | null {
+	if (!cache || cache.database !== db || Date.now() >= cache.expiresAt)
+		return null;
+	return cache.value;
+}
+
+function writeCache(value: Record<string, string>): void {
+	cache = { value, expiresAt: Date.now() + CACHE_TTL_MS, database: db };
+}
+
+function invalidateCache(): void {
+	cache = null;
 }
 
 export async function get(key: string): Promise<string | null> {
+	const cached = readCache();
+	if (cached) return cached[key] ?? null;
 	const [row] = await db.select().from(settings).where(eq(settings.key, key));
 	return row?.value ?? null;
 }
@@ -33,5 +65,6 @@ export async function set(key: string, value: string) {
 			set: { value: storedValue },
 		});
 
+	invalidateCache();
 	emit("settings.changed", { key });
 }
