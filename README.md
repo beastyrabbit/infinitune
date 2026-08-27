@@ -262,12 +262,19 @@ RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
 
 # Optional public-share read cap per client and minute (default: 120)
 RATE_LIMIT_SHARE_READS_PER_MIN=120
+
+# Optional global backstops for routes that can spend external compute.
+# These remain effective when clients rotate source addresses.
+RATE_LIMIT_GENERATION_GLOBAL_PER_MIN=100
+RATE_LIMIT_LLM_GLOBAL_PER_MIN=200
+RATE_LIMIT_RADIO_REQUESTS_GLOBAL_PER_MIN=50
 ```
 
-For a split production deployment, set `APP_ORIGIN` on the frontend process to
-the public web origin, such as `https://music.example.com`. The share-page SSR
-loader uses that origin by default. You may also set `INTERNAL_API_URL` on the
-frontend process to a private backend origin, such as
+Every production frontend process requires `APP_ORIGIN`. Set it to the public
+web origin, such as `https://music.example.com`, even when the frontend and API
+share one public origin. The container entrypoint refuses to start a production
+frontend without it. You may also set `INTERNAL_API_URL` on the frontend process
+to a private backend origin, such as
 `http://infinitune-api:5175`; it is used only for server-side API fetches.
 Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
 requests remain same-origin when production builds leave `VITE_API_URL` empty.
@@ -275,7 +282,19 @@ requests remain same-origin when production builds leave `VITE_API_URL` empty.
 When a reverse proxy is present, list every trusted proxy network in
 `RATE_LIMIT_TRUSTED_PROXY_IPS` and configure the edge proxy to overwrite
 `X-Forwarded-For`. Infinitune walks that chain from the right and uses the first
-untrusted address as the client. It ignores `X-Real-IP` for rate limiting.
+untrusted address as the client. In a split deployment, the backend trust list
+must include the frontend container or network because the SSR loader appends
+its direct peer to the forwarded chain. Do not expose the frontend around an
+edge proxy that is responsible for overwriting `X-Forwarded-For`. Infinitune
+ignores `X-Real-IP` for rate limiting.
+
+Share links created without an expiry are permanent. Creating one for temporary
+music permanently promotes its playlist by clearing the cleanup expiry. Revoking
+the link later does not make that playlist temporary again. This is deliberate:
+after multiple links, ownership changes, or later edits, the service cannot
+safely reconstruct the original cleanup deadline without risking deletion of
+music the user expected to keep. Timed links extend a temporary playlist only to
+the link expiry.
 
 ### OpenAI Codex (ChatGPT Subscription) Setup
 

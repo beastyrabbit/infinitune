@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+import {
+	buildApiForwardedFor,
+	shareLoadErrorForStatus,
+} from "../lib/share-loader";
+
+describe("share loader", () => {
+	it("appends the frontend peer to the existing proxy chain", () => {
+		expect(buildApiForwardedFor("203.0.113.8, 192.0.2.10", "10.42.0.25")).toBe(
+			"203.0.113.8, 192.0.2.10, 10.42.0.25",
+		);
+		expect(buildApiForwardedFor(undefined, "203.0.113.8")).toBe("203.0.113.8");
+	});
+
+	it("does not forward a spoofable chain when the direct peer is unavailable", () => {
+		expect(buildApiForwardedFor("203.0.113.8", undefined)).toBeUndefined();
+	});
+
+	it("distinguishes missing, throttled, and unavailable links", () => {
+		expect(shareLoadErrorForStatus(404)).toMatchObject({ status: 404 });
+		expect(shareLoadErrorForStatus(429)).toMatchObject({ status: 429 });
+		expect(shareLoadErrorForStatus(500)).toMatchObject({ status: 503 });
+	});
+});

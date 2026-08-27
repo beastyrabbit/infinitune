@@ -25,6 +25,8 @@ vi.mock("../events/event-bus", () => ({
 }));
 
 import { requireUserActor } from "../auth/actor";
+import { radioStationPresets } from "../db/schema";
+import { emit } from "../events/event-bus";
 import { resetRateLimiters } from "../middleware/rate-limit";
 import radioRoutes from "../routes/radio";
 import * as presetService from "../services/radio-station-presets-service";
@@ -104,9 +106,28 @@ describe("radio-station-presets-service", () => {
 			genrePrompt: "doom jazz",
 		});
 		await presetService.activatePreset(preset.id);
+		vi.mocked(emit).mockClear();
 		expect(await presetService.deletePreset(preset.id)).toBe(true);
 		expect(await presetService.deletePreset(preset.id)).toBe(false);
 		expect(await presetService.getActivePreset()).toBeNull();
+		expect(emit).toHaveBeenCalledWith("radio.state_changed", {
+			stationId: "global",
+		});
+	});
+
+	it("broadcasts station state when the active preset is edited", async () => {
+		const preset = await presetService.createPreset({
+			name: "Before",
+			genrePrompt: "ambient",
+		});
+		await presetService.activatePreset(preset.id);
+		vi.mocked(emit).mockClear();
+
+		await presetService.updatePreset(preset.id, { name: "After" });
+
+		expect(emit).toHaveBeenCalledWith("radio.state_changed", {
+			stationId: "global",
+		});
 	});
 
 	it("lists presets with active ones first", async () => {
@@ -122,6 +143,59 @@ describe("radio-station-presets-service", () => {
 		const list = presetService.listPresets();
 		expect(list[0]?.id).toBe(second.id);
 		expect(list.map((preset) => preset.id)).toContain(first.id);
+	});
+
+	it("bounds the public preset list", async () => {
+		await getTestDb()
+			.insert(radioStationPresets)
+			.values(
+				Array.from(
+					{ length: presetService.MAX_STATION_PRESETS + 5 },
+					(_, index) => ({
+						id: `preset-${index}`,
+						createdAt: index,
+						updatedAt: index,
+						name: `Preset ${index}`,
+						genrePrompt: "ambient",
+					}),
+				),
+			);
+
+		expect(presetService.listPresets()).toHaveLength(
+			presetService.MAX_STATION_PRESETS,
+		);
+	});
+
+	it("rejects creation when the preset cap is reached", async () => {
+		await getTestDb()
+			.insert(radioStationPresets)
+			.values(
+				Array.from(
+					{ length: presetService.MAX_STATION_PRESETS },
+					(_, index) => ({
+						id: `preset-${index}`,
+						createdAt: index,
+						updatedAt: index,
+						name: `Preset ${index}`,
+						genrePrompt: "ambient",
+					}),
+				),
+			);
+
+		await expect(
+			presetService.createPreset({ name: "One too many", genrePrompt: "dub" }),
+		).rejects.toBeInstanceOf(presetService.StationPresetLimitError);
+
+		vi.mocked(requireUserActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		const response = await radioRoutes.request("/presets", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ name: "One too many", genrePrompt: "dub" }),
+		});
+		expect(response.status).toBe(409);
 	});
 
 	it.each([

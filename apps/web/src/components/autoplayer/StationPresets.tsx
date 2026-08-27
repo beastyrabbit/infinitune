@@ -2,6 +2,7 @@ import { Loader2, Plus, Radio, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
 	useActivateStationPreset,
+	useControlAuthSession,
 	useCreateStationPreset,
 	useDeleteStationPreset,
 	useStationPresets,
@@ -14,6 +15,8 @@ import {
  */
 export function StationPresets() {
 	const presets = useStationPresets();
+	const authSession = useControlAuthSession();
+	const canManage = authSession?.authenticated === true;
 	const activate = useActivateStationPreset();
 	const remove = useDeleteStationPreset();
 	const [activatingId, setActivatingId] = useState<string | null>(null);
@@ -31,16 +34,22 @@ export function StationPresets() {
 					<Radio className="h-4 w-4" />
 					Stations
 				</h3>
-				<button
-					type="button"
-					onClick={() => setCreating(!creating)}
-					className="border border-white/15 px-3 py-1 font-mono text-xs uppercase tracking-widest text-white/60 transition-colors hover:border-emerald-400/50 hover:text-emerald-300"
-				>
-					{creating ? "Cancel" : "New"}
-				</button>
+				{canManage ? (
+					<button
+						type="button"
+						onClick={() => setCreating(!creating)}
+						className="border border-white/15 px-3 py-1 font-mono text-xs uppercase tracking-widest text-white/60 transition-colors hover:border-emerald-400/50 hover:text-emerald-300"
+					>
+						{creating ? "Cancel" : "New"}
+					</button>
+				) : (
+					<span className="font-mono text-[10px] uppercase tracking-widest text-white/35">
+						Sign in to manage
+					</span>
+				)}
 			</div>
 
-			{creating && (
+			{canManage && creating && (
 				<StationPresetForm
 					name={name}
 					genrePrompt={genrePrompt}
@@ -74,7 +83,7 @@ export function StationPresets() {
 								{preset.genrePrompt}
 							</p>
 						</div>
-						{!preset.isActive && (
+						{canManage && !preset.isActive && (
 							<button
 								type="button"
 								disabled={activatingId !== null}
@@ -97,28 +106,30 @@ export function StationPresets() {
 								)}
 							</button>
 						)}
-						<button
-							type="button"
-							disabled={removingId !== null}
-							title="Delete station"
-							onClick={async () => {
-								setRemovingId(preset.id);
-								try {
-									await remove(preset.id);
-								} catch {
-									// The mutation hook already reports the API error.
-								} finally {
-									setRemovingId(null);
-								}
-							}}
-							className="text-white/30 transition-colors hover:text-red-400 disabled:opacity-30"
-						>
-							{removingId === preset.id ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<Trash2 className="h-3.5 w-3.5" />
-							)}
-						</button>
+						{canManage && (
+							<button
+								type="button"
+								disabled={removingId !== null}
+								title="Delete station"
+								onClick={async () => {
+									setRemovingId(preset.id);
+									try {
+										await remove(preset.id);
+									} catch {
+										// The mutation hook already reports the API error.
+									} finally {
+										setRemovingId(null);
+									}
+								}}
+								className="text-white/30 transition-colors hover:text-red-400 disabled:opacity-30"
+							>
+								{removingId === preset.id ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Trash2 className="h-3.5 w-3.5" />
+								)}
+							</button>
+						)}
 					</li>
 				))}
 				{presets && presets.length === 0 && !creating && (

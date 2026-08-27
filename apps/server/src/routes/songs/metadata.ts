@@ -11,8 +11,23 @@ import {
 import { Hono } from "hono";
 import { saveCover } from "../../covers";
 import * as songService from "../../services/song-service";
+import { requirePlaylistAccess, requireSongAccess } from "./access";
 
 const app = new Hono();
+
+for (const path of [
+	"/:id/metadata",
+	"/:id/cover",
+	"/:id/upload-cover",
+	"/:id/cover-processing-ms",
+	"/:id/audio-duration",
+	"/:id/storage-path",
+	"/:id/persona-extract",
+	"/:id/order",
+]) {
+	app.use(path, requireSongAccess);
+}
+app.use("/reindex/:playlistId", requirePlaylistAccess);
 
 // PATCH /api/songs/:id/metadata — update metadata fields
 app.patch("/:id/metadata", async (c) => {

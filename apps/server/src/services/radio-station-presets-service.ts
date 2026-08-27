@@ -1,9 +1,18 @@
 import { createId } from "@paralleldrive/cuid2";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, count, desc, eq, ne } from "drizzle-orm";
 import { db } from "../db/index";
 import { radioStationPresets } from "../db/schema";
 import { emit } from "../events/event-bus";
 import { logger } from "../logger";
+
+export const MAX_STATION_PRESETS = 100;
+
+export class StationPresetLimitError extends Error {
+	constructor() {
+		super(`A maximum of ${MAX_STATION_PRESETS} station presets is allowed`);
+		this.name = "StationPresetLimitError";
+	}
+}
 
 export interface StationPreset {
 	id: string;
@@ -34,17 +43,18 @@ export function listPresets(): StationPreset[] {
 		.select()
 		.from(radioStationPresets)
 		.orderBy(desc(radioStationPresets.isActive), radioStationPresets.createdAt)
+		.limit(MAX_STATION_PRESETS)
 		.all();
 	return rows.map(toPreset);
 }
 
 export function getActivePreset(): StationPreset | null {
-	const [row] = db
+	const row = db
 		.select()
 		.from(radioStationPresets)
 		.where(eq(radioStationPresets.isActive, true))
-		.all()
-		.slice(0, 1);
+		.limit(1)
+		.get();
 	return row ? toPreset(row) : null;
 }
 
@@ -57,19 +67,25 @@ export interface PresetInput {
 
 export async function createPreset(input: PresetInput): Promise<StationPreset> {
 	const now = Date.now();
-	const [row] = await db
-		.insert(radioStationPresets)
-		.values({
-			id: createId(),
-			createdAt: now,
-			updatedAt: now,
-			name: input.name.trim(),
-			description: input.description?.trim() || null,
-			genrePrompt: input.genrePrompt.trim(),
-			vocalStyle: input.vocalStyle?.trim() || null,
-			isActive: false,
-		})
-		.returning();
+	const row = db.transaction((tx) => {
+		const total =
+			tx.select({ value: count() }).from(radioStationPresets).get()?.value ?? 0;
+		if (total >= MAX_STATION_PRESETS) throw new StationPresetLimitError();
+		return tx
+			.insert(radioStationPresets)
+			.values({
+				id: createId(),
+				createdAt: now,
+				updatedAt: now,
+				name: input.name.trim(),
+				description: input.description?.trim() || null,
+				genrePrompt: input.genrePrompt.trim(),
+				vocalStyle: input.vocalStyle?.trim() || null,
+				isActive: false,
+			})
+			.returning()
+			.get();
+	});
 	logger.info({ presetId: row.id, name: row.name }, "Created station preset");
 	emit("radio.presets.changed", { stationId: "global" });
 	return toPreset(row);
@@ -95,6 +111,7 @@ export async function updatePreset(
 		.returning();
 	if (!row) return null;
 	emit("radio.presets.changed", { stationId: "global" });
+	if (row.isActive) emit("radio.state_changed", { stationId: "global" });
 	return toPreset(row);
 }
 
@@ -142,8 +159,14 @@ export async function deletePreset(presetId: string): Promise<boolean> {
 	const deleted = await db
 		.delete(radioStationPresets)
 		.where(eq(radioStationPresets.id, presetId))
-		.returning({ id: radioStationPresets.id });
+		.returning({
+			id: radioStationPresets.id,
+			isActive: radioStationPresets.isActive,
+		});
 	if (deleted.length === 0) return false;
 	emit("radio.presets.changed", { stationId: "global" });
+	if (deleted[0].isActive) {
+		emit("radio.state_changed", { stationId: "global" });
+	}
 	return true;
 }

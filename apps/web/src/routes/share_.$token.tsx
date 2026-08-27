@@ -1,8 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader, getRequestIP } from "@tanstack/react-start/server";
 import { Disc3, Radio } from "lucide-react";
 import { useState } from "react";
 import { API_FETCH_URL, resolveApiMediaUrl } from "@/lib/endpoints";
 import { formatTime } from "@/lib/format-time";
+import {
+	buildApiForwardedFor,
+	type ShareLoadError,
+	shareLoadErrorForStatus,
+} from "@/lib/share-loader";
 
 interface PublicSong {
 	id: string;
@@ -24,25 +31,39 @@ interface SharePayload {
 	};
 }
 
-async function loadShare(token: string): Promise<{
-	data: SharePayload | null;
-	error: string | null;
-}> {
-	try {
-		const response = await fetch(
-			`${API_FETCH_URL}/api/share/${encodeURIComponent(token)}`,
-		);
-		if (!response.ok) {
-			return { data: null, error: "This share link is invalid or expired" };
-		}
-		return { data: (await response.json()) as SharePayload, error: null };
-	} catch {
-		return { data: null, error: "Failed to load this share link" };
-	}
-}
+const loadShare = createServerFn({ method: "GET" })
+	.inputValidator((token: string) => token)
+	.handler(
+		async ({
+			data: token,
+		}): Promise<{
+			data: SharePayload | null;
+			error: ShareLoadError | null;
+		}> => {
+			try {
+				const forwardedFor = buildApiForwardedFor(
+					getRequestHeader("x-forwarded-for"),
+					getRequestIP(),
+				);
+				const response = await fetch(
+					`${API_FETCH_URL}/api/share/${encodeURIComponent(token)}`,
+					{ headers: forwardedFor ? { "x-forwarded-for": forwardedFor } : {} },
+				);
+				if (!response.ok) {
+					return {
+						data: null,
+						error: shareLoadErrorForStatus(response.status),
+					};
+				}
+				return { data: (await response.json()) as SharePayload, error: null };
+			} catch {
+				return { data: null, error: shareLoadErrorForStatus(503) };
+			}
+		},
+	);
 
 export const Route = createFileRoute("/share_/$token")({
-	loader: ({ params }) => loadShare(params.token),
+	loader: ({ params }) => loadShare({ data: params.token }),
 	head: ({ loaderData }) => {
 		const title =
 			loaderData?.data?.payload.name ??
@@ -85,9 +106,9 @@ function SharePage() {
 		return (
 			<div className="font-mono flex min-h-screen items-center justify-center bg-gray-950 text-white">
 				<div className="text-center">
-					<p className="text-4xl font-black">404</p>
+					<p className="text-4xl font-black">{error.status}</p>
 					<p className="mt-2 text-sm uppercase tracking-widest text-white/40">
-						{error}
+						{error.message}
 					</p>
 					<a
 						href="/autoplayer"

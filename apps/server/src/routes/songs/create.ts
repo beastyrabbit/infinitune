@@ -4,13 +4,19 @@ import {
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import z from "zod";
+import { getRequestActor, type RequestActor } from "../../auth/actor";
 import { downloadYoutubeAudio } from "../../external/youtube-audio";
 import { generationLimiter } from "../../middleware/limiters";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
 import { resolveSongAudioFile } from "../../utils/song-audio-path";
+import { canActorAccessPlaylist } from "./access";
 
 const app = new Hono();
+
+function ownerFields(actor: RequestActor): { ownerUserId?: string } {
+	return actor.kind === "user" ? { ownerUserId: actor.userId } : {};
+}
 
 const CreateWithMetadataSchema = CompleteSongMetadataSchema.extend({
 	playlistId: CreatePendingSongSchema.shape.playlistId,
@@ -26,6 +32,10 @@ app.post("/", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...metadata } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(
 		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);
@@ -39,6 +49,10 @@ app.post("/create-pending", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...opts } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(await songService.createPending(playlistId, orderIndex, opts));
 });
 
@@ -71,6 +85,7 @@ app.post("/oneshot-raw", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { lyrics, style, audioDuration, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	const title = deriveOneshotTitle(lyrics);
 	const genre = style.split(",")[0]?.trim() || "electronic";
@@ -88,6 +103,7 @@ app.post("/oneshot-raw", generationLimiter, async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(playlist.id, 1, {
@@ -126,9 +142,10 @@ app.post("/reimagine", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { sourceSongId, style, coverNoiseStrength, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	const source = await songService.getById(sourceSongId);
-	if (!source) {
+	if (!source || !(await canActorAccessPlaylist(actor, source.playlistId))) {
 		return c.json({ error: "Source song not found" }, 404);
 	}
 	if (!resolveSongAudioFile(source.storagePath)) {
@@ -152,6 +169,7 @@ app.post("/reimagine", generationLimiter, async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(
@@ -199,6 +217,7 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { url, style, lyrics, coverNoiseStrength, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	let download: Awaited<ReturnType<typeof downloadYoutubeAudio>>;
 	try {
@@ -224,6 +243,7 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(
@@ -261,6 +281,10 @@ app.post("/create-metadata-ready", generationLimiter, async (c) => {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...metadata } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(
 		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);

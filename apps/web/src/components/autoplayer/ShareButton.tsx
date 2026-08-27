@@ -2,14 +2,11 @@ import { Link2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/integrations/api/client";
+import {
+	findReusablePermanentShareLink,
+	type ShareLinkResponse,
+} from "@/lib/share-links";
 import { cn } from "@/lib/utils";
-
-interface ShareLinkResponse {
-	id: string;
-	token: string;
-	expiresAt: number | null;
-	revokedAt: number | null;
-}
 
 interface ShareButtonProps {
 	resourceType: "playlist" | "song";
@@ -21,6 +18,9 @@ interface ShareButtonProps {
 export function buildShareUrl(token: string): string {
 	return `${window.location.origin}/share/${token}`;
 }
+
+const PERMANENT_SHARE_NOTICE =
+	"Permanent links keep temporary music permanently, even after revocation.";
 
 /**
  * Creates a share link for a resource and copies the public URL.
@@ -41,12 +41,8 @@ export function ShareButton({
 			const existing = await api.get<{ links: ShareLinkResponse[] }>(
 				`/api/share?${query}`,
 			);
-			const now = Date.now();
 			const link =
-				existing.links.find(
-					(item) =>
-						!item.revokedAt && (!item.expiresAt || item.expiresAt > now),
-				) ??
+				findReusablePermanentShareLink(existing.links) ??
 				(await api.post<ShareLinkResponse>("/api/share", {
 					resourceType,
 					resourceId,
@@ -54,10 +50,12 @@ export function ShareButton({
 			const url = buildShareUrl(link.token);
 			try {
 				await navigator.clipboard.writeText(url);
-				toast.success("Share link copied", { description: url });
+				toast.success("Permanent share link copied", {
+					description: `${url}\n${PERMANENT_SHARE_NOTICE}`,
+				});
 			} catch {
-				toast.warning("Share link ready — copy it manually", {
-					description: url,
+				toast.warning("Permanent share link ready — copy it manually", {
+					description: `${url}\n${PERMANENT_SHARE_NOTICE}`,
 					duration: 10_000,
 				});
 			}
@@ -75,7 +73,7 @@ export function ShareButton({
 			type="button"
 			onClick={handleShare}
 			disabled={busy}
-			title="Copy public share link"
+			title="Copy permanent share link. Temporary music will be kept permanently."
 			aria-label={label ?? "Copy public share link"}
 			className={cn(
 				"flex h-8 w-8 items-center justify-center border-2 border-white/20 bg-white/5 text-white/50 transition-colors hover:border-emerald-500/50 hover:text-emerald-400 disabled:opacity-50",

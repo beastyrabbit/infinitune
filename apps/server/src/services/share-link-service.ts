@@ -5,6 +5,7 @@ import {
 	desc,
 	eq,
 	gt,
+	inArray,
 	isNotNull,
 	isNull,
 	lte,
@@ -130,6 +131,7 @@ export async function createShareLink(input: {
 			.orderBy(desc(shareLinks.createdAt))
 			.all()
 			.map(toShareLink);
+
 		const preserveTemporaryResource = (linkExpiry: number | null) => {
 			if (!resource.isTemporary) return;
 			if (linkExpiry === null) {
@@ -148,14 +150,29 @@ export async function createShareLink(input: {
 			}
 		};
 
+		if (expiresAt === null) {
+			const reusable = liveLinks.find((link) => link.expiresAt === null);
+			if (reusable) {
+				preserveTemporaryResource(reusable.expiresAt);
+				return reusable;
+			}
+		}
+
 		if (liveLinks.length >= MAX_LIVE_SHARE_LINKS_PER_RESOURCE) {
-			const reusable =
-				expiresAt === null
-					? liveLinks.find((link) => link.expiresAt === null)
-					: undefined;
-			if (!reusable) throw new ShareLinkLimitError();
-			preserveTemporaryResource(reusable.expiresAt);
-			return reusable;
+			const expiringLink = liveLinks
+				.filter(
+					(link): link is ShareLink & { expiresAt: number } =>
+						link.expiresAt !== null,
+				)
+				.sort((a, b) => a.expiresAt - b.expiresAt)[0];
+			if (!expiringLink) throw new ShareLinkLimitError();
+
+			tx.update(shareLinks)
+				.set({ revokedAt: now })
+				.where(
+					and(eq(shareLinks.id, expiringLink.id), isNull(shareLinks.revokedAt)),
+				)
+				.run();
 		}
 
 		const row = tx
@@ -260,7 +277,7 @@ function toPublicSongFromRow(song: SongRowLike): PublicSong {
 }
 
 /**
- * Resolve a share token into a read-only public snapshot. Only ready songs
+ * Resolve a share token into a read-only public snapshot. Only playable songs
  * with audio are included; generation internals stay private.
  */
 export async function resolveShareLink(token: string): Promise<{
@@ -287,7 +304,7 @@ export async function resolveShareLink(token: string): Promise<{
 			.where(
 				and(
 					eq(songs.playlistId, playlist.id),
-					eq(songs.status, "ready"),
+					inArray(songs.status, ["ready", "played"]),
 					isNotNull(songs.audioUrl),
 				),
 			)
@@ -305,7 +322,12 @@ export async function resolveShareLink(token: string): Promise<{
 	}
 
 	const song = await songService.getById(link.resourceId);
-	if (!song || song.status !== "ready" || !song.audioUrl) return null;
+	if (
+		!song ||
+		(song.status !== "ready" && song.status !== "played") ||
+		!song.audioUrl
+	)
+		return null;
 	return {
 		resourceType: "song",
 		payload: { song: toPublicSongFromRow(song) },

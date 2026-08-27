@@ -5,8 +5,13 @@ import {
 import { Hono } from "hono";
 import { scheduleMemoryCurator } from "../../agents/playlist-director-service";
 import * as songService from "../../services/song-service";
+import { requireSongAccess } from "./access";
 
 const app = new Hono();
+
+for (const path of ["/:id/rating", "/:id/listen", "/:id/play-duration"]) {
+	app.use(path, requireSongAccess);
+}
 
 // POST /api/songs/:id/rating — toggle rating
 app.post("/:id/rating", async (c) => {

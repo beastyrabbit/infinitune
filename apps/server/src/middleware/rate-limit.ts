@@ -17,7 +17,7 @@ export interface RateLimitOptions {
 	keyBy?: (c: Context) => string;
 	/** Socket peer IPs or CIDRs allowed to supply X-Forwarded-For. */
 	trustedProxyIps?: readonly string[];
-	/** Maximum live client buckets, including a shared overflow bucket. */
+	/** Maximum live client buckets. Least-recently-used buckets are evicted. */
 	maxBuckets?: number;
 }
 
@@ -52,6 +52,29 @@ function normalizeIp(value: string | undefined): string | undefined {
 	if (!trimmed) return undefined;
 	const normalized = trimmed.startsWith("::ffff:") ? trimmed.slice(7) : trimmed;
 	return isIP(normalized) ? normalized : undefined;
+}
+
+function ipv6NetworkKey(address: string): string {
+	const halves = address.toLowerCase().split("::");
+	if (halves.length > 2) return address;
+	const left = halves[0] ? halves[0].split(":") : [];
+	const right = halves[1] ? halves[1].split(":") : [];
+	const missing = 8 - left.length - right.length;
+	if (missing < 0) return address;
+	const expanded = [
+		...left,
+		...Array.from({ length: missing }, () => "0"),
+		...right,
+	];
+	if (expanded.length !== 8) return address;
+	return `${expanded
+		.slice(0, 4)
+		.map((part) => Number.parseInt(part || "0", 16).toString(16))
+		.join(":")}::/64`;
+}
+
+function clientBucketKey(address: string): string {
+	return isIP(address) === 6 ? ipv6NetworkKey(address) : address;
 }
 
 function configuredTrustedProxyIps(): string[] {
@@ -128,26 +151,27 @@ function defaultKey(c: Context, trustedProxies: TrustedProxyMatcher): string {
 		// Hono's in-process test/request helper has no Node socket binding.
 	}
 	const forwardedFor = c.req.header("x-forwarded-for")?.trim();
-	if (!forwardedFor) return remoteAddress ?? "local";
+	if (!forwardedFor)
+		return remoteAddress ? clientBucketKey(remoteAddress) : "local";
 	if (!trustedProxies.configured) {
 		warnIgnoredProxyHeader("missing-trust-config", remoteAddress);
-		return remoteAddress ?? "local";
+		return remoteAddress ? clientBucketKey(remoteAddress) : "local";
 	}
 	if (!remoteAddress || !trustedProxies.matches(remoteAddress)) {
 		warnIgnoredProxyHeader("untrusted-peer", remoteAddress);
-		return remoteAddress ?? "local";
+		return remoteAddress ? clientBucketKey(remoteAddress) : "local";
 	}
 
-	const forwardedHops = forwardedFor.split(",").map((hop) => normalizeIp(hop));
-	if (forwardedHops.length === 0 || forwardedHops.some((hop) => !hop)) {
-		warnIgnoredProxyHeader("invalid-header", remoteAddress);
-		return remoteAddress;
-	}
+	const forwardedHops = forwardedFor.split(",");
 	for (let index = forwardedHops.length - 1; index >= 0; index--) {
-		const hop = forwardedHops[index];
-		if (hop && !trustedProxies.matches(hop)) return hop;
+		const hop = normalizeIp(forwardedHops[index]);
+		if (!hop) {
+			warnIgnoredProxyHeader("invalid-header", remoteAddress);
+			return `${clientBucketKey(remoteAddress)}:invalid-forwarded`;
+		}
+		if (!trustedProxies.matches(hop)) return clientBucketKey(hop);
 	}
-	return remoteAddress;
+	return clientBucketKey(remoteAddress);
 }
 
 /**
@@ -174,9 +198,10 @@ export function createRateLimiter(options: RateLimitOptions) {
 		stores.add(store);
 		ensureTimer(store);
 		const prefix = options.prefix ?? c.req.path;
-		let key = `${prefix}:${keyBy(c)}`;
-		if (!store.buckets.has(key) && store.buckets.size >= maxBuckets - 1) {
-			key = `${prefix}:overflow`;
+		const key = `${prefix}:${keyBy(c)}`;
+		if (!store.buckets.has(key) && store.buckets.size >= maxBuckets) {
+			const oldestKey = store.buckets.keys().next().value;
+			if (oldestKey !== undefined) store.buckets.delete(oldestKey);
 		}
 		const now = Date.now();
 		let bucket = store.buckets.get(key);
@@ -189,6 +214,8 @@ export function createRateLimiter(options: RateLimitOptions) {
 			bucket.tokens + (now - bucket.lastRefill) * refillPerMs,
 		);
 		bucket.lastRefill = now;
+		store.buckets.delete(key);
+		store.buckets.set(key, bucket);
 
 		if (bucket.tokens < 1) {
 			const missingTokens = 1 - bucket.tokens;
@@ -213,4 +240,11 @@ export function resetRateLimiters(): void {
 		stores.delete(store);
 	}
 	proxyHeaderWarnings.clear();
+}
+
+/** Current bucket count across live limiter instances (diagnostic for tests). */
+export function getRateLimitBucketCount(): number {
+	let count = 0;
+	for (const store of stores) count += store.buckets.size;
+	return count;
 }

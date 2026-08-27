@@ -71,7 +71,7 @@ app.get("/library", async (c) => {
 		Number.isFinite(limitParam) && limitParam > 0
 			? Math.min(Math.floor(limitParam), 1000)
 			: 300;
-	const allSongs = await songService.listAll(limit);
+	const allSongs = await songService.listAll(limit, { ownerUserId: null });
 	return c.json({
 		albums: await listRadioAlbums(),
 		legacySongs: allSongs.filter(
@@ -148,7 +148,14 @@ app.post("/presets", stationPresetLimiter, async (c) => {
 	}
 	const result = PresetSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
-	return c.json(await presetService.createPreset(result.data), 201);
+	try {
+		return c.json(await presetService.createPreset(result.data), 201);
+	} catch (error) {
+		if (error instanceof presetService.StationPresetLimitError) {
+			return c.json({ error: error.message }, 409);
+		}
+		throw error;
+	}
 });
 
 app.patch("/presets/:id", stationPresetLimiter, async (c) => {

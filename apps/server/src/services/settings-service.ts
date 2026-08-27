@@ -1,18 +1,17 @@
 import { normalizeAgentReasoningLevel } from "@infinitune/shared/agent-reasoning";
 import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
-import { eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { settings } from "../db/schema";
 import { emit } from "../events/event-bus";
 
 export async function getAll(): Promise<Record<string, string>> {
 	const cached = readCache();
-	if (cached) return cached;
+	if (cached) return { ...cached };
 	const rows = await db.select().from(settings);
 	const all = Object.fromEntries(rows.map((s) => [s.key, s.value]));
 	writeCache(all);
-	return all;
+	return { ...all };
 }
 
 // ─── Short-TTL cache ─────────────────────────────────────────────────
@@ -34,7 +33,11 @@ function readCache(): Record<string, string> | null {
 }
 
 function writeCache(value: Record<string, string>): void {
-	cache = { value, expiresAt: Date.now() + CACHE_TTL_MS, database: db };
+	cache = {
+		value: { ...value },
+		expiresAt: Date.now() + CACHE_TTL_MS,
+		database: db,
+	};
 }
 
 function invalidateCache(): void {
@@ -42,10 +45,7 @@ function invalidateCache(): void {
 }
 
 export async function get(key: string): Promise<string | null> {
-	const cached = readCache();
-	if (cached) return cached[key] ?? null;
-	const [row] = await db.select().from(settings).where(eq(settings.key, key));
-	return row?.value ?? null;
+	return (await getAll())[key] ?? null;
 }
 
 export async function set(key: string, value: string) {

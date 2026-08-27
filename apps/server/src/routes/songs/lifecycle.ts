@@ -7,8 +7,27 @@ import {
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import * as songService from "../../services/song-service";
+import { requirePlaylistAccess, requireSongAccess } from "./access";
 
 const app = new Hono();
+
+for (const path of [
+	"/:id/status",
+	"/:id/claim-metadata",
+	"/:id/claim-audio",
+	"/:id/complete-metadata",
+	"/:id/ace-task",
+	"/:id/mark-ready",
+	"/:id/mark-error",
+	"/:id/retry",
+	"/:id",
+	"/:id/revert",
+	"/:id/revert-to-metadata-ready",
+]) {
+	app.use(path, requireSongAccess);
+}
+app.use("/revert-transient/:playlistId", requirePlaylistAccess);
+app.use("/recover/:playlistId", requirePlaylistAccess);
 
 // PATCH /api/songs/:id/status
 app.patch("/:id/status", async (c) => {

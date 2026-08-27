@@ -6,7 +6,12 @@ vi.mock("../logger", () => ({
 }));
 
 import { logger } from "../logger";
-import { createRateLimiter, resetRateLimiters } from "../middleware/rate-limit";
+import { withGlobalCap } from "../middleware/limiters";
+import {
+	createRateLimiter,
+	getRateLimitBucketCount,
+	resetRateLimiters,
+} from "../middleware/rate-limit";
 
 function buildApp(limit: number, windowMs: number) {
 	const app = new Hono();
@@ -90,6 +95,40 @@ describe("rate-limit middleware", () => {
 		expect(firstRes.status).toBe(200);
 		expect(secondResSameClient.status).toBe(429);
 		expect(otherClientRes.status).toBe(200);
+	});
+
+	it("preserves a global-cap response across different client buckets", async () => {
+		const app = new Hono();
+		app.use(
+			"/",
+			withGlobalCap(
+				createRateLimiter({
+					limit: 2,
+					windowMs: 60_000,
+					prefix: "paired-client",
+					keyBy: (c) => c.req.header("x-test-client") ?? "unknown",
+				}),
+				createRateLimiter({
+					limit: 1,
+					windowMs: 60_000,
+					prefix: "paired-global",
+					keyBy: () => "all-clients",
+					maxBuckets: 1,
+				}),
+			),
+		);
+		app.get("/", (c) => c.json({ ok: true }));
+
+		expect(
+			(await app.request("/", { headers: { "x-test-client": "a" } })).status,
+		).toBe(200);
+		const globallyLimited = await app.request("/", {
+			headers: { "x-test-client": "b" },
+		});
+		expect(globallyLimited.status).toBe(429);
+		expect(await globallyLimited.json()).toEqual({
+			error: "Too many requests",
+		});
 	});
 
 	it("ignores proxy headers from an untrusted or missing socket peer", async () => {
@@ -201,6 +240,105 @@ describe("rate-limit middleware", () => {
 		expect(spoofedPrefix.status).toBe(429);
 	});
 
+	it("uses the appended direct peer when a client forges the earlier chain", async () => {
+		const app = new Hono();
+		app.use(
+			"/limited",
+			createRateLimiter({
+				limit: 1,
+				windowMs: 60_000,
+				prefix: "frontend-chain",
+				trustedProxyIps: ["10.42.0.0/16"],
+			}),
+		);
+		app.get("/limited", (c) => c.json({ ok: true }));
+
+		const first = await app.request(
+			"/limited",
+			{
+				headers: {
+					"x-forwarded-for": "198.51.100.1, 203.0.113.8",
+				},
+			},
+			nodeEnv("10.42.0.25"),
+		);
+		const forgedPrefix = await app.request(
+			"/limited",
+			{
+				headers: {
+					"x-forwarded-for": "198.51.100.2, 203.0.113.8",
+				},
+			},
+			nodeEnv("10.42.0.25"),
+		);
+
+		expect(first.status).toBe(200);
+		expect(forgedPrefix.status).toBe(429);
+	});
+
+	it("trusts a forwarded client only from the configured frontend proxy", async () => {
+		const app = new Hono();
+		app.use(
+			"/limited",
+			createRateLimiter({
+				limit: 1,
+				windowMs: 60_000,
+				prefix: "configured-frontend",
+				trustedProxyIps: ["10.42.0.25"],
+			}),
+		);
+		app.get("/limited", (c) => c.json({ ok: true }));
+
+		const trustedFrontend = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "203.0.113.8" } },
+			nodeEnv("10.42.0.25"),
+		);
+		const untrustedFrontend = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "203.0.113.8" } },
+			nodeEnv("10.42.0.26"),
+		);
+		const sameUntrustedFrontend = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "203.0.113.9" } },
+			nodeEnv("10.42.0.26"),
+		);
+
+		expect(trustedFrontend.status).toBe(200);
+		expect(untrustedFrontend.status).toBe(200);
+		expect(sameUntrustedFrontend.status).toBe(429);
+	});
+
+	it("groups IPv6 clients by /64 so address rotation does not reset limits", async () => {
+		const app = new Hono();
+		app.use(
+			"/limited",
+			createRateLimiter({ limit: 1, windowMs: 60_000, prefix: "ipv6" }),
+		);
+		app.get("/limited", (c) => c.json({ ok: true }));
+
+		const first = await app.request(
+			"/limited",
+			undefined,
+			nodeEnv("2001:db8:1234:5678::1"),
+		);
+		const rotated = await app.request(
+			"/limited",
+			undefined,
+			nodeEnv("2001:db8:1234:5678:ffff::2"),
+		);
+		const otherNetwork = await app.request(
+			"/limited",
+			undefined,
+			nodeEnv("2001:db8:1234:5679::1"),
+		);
+
+		expect(first.status).toBe(200);
+		expect(rotated.status).toBe(429);
+		expect(otherNetwork.status).toBe(200);
+	});
+
 	it("falls back to the socket peer for an invalid forwarded chain", async () => {
 		const app = new Hono();
 		app.use(
@@ -228,6 +366,41 @@ describe("rate-limit middleware", () => {
 		expect(first.status).toBe(200);
 		expect(second.status).toBe(429);
 		expect(logger.warn).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses a valid client hop before an unrelated malformed prefix", async () => {
+		const app = new Hono();
+		app.use(
+			"/limited",
+			createRateLimiter({
+				limit: 1,
+				windowMs: 60_000,
+				prefix: "partly-valid-forwarded",
+				trustedProxyIps: ["192.0.2.0/24"],
+			}),
+		);
+		app.get("/limited", (c) => c.json({ ok: true }));
+
+		const first = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "bad-prefix, 203.0.113.1" } },
+			nodeEnv("192.0.2.10"),
+		);
+		const sameClient = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "other-bad-prefix, 203.0.113.1" } },
+			nodeEnv("192.0.2.10"),
+		);
+		const otherClient = await app.request(
+			"/limited",
+			{ headers: { "x-forwarded-for": "bad-prefix, 203.0.113.2" } },
+			nodeEnv("192.0.2.10"),
+		);
+
+		expect(first.status).toBe(200);
+		expect(sameClient.status).toBe(429);
+		expect(otherClient.status).toBe(200);
+		expect(logger.warn).not.toHaveBeenCalled();
 	});
 
 	it("does not use X-Real-IP as a fallback", async () => {
@@ -325,7 +498,7 @@ describe("rate-limit middleware", () => {
 		expect(otherClient.status).toBe(200);
 	});
 
-	it("shares a rate-limited overflow bucket after the client cap", async () => {
+	it("evicts the least recently used bucket instead of sharing overflow", async () => {
 		const app = new Hono();
 		app.use(
 			"/",
@@ -359,7 +532,59 @@ describe("rate-limit middleware", () => {
 					headers: { "x-test-client": "third" },
 				})
 			).status,
+		).toBe(200);
+		expect(
+			(
+				await app.request("/", {
+					headers: { "x-test-client": "third" },
+				})
+			).status,
 		).toBe(429);
+		expect(
+			(
+				await app.request("/", {
+					headers: { "x-test-client": "first" },
+				})
+			).status,
+		).toBe(200);
+		expect(getRateLimitBucketCount()).toBe(2);
+	});
+
+	it("stays bounded and does not throttle an honest client through key churn", async () => {
+		const app = new Hono();
+		app.use(
+			"/",
+			createRateLimiter({
+				limit: 1,
+				windowMs: 60_000,
+				prefix: "churn",
+				maxBuckets: 3,
+				keyBy: (c) => c.req.header("x-test-client") ?? "unknown",
+			}),
+		);
+		app.get("/", (c) => c.json({ ok: true }));
+
+		expect(
+			(await app.request("/", { headers: { "x-test-client": "honest" } }))
+				.status,
+		).toBe(200);
+		for (let index = 0; index < 50; index++) {
+			expect(
+				(
+					await app.request("/", {
+						headers: { "x-test-client": `rotating-${index}` },
+					})
+				).status,
+			).toBe(200);
+			expect(getRateLimitBucketCount()).toBeLessThanOrEqual(3);
+		}
+
+		// Churn may evict idle history, but it cannot force an honest request into
+		// an attacker-drained shared overflow bucket.
+		expect(
+			(await app.request("/", { headers: { "x-test-client": "honest" } }))
+				.status,
+		).toBe(200);
 	});
 
 	it("refills tokens as the window elapses", async () => {

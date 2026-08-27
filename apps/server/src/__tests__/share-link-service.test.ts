@@ -16,7 +16,9 @@ import { getRequestActor } from "../auth/actor";
 import { playlists, shareLinks, songs, users } from "../db/schema";
 import { resetRateLimiters } from "../middleware/rate-limit";
 import shareRoutes from "../routes/share";
+import songsRoutes from "../routes/songs/index";
 import * as shareService from "../services/share-link-service";
+import * as songService from "../services/song-service";
 
 async function seedPlaylistWithSong(): Promise<{
 	playlistId: string;
@@ -67,7 +69,7 @@ describe("share-link-service", () => {
 		teardownTestDb();
 	});
 
-	it("creates a link with a unique url-safe token", async () => {
+	it("creates and reuses a permanent link with a url-safe token", async () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
@@ -80,7 +82,8 @@ describe("share-link-service", () => {
 			resourceType: "playlist",
 			resourceId: "pl-1",
 		});
-		expect(other?.token).not.toBe(link?.token);
+		expect(other?.token).toBe(link?.token);
+		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
 	});
 
 	it("resolves a playlist token into a public snapshot of ready songs", async () => {
@@ -113,6 +116,35 @@ describe("share-link-service", () => {
 		expect(resolved?.resourceType).toBe("song");
 		const payload = resolved?.payload as { song: { id: string } };
 		expect(payload.song.id).toBe("song-1");
+	});
+
+	it("keeps played songs in playlist and single-song shares", async () => {
+		await getTestDb()
+			.update(songs)
+			.set({ status: "played" })
+			.where(eq(songs.id, "song-1"));
+
+		const playlistLink = await shareService.createShareLink({
+			resourceType: "playlist",
+			resourceId: "pl-1",
+		});
+		const playlistShare = await shareService.resolveShareLink(
+			playlistLink?.token ?? "",
+		);
+		expect(
+			(playlistShare?.payload as { songs: Array<{ id: string }> }).songs,
+		).toMatchObject([{ id: "song-1" }]);
+
+		const songLink = await shareService.createShareLink({
+			resourceType: "song",
+			resourceId: "song-1",
+		});
+		const songShare = await shareService.resolveShareLink(
+			songLink?.token ?? "",
+		);
+		expect((songShare?.payload as { song: { id: string } }).song.id).toBe(
+			"song-1",
+		);
 	});
 
 	it("returns null for unknown tokens", async () => {
@@ -241,10 +273,12 @@ describe("share-link-service", () => {
 		await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			expiresInDays: 1,
 		});
 		await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			expiresInDays: 2,
 		});
 		const links = await shareService.listShareLinksForResource(
 			"playlist",
@@ -253,37 +287,46 @@ describe("share-link-service", () => {
 		expect(links).toHaveLength(2);
 	});
 
-	it("caps live links per resource", async () => {
+	it("caps concurrent timed links per resource", async () => {
 		const tokens = new Set<string>();
-		for (
-			let index = 0;
-			index < shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE + 1;
-			index++
-		) {
-			const link = await shareService.createShareLink({
-				resourceType: "playlist",
-				resourceId: "pl-1",
-			});
+		const created = await Promise.all(
+			Array.from(
+				{ length: shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE + 10 },
+				(_, index) =>
+					shareService.createShareLink({
+						resourceType: "playlist",
+						resourceId: "pl-1",
+						expiresInDays: index + 1,
+					}),
+			),
+		);
+		for (const link of created) {
 			if (link) tokens.add(link.token);
 		}
 
-		expect(tokens.size).toBe(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
-		expect(await getTestDb().select().from(shareLinks)).toHaveLength(
-			shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE,
+		expect(tokens.size).toBe(
+			shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE + 10,
 		);
+		expect(
+			(await getTestDb().select().from(shareLinks)).filter(
+				(link) => link.revokedAt === null,
+			),
+		).toHaveLength(shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE);
 	});
 
 	it("rejects a timed-link request when the cap has no compatible link", async () => {
-		for (
-			let index = 0;
-			index < shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE;
-			index++
-		) {
-			await shareService.createShareLink({
-				resourceType: "playlist",
-				resourceId: "pl-1",
-			});
-		}
+		await getTestDb()
+			.insert(shareLinks)
+			.values(
+				Array.from(
+					{ length: shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE },
+					(_, index) => ({
+						token: `permanent-${index}`,
+						resourceType: "playlist",
+						resourceId: "pl-1",
+					}),
+				),
+			);
 
 		await expect(
 			shareService.createShareLink({
@@ -305,7 +348,42 @@ describe("share-link-service", () => {
 		expect(response.status).toBe(409);
 	});
 
-	it("keeps a shared temporary playlist for the lifetime of its link", async () => {
+	it("replaces only the soonest-expiring link when timed links reach the cap", async () => {
+		const created: Array<
+			Awaited<ReturnType<typeof shareService.createShareLink>>
+		> = [];
+		for (
+			let index = 0;
+			index < shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE;
+			index++
+		) {
+			created.push(
+				await shareService.createShareLink({
+					resourceType: "playlist",
+					resourceId: "pl-1",
+					expiresInDays: index + 1,
+				}),
+			);
+		}
+
+		const replacement = await shareService.createShareLink({
+			resourceType: "playlist",
+			resourceId: "pl-1",
+			expiresInDays: 30,
+		});
+		const rows = await getTestDb().select().from(shareLinks);
+		const first = rows.find((row) => row.id === created[0]?.id);
+		expect(replacement?.id).not.toBe(created[0]?.id);
+		expect(first?.revokedAt).not.toBeNull();
+		expect(rows.filter((row) => row.revokedAt === null)).toHaveLength(
+			shareService.MAX_LIVE_SHARE_LINKS_PER_RESOURCE,
+		);
+		expect(
+			rows.filter((row) => row.expiresAt === null).map((row) => row.id),
+		).toEqual([]);
+	});
+
+	it("permanently retains a temporary playlist shared without an expiry", async () => {
 		const db = getTestDb();
 		await db
 			.update(playlists)
@@ -316,6 +394,27 @@ describe("share-link-service", () => {
 			resourceType: "song",
 			resourceId: "song-1",
 		});
+
+		const [playlist] = await db
+			.select()
+			.from(playlists)
+			.where(eq(playlists.id, "pl-1"));
+		expect(playlist.isTemporary).toBe(false);
+		expect(playlist.expiresAt).toBeNull();
+	});
+
+	it("does not re-temporize a promoted playlist when its permanent link is revoked", async () => {
+		const db = getTestDb();
+		await db
+			.update(playlists)
+			.set({ isTemporary: true, expiresAt: Date.now() + 1000 })
+			.where(eq(playlists.id, "pl-1"));
+
+		const link = await shareService.createShareLink({
+			resourceType: "playlist",
+			resourceId: "pl-1",
+		});
+		await shareService.revokeShareLink(link?.id ?? "");
 
 		const [playlist] = await db
 			.select()
@@ -512,6 +611,49 @@ describe("share-link-service", () => {
 		});
 
 		expect(response.status).toBe(404);
+	});
+
+	it("does not turn a shared owned song id into a mutation capability", async () => {
+		const db = getTestDb();
+		await db.insert(users).values({
+			id: "user-1",
+			createdAt: Date.now(),
+			shooSubject: "shoo-user-1",
+		});
+		await db
+			.update(playlists)
+			.set({ ownerUserId: "user-1" })
+			.where(eq(playlists.id, "pl-1"));
+		const link = await shareService.createShareLink({
+			resourceType: "song",
+			resourceId: "song-1",
+		});
+		expect(
+			await shareService.resolveShareLink(link?.token ?? ""),
+		).not.toBeNull();
+
+		expect((await songsRoutes.request("/song-1")).status).toBe(404);
+		expect(
+			(
+				await songsRoutes.request("/song-1/revert", {
+					method: "POST",
+				})
+			).status,
+		).toBe(404);
+		expect(
+			(
+				await songsRoutes.request("/song-1", {
+					method: "DELETE",
+				})
+			).status,
+		).toBe(404);
+		expect(await songService.getById("song-1")).not.toBeNull();
+
+		vi.mocked(getRequestActor).mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		expect((await songsRoutes.request("/song-1")).status).toBe(200);
 	});
 
 	it("cleans up playlist and song links when their resources are deleted", async () => {
