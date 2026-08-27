@@ -45,7 +45,8 @@ function invalidateCache(): void {
 }
 
 export async function get(key: string): Promise<string | null> {
-	return (await getAll())[key] ?? null;
+	const all = await getAll();
+	return Object.hasOwn(all, key) ? all[key] : null;
 }
 
 export async function set(key: string, value: string) {

@@ -502,6 +502,48 @@ describe("share-link-service", () => {
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
 	});
 
+	it("rejects zero-day expiry instead of creating a permanent link", async () => {
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 0,
+			}),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await getTestDb().select().from(shareLinks)).toHaveLength(0);
+	});
+
+	it("rate-limits share-link listing", async () => {
+		const path = "/?resourceType=playlist&resourceId=pl-1";
+		for (let index = 0; index < 20; index++) {
+			expect((await shareRoutes.request(path)).status).toBe(200);
+		}
+		expect((await shareRoutes.request(path)).status).toBe(429);
+	});
+
+	it("rate-limits share-link revocation", async () => {
+		for (let index = 0; index < 20; index++) {
+			expect(
+				(
+					await shareRoutes.request(`/missing-${index}`, {
+						method: "DELETE",
+					})
+				).status,
+			).toBe(404);
+		}
+		expect(
+			(
+				await shareRoutes.request("/limited", {
+					method: "DELETE",
+				})
+			).status,
+		).toBe(429);
+	});
+
 	it("hides an owned playlist from anonymous link management", async () => {
 		const db = getTestDb();
 		const link = await shareService.createShareLink({

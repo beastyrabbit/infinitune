@@ -36,6 +36,12 @@ describe("settings-service cache", () => {
 		expect(await settingsService.get("example")).toBe("first");
 	});
 
+	it("does not resolve inherited object keys as settings", async () => {
+		expect(await settingsService.get("toString")).toBeNull();
+		expect(await settingsService.get("constructor")).toBeNull();
+		expect(await settingsService.get("__proto__")).toBeNull();
+	});
+
 	it("invalidates the cache after a service write", async () => {
 		await settingsService.set("example", "first");
 		expect(await settingsService.get("example")).toBe("first");

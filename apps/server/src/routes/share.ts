@@ -19,7 +19,7 @@ const app = new Hono();
 const CreateSchema = z.object({
 	resourceType: z.enum(["playlist", "song"]),
 	resourceId: z.string().min(1),
-	expiresInDays: z.number().min(0).max(365).optional(),
+	expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
 async function canManageResource(
@@ -61,7 +61,7 @@ app.post("/", shareLinkLimiter, async (c) => {
 });
 
 // GET /api/share?resourceType=playlist&resourceId=... — list links for a resource
-app.get("/", async (c) => {
+app.get("/", shareLinkLimiter, async (c) => {
 	const resourceType = c.req.query("resourceType") ?? "";
 	const resourceId = c.req.query("resourceId") ?? "";
 	if (!isShareResourceType(resourceType) || !resourceId) {
@@ -83,7 +83,7 @@ app.get("/:token", shareReadLimiter, async (c) => {
 });
 
 // DELETE /api/share/:id — revoke a link
-app.delete("/:id", async (c) => {
+app.delete("/:id", shareLinkLimiter, async (c) => {
 	const id = c.req.param("id");
 	const link = await getShareLinkById(id);
 	if (

@@ -256,8 +256,8 @@ CODEX_TURN_TIMEOUT_MS=360000
 # Where to store generated audio files
 MUSIC_STORAGE_PATH=/path/to/your/music/storage
 
-# Optional comma-separated proxy IPs or CIDRs allowed to supply
-# X-Forwarded-For. Leave empty when serving directly.
+# Required behind a reverse proxy: comma-separated IPs or CIDRs allowed to
+# supply X-Forwarded-For. Leave empty only when serving directly.
 RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
 
 # Optional public-share read cap per client and minute (default: 120)
@@ -282,7 +282,10 @@ requests remain same-origin when production builds leave `VITE_API_URL` empty.
 When a reverse proxy is present, list every trusted proxy network in
 `RATE_LIMIT_TRUSTED_PROXY_IPS` and configure the edge proxy to overwrite
 `X-Forwarded-For`. Infinitune walks that chain from the right and uses the first
-untrusted address as the client. In a split deployment, the backend trust list
+untrusted address as the client. Requests containing `X-Forwarded-For` are
+rejected with 503 when no trust list is configured, so direct deployments remain
+supported without silently collapsing proxied clients into one rate-limit
+bucket. In a split deployment, the backend trust list
 must include the frontend container or network because the SSR loader appends
 its direct peer to the forwarded chain. Do not expose the frontend around an
 edge proxy that is responsible for overwriting `X-Forwarded-For`. Infinitune

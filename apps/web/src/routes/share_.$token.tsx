@@ -8,6 +8,7 @@ import { formatTime } from "@/lib/format-time";
 import {
 	buildApiForwardedFor,
 	type ShareLoadError,
+	shareFetchInit,
 	shareLoadErrorForStatus,
 } from "@/lib/share-loader";
 
@@ -47,7 +48,7 @@ const loadShare = createServerFn({ method: "GET" })
 				);
 				const response = await fetch(
 					`${API_FETCH_URL}/api/share/${encodeURIComponent(token)}`,
-					{ headers: forwardedFor ? { "x-forwarded-for": forwardedFor } : {} },
+					shareFetchInit(forwardedFor),
 				);
 				if (!response.ok) {
 					return {

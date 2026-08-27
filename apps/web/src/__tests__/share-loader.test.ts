@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	buildApiForwardedFor,
+	SHARE_LOAD_TIMEOUT_MS,
+	shareFetchInit,
 	shareLoadErrorForStatus,
 } from "../lib/share-loader";
 
@@ -14,6 +16,20 @@ describe("share loader", () => {
 
 	it("does not forward a spoofable chain when the direct peer is unavailable", () => {
 		expect(buildApiForwardedFor("203.0.113.8", undefined)).toBeUndefined();
+	});
+
+	it("bounds the server-side API request", () => {
+		const signal = new AbortController().signal;
+		const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+
+		const init = shareFetchInit("203.0.113.8");
+
+		expect(timeout).toHaveBeenCalledWith(SHARE_LOAD_TIMEOUT_MS);
+		expect(init.signal).toBe(signal);
+		expect(new Headers(init.headers).get("x-forwarded-for")).toBe(
+			"203.0.113.8",
+		);
+		timeout.mockRestore();
 	});
 
 	it("distinguishes missing, throttled, and unavailable links", () => {

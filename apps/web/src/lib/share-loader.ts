@@ -3,6 +3,15 @@ export interface ShareLoadError {
 	message: string;
 }
 
+export const SHARE_LOAD_TIMEOUT_MS = 5_000;
+
+export function shareFetchInit(forwardedFor: string | undefined): RequestInit {
+	return {
+		headers: forwardedFor ? { "x-forwarded-for": forwardedFor } : {},
+		signal: AbortSignal.timeout(SHARE_LOAD_TIMEOUT_MS),
+	};
+}
+
 /**
  * Preserve the edge proxy chain and append the frontend's direct peer. The API
  * can then apply its own trusted-proxy policy from the right of the chain.

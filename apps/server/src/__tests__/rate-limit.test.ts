@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../logger", () => ({
-	logger: { warn: vi.fn() },
+	logger: { error: vi.fn(), warn: vi.fn() },
 }));
 
 import { logger } from "../logger";
@@ -35,6 +35,7 @@ describe("rate-limit middleware", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+		vi.mocked(logger.error).mockClear();
 		vi.mocked(logger.warn).mockClear();
 		resetRateLimiters();
 	});
@@ -132,7 +133,17 @@ describe("rate-limit middleware", () => {
 	});
 
 	it("ignores proxy headers from an untrusted or missing socket peer", async () => {
-		const app = buildApp(1, 60_000);
+		const app = new Hono();
+		app.use(
+			"/limited",
+			createRateLimiter({
+				limit: 1,
+				windowMs: 60_000,
+				prefix: "missing-socket",
+				trustedProxyIps: ["192.0.2.10"],
+			}),
+		);
+		app.get("/limited", (c) => c.json({ ok: true }));
 		const first = await app.request("/limited", {
 			headers: { "x-forwarded-for": "203.0.113.1, 192.0.2.10" },
 		});
@@ -431,20 +442,23 @@ describe("rate-limit middleware", () => {
 		expect(changedHeader.status).toBe(429);
 	});
 
-	it("warns once when forwarded headers lack a trust configuration", async () => {
+	it("fails closed when forwarded headers lack a trust configuration", async () => {
 		const app = buildApp(5, 60_000);
-		await app.request("/limited", {
+		const first = await app.request("/limited", {
 			headers: { "x-forwarded-for": "203.0.113.1" },
 		});
-		await app.request("/limited", {
+		const second = await app.request("/limited", {
 			headers: { "x-forwarded-for": "203.0.113.2" },
 		});
 
-		expect(logger.warn).toHaveBeenCalledTimes(1);
-		expect(logger.warn).toHaveBeenCalledWith(
+		expect(first.status).toBe(503);
+		expect(second.status).toBe(503);
+		expect(logger.error).toHaveBeenCalledTimes(1);
+		expect(logger.error).toHaveBeenCalledWith(
 			expect.objectContaining({ reason: "missing-trust-config" }),
-			"Ignoring X-Forwarded-For for rate limiting",
+			"Refusing forwarded request without trusted proxy configuration",
 		);
+		expect(logger.warn).not.toHaveBeenCalled();
 	});
 
 	it("warns once when the socket peer is outside the configured ranges", async () => {

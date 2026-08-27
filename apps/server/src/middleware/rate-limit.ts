@@ -132,7 +132,7 @@ function createTrustedProxyMatcher(
 }
 
 function warnIgnoredProxyHeader(
-	reason: "missing-trust-config" | "untrusted-peer" | "invalid-header",
+	reason: "untrusted-peer" | "invalid-header",
 	remoteAddress: string | undefined,
 ): void {
 	if (proxyHeaderWarnings.has(reason)) return;
@@ -143,7 +143,22 @@ function warnIgnoredProxyHeader(
 	);
 }
 
-function defaultKey(c: Context, trustedProxies: TrustedProxyMatcher): string {
+function logMissingProxyTrustConfiguration(
+	remoteAddress: string | undefined,
+): void {
+	const reason = "missing-trust-config";
+	if (proxyHeaderWarnings.has(reason)) return;
+	proxyHeaderWarnings.add(reason);
+	logger.error(
+		{ reason, remoteAddress },
+		"Refusing forwarded request without trusted proxy configuration",
+	);
+}
+
+function defaultKey(
+	c: Context,
+	trustedProxies: TrustedProxyMatcher,
+): string | null {
 	let remoteAddress: string | undefined;
 	try {
 		remoteAddress = normalizeIp(getConnInfo(c).remote.address);
@@ -154,8 +169,8 @@ function defaultKey(c: Context, trustedProxies: TrustedProxyMatcher): string {
 	if (!forwardedFor)
 		return remoteAddress ? clientBucketKey(remoteAddress) : "local";
 	if (!trustedProxies.configured) {
-		warnIgnoredProxyHeader("missing-trust-config", remoteAddress);
-		return remoteAddress ? clientBucketKey(remoteAddress) : "local";
+		logMissingProxyTrustConfiguration(remoteAddress);
+		return null;
 	}
 	if (!remoteAddress || !trustedProxies.matches(remoteAddress)) {
 		warnIgnoredProxyHeader("untrusted-peer", remoteAddress);
@@ -183,8 +198,6 @@ export function createRateLimiter(options: RateLimitOptions) {
 	const trustedProxies = createTrustedProxyMatcher(
 		options.trustedProxyIps ?? configuredTrustedProxyIps(),
 	);
-	const keyBy =
-		options.keyBy ?? ((c: Context) => defaultKey(c, trustedProxies));
 	const refillPerMs = options.limit / options.windowMs;
 	const maxBuckets = Math.max(1, Math.floor(options.maxBuckets ?? 10_000));
 	const store: RateLimitStore = {
@@ -198,7 +211,13 @@ export function createRateLimiter(options: RateLimitOptions) {
 		stores.add(store);
 		ensureTimer(store);
 		const prefix = options.prefix ?? c.req.path;
-		const key = `${prefix}:${keyBy(c)}`;
+		const clientKey = options.keyBy
+			? options.keyBy(c)
+			: defaultKey(c, trustedProxies);
+		if (clientKey === null) {
+			return c.json({ error: "Service unavailable" }, 503);
+		}
+		const key = `${prefix}:${clientKey}`;
 		if (!store.buckets.has(key) && store.buckets.size >= maxBuckets) {
 			const oldestKey = store.buckets.keys().next().value;
 			if (oldestKey !== undefined) store.buckets.delete(oldestKey);
