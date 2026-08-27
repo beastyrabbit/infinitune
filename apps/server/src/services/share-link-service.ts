@@ -99,14 +99,33 @@ export async function createShareLink(input: {
 	resourceId: string;
 	expiresInDays?: number;
 }): Promise<ShareLink | null> {
-	const resource = await getShareResource(input.resourceType, input.resourceId);
-	if (!resource) return null;
 	const now = Date.now();
 	const expiresAt =
 		input.expiresInDays && input.expiresInDays > 0
 			? now + input.expiresInDays * 24 * 60 * 60 * 1000
 			: null;
 	return db.transaction((tx) => {
+		const resource =
+			input.resourceType === "playlist"
+				? tx
+						.select({
+							playlistId: playlists.id,
+							isTemporary: playlists.isTemporary,
+						})
+						.from(playlists)
+						.where(eq(playlists.id, input.resourceId))
+						.get()
+				: tx
+						.select({
+							playlistId: playlists.id,
+							isTemporary: playlists.isTemporary,
+						})
+						.from(songs)
+						.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+						.where(eq(songs.id, input.resourceId))
+						.get();
+		if (!resource) return null;
+
 		tx.delete(shareLinks)
 			.where(
 				or(
