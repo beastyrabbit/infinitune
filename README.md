@@ -273,8 +273,9 @@ RATE_LIMIT_RADIO_REQUESTS_GLOBAL_PER_MIN=50
 Every production frontend and server process requires `APP_ORIGIN`. Set it to
 the public web origin, such as `https://music.example.com`, even when the
 frontend and API share one public origin. The container entrypoint refuses to
-start either process without it. You may also set `INTERNAL_API_URL` on the
-frontend process to a private backend origin, such as
+start either process when it is missing or is not an absolute HTTP(S) origin.
+You may also set `INTERNAL_API_URL` on the frontend process to a private backend
+origin, such as
 `http://infinitune-api:5175`; it is used only for server-side API fetches.
 Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
 requests remain same-origin when production builds leave `VITE_API_URL` empty.
