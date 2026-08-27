@@ -447,6 +447,34 @@ describe("share-link-service", () => {
 		expect(playlist.expiresAt).toBeGreaterThan(originalExpiry);
 	});
 
+	it("does not shorten temporary retention when timed shares race", async () => {
+		const db = getTestDb();
+		await db
+			.update(playlists)
+			.set({ isTemporary: true, expiresAt: Date.now() + 1000 })
+			.where(eq(playlists.id, "pl-1"));
+
+		const [longLink, shortLink] = await Promise.all([
+			shareService.createShareLink({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 30,
+			}),
+			shareService.createShareLink({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 1,
+			}),
+		]);
+
+		const [playlist] = await db
+			.select()
+			.from(playlists)
+			.where(eq(playlists.id, "pl-1"));
+		expect(longLink?.expiresAt).toBeGreaterThan(shortLink?.expiresAt ?? 0);
+		expect(playlist.expiresAt).toBe(longLink?.expiresAt);
+	});
+
 	it("does not add an expiry to a temporary playlist without one", async () => {
 		const db = getTestDb();
 		await db

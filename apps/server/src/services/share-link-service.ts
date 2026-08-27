@@ -8,6 +8,7 @@ import {
 	inArray,
 	isNotNull,
 	isNull,
+	lt,
 	lte,
 	or,
 } from "drizzle-orm";
@@ -37,7 +38,6 @@ export interface ShareResource {
 	ownerUserId: string | null;
 	playlistId: string;
 	isTemporary: boolean;
-	resourceExpiresAt: number | null;
 }
 
 export class ShareLinkLimitError extends Error {
@@ -76,7 +76,6 @@ export async function getShareResource(
 					ownerUserId: playlist.ownerUserId,
 					playlistId: playlist.id,
 					isTemporary: playlist.isTemporary,
-					resourceExpiresAt: playlist.expiresAt,
 				}
 			: null;
 	}
@@ -91,7 +90,6 @@ export async function getShareResource(
 				ownerUserId: playlist.ownerUserId,
 				playlistId: playlist.id,
 				isTemporary: playlist.isTemporary,
-				resourceExpiresAt: playlist.expiresAt,
 			}
 		: null;
 }
@@ -139,13 +137,17 @@ export async function createShareLink(input: {
 					.set({ isTemporary: false, expiresAt: null })
 					.where(eq(playlists.id, resource.playlistId))
 					.run();
-			} else if (
-				resource.resourceExpiresAt !== null &&
-				resource.resourceExpiresAt < linkExpiry
-			) {
+			} else {
 				tx.update(playlists)
 					.set({ expiresAt: linkExpiry })
-					.where(eq(playlists.id, resource.playlistId))
+					.where(
+						and(
+							eq(playlists.id, resource.playlistId),
+							eq(playlists.isTemporary, true),
+							isNotNull(playlists.expiresAt),
+							lt(playlists.expiresAt, linkExpiry),
+						),
+					)
 					.run();
 			}
 		};
