@@ -222,6 +222,12 @@ export interface ProviderTaskPorts {
 		lmTemperature?: number;
 		lmCfgScale?: number;
 		inferMethod?: string;
+		guidanceScale?: number;
+		samplerMode?: string;
+		shift?: number;
+		velocityNormThreshold?: number;
+		velocityEmaFactor?: number;
+		useAdg?: boolean;
 		aceDcwEnabled?: boolean;
 		aceDcwMode?: string;
 		aceDcwScaler?: number;

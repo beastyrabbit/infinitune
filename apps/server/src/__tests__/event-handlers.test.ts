@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../services/song-service", () => ({
 	getWorkQueue: vi.fn(),
+	getById: vi.fn(),
 	getByIds: vi.fn(),
 	createPending: vi.fn(),
 	deleteSong: vi.fn(),
@@ -44,7 +45,33 @@ vi.mock("../external/ace", () => ({
 	batchPollAce: vi.fn(),
 }));
 
-vi.mock("./song-worker", () => ({
+vi.mock("../worker/song-worker", () => ({
+	blocksOwnerlessOpenRouterTextGeneration: vi.fn(
+		(input: {
+			playlist: {
+				llmProvider: string;
+				mode: string;
+				ownerUserId: string | null;
+				playlistKey: string | null;
+				isTemporary: boolean;
+			};
+			settings: { textProvider: string };
+		}) => {
+			const canonicalRadio =
+				input.playlist.mode === "radio" &&
+				input.playlist.playlistKey === "global-radio" &&
+				input.playlist.isTemporary === false;
+			const provider = canonicalRadio
+				? input.settings.textProvider
+				: input.playlist.llmProvider || input.settings.textProvider;
+			return (
+				process.env.NODE_ENV === "production" &&
+				!input.playlist.ownerUserId &&
+				!canonicalRadio &&
+				provider === "openrouter"
+			);
+		},
+	),
 	SongWorker: vi.fn().mockImplementation(() => ({
 		run: vi.fn().mockResolvedValue(undefined),
 		cancel: vi.fn(),
@@ -65,9 +92,12 @@ vi.mock("./queues", () => ({
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
 import { _test } from "../worker/index";
+import { SongWorker } from "../worker/song-worker";
 
 const {
 	checkBufferDeficit,
+	runPersonaScan,
+	handleSongCreated,
 	handleSongStatusChanged,
 	handlePlaylistCreated,
 	handlePlaylistDeleted,
@@ -149,11 +179,41 @@ function mockPlaylist(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function mockPersonaCandidate() {
+	return {
+		id: "song-persona",
+		title: "Rated Song",
+		artistName: "Test Artist",
+		genre: "Electronic",
+		subGenre: "Ambient",
+		mood: "Calm",
+		energy: "Low",
+		era: "2020s",
+		vocalStyle: "Instrumental",
+		instruments: ["Synthesizer"],
+		themes: ["Night"],
+		description: "An ambient test track",
+		lyrics: null,
+	};
+}
+
+function mockPersonaQueue() {
+	const enqueue = vi.fn(() => new Promise(() => {}));
+	setQueues({
+		recalcPendingPriorities: vi.fn(),
+		refreshAll: vi.fn(),
+		audio: { tickPolls: vi.fn() },
+		llm: { enqueue },
+	} as never);
+	return enqueue;
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe("worker event handlers", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(songService.getNeedsPersona).mockResolvedValue([]);
 		vi.useFakeTimers();
 		reset();
 		setQueues({
@@ -166,11 +226,44 @@ describe("worker event handlers", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.unstubAllEnvs();
 	});
 
 	// ─── checkBufferDeficit ─────────────────────────────────────────
 
 	describe("checkBufferDeficit", () => {
+		it("fails closed for a production ownerless OpenRouter playlist", async () => {
+			vi.stubEnv("NODE_ENV", "production");
+			vi.mocked(playlistService.getById).mockResolvedValue(
+				mockPlaylist({ llmProvider: "openrouter", ownerUserId: null }),
+			);
+
+			await checkBufferDeficit("pl-1");
+
+			expect(songService.getWorkQueue).not.toHaveBeenCalled();
+			expect(songService.createPending).not.toHaveBeenCalled();
+		});
+
+		it.each([
+			["development ownerless", "development", "endless", null],
+			["production owned", "production", "endless", "user-1"],
+		] as const)(
+			"allows %s OpenRouter work",
+			async (_label, nodeEnv, mode, ownerUserId) => {
+				vi.stubEnv("NODE_ENV", nodeEnv);
+				vi.mocked(playlistService.getById).mockResolvedValue(
+					mockPlaylist({ llmProvider: "openrouter", mode, ownerUserId }),
+				);
+				vi.mocked(songService.getWorkQueue).mockResolvedValue(
+					mockWorkQueue({ bufferDeficit: 1 }),
+				);
+
+				await checkBufferDeficit("pl-1");
+
+				expect(songService.createPending).toHaveBeenCalledTimes(1);
+			},
+		);
+
 		it("creates songs when buffer has deficit", async () => {
 			vi.mocked(playlistService.getById).mockResolvedValue(mockPlaylist());
 			vi.mocked(songService.getWorkQueue).mockResolvedValue(
@@ -265,7 +358,129 @@ describe("worker event handlers", () => {
 		});
 	});
 
+	describe("handleSongCreated", () => {
+		it("still starts audio recovery for a production ownerless OpenRouter playlist", async () => {
+			vi.stubEnv("NODE_ENV", "production");
+			vi.mocked(songService.getByIds).mockResolvedValue([
+				{ id: "song-1", status: "metadata_ready" } as never,
+			]);
+			vi.mocked(playlistService.getById).mockResolvedValue(
+				mockPlaylist({ llmProvider: "openrouter", ownerUserId: null }),
+			);
+			vi.mocked(songService.getWorkQueue).mockResolvedValue(mockWorkQueue());
+
+			await handleSongCreated({
+				songId: "song-1",
+				playlistId: "pl-1",
+				status: "metadata_ready",
+			});
+
+			expect(SongWorker).toHaveBeenCalledTimes(1);
+		});
+
+		it.each([
+			["development ownerless", "development", "endless", null],
+			["production owned", "production", "endless", "user-1"],
+			["production radio recovery", "production", "radio", null],
+		] as const)(
+			"starts a SongWorker for %s OpenRouter playlists",
+			async (_label, nodeEnv, mode, ownerUserId) => {
+				vi.stubEnv("NODE_ENV", nodeEnv);
+				vi.mocked(songService.getByIds).mockResolvedValue([
+					{ id: "song-1", status: "pending" } as never,
+				]);
+				vi.mocked(playlistService.getById).mockResolvedValue(
+					mockPlaylist({ llmProvider: "openrouter", mode, ownerUserId }),
+				);
+				vi.mocked(songService.getWorkQueue).mockResolvedValue(mockWorkQueue());
+
+				await handleSongCreated({
+					songId: "song-1",
+					playlistId: "pl-1",
+					status: "pending",
+				});
+
+				expect(SongWorker).toHaveBeenCalledTimes(1);
+			},
+		);
+	});
+
 	// ─── handleSongStatusChanged ────────────────────────────────────
+
+	describe("runPersonaScan", () => {
+		it.each([
+			["non-radio playlist", { mode: "endless" }],
+			[
+				"non-canonical radio playlist",
+				{ mode: "radio", playlistKey: "other-radio" },
+			],
+			[
+				"temporary global radio playlist",
+				{ mode: "radio", playlistKey: "global-radio", isTemporary: true },
+			],
+		] as const)(
+			"blocks production ownerless OpenRouter persona work for a %s",
+			async (_label, playlistOverrides) => {
+				vi.stubEnv("NODE_ENV", "production");
+				const enqueue = mockPersonaQueue();
+				vi.mocked(songService.getNeedsPersona).mockResolvedValue([
+					mockPersonaCandidate(),
+				]);
+				vi.mocked(songService.getById).mockResolvedValue({
+					id: "song-persona",
+					playlistId: "pl-1",
+				} as never);
+				vi.mocked(playlistService.getById).mockResolvedValue(
+					mockPlaylist({ ownerUserId: null, ...playlistOverrides }),
+				);
+
+				await runPersonaScan({
+					personaProvider: "openrouter",
+					personaModel: "auto",
+				} as never);
+
+				expect(enqueue).not.toHaveBeenCalled();
+			},
+		);
+
+		it.each([
+			["production owned playlist", "production", { ownerUserId: "user-1" }],
+			[
+				"production canonical global radio",
+				"production",
+				{
+					ownerUserId: null,
+					mode: "radio",
+					playlistKey: "global-radio",
+					isTemporary: false,
+				},
+			],
+			["development ownerless playlist", "development", { ownerUserId: null }],
+		] as const)(
+			"allows OpenRouter persona work for a %s",
+			async (_label, nodeEnv, playlistOverrides) => {
+				vi.stubEnv("NODE_ENV", nodeEnv);
+				const enqueue = mockPersonaQueue();
+				vi.mocked(songService.getNeedsPersona).mockResolvedValue([
+					mockPersonaCandidate(),
+				]);
+				vi.mocked(songService.getById).mockResolvedValue({
+					id: "song-persona",
+					playlistId: "pl-1",
+				} as never);
+				vi.mocked(playlistService.getById).mockResolvedValue(
+					mockPlaylist(playlistOverrides),
+				);
+
+				await runPersonaScan({
+					personaProvider: "openrouter",
+					personaModel: "auto",
+				} as never);
+
+				expect(enqueue).toHaveBeenCalledTimes(1);
+			},
+		);
+	});
 
 	describe("handleSongStatusChanged", () => {
 		it("checks buffer deficit when song becomes ready", async () => {

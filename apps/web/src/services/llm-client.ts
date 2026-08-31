@@ -1,8 +1,4 @@
-import {
-	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
-	normalizeLlmProvider,
-} from "@infinitune/shared/text-llm-profile";
-import type { LlmProvider } from "@infinitune/shared/types";
+import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
 import z, { type ZodType } from "zod";
 import { API_URL } from "@/lib/endpoints";
 
@@ -10,7 +6,7 @@ import { API_URL } from "@/lib/endpoints";
 // Per-provider semaphore for app-server text generation requests.
 // ---------------------------------------------------------------------------
 
-type Provider = LlmProvider;
+type Provider = "openai-codex";
 
 const LIMITS: Record<Provider, number> = {
 	"openai-codex": 2,
@@ -199,7 +195,7 @@ export async function callLlmText(options: {
 	signal?: AbortSignal;
 }): Promise<string> {
 	const { system, prompt, temperature = 0.7, signal } = options;
-	const provider = normalizeLlmProvider(options.provider);
+	const provider = options.provider;
 	const model = await resolveModelForProvider(provider, options.model, signal);
 
 	if (!(provider in semaphores)) {
@@ -242,7 +238,7 @@ export async function callLlmObject<T>(options: {
 		seed,
 		signal,
 	} = options;
-	const provider = normalizeLlmProvider(options.provider);
+	const provider = options.provider;
 	const model = await resolveModelForProvider(provider, options.model, signal);
 
 	if (!(provider in semaphores)) {

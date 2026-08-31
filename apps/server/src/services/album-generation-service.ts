@@ -19,11 +19,12 @@ import {
 	resolveCoverSourceSpec,
 } from "./cover-source-service";
 import * as playlistService from "./playlist-service";
+import { RADIO_PLAYLIST_KEY } from "./radio-constants";
 import { getActivePreset } from "./radio-station-presets-service";
 import * as settingsService from "./settings-service";
 import * as songService from "./song-service";
 
-export const RADIO_PLAYLIST_KEY = "global-radio";
+export { RADIO_PLAYLIST_KEY } from "./radio-constants";
 export const RADIO_STATION_ID = "global";
 export const RADIO_ALBUM_TRACK_COUNT = 12;
 export const RADIO_TRACK_DURATION_SECONDS = 180;

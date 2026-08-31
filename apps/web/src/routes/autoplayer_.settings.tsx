@@ -1,10 +1,16 @@
 import {
 	ACE_DCW_DEFAULTS,
 	ACE_GENERATION_DEFAULTS,
+	ACE_QUALITY_DEFAULT_MODEL,
 	ACE_VAE_DEFAULT,
 	normalizeAceDcwScaler,
+	normalizeAceGuidanceScale,
 	normalizeAceModel,
+	normalizeAceSamplerMode,
+	normalizeAceShift,
 	normalizeAceVaeCheckpoint,
+	normalizeAceVelocityEmaFactor,
+	normalizeAceVelocityNormThreshold,
 	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
@@ -19,6 +25,7 @@ import {
 import { DEFAULT_INFERENCE_SH_IMAGE_MODEL } from "@infinitune/shared/inference-sh-image-models";
 import {
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_OPENROUTER_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
@@ -32,7 +39,7 @@ import {
 	Save,
 	SlidersHorizontal,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { OpsPageHeader } from "@/components/autoplayer/OpsPageHeader";
 import { Stat } from "@/components/autoplayer/Stat";
@@ -45,10 +52,12 @@ import { SettingsTabModels } from "@/components/autoplayer/settings/SettingsTabM
 import { SettingsTabNetwork } from "@/components/autoplayer/settings/SettingsTabNetwork";
 import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
+import { api, getRequestErrorMessage } from "@/integrations/api/client";
 import {
 	useAutoplayerAceModels,
 	useAutoplayerCodexModelsQuery,
 	useAutoplayerInferenceShImageModelsQuery,
+	useAutoplayerOpenRouterModelsQuery,
 	useForceGenerateRadioAlbum,
 	useRadioQueue,
 	useSetSetting,
@@ -71,25 +80,33 @@ const TABS: { id: Tab; label: string; icon: typeof Disc3 }[] = [
 
 const DEFAULT_SETTINGS: Record<string, string> = {
 	ollamaUrl: "http://192.168.10.120:11434",
-	aceStepUrl: "http://192.168.10.120:8001",
+	aceStepUrl: "http://192.168.10.242:8001",
 	textProvider: DEFAULT_TEXT_PROVIDER,
 	textModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	imageProvider: "inference-sh",
 	imageModel: DEFAULT_INFERENCE_SH_IMAGE_MODEL,
 	coversEnabled: "true",
-	aceModel: "acestep-v15-xl-turbo",
+	aceModel: ACE_QUALITY_DEFAULT_MODEL,
 	aceVaeCheckpoint: ACE_VAE_DEFAULT,
 	aceInferenceSteps: String(ACE_GENERATION_DEFAULTS.inferenceSteps),
 	aceLmTemperature: String(ACE_GENERATION_DEFAULTS.lmTemperature),
 	aceLmCfgScale: String(ACE_GENERATION_DEFAULTS.lmCfgScale),
 	aceInferMethod: ACE_GENERATION_DEFAULTS.inferMethod,
+	aceGuidanceScale: String(ACE_GENERATION_DEFAULTS.guidanceScale),
+	aceSamplerMode: ACE_GENERATION_DEFAULTS.samplerMode,
+	aceShift: String(ACE_GENERATION_DEFAULTS.shift),
+	aceVelocityNormThreshold: String(
+		ACE_GENERATION_DEFAULTS.velocityNormThreshold,
+	),
+	aceVelocityEmaFactor: String(ACE_GENERATION_DEFAULTS.velocityEmaFactor),
+	aceUseAdg: String(ACE_GENERATION_DEFAULTS.useAdg),
 	aceQueueDepth: "12",
 	aceDcwEnabled: String(ACE_DCW_DEFAULTS.enabled),
 	aceDcwMode: ACE_DCW_DEFAULTS.mode,
 	aceDcwScaler: String(ACE_DCW_DEFAULTS.scaler),
 	aceDcwHighScaler: String(ACE_DCW_DEFAULTS.highScaler),
 	aceDcwWavelet: ACE_DCW_DEFAULTS.wavelet,
-	aceThinking: "false",
+	aceThinking: String(ACE_GENERATION_DEFAULTS.thinking),
 	aceAutoDuration: "false",
 	personaProvider: DEFAULT_TEXT_PROVIDER,
 	personaModel: "",
@@ -102,6 +119,11 @@ interface CodexAuthSession {
 	userCode?: string;
 	message?: string;
 	error?: string;
+}
+
+interface OpenRouterAuthStatus {
+	configured: boolean;
+	source: "stored" | "environment" | "runtime" | "fallback" | null;
 }
 
 function normalizeFallbackModel(value: string | undefined | null): string {
@@ -153,6 +175,12 @@ function SettingsPage() {
 	const { refetch: refetchCodexModels } = codexModelsQuery;
 	const codexModels: ModelOption[] = codexModelsQuery.data ?? [];
 	const codexLoading = needsCodex && codexModelsQuery.isFetching;
+	const needsOpenRouter =
+		textProvider === "openrouter" || personaProvider === "openrouter";
+	const openrouterModelsQuery =
+		useAutoplayerOpenRouterModelsQuery(needsOpenRouter);
+	const openrouterModels: ModelOption[] = openrouterModelsQuery.data ?? [];
+	const openrouterLoading = needsOpenRouter && openrouterModelsQuery.isFetching;
 
 	const [ollamaTest, setOllamaTest] = useState<TestStatus>({ state: "idle" });
 	const [inferenceShTest, setInferenceShTest] = useState<TestStatus>({
@@ -163,6 +191,13 @@ function SettingsPage() {
 	});
 	const [aceTest, setAceTest] = useState<TestStatus>({ state: "idle" });
 	const [codexTest, setCodexTest] = useState<TestStatus>({ state: "idle" });
+	const [openrouterTest, setOpenrouterTest] = useState<TestStatus>({
+		state: "idle",
+	});
+	const [openrouterAuth, setOpenrouterAuth] = useState<OpenRouterAuthStatus>({
+		configured: false,
+		source: null,
+	});
 
 	function readSetting(key: string): string {
 		if (Object.hasOwn(draft, key)) return draft[key];
@@ -279,6 +314,37 @@ function SettingsPage() {
 		}
 	}, [codexAuthSession?.id]);
 
+	const refreshOpenRouterAuthStatus = useCallback(async () => {
+		try {
+			setOpenrouterAuth(
+				await api.get<OpenRouterAuthStatus>("/api/autoplayer/openrouter-auth"),
+			);
+		} catch {
+			// Keep the last known status when the server is temporarily unavailable.
+		}
+	}, []);
+
+	useEffect(() => {
+		void refreshOpenRouterAuthStatus();
+	}, [refreshOpenRouterAuthStatus]);
+
+	const saveOpenRouterApiKey = useCallback(async (apiKey: string) => {
+		const data = await api.post<OpenRouterAuthStatus>(
+			"/api/autoplayer/openrouter-auth",
+			{ apiKey },
+		);
+		setOpenrouterAuth(data);
+		setOpenrouterTest({ state: "idle" });
+	}, []);
+
+	const clearOpenRouterApiKey = useCallback(async () => {
+		const data = await api.del<OpenRouterAuthStatus>(
+			"/api/autoplayer/openrouter-auth",
+		);
+		setOpenrouterAuth(data);
+		setOpenrouterTest({ state: "idle" });
+	}, []);
+
 	const testConnection = useCallback(async (provider: string) => {
 		const setStatus =
 			provider === "ollama"
@@ -289,20 +355,19 @@ function SettingsPage() {
 						? setCodexImagegenTest
 						: provider === "openai-codex"
 							? setCodexTest
-							: setAceTest;
+							: provider === "openrouter"
+								? setOpenrouterTest
+								: setAceTest;
 
 		setStatus({ state: "testing" });
 		try {
-			const res = await fetch(`${API_URL}/api/autoplayer/test-connection`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ provider }),
-			});
-			const data = await res.json();
+			const data = await api.post<
+				{ ok: true; message: string } | { ok: false; error: string }
+			>("/api/autoplayer/test-connection", { provider });
 			if (data.ok) setStatus({ state: "ok", message: data.message });
 			else setStatus({ state: "error", message: data.error });
-		} catch {
-			setStatus({ state: "error", message: "Request failed" });
+		} catch (error) {
+			setStatus({ state: "error", message: getRequestErrorMessage(error) });
 		}
 	}, []);
 
@@ -337,7 +402,11 @@ function SettingsPage() {
 				ollamaUrl: readSetting("ollamaUrl"),
 				aceStepUrl: readSetting("aceStepUrl"),
 				textProvider,
-				textModel: readSetting("textModel") || DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+				textModel:
+					readSetting("textModel") ||
+					(textProvider === "openrouter"
+						? DEFAULT_OPENROUTER_TEXT_MODEL
+						: DEFAULT_OPENAI_CODEX_TEXT_MODEL),
 				imageProvider,
 				imageModel: readSetting("imageModel"),
 				coversEnabled: String(
@@ -360,6 +429,25 @@ function SettingsPage() {
 					String(ACE_GENERATION_DEFAULTS.lmCfgScale),
 				aceInferMethod:
 					readSetting("aceInferMethod") || ACE_GENERATION_DEFAULTS.inferMethod,
+				aceGuidanceScale: String(
+					normalizeAceGuidanceScale(readSetting("aceGuidanceScale")),
+				),
+				aceSamplerMode: normalizeAceSamplerMode(readSetting("aceSamplerMode")),
+				aceShift: String(normalizeAceShift(readSetting("aceShift"))),
+				aceVelocityNormThreshold: String(
+					normalizeAceVelocityNormThreshold(
+						readSetting("aceVelocityNormThreshold"),
+					),
+				),
+				aceVelocityEmaFactor: String(
+					normalizeAceVelocityEmaFactor(readSetting("aceVelocityEmaFactor")),
+				),
+				aceUseAdg: String(
+					parseBooleanSetting(
+						readSetting("aceUseAdg"),
+						ACE_GENERATION_DEFAULTS.useAdg,
+					),
+				),
 				aceQueueDepth: readSetting("aceQueueDepth") || "12",
 				aceDcwEnabled: String(
 					parseBooleanSetting(
@@ -379,7 +467,10 @@ function SettingsPage() {
 				aceDcwWavelet:
 					readSetting("aceDcwWavelet").trim() || ACE_DCW_DEFAULTS.wavelet,
 				aceThinking: String(
-					parseBooleanSetting(readSetting("aceThinking"), false),
+					parseBooleanSetting(
+						readSetting("aceThinking"),
+						ACE_GENERATION_DEFAULTS.thinking,
+					),
 				),
 				aceAutoDuration: "false",
 			};
@@ -518,6 +609,16 @@ function SettingsPage() {
 
 				{activeTab === "models" ? (
 					<SettingsTabModels
+						textProvider={textProvider}
+						setTextProvider={(value) => {
+							writeSetting("textProvider", value);
+							writeSetting(
+								"textModel",
+								value === "openrouter"
+									? DEFAULT_OPENROUTER_TEXT_MODEL
+									: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+							);
+						}}
 						textModel={readSetting("textModel")}
 						setTextModel={(value) => writeSetting("textModel", value)}
 						imageProvider={imageProvider}
@@ -552,6 +653,11 @@ function SettingsPage() {
 						}
 						personaModel={readSetting("personaModel")}
 						setPersonaModel={(value) => writeSetting("personaModel", value)}
+						personaProvider={personaProvider}
+						setPersonaProvider={(value) => {
+							writeSetting("personaProvider", value);
+							writeSetting("personaModel", "");
+						}}
 						agentReasoning={agentReasoning}
 						setAgentReasoningLevel={(agentId, level) =>
 							writeSetting(getAgentReasoningSettingKey(agentId), level)
@@ -561,6 +667,8 @@ function SettingsPage() {
 						inferenceShLoading={inferenceShLoading}
 						codexModels={codexModels}
 						codexLoading={codexLoading}
+						openrouterModels={openrouterModels}
+						openrouterLoading={openrouterLoading}
 						activePlaylist={false}
 					/>
 				) : null}
@@ -575,7 +683,31 @@ function SettingsPage() {
 						setLmCfg={(value) => writeSetting("aceLmCfgScale", value)}
 						inferMethod={readSetting("aceInferMethod")}
 						setInferMethod={(value) => writeSetting("aceInferMethod", value)}
-						aceThinking={parseBooleanSetting(readSetting("aceThinking"), false)}
+						guidanceScale={readSetting("aceGuidanceScale")}
+						setGuidanceScale={(value) =>
+							writeSetting("aceGuidanceScale", value)
+						}
+						samplerMode={readSetting("aceSamplerMode")}
+						setSamplerMode={(value) => writeSetting("aceSamplerMode", value)}
+						shift={readSetting("aceShift")}
+						setShift={(value) => writeSetting("aceShift", value)}
+						velocityNormThreshold={readSetting("aceVelocityNormThreshold")}
+						setVelocityNormThreshold={(value) =>
+							writeSetting("aceVelocityNormThreshold", value)
+						}
+						velocityEmaFactor={readSetting("aceVelocityEmaFactor")}
+						setVelocityEmaFactor={(value) =>
+							writeSetting("aceVelocityEmaFactor", value)
+						}
+						aceUseAdg={parseBooleanSetting(
+							readSetting("aceUseAdg"),
+							ACE_GENERATION_DEFAULTS.useAdg,
+						)}
+						setAceUseAdg={(value) => writeSetting("aceUseAdg", String(value))}
+						aceThinking={parseBooleanSetting(
+							readSetting("aceThinking"),
+							ACE_GENERATION_DEFAULTS.thinking,
+						)}
 						setAceThinking={(value) =>
 							writeSetting("aceThinking", String(value))
 						}
@@ -616,10 +748,14 @@ function SettingsPage() {
 						inferenceShTest={inferenceShTest}
 						codexImagegenTest={codexImagegenTest}
 						codexTest={codexTest}
+						openrouterTest={openrouterTest}
+						openrouterAuth={openrouterAuth}
 						codexAuthSession={codexAuthSession}
 						onStartCodexAuth={startCodexAuth}
 						onUploadCodexAuthFile={uploadCodexAuthCache}
 						onCancelCodexAuth={cancelCodexAuth}
+						onSaveOpenRouterApiKey={saveOpenRouterApiKey}
+						onClearOpenRouterApiKey={clearOpenRouterApiKey}
 						onTest={testConnection}
 					/>
 				) : null}

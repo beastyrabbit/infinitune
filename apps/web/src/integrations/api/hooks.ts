@@ -620,6 +620,24 @@ export function useAutoplayerCodexModels(
 	return data;
 }
 
+export function useAutoplayerOpenRouterModelsQuery(enabled = true) {
+	return useQuery({
+		queryKey: ["autoplayer", "models", "openrouter", "text"],
+		queryFn: async () =>
+			extractAutoplayerModelOptions(
+				await api.get<unknown>("/api/autoplayer/openrouter-models"),
+			),
+		enabled,
+	});
+}
+
+export function useAutoplayerOpenRouterModels(
+	enabled = true,
+): AutoplayerModelOption[] | undefined {
+	const { data } = useAutoplayerOpenRouterModelsQuery(enabled);
+	return data;
+}
+
 export function useAutoplayerInferenceShImageModelsQuery(enabled = true) {
 	return useQuery({
 		queryKey: ["autoplayer", "models", "inference-sh", "image"],

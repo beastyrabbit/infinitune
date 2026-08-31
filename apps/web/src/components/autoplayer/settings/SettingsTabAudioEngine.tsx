@@ -2,6 +2,7 @@ import {
 	ACE_DCW_DEFAULTS,
 	ACE_DCW_MODES,
 	ACE_GENERATION_DEFAULTS,
+	ACE_SAMPLER_MODES,
 } from "@infinitune/shared/ace-settings";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,18 @@ export interface AudioEngineTabProps {
 	setLmCfg: (v: string) => void;
 	inferMethod: string;
 	setInferMethod: (v: string) => void;
+	guidanceScale: string;
+	setGuidanceScale: (v: string) => void;
+	samplerMode: string;
+	setSamplerMode: (v: string) => void;
+	shift: string;
+	setShift: (v: string) => void;
+	velocityNormThreshold: string;
+	setVelocityNormThreshold: (v: string) => void;
+	velocityEmaFactor: string;
+	setVelocityEmaFactor: (v: string) => void;
+	aceUseAdg: boolean;
+	setAceUseAdg: (v: boolean) => void;
 	aceThinking: boolean;
 	setAceThinking: (v: boolean) => void;
 	aceAutoDuration: boolean;
@@ -48,6 +61,15 @@ const DEFAULT_INFER_STEPS = String(ACE_GENERATION_DEFAULTS.inferenceSteps);
 const DEFAULT_LM_TEMP = String(ACE_GENERATION_DEFAULTS.lmTemperature);
 const DEFAULT_LM_CFG = String(ACE_GENERATION_DEFAULTS.lmCfgScale);
 const DEFAULT_INFER_METHOD = ACE_GENERATION_DEFAULTS.inferMethod;
+const DEFAULT_GUIDANCE_SCALE = String(ACE_GENERATION_DEFAULTS.guidanceScale);
+const DEFAULT_SAMPLER_MODE = ACE_GENERATION_DEFAULTS.samplerMode;
+const DEFAULT_SHIFT = String(ACE_GENERATION_DEFAULTS.shift);
+const DEFAULT_VELOCITY_NORM_THRESHOLD = String(
+	ACE_GENERATION_DEFAULTS.velocityNormThreshold,
+);
+const DEFAULT_VELOCITY_EMA_FACTOR = String(
+	ACE_GENERATION_DEFAULTS.velocityEmaFactor,
+);
 
 const INFERENCE_STEP_OPTIONS = [
 	"4",
@@ -61,6 +83,8 @@ const INFERENCE_STEP_OPTIONS = [
 	"24",
 	"28",
 	"32",
+	"40",
+	"50",
 ];
 const LM_TEMPERATURE_OPTIONS = [
 	"0.35",
@@ -133,6 +157,18 @@ export function SettingsTabAudioEngine({
 	setLmCfg,
 	inferMethod,
 	setInferMethod,
+	guidanceScale,
+	setGuidanceScale,
+	samplerMode,
+	setSamplerMode,
+	shift,
+	setShift,
+	velocityNormThreshold,
+	setVelocityNormThreshold,
+	velocityEmaFactor,
+	setVelocityEmaFactor,
+	aceUseAdg,
+	setAceUseAdg,
 	aceThinking,
 	setAceThinking,
 	aceQueueDepth,
@@ -163,11 +199,11 @@ export function SettingsTabAudioEngine({
 			>
 				<SettingsField
 					label="ACE Thinking"
-					hint="ON = ACE REWRITES CAPTION INTERNALLY, OFF = FASTER, USES LLM OUTPUT AS-IS"
+					hint="OFF FOR THE TESTED PRESET M; ON LETS ACE REWRITE THE CAPTION INTERNALLY"
 				>
 					<ToggleButtons
 						options={[
-							{ label: "OFF (FASTER)", value: false },
+							{ label: "OFF (PRESET M)", value: false },
 							{ label: "ON", value: true },
 						]}
 						value={aceThinking}
@@ -211,7 +247,7 @@ export function SettingsTabAudioEngine({
 
 				<SettingsField
 					label="Inference Steps"
-					hint="4-16 — HIGHER = BETTER QUALITY, SLOWER"
+					hint="PRESET M USES 50; HIGHER VALUES TRADE SPEED FOR QUALITY"
 				>
 					<Select
 						value={inferSteps || DEFAULT_INFER_STEPS}
@@ -232,6 +268,100 @@ export function SettingsTabAudioEngine({
 							))}
 						</SelectContent>
 					</Select>
+				</SettingsField>
+
+				<div className="grid grid-cols-2 gap-3">
+					<SettingsField
+						label="Diffusion CFG"
+						hint="GUIDANCE SCALE, 1-15; PRESET M USES 7"
+					>
+						<input
+							type="number"
+							min="1"
+							max="15"
+							step="0.1"
+							className={`${inputClass} w-full px-3`}
+							value={guidanceScale || DEFAULT_GUIDANCE_SCALE}
+							onChange={(event) => setGuidanceScale(event.target.value)}
+						/>
+					</SettingsField>
+
+					<SettingsField label="Shift" hint="FLOW SHIFT, 1-5; PRESET M USES 1">
+						<input
+							type="number"
+							min="1"
+							max="5"
+							step="0.1"
+							className={`${inputClass} w-full px-3`}
+							value={shift || DEFAULT_SHIFT}
+							onChange={(event) => setShift(event.target.value)}
+						/>
+					</SettingsField>
+				</div>
+
+				<SettingsField label="Sampler" hint="PRESET M USES HEUN">
+					<Select
+						value={samplerMode || DEFAULT_SAMPLER_MODE}
+						onValueChange={setSamplerMode}
+					>
+						<SelectTrigger className={inputClass}>
+							<SelectValue placeholder={DEFAULT_SAMPLER_MODE.toUpperCase()} />
+						</SelectTrigger>
+						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+							{ACE_SAMPLER_MODES.map((mode) => (
+								<SelectItem
+									key={mode}
+									value={mode}
+									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+								>
+									{mode.toUpperCase()}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</SettingsField>
+
+				<div className="grid grid-cols-2 gap-3">
+					<SettingsField
+						label="Velocity Clamp"
+						hint="NORM THRESHOLD, 0-5; PRESET M USES 2"
+					>
+						<input
+							type="number"
+							min="0"
+							max="5"
+							step="0.1"
+							className={`${inputClass} w-full px-3`}
+							value={velocityNormThreshold || DEFAULT_VELOCITY_NORM_THRESHOLD}
+							onChange={(event) => setVelocityNormThreshold(event.target.value)}
+						/>
+					</SettingsField>
+
+					<SettingsField
+						label="Velocity EMA"
+						hint="EMA FACTOR, 0-0.5; PRESET M USES 0.1"
+					>
+						<input
+							type="number"
+							min="0"
+							max="0.5"
+							step="0.01"
+							className={`${inputClass} w-full px-3`}
+							value={velocityEmaFactor || DEFAULT_VELOCITY_EMA_FACTOR}
+							onChange={(event) => setVelocityEmaFactor(event.target.value)}
+						/>
+					</SettingsField>
+				</div>
+
+				<SettingsField label="ADG" hint="OFF FOR PRESET M">
+					<ToggleButtons
+						options={[
+							{ label: "OFF", value: false },
+							{ label: "ON", value: true },
+						]}
+						value={aceUseAdg}
+						onChange={setAceUseAdg}
+					/>
 				</SettingsField>
 
 				<div className="grid grid-cols-2 gap-3">
@@ -283,7 +413,7 @@ export function SettingsTabAudioEngine({
 				<SettingsField label="Diffusion Method">
 					<ToggleButtons
 						options={[
-							{ label: "ODE (FASTER)", value: "ode" },
+							{ label: "ODE (PRESET M)", value: "ode" },
 							{ label: "SDE (STOCHASTIC)", value: "sde" },
 						]}
 						value={inferMethod}
@@ -295,7 +425,7 @@ export function SettingsTabAudioEngine({
 			<SettingsPanel title="ACE-STEP DCW CORRECTION">
 				<SettingsField
 					label="DCW"
-					hint="ACE V0.1.7 DEFAULTS TO ON; DOUBLE MODE CORRECTS LOW AND HIGH WAVELET BANDS"
+					hint="OFF FOR PRESET M; ENABLE TO APPLY MANUAL WAVELET CORRECTION"
 				>
 					<ToggleButtons
 						options={[
@@ -400,11 +530,17 @@ export function SettingsTabAudioEngine({
 			<Button
 				className="w-full h-10 rounded-none border-2 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white/60 hover:bg-white/10 hover:text-white"
 				onClick={() => {
-					setAceThinking(false);
+					setAceThinking(ACE_GENERATION_DEFAULTS.thinking);
 					setInferSteps(DEFAULT_INFER_STEPS);
 					setLmTemp(DEFAULT_LM_TEMP);
 					setLmCfg(DEFAULT_LM_CFG);
 					setInferMethod(DEFAULT_INFER_METHOD);
+					setGuidanceScale(DEFAULT_GUIDANCE_SCALE);
+					setSamplerMode(DEFAULT_SAMPLER_MODE);
+					setShift(DEFAULT_SHIFT);
+					setVelocityNormThreshold(DEFAULT_VELOCITY_NORM_THRESHOLD);
+					setVelocityEmaFactor(DEFAULT_VELOCITY_EMA_FACTOR);
+					setAceUseAdg(ACE_GENERATION_DEFAULTS.useAdg);
 					setAceQueueDepth("12");
 					setAceDcwEnabled(ACE_DCW_DEFAULTS.enabled);
 					setAceDcwMode(ACE_DCW_DEFAULTS.mode);

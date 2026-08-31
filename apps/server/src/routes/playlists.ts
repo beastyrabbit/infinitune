@@ -1,3 +1,4 @@
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import {
 	CreatePlaylistSchema,
 	UpdatePlaylistParamsSchema,
@@ -21,6 +22,7 @@ import { getDeviceActor } from "../auth/device";
 import { logger } from "../logger";
 import { generationLimiter, llmLimiter } from "../middleware/limiters";
 import * as playlistService from "../services/playlist-service";
+import { RADIO_PLAYLIST_KEY } from "../services/radio-constants";
 import { type PlaylistWire, playlistToWire } from "../wire";
 
 const app = new Hono();
@@ -82,7 +84,7 @@ function isHiddenRadioPlaylist(playlist: PlaylistWire): boolean {
 
 async function loadAccessiblePlaylist(
 	c: Context,
-): Promise<{ playlist: PlaylistWire } | Response> {
+): Promise<{ actor: RequestActor; playlist: PlaylistWire } | Response> {
 	const actor = await getRequestActor(c);
 	const playlist = await playlistService.getById(c.req.param("id"));
 	if (!playlist) return c.json(null, 404);
@@ -90,12 +92,12 @@ async function loadAccessiblePlaylist(
 	if (!canAccessPlaylist(actor, wire)) {
 		return c.json({ error: "Playlist not found" }, 404);
 	}
-	return { playlist: wire };
+	return { actor, playlist: wire };
 }
 
 async function loadPlaybackAccessiblePlaylist(
 	c: Context,
-): Promise<{ playlist: PlaylistWire } | Response> {
+): Promise<{ actor: RequestActor; playlist: PlaylistWire } | Response> {
 	const access = await getPlaybackAccess(c);
 	const playlist = await playlistService.getById(c.req.param("id"));
 	if (!playlist) return c.json(null, 404);
@@ -103,7 +105,47 @@ async function loadPlaybackAccessiblePlaylist(
 	if (!canPlaybackAccessPlaylist(access, wire)) {
 		return c.json({ error: "Playlist not found" }, 404);
 	}
-	return { playlist: wire };
+	return { actor: access.actor, playlist: wire };
+}
+
+function requiresOpenRouterSpendAuthentication(input: {
+	actor: RequestActor;
+	ownerUserId: string | null;
+	provider: string;
+}): boolean {
+	return (
+		process.env.NODE_ENV === "production" &&
+		input.actor.kind === "anonymous" &&
+		input.ownerUserId === null &&
+		normalizeLlmProvider(input.provider) === "openrouter"
+	);
+}
+
+function openRouterSpendDenied(
+	c: Context,
+	access: { actor: RequestActor; playlist: PlaylistWire },
+	provider = access.playlist.llmProvider,
+): Response | null {
+	const isOwnerlessProductionOpenRouter =
+		process.env.NODE_ENV === "production" &&
+		access.playlist.ownerUserId === null &&
+		normalizeLlmProvider(provider) === "openrouter";
+	if (!isOwnerlessProductionOpenRouter) {
+		return null;
+	}
+	if (access.actor.kind === "user") {
+		return c.json(
+			{
+				error:
+					"Ownerless playlists cannot use OpenRouter in production; create an owned playlist instead",
+			},
+			409,
+		);
+	}
+	return c.json(
+		{ error: "Authentication is required to use the server OpenRouter key" },
+		401,
+	);
 }
 
 // ─── Queries ────────────────────────────────────────────────────────
@@ -209,6 +251,8 @@ app.post(
 	async (c) => {
 		const access = await loadAccessiblePlaylist(c);
 		if (access instanceof Response) return access;
+		const denied = openRouterSpendDenied(c, access);
+		if (denied) return denied;
 		const body = await c.req.json();
 		const result = ChatMessageSchema.safeParse(body);
 		if (!result.success) return c.json({ error: result.error.message }, 400);
@@ -234,6 +278,8 @@ app.get("/:id/agent-chat/state", async (c) => {
 app.post("/:id/agent-chat/answer", llmLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
+	const denied = openRouterSpendDenied(c, access);
+	if (denied) return denied;
 	const body = await c.req.json();
 	const result = ChatAnswerSchema.safeParse(body);
 	if (!result.success) return c.json({ error: result.error.message }, 400);
@@ -260,6 +306,17 @@ app.post("/", generationLimiter, async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
+	if (
+		result.data.mode === "radio" ||
+		result.data.playlistKey === RADIO_PLAYLIST_KEY
+	) {
+		return c.json(
+			{
+				error: "Radio mode and key are reserved for the global server playlist",
+			},
+			400,
+		);
+	}
 	const actor = await getRequestActor(c);
 	const createPayload = { ...result.data };
 	const initialDirectorPlan = createPayload.initialDirectorPlan === true;
@@ -267,6 +324,20 @@ app.post("/", generationLimiter, async (c) => {
 
 	if (createPayload.ownerUserId && actor.kind !== "user") {
 		return c.json({ error: "ownerUserId requires authenticated user" }, 401);
+	}
+	if (
+		requiresOpenRouterSpendAuthentication({
+			actor,
+			ownerUserId: null,
+			provider: createPayload.llmProvider,
+		})
+	) {
+		return c.json(
+			{
+				error: "Authentication is required to use the server OpenRouter key",
+			},
+			401,
+		);
 	}
 
 	if (actor.kind === "user") {
@@ -315,6 +386,12 @@ app.patch("/:id/params", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
+	const denied = openRouterSpendDenied(
+		c,
+		access,
+		result.data.llmProvider ?? access.playlist.llmProvider,
+	);
+	if (denied) return denied;
 	await playlistService.updateParams(c.req.param("id"), result.data);
 	return c.json({ ok: true });
 });
@@ -327,6 +404,10 @@ app.patch("/:id/status", async (c) => {
 	const result = UpdatePlaylistStatusSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
+	}
+	if (result.data.status !== "closed") {
+		const denied = openRouterSpendDenied(c, access);
+		if (denied) return denied;
 	}
 	await playlistService.updateStatus(c.req.param("id"), result.data.status);
 	return c.json({ ok: true });
@@ -368,6 +449,8 @@ app.post("/:id/reset-defaults", async (c) => {
 app.patch("/:id/prompt", generationLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
+	const denied = openRouterSpendDenied(c, access);
+	if (denied) return denied;
 	const body = await c.req.json();
 	const result = UpdatePlaylistPromptSchema.safeParse(body);
 	if (!result.success) {
@@ -398,6 +481,8 @@ app.delete("/:id", async (c) => {
 app.post("/:id/heartbeat", async (c) => {
 	const access = await loadPlaybackAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
+	const denied = openRouterSpendDenied(c, access);
+	if (denied) return denied;
 	await playlistService.heartbeat(c.req.param("id"));
 	return c.json({ ok: true });
 });

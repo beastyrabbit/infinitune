@@ -1,6 +1,12 @@
 import {
 	ACE_DCW_DEFAULTS,
+	ACE_GENERATION_DEFAULTS,
 	normalizeAceDcwScaler,
+	normalizeAceGuidanceScale,
+	normalizeAceSamplerMode,
+	normalizeAceShift,
+	normalizeAceVelocityEmaFactor,
+	normalizeAceVelocityNormThreshold,
 	parseBooleanSetting,
 	resolveAceModelSetting,
 } from "@infinitune/shared/ace-settings";
@@ -17,6 +23,7 @@ import { batchPollAce, pollAce } from "../external/ace";
 import type { RecentSong } from "../external/llm";
 import { logger, playlistLogger, songLogger } from "../logger";
 import * as playlistService from "../services/playlist-service";
+import { RADIO_PLAYLIST_KEY } from "../services/radio-constants";
 import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
 import { type PlaylistWire, playlistToWire, type SongWire } from "../wire";
@@ -33,6 +40,7 @@ import { ProviderRegistry } from "./runtime/provider-registry";
 import { createSongActor } from "./runtime/song-actor";
 import type { WorkerRuntimeEvent } from "./runtime/types";
 import {
+	blocksOwnerlessOpenRouterTextGeneration,
 	SongWorker,
 	type SongWorkerContext,
 	type SongWorkerSettings,
@@ -129,6 +137,12 @@ function uniqueSongWires(groups: SongWire[][]): SongWire[] {
 		}
 	}
 	return Array.from(byId.values());
+}
+
+function logOwnerlessOpenRouterWorkerBlock(playlistId: string): void {
+	playlistLogger(playlistId).warn(
+		"Blocked generation for an ownerless OpenRouter playlist in production; create an owned playlist or switch it to Codex",
+	);
 }
 
 // ─── Persona scan state ─────────────────────────────────────────────
@@ -351,11 +365,24 @@ async function getSettings(): Promise<SongWorkerSettings> {
 		imageProvider: normalizeImageProvider(all.imageProvider),
 		imageModel: all.imageModel ?? undefined,
 		coversEnabled: parseBooleanSetting(all.coversEnabled, true),
-		aceModel: aceModel || undefined,
+		aceModel,
 		aceInferenceSteps: parseOptionalIntegerSetting(all.aceInferenceSteps),
 		aceLmTemperature: parseOptionalNumberSetting(all.aceLmTemperature),
 		aceLmCfgScale: parseOptionalNumberSetting(all.aceLmCfgScale),
 		aceInferMethod: all.aceInferMethod || undefined,
+		aceGuidanceScale: normalizeAceGuidanceScale(all.aceGuidanceScale),
+		aceSamplerMode: normalizeAceSamplerMode(all.aceSamplerMode),
+		aceShift: normalizeAceShift(all.aceShift),
+		aceVelocityNormThreshold: normalizeAceVelocityNormThreshold(
+			all.aceVelocityNormThreshold,
+		),
+		aceVelocityEmaFactor: normalizeAceVelocityEmaFactor(
+			all.aceVelocityEmaFactor,
+		),
+		aceUseAdg: parseBooleanSetting(
+			all.aceUseAdg,
+			ACE_GENERATION_DEFAULTS.useAdg,
+		),
 		aceDcwEnabled: parseBooleanSetting(
 			all.aceDcwEnabled,
 			ACE_DCW_DEFAULTS.enabled,
@@ -364,7 +391,10 @@ async function getSettings(): Promise<SongWorkerSettings> {
 		aceDcwScaler,
 		aceDcwHighScaler,
 		aceDcwWavelet: all.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet,
-		aceThinking: parseBooleanSetting(all.aceThinking, false),
+		aceThinking: parseBooleanSetting(
+			all.aceThinking,
+			ACE_GENERATION_DEFAULTS.thinking,
+		),
 		aceAutoDuration: parseBooleanSetting(all.aceAutoDuration, true),
 		aceQueueDepth: parseBoundedIntegerSetting(all.aceQueueDepth, 12, 1, 120),
 		personaProvider,
@@ -1006,6 +1036,15 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 		const playlist = await playlistService.getById(playlistId);
 		if (!playlist || playlist.status !== "active") return;
 		if (playlist.mode === "radio") return;
+		if (
+			blocksOwnerlessOpenRouterTextGeneration({
+				playlist: playlistToWire(playlist),
+				settings: await getSettings(),
+			})
+		) {
+			logOwnerlessOpenRouterWorkerBlock(playlist.id);
+			return;
+		}
 
 		const isOneshot = playlist.mode === "oneshot";
 		const workQueue = await songService.getWorkQueue(playlistId);
@@ -1051,6 +1090,22 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 
 // ─── Persona scan ───────────────────────────────────────────────────
 
+async function allowsOpenRouterPersonaExtraction(songId: string) {
+	if (process.env.NODE_ENV !== "production") return true;
+
+	const song = await songService.getById(songId);
+	if (!song) return false;
+
+	const playlist = await playlistService.getById(song.playlistId);
+	if (!playlist) return false;
+
+	const isCanonicalGlobalRadio =
+		playlist.mode === "radio" &&
+		playlist.playlistKey === RADIO_PLAYLIST_KEY &&
+		playlist.isTemporary === false;
+	return Boolean(playlist.ownerUserId) || isCanonicalGlobalRadio;
+}
+
 async function runPersonaScan(
 	settings: Awaited<ReturnType<typeof getSettings>>,
 ) {
@@ -1063,6 +1118,15 @@ async function runPersonaScan(
 	});
 	for (const song of needsPersona) {
 		if (personaPending.has(song.id)) continue;
+		if (
+			pProvider === "openrouter" &&
+			!(await allowsOpenRouterPersonaExtraction(song.id))
+		) {
+			songLogger(song.id).warn(
+				"Skipped OpenRouter persona extraction without an owned playlist in production",
+			);
+			continue;
+		}
 		personaPending.add(song.id);
 		songLogger(song.id).debug({ title: song.title }, "Queuing persona extract");
 
@@ -1723,6 +1787,7 @@ export const _test = {
 	handlePlaylistStatusChanged,
 	handleSettingsChanged,
 	checkBufferDeficit,
+	runPersonaScan,
 	staleSongCleanup,
 	setQueues(q: EndpointQueues) {
 		queues = q;

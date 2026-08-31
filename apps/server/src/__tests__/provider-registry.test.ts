@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	generateSongMetadata: vi.fn(async (input: unknown) => input),
+	submitToAce: vi.fn(async () => ({ taskId: "ace-task-1" })),
 }));
 
 vi.mock("../external/llm", () => ({
@@ -16,12 +17,28 @@ vi.mock("../external/cover", () => ({
 vi.mock("../external/ace", () => ({
 	batchPollAce: vi.fn(),
 	pollAce: vi.fn(),
-	submitToAce: vi.fn(),
+	submitToAce: mocks.submitToAce,
 }));
 
 import { createProviderCapability } from "../worker/runtime/provider-registry";
 
 describe("provider registry", () => {
+	it("passes OpenRouter through to song metadata generation", async () => {
+		const capability = createProviderCapability();
+		await capability.generateMetadata({
+			prompt: "well-known melody in a different style",
+			provider: "openrouter",
+			model: "auto",
+		});
+
+		expect(mocks.generateSongMetadata).toHaveBeenCalledWith(
+			expect.objectContaining({
+				provider: "openrouter",
+				model: "auto",
+			}),
+		);
+	});
+
 	it("preserves V2 manager slot guidance for metadata generation", async () => {
 		const capability = createProviderCapability();
 		await capability.generateMetadata({
@@ -57,6 +74,35 @@ describe("provider registry", () => {
 					noveltyTarget: "medium",
 					avoidPatterns: ["invented source songs"],
 				}),
+			}),
+		);
+	});
+
+	it("forwards all Preset M audio settings to ACE", async () => {
+		const capability = createProviderCapability();
+		await capability.submitAudio({
+			lyrics: "hello",
+			caption: "bright synth pop",
+			bpm: 120,
+			keyScale: "C major",
+			timeSignature: "4/4",
+			audioDuration: 180,
+			guidanceScale: 8,
+			samplerMode: "euler",
+			shift: 2,
+			velocityNormThreshold: 3,
+			velocityEmaFactor: 0.2,
+			useAdg: true,
+		});
+
+		expect(mocks.submitToAce).toHaveBeenCalledWith(
+			expect.objectContaining({
+				guidanceScale: 8,
+				samplerMode: "euler",
+				shift: 2,
+				velocityNormThreshold: 3,
+				velocityEmaFactor: 0.2,
+				useAdg: true,
 			}),
 		);
 	});

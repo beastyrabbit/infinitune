@@ -1,3 +1,4 @@
+import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import { Hono } from "hono";
 import { z } from "zod";
 import { requireUserActor } from "../auth/actor";
@@ -33,6 +34,7 @@ import {
 	seekStation,
 	skipStation,
 } from "../services/radio-station-service";
+import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
 import { songReadAccess } from "./songs/access";
 
@@ -124,6 +126,20 @@ app.post("/feedback", async (c) => {
 app.post("/requests", radioRequestLimiter, async (c) => {
 	const result = RequestSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
+	if (process.env.NODE_ENV === "production") {
+		const settings = await settingsService.getAll();
+		if (
+			normalizeLlmProvider(settings.textProvider) === "openrouter" &&
+			!(await requireUserActor(c))
+		) {
+			return c.json(
+				{
+					error: "Authentication is required to use the server OpenRouter key",
+				},
+				401,
+			);
+		}
+	}
 	return c.json(await submitRadioRequest(result.data.prompt));
 });
 
@@ -189,6 +205,9 @@ app.delete("/presets/:id", stationPresetLimiter, async (c) => {
 });
 
 app.post("/force-generate-album", generationLimiter, async (c) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
 	return c.json(await topUpInventory({ force: true }));
 });
 

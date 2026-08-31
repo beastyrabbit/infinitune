@@ -7,7 +7,9 @@ import {
 } from "@infinitune/shared/ace-settings";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
+import { getModels } from "@mariozechner/pi-ai";
 import { Hono } from "hono";
+import { requireUserActor } from "../auth/actor";
 import { codexAppServerClient } from "../external/codex-app-server-client";
 import {
 	cancelCodexDeviceAuth,
@@ -35,6 +37,12 @@ import {
 	type SessionParams,
 	type SongMetadata,
 } from "../external/llm";
+import {
+	clearOpenRouterApiKey,
+	getOpenRouterApiKey,
+	getOpenRouterAuthStatus,
+	saveOpenRouterApiKey,
+} from "../external/openrouter-auth";
 import { getServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
 import { llmLimiter } from "../middleware/limiters";
@@ -285,6 +293,31 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 }
 
 const app = new Hono();
+
+async function canManageServerCredentials(
+	c: Parameters<typeof requireUserActor>[0],
+) {
+	return (
+		process.env.NODE_ENV !== "production" ||
+		(await requireUserActor(c)) !== null
+	);
+}
+
+async function canUseClientSelectedLlmProvider(
+	c: Parameters<typeof requireUserActor>[0],
+	provider: AutoplayerProvider,
+): Promise<boolean> {
+	return provider !== "openrouter" || (await canManageServerCredentials(c));
+}
+
+function openRouterAuthorizationError(
+	c: Parameters<typeof requireUserActor>[0],
+) {
+	return c.json(
+		{ error: "Authentication is required to use the server OpenRouter key" },
+		401,
+	);
+}
 const parsePositiveTimeout = (
 	value: string | undefined,
 	fallback: number,
@@ -385,6 +418,78 @@ app.get("/ollama-models", async (c) => {
 						? error.message
 						: "Failed to fetch Ollama models",
 				models: [],
+			},
+			500,
+		);
+	}
+});
+
+// ─── OpenRouter models and credentials ─────────────────────────────
+app.get("/openrouter-models", (c) => {
+	const models = getModels("openrouter")
+		.filter((model) => model.input.includes("text"))
+		.map((model) => ({
+			name: model.id,
+			displayName: model.name,
+			type: "text",
+			inputModalities: model.input,
+			contextLength: model.contextWindow,
+			cost: model.cost,
+		}))
+		.sort((a, b) => a.displayName.localeCompare(b.displayName));
+	return c.json({ models });
+});
+
+app.get("/openrouter-auth", async (c) => {
+	try {
+		return c.json(await getOpenRouterAuthStatus());
+	} catch (error) {
+		logger.warn({ err: error }, "Failed to read OpenRouter auth status");
+		return c.json({ error: "Failed to read OpenRouter auth status" }, 500);
+	}
+});
+
+app.post("/openrouter-auth", async (c) => {
+	if (!(await canManageServerCredentials(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	let body: { apiKey?: unknown };
+	try {
+		body = await c.req.json<{ apiKey?: unknown }>();
+	} catch {
+		return c.json({ error: "Expected a JSON request body" }, 400);
+	}
+	if (typeof body.apiKey !== "string") {
+		return c.json({ error: "Missing required field: apiKey" }, 400);
+	}
+	try {
+		return c.json(await saveOpenRouterApiKey(body.apiKey));
+	} catch (error) {
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to save OpenRouter API key",
+			},
+			500,
+		);
+	}
+});
+
+app.delete("/openrouter-auth", async (c) => {
+	if (!(await canManageServerCredentials(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	try {
+		return c.json(await clearOpenRouterApiKey());
+	} catch (error) {
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to clear OpenRouter API key",
 			},
 			500,
 		);
@@ -561,6 +666,9 @@ app.post("/generate-song", llmLimiter, async (c) => {
 				400,
 			);
 		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
+		}
 
 		const songData = await generateSongMetadata({
 			prompt,
@@ -648,6 +756,9 @@ app.post("/generate-album-track", llmLimiter, async (c) => {
 				400,
 			);
 		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
+		}
 
 		const request: AlbumTrackRequest = {
 			playlistPrompt,
@@ -719,6 +830,9 @@ app.post("/extract-persona", llmLimiter, async (c) => {
 				400,
 			);
 		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
+		}
 		const persona = await generatePersonaExtract({
 			song,
 			provider,
@@ -749,6 +863,9 @@ app.post("/enhance-prompt", llmLimiter, async (c) => {
 				{ error: "Missing required fields: prompt, provider" },
 				400,
 			);
+		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
 		}
 		const { controller, clear } = createTimeoutController(ENHANCE_TIMEOUT_MS);
 		try {
@@ -796,6 +913,9 @@ app.post("/enhance-request", llmLimiter, async (c) => {
 				400,
 			);
 		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
+		}
 		const result = await enhanceSongRequest({
 			request,
 			provider,
@@ -830,6 +950,9 @@ app.post("/refine-prompt", llmLimiter, async (c) => {
 				400,
 			);
 		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
+		}
 		const result = await refineSessionPrompt({
 			currentPrompt,
 			direction,
@@ -863,6 +986,9 @@ app.post("/enhance-session", llmLimiter, async (c) => {
 				},
 				400,
 			);
+		}
+		if (!(await canUseClientSelectedLlmProvider(c, provider))) {
+			return openRouterAuthorizationError(c);
 		}
 		const { controller, clear } = createTimeoutController(ENHANCE_TIMEOUT_MS);
 		try {
@@ -1161,15 +1287,18 @@ app.post("/codex-auth/upload-cache", async (c) => {
 });
 
 // ─── POST /test-connection ──────────────────────────────────────────
-app.post("/test-connection", async (c) => {
+app.post("/test-connection", llmLimiter, async (c) => {
 	try {
-		const body = await c.req.json<{ provider: string; apiKey?: string }>();
-		const { provider, apiKey } = body;
+		const body = await c.req.json<{ provider: string }>();
+		const { provider } = body;
 		if (!provider || typeof provider !== "string") {
 			return c.json(
 				{ ok: false, error: "Missing required field: provider" },
 				400,
 			);
+		}
+		if (provider === "openrouter" && !(await canManageServerCredentials(c))) {
+			return openRouterAuthorizationError(c);
 		}
 		const urls = await getServiceUrls();
 
@@ -1195,13 +1324,33 @@ app.post("/test-connection", async (c) => {
 			});
 		}
 
-		if (provider === "inference-sh" || provider === "openrouter") {
-			void apiKey;
+		if (provider === "inference-sh") {
 			await testInferenceShImageProvider();
 			return c.json({
 				ok: true,
 				message: "Inference.sh CLI ready",
 			});
+		}
+
+		if (provider === "openrouter") {
+			const apiKey = await getOpenRouterApiKey();
+			if (!apiKey) {
+				return c.json({
+					ok: false,
+					error: "No OpenRouter API key configured",
+				});
+			}
+			const response = await fetch("https://openrouter.ai/api/v1/key", {
+				headers: { Authorization: `Bearer ${apiKey}` },
+				signal: AbortSignal.timeout(8_000),
+			});
+			if (!response.ok) {
+				return c.json({
+					ok: false,
+					error: `OpenRouter rejected the credential (${response.status})`,
+				});
+			}
+			return c.json({ ok: true, message: "OpenRouter credential is valid" });
 		}
 
 		if (provider === "codex-imagegen") {

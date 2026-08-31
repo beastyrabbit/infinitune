@@ -1,5 +1,11 @@
 import { API_URL } from "./endpoints";
 
+const PANGOLIN_IDENTITY_HEADERS = [
+	"Remote-User-Id",
+	"Remote-Email",
+	"Remote-Name",
+] as const;
+
 export async function proxyAutoplayerRequest(
 	request: Request,
 	path: string,
@@ -12,6 +18,17 @@ export async function proxyAutoplayerRequest(
 	const headers = new Headers();
 	const contentType = request.headers.get("content-type");
 	if (contentType) headers.set("content-type", contentType);
+	const authorization = request.headers.get("authorization");
+	if (authorization) headers.set("authorization", authorization);
+	if (
+		typeof process !== "undefined" &&
+		process.env.INFINITUNE_TRUST_PANGOLIN_HEADERS === "true"
+	) {
+		for (const headerName of PANGOLIN_IDENTITY_HEADERS) {
+			const value = request.headers.get(headerName);
+			if (value !== null) headers.set(headerName, value);
+		}
+	}
 
 	const init: RequestInit = {
 		method,

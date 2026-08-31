@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaylistWire, SongWire } from "../wire";
 import {
+	blocksOwnerlessOpenRouterTextGeneration,
 	buildAceSubmitInput,
+	resolveSongTextLlmProfile,
 	SongWorker,
 	type SongWorkerContext,
 	type SongWorkerSettings,
 } from "./song-worker";
+
+afterEach(() => vi.unstubAllEnvs());
 
 const baseSettings: SongWorkerSettings = {
 	textProvider: "openai-codex",
@@ -17,6 +21,12 @@ const baseSettings: SongWorkerSettings = {
 	aceLmTemperature: 1.1,
 	aceLmCfgScale: 3.5,
 	aceInferMethod: "sde",
+	aceGuidanceScale: 9,
+	aceSamplerMode: "euler",
+	aceShift: 2,
+	aceVelocityNormThreshold: 4,
+	aceVelocityEmaFactor: 0.2,
+	aceUseAdg: true,
 	aceDcwEnabled: false,
 	aceDcwMode: "high",
 	aceDcwScaler: 0.1,
@@ -43,6 +53,8 @@ function makeSong(): SongWire {
 
 function makePlaylist(overrides: Partial<PlaylistWire> = {}): PlaylistWire {
 	return {
+		isTemporary: false,
+		playlistKey: null,
 		lyricsLanguage: "english",
 		aceModel: null,
 		inferenceSteps: null,
@@ -73,6 +85,12 @@ describe("buildAceSubmitInput", () => {
 		expect(input.lmTemperature).toBe(1.1);
 		expect(input.lmCfgScale).toBe(3.5);
 		expect(input.inferMethod).toBe("sde");
+		expect(input.guidanceScale).toBe(9);
+		expect(input.samplerMode).toBe("euler");
+		expect(input.shift).toBe(2);
+		expect(input.velocityNormThreshold).toBe(4);
+		expect(input.velocityEmaFactor).toBe(0.2);
+		expect(input.useAdg).toBe(true);
 		expect(input.aceDcwEnabled).toBe(false);
 		expect(input.aceDcwMode).toBe("high");
 		expect(input.aceDcwScaler).toBe(0.1);
@@ -80,6 +98,16 @@ describe("buildAceSubmitInput", () => {
 		expect(input.aceDcwWavelet).toBe("db4");
 		expect(input.aceThinking).toBe(true);
 		expect(input.aceAutoDuration).toBe(false);
+	});
+
+	it("preserves an explicit empty global ACE model for the server default", () => {
+		const input = buildAceSubmitInput({
+			song: makeSong(),
+			playlist: makePlaylist(),
+			settings: { ...baseSettings, aceModel: "" },
+		});
+
+		expect(input.aceModel).toBe("");
 	});
 
 	it("passes reimagine cover-task fields through to the ACE submit input", () => {
@@ -126,6 +154,12 @@ describe("buildAceSubmitInput", () => {
 		expect(input.lmTemperature).toBe(0.7);
 		expect(input.lmCfgScale).toBe(2);
 		expect(input.inferMethod).toBe("ode");
+		expect(input.guidanceScale).toBe(9);
+		expect(input.samplerMode).toBe("euler");
+		expect(input.shift).toBe(2);
+		expect(input.velocityNormThreshold).toBe(4);
+		expect(input.velocityEmaFactor).toBe(0.2);
+		expect(input.useAdg).toBe(true);
 		expect(input.aceDcwEnabled).toBe(true);
 		expect(input.aceDcwMode).toBe("double");
 		expect(input.aceDcwScaler).toBe(0.05);
@@ -133,6 +167,141 @@ describe("buildAceSubmitInput", () => {
 		expect(input.aceDcwWavelet).toBe("haar");
 		expect(input.aceThinking).toBe(false);
 		expect(input.aceAutoDuration).toBe(true);
+	});
+});
+
+describe("resolveSongTextLlmProfile", () => {
+	it("uses current global settings for the hidden radio playlist", () => {
+		expect(
+			resolveSongTextLlmProfile({
+				playlist: makePlaylist({
+					mode: "radio",
+					playlistKey: "global-radio",
+					llmProvider: "openai-codex",
+					llmModel: "gpt-5.1",
+				}),
+				settings: {
+					...baseSettings,
+					textProvider: "openrouter",
+					textModel: "",
+				},
+			}),
+		).toEqual({ provider: "openrouter", model: "auto" });
+	});
+
+	it("keeps explicit provider settings for regular playlists", () => {
+		expect(
+			resolveSongTextLlmProfile({
+				playlist: makePlaylist({
+					mode: "endless",
+					llmProvider: "openai-codex",
+					llmModel: "gpt-5.1",
+				}),
+				settings: {
+					...baseSettings,
+					textProvider: "openrouter",
+					textModel: "auto",
+				},
+			}),
+		).toEqual({ provider: "openai-codex", model: "gpt-5.1" });
+	});
+});
+
+describe("ownerless OpenRouter production guard", () => {
+	it.each([
+		{
+			name: "explicit production OpenRouter",
+			nodeEnv: "production",
+			playlist: { mode: "endless", llmProvider: "openrouter" },
+			settingsProvider: "openai-codex",
+			expected: true,
+		},
+		{
+			name: "production OpenRouter from global fallback",
+			nodeEnv: "production",
+			playlist: { mode: "endless", llmProvider: "" },
+			settingsProvider: "openrouter",
+			expected: true,
+		},
+		{
+			name: "production owned OpenRouter",
+			nodeEnv: "production",
+			playlist: {
+				mode: "endless",
+				llmProvider: "openrouter",
+				ownerUserId: "user-1",
+			},
+			settingsProvider: "openai-codex",
+			expected: false,
+		},
+		{
+			name: "development ownerless OpenRouter",
+			nodeEnv: "development",
+			playlist: { mode: "endless", llmProvider: "openrouter" },
+			settingsProvider: "openai-codex",
+			expected: false,
+		},
+		{
+			name: "canonical global radio",
+			nodeEnv: "production",
+			playlist: {
+				mode: "radio",
+				playlistKey: "global-radio",
+				llmProvider: "openai-codex",
+			},
+			settingsProvider: "openrouter",
+			expected: false,
+		},
+		{
+			name: "spoofed radio playlist",
+			nodeEnv: "production",
+			playlist: {
+				mode: "radio",
+				playlistKey: "not-global-radio",
+				llmProvider: "openrouter",
+			},
+			settingsProvider: "openrouter",
+			expected: true,
+		},
+	] as const)("returns $expected for $name", (testCase) => {
+		vi.stubEnv("NODE_ENV", testCase.nodeEnv);
+
+		expect(
+			blocksOwnerlessOpenRouterTextGeneration({
+				playlist: makePlaylist(testCase.playlist),
+				settings: {
+					...baseSettings,
+					textProvider: testCase.settingsProvider,
+				},
+			}),
+		).toBe(testCase.expected);
+	});
+
+	it("stops before an ownerless playlist reaches metadata capabilities", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		const generateMetadata = vi.fn();
+		const worker = new SongWorker(
+			{ id: "song-1", status: "pending" } as SongWire,
+			{
+				queues: {},
+				playlist: makePlaylist({
+					id: "playlist-1",
+					mode: "endless",
+					llmProvider: "openrouter",
+					ownerUserId: null,
+				}),
+				recentSongs: [],
+				recentDescriptions: [],
+				getPlaylistActive: async () => true,
+				getSettings: async () => baseSettings,
+				capabilities: { generateMetadata },
+			} as unknown as SongWorkerContext,
+		);
+
+		// biome-ignore lint/complexity/useLiteralKeys: bracket access reaches the private method under test
+		await worker["generateMetadata"]();
+
+		expect(generateMetadata).not.toHaveBeenCalled();
 	});
 });
 

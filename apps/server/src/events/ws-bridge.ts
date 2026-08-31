@@ -22,8 +22,8 @@ export function getClientCount(): number {
 }
 
 /** Broadcast a JSON message to all connected browser clients. */
-function broadcast(routingKey: string, data: unknown) {
-	const message = JSON.stringify({ routingKey, data });
+function broadcast(routingKey: string) {
+	const message = JSON.stringify({ routingKey });
 	for (const client of [...clients]) {
 		try {
 			client.send(message);
@@ -103,7 +103,7 @@ export function startWsBridge(): void {
 				event,
 				data as Record<string, unknown>,
 			);
-			broadcast(routingKey, data);
+			broadcast(routingKey);
 		});
 	}
 

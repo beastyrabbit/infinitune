@@ -10,6 +10,7 @@ import {
 	StatusBadge,
 	type StepState,
 } from "@/components/autoplayer/test/shared";
+import { api } from "@/integrations/api/client";
 import {
 	useAutoplayerPromptContract,
 	useCreateSong,
@@ -148,16 +149,14 @@ function PipelineTestPage() {
 						input: llmInput,
 					});
 
-					const llmRes = await fetch("/api/autoplayer/generate-song", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify(llmInput),
-						signal,
-					});
-
-					if (!llmRes.ok) throw new Error(`LLM failed: ${await llmRes.text()}`);
-					const songData = await llmRes.json();
-					if (songData.error) throw new Error(songData.error);
+					const songData = await api.post<Record<string, unknown>>(
+						"/api/autoplayer/generate-song",
+						llmInput,
+						{ signal },
+					);
+					if (typeof songData.error === "string") {
+						throw new Error(songData.error);
+					}
 
 					cd.songData = songData;
 					setSongMeta(songData);

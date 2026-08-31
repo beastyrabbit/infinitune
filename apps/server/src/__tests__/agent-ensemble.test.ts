@@ -56,12 +56,14 @@ import {
 	answerDirectorQuestion,
 	MAX_HUMAN_CHAT_CONTENT_CHARS,
 	postHumanChat,
+	wakePlaylistDirector,
 } from "../agents/playlist-director-service";
 import {
 	getRecentSongsData,
 	getTopicHistoryData,
 } from "../agents/tools/playlist-context-tools";
 import { playlists, songs } from "../db/schema";
+import { promptInfinituneAgent } from "../external/pi-runtime";
 import * as playlistService from "../services/playlist-service";
 
 const AGENTS: AgentId[] = [
@@ -309,10 +311,19 @@ describe("agent ensemble", () => {
 		expect(normalizeImageProvider("codex-imagegen")).toBe("codex-imagegen");
 	});
 
-	it("normalizes old text providers to openai-codex", () => {
+	it("keeps OpenRouter while normalizing removed text providers", () => {
 		expect(normalizeLlmProvider("ollama")).toBe("openai-codex");
-		expect(normalizeLlmProvider("openrouter")).toBe("openai-codex");
+		expect(normalizeLlmProvider("openrouter")).toBe("openrouter");
 		expect(normalizeLlmProvider("anthropic")).toBe("openai-codex");
+		expect(
+			resolveTextLlmProfile({ provider: "openrouter", model: "auto" }),
+		).toEqual({ provider: "openrouter", model: "auto" });
+		expect(
+			resolveTextLlmProfile({ provider: "openrouter", model: "" }),
+		).toEqual({
+			provider: "openrouter",
+			model: "auto",
+		});
 		expect(resolveTextLlmProfile({ provider: "ollama", model: "" })).toEqual({
 			provider: "openai-codex",
 			model: "gpt-5.2",
@@ -458,6 +469,28 @@ describe("agent ensemble", () => {
 			.from(playlists)
 			.where(eq(playlists.id, playlist.id));
 		expect(row.promptEpoch).toBe(0);
+	});
+
+	it("keeps playlist OpenRouter settings when waking the director", async () => {
+		const playlist = await playlistService.create({
+			name: "OpenRouter chat",
+			prompt: "garage rock",
+			llmProvider: "openrouter",
+			llmModel: "auto",
+		});
+		vi.mocked(promptInfinituneAgent).mockClear();
+
+		await wakePlaylistDirector({
+			playlistId: playlist.id,
+			trigger: "human-chat",
+			userMessage: "Make it grimier.",
+		});
+
+		expect(promptInfinituneAgent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				modelProfile: { provider: "openrouter", model: "auto" },
+			}),
+		);
 	});
 
 	it("caps human chat before storing and waking the director", async () => {

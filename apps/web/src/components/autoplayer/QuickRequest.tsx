@@ -3,6 +3,7 @@ import { Zap } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { api } from "@/integrations/api/client";
 
 interface QuickRequestProps {
 	onRequest: (prompt: string) => void;
@@ -28,16 +29,14 @@ export function QuickRequest({
 		if (provider && model) {
 			setEnhancing(true);
 			try {
-				const res = await fetch("/api/autoplayer/enhance-request", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
+				const data = await api.post<{ result?: string }>(
+					"/api/autoplayer/enhance-request",
+					{
 						request: trimmed,
 						provider,
 						model,
-					}),
-				});
-				const data = await res.json();
+					},
+				);
 				if (data.result) {
 					onRequest(data.result);
 				} else {

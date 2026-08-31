@@ -1,17 +1,32 @@
 import { normalizeAgentReasoningLevel } from "@infinitune/shared/agent-reasoning";
 import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
+import { eq } from "drizzle-orm";
 import { db } from "../db/index";
 import { settings } from "../db/schema";
 import { emit } from "../events/event-bus";
 
+const SENSITIVE_SETTING_KEYS = new Set(["openrouterApiKey"]);
+
+export function isSensitiveSettingKey(key: string): boolean {
+	return SENSITIVE_SETTING_KEYS.has(key);
+}
+
+function redactSensitiveSettings(
+	values: Record<string, string>,
+): Record<string, string> {
+	return Object.fromEntries(
+		Object.entries(values).filter(([key]) => !isSensitiveSettingKey(key)),
+	);
+}
+
 export async function getAll(): Promise<Record<string, string>> {
 	const cached = readCache();
-	if (cached) return { ...cached };
+	if (cached) return redactSensitiveSettings(cached);
 	const rows = await db.select().from(settings);
 	const all = Object.fromEntries(rows.map((s) => [s.key, s.value]));
 	writeCache(all);
-	return { ...all };
+	return redactSensitiveSettings(all);
 }
 
 // ─── Short-TTL cache ─────────────────────────────────────────────────
@@ -45,11 +60,45 @@ function invalidateCache(): void {
 }
 
 export async function get(key: string): Promise<string | null> {
+	if (isSensitiveSettingKey(key)) return null;
 	const all = await getAll();
 	return Object.hasOwn(all, key) ? all[key] : null;
 }
 
+export async function migrateSensitiveSetting(
+	key: string,
+	writeReplacement: (value: string) => void | Promise<void>,
+): Promise<boolean> {
+	if (!isSensitiveSettingKey(key)) {
+		throw new Error(`Setting "${key}" is not registered as sensitive`);
+	}
+	const [row] = await db
+		.select({ value: settings.value })
+		.from(settings)
+		.where(eq(settings.key, key))
+		.limit(1);
+	if (!row) return false;
+
+	await writeReplacement(row.value);
+	await db.delete(settings).where(eq(settings.key, key));
+	invalidateCache();
+	return true;
+}
+
+export async function deleteSensitiveSetting(key: string): Promise<void> {
+	if (!isSensitiveSettingKey(key)) {
+		throw new Error(`Setting "${key}" is not registered as sensitive`);
+	}
+	await db.delete(settings).where(eq(settings.key, key));
+	invalidateCache();
+}
+
 export async function set(key: string, value: string) {
+	if (isSensitiveSettingKey(key)) {
+		throw new Error(
+			`Sensitive setting "${key}" must use its dedicated credential endpoint`,
+		);
+	}
 	const storedValue =
 		key === "textProvider" || key === "personaProvider"
 			? normalizeLlmProvider(value)

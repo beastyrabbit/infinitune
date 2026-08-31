@@ -1,7 +1,6 @@
 import type { WebSocket } from "ws";
 import { on } from "../events/event-bus";
 import { logger } from "../logger";
-import { submitRadioRequest } from "../services/radio-request-service";
 import {
 	activateListener,
 	addFeedback,
@@ -162,12 +161,10 @@ export function handleRadioConnection(ws: WebSocket): void {
 						}
 						break;
 					case "request":
-						if (typeof msg.prompt === "string") {
-							send(ws, {
-								type: "request",
-								request: await submitRadioRequest(msg.prompt),
-							});
-						}
+						send(ws, {
+							type: "error",
+							message: "Radio requests must use POST /api/radio/requests",
+						});
 						break;
 					default:
 						send(ws, {

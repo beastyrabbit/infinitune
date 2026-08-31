@@ -1,16 +1,12 @@
 import {
-	ACE_DCW_DEFAULTS,
-	normalizeAceDcwScaler,
-	resolveAceModelSetting,
-} from "@infinitune/shared/ace-settings";
-import {
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_OPENROUTER_TEXT_MODEL,
 	DEFAULT_TEXT_PROVIDER,
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { Headphones, Library, List, Monitor, Radio, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import GearIcon from "@/components/ui/gear-icon";
 import { Input } from "@/components/ui/input";
@@ -31,6 +27,7 @@ import {
 } from "@/integrations/api/client";
 import {
 	useAutoplayerCodexModels,
+	useAutoplayerOpenRouterModels,
 	useSettings,
 } from "@/integrations/api/hooks";
 
@@ -126,6 +123,7 @@ export function PlaylistCreator({
 	const [provider, setProvider] = useState<LlmProvider>(DEFAULT_TEXT_PROVIDER);
 	const [model, setModel] = useState("");
 	const codexModels = useAutoplayerCodexModels() ?? [];
+	const openrouterModels = useAutoplayerOpenRouterModels() ?? [];
 	const [loading, setLoading] = useState(false);
 	const [enhancing, setEnhancing] = useState(false);
 	const [loadingState, setLoadingState] = useState("");
@@ -133,6 +131,7 @@ export function PlaylistCreator({
 	const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("local");
 	const [roomName, setRoomName] = useState("");
 	const [roomNameEdited, setRoomNameEdited] = useState(false);
+	const openrouterModelListId = useId();
 
 	const settings = useSettings();
 
@@ -163,6 +162,15 @@ export function PlaylistCreator({
 	);
 
 	useEffect(() => {
+		if (provider === "openrouter") {
+			if (
+				!model.trim() ||
+				codexTextModels.some((item) => item.name === model)
+			) {
+				setModel(DEFAULT_OPENROUTER_TEXT_MODEL);
+			}
+			return;
+		}
 		if (provider === "openai-codex" && codexTextModels.length > 0) {
 			if (!codexTextModels.some((m) => m.name === model)) {
 				const preferred =
@@ -175,6 +183,17 @@ export function PlaylistCreator({
 			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
 		}
 	}, [provider, model, codexTextModels]);
+
+	const selectProvider = (nextProvider: LlmProvider) => {
+		setProvider(nextProvider);
+		if (nextProvider === "openrouter") {
+			setModel(DEFAULT_OPENROUTER_TEXT_MODEL);
+			return;
+		}
+		const preferred =
+			codexTextModels.find((item) => item.is_default) ?? codexTextModels[0];
+		setModel(preferred?.name ?? DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+	};
 
 	const handleEnhancePrompt = async () => {
 		if (!prompt.trim() || !model.trim() || enhancing) return;
@@ -214,35 +233,6 @@ export function PlaylistCreator({
 				: ">>> ANALYZING PROMPT <<<",
 		);
 
-		const inferenceSteps = settings?.aceInferenceSteps
-			? Number.parseInt(settings.aceInferenceSteps, 10)
-			: undefined;
-		const lmTemperature = settings?.aceLmTemperature
-			? Number.parseFloat(settings.aceLmTemperature)
-			: undefined;
-		const lmCfgScale = settings?.aceLmCfgScale
-			? Number.parseFloat(settings.aceLmCfgScale)
-			: undefined;
-		const inferMethod = settings?.aceInferMethod || undefined;
-		const aceModel = resolveAceModelSetting(
-			settings?.aceModel,
-			settings?.aceModel !== undefined,
-		);
-		const aceDcwEnabled = settings?.aceDcwEnabled
-			? settings.aceDcwEnabled !== "false"
-			: ACE_DCW_DEFAULTS.enabled;
-		const aceDcwMode = settings?.aceDcwMode || ACE_DCW_DEFAULTS.mode;
-		const aceDcwScaler = normalizeAceDcwScaler(
-			settings?.aceDcwScaler,
-			ACE_DCW_DEFAULTS.scaler,
-		);
-		const aceDcwHighScaler = normalizeAceDcwScaler(
-			settings?.aceDcwHighScaler,
-			ACE_DCW_DEFAULTS.highScaler,
-		);
-		const aceDcwWavelet = settings?.aceDcwWavelet || ACE_DCW_DEFAULTS.wavelet;
-		const aceThinking = settings?.aceThinking === "true";
-		const aceAutoDuration = settings?.aceAutoDuration !== "false";
 		const roomSlug =
 			playbackMode === "room"
 				? slugify(roomName.trim() || "room") || "room"
@@ -270,20 +260,7 @@ export function PlaylistCreator({
 				targetKey: enhancedParams.targetKey as string | undefined,
 				timeSignature: enhancedParams.timeSignature as string | undefined,
 				audioDuration: enhancedParams.audioDuration as number | undefined,
-				inferenceSteps:
-					(enhancedParams.inferenceSteps as number | undefined) ??
-					inferenceSteps,
-				lmTemperature,
-				lmCfgScale,
-				inferMethod,
-				aceModel,
-				aceDcwEnabled,
-				aceDcwMode,
-				aceDcwScaler,
-				aceDcwHighScaler,
-				aceDcwWavelet,
-				aceThinking,
-				aceAutoDuration,
+				inferenceSteps: enhancedParams.inferenceSteps as number | undefined,
 				initialDirectorPlan: true,
 				roomSlug,
 			};
@@ -299,18 +276,6 @@ export function PlaylistCreator({
 				provider,
 				model,
 				lyricsLanguage: "english",
-				inferenceSteps,
-				lmTemperature,
-				lmCfgScale,
-				inferMethod,
-				aceModel,
-				aceDcwEnabled,
-				aceDcwMode,
-				aceDcwScaler,
-				aceDcwHighScaler,
-				aceDcwWavelet,
-				aceThinking,
-				aceAutoDuration,
 				initialDirectorPlan: true,
 				roomSlug,
 			};
@@ -439,8 +404,29 @@ export function PlaylistCreator({
 								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									PROVIDER
 								</p>
-								<div className="flex h-10 items-center border-4 border-white/20 bg-white px-3 font-mono text-xs font-black uppercase text-black">
-									OPENAI CODEX
+								<div className="flex h-10">
+									<button
+										type="button"
+										className={`flex-1 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+											provider === "openai-codex"
+												? "bg-white text-black"
+												: "bg-transparent text-white hover:bg-white/10"
+										}`}
+										onClick={() => selectProvider("openai-codex")}
+									>
+										CODEX
+									</button>
+									<button
+										type="button"
+										className={`flex-1 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+											provider === "openrouter"
+												? "bg-white text-black"
+												: "bg-transparent text-white hover:bg-white/10"
+										}`}
+										onClick={() => selectProvider("openrouter")}
+									>
+										OPENROUTER
+									</button>
 								</div>
 							</div>
 
@@ -448,31 +434,50 @@ export function PlaylistCreator({
 								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
 									TEXT MODEL
 								</p>
-								{provider === "openai-codex" && codexTextModels.length > 0 ? (
-									<Select value={model} onValueChange={setModel}>
-										<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-											<SelectValue placeholder="SELECT CODEX MODEL" />
-										</SelectTrigger>
-										<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-											{codexTextModels.map((m) => (
-												<SelectItem
-													key={m.name}
-													value={m.name}
-													className="font-mono text-sm font-bold uppercase text-white"
-												>
-													{(m.displayName || m.name).toUpperCase()}
-													{m.is_default ? " (DEFAULT)" : ""}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+								{provider === "openai-codex" ? (
+									codexTextModels.length > 0 ? (
+										<Select value={model} onValueChange={setModel}>
+											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+												<SelectValue placeholder="SELECT CODEX MODEL" />
+											</SelectTrigger>
+											<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+												{codexTextModels.map((m) => (
+													<SelectItem
+														key={m.name}
+														value={m.name}
+														className="font-mono text-sm font-bold uppercase text-white"
+													>
+														{(m.displayName || m.name).toUpperCase()}
+														{m.is_default ? " (DEFAULT)" : ""}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									) : (
+										<Input
+											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+											placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
+											value={model}
+											onChange={(e) => setModel(e.target.value)}
+										/>
+									)
 								) : (
-									<Input
-										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-										placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
-										value={model}
-										onChange={(e) => setModel(e.target.value)}
-									/>
+									<>
+										<Input
+											list={openrouterModelListId}
+											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+											placeholder={DEFAULT_OPENROUTER_TEXT_MODEL.toUpperCase()}
+											value={model}
+											onChange={(e) => setModel(e.target.value)}
+										/>
+										<datalist id={openrouterModelListId}>
+											{openrouterModels.map((item) => (
+												<option key={item.name} value={item.name}>
+													{item.displayName || item.name}
+												</option>
+											))}
+										</datalist>
+									</>
 								)}
 							</div>
 						</div>

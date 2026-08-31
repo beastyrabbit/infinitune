@@ -44,7 +44,7 @@ export type PlaylistMode = (typeof PLAYLIST_MODES)[number];
 export const PLAYLIST_STATUSES = ["active", "closing", "closed"] as const;
 export type PlaylistStatus = (typeof PLAYLIST_STATUSES)[number];
 
-export const LLM_PROVIDERS = ["openai-codex"] as const;
+export const LLM_PROVIDERS = ["openai-codex", "openrouter"] as const;
 export type LlmProvider = (typeof LLM_PROVIDERS)[number];
 
 export type { SongCover } from "./protocol";

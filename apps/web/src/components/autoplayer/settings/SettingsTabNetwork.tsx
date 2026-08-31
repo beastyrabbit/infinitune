@@ -14,6 +14,11 @@ export interface NetworkTabProps {
 	inferenceShTest: TestStatus;
 	codexImagegenTest: TestStatus;
 	codexTest: TestStatus;
+	openrouterTest: TestStatus;
+	openrouterAuth: {
+		configured: boolean;
+		source: "stored" | "environment" | "runtime" | "fallback" | null;
+	};
 	codexAuthSession: {
 		id: string;
 		state: string;
@@ -25,6 +30,8 @@ export interface NetworkTabProps {
 	onUploadCodexAuthFile: (file: File) => Promise<void>;
 	onStartCodexAuth: () => void;
 	onCancelCodexAuth: () => void;
+	onSaveOpenRouterApiKey: (apiKey: string) => Promise<void>;
+	onClearOpenRouterApiKey: () => Promise<void>;
 	onTest: (provider: string) => void;
 }
 
@@ -44,12 +51,55 @@ export function SettingsTabNetwork({
 	inferenceShTest,
 	codexImagegenTest,
 	codexTest,
+	openrouterTest,
+	openrouterAuth,
 	codexAuthSession,
 	onUploadCodexAuthFile,
 	onStartCodexAuth,
 	onCancelCodexAuth,
+	onSaveOpenRouterApiKey,
+	onClearOpenRouterApiKey,
 	onTest,
 }: NetworkTabProps) {
+	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+	const [openrouterKeyStatus, setOpenrouterKeyStatus] = useState<{
+		state: "idle" | "saving" | "success" | "error";
+		message?: string;
+	}>({ state: "idle" });
+	const saveOpenRouterKey = async () => {
+		if (!openrouterApiKey.trim()) return;
+		setOpenrouterKeyStatus({ state: "saving", message: "Saving key..." });
+		try {
+			await onSaveOpenRouterApiKey(openrouterApiKey);
+			setOpenrouterApiKey("");
+			setOpenrouterKeyStatus({
+				state: "success",
+				message: "OpenRouter key saved.",
+			});
+		} catch (error) {
+			setOpenrouterKeyStatus({
+				state: "error",
+				message: error instanceof Error ? error.message : "Could not save key",
+			});
+		}
+	};
+	const clearOpenRouterKey = async () => {
+		if (!window.confirm("Remove the stored OpenRouter API key?")) return;
+		setOpenrouterKeyStatus({ state: "saving", message: "Removing key..." });
+		try {
+			await onClearOpenRouterApiKey();
+			setOpenrouterKeyStatus({
+				state: "success",
+				message: "Stored OpenRouter key removed.",
+			});
+		} catch (error) {
+			setOpenrouterKeyStatus({
+				state: "error",
+				message:
+					error instanceof Error ? error.message : "Could not remove key",
+			});
+		}
+	};
 	const codexStatusText = codexAuthSession
 		? codexAuthSession.error ||
 			codexAuthSession.message ||
@@ -120,7 +170,7 @@ export function SettingsTabNetwork({
 				>
 					<Input
 						className={inputClass}
-						placeholder="http://192.168.10.120:8001"
+						placeholder="http://192.168.10.242:8001"
 						value={aceStepUrl}
 						onChange={(e) => setAceStepUrl(e.target.value)}
 					/>
@@ -164,6 +214,76 @@ export function SettingsTabNetwork({
 					</SettingsField>
 				</SettingsPanel>
 			)}
+
+			<SettingsPanel
+				title="OPENROUTER — SONG TEXT"
+				badge={
+					<TestButton
+						provider="openrouter"
+						status={openrouterTest}
+						onTest={onTest}
+					/>
+				}
+			>
+				<SettingsField label="Authentication Status">
+					<div className="min-h-10 px-3 py-2 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/70">
+						{openrouterAuth.configured
+							? `CONFIGURED VIA ${openrouterAuth.source ?? "UNKNOWN SOURCE"}`
+							: "NOT CONFIGURED"}
+					</div>
+				</SettingsField>
+
+				<SettingsField label="Replace API Key">
+					<Input
+						type="password"
+						autoComplete="new-password"
+						className={inputClass}
+						placeholder="PASTE A NEW OPENROUTER KEY"
+						value={openrouterApiKey}
+						onChange={(event) => setOpenrouterApiKey(event.target.value)}
+					/>
+					<p className="mt-1 text-[10px] font-bold uppercase text-white/40">
+						THE BROWSER CANNOT READ A SAVED KEY. THE SERVER STORES IT IN PI
+						AUTH.
+					</p>
+				</SettingsField>
+
+				<div className="flex gap-2">
+					<button
+						type="button"
+						className="flex-1 h-10 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white hover:bg-white/10 disabled:opacity-30"
+						onClick={() => void saveOpenRouterKey()}
+						disabled={
+							!openrouterApiKey.trim() || openrouterKeyStatus.state === "saving"
+						}
+					>
+						SAVE KEY
+					</button>
+					{openrouterAuth.source === "stored" && (
+						<button
+							type="button"
+							className="h-10 px-4 border-4 border-red-500/30 bg-transparent font-mono text-xs font-black uppercase text-red-300 hover:bg-red-950/40 disabled:opacity-30"
+							onClick={() => void clearOpenRouterKey()}
+							disabled={openrouterKeyStatus.state === "saving"}
+						>
+							REMOVE STORED KEY
+						</button>
+					)}
+				</div>
+				{openrouterKeyStatus.message && (
+					<div
+						className={`px-3 py-2 border-4 border-white/20 font-mono text-xs font-bold uppercase ${
+							openrouterKeyStatus.state === "error"
+								? "bg-red-950/40 text-red-300"
+								: openrouterKeyStatus.state === "success"
+									? "bg-green-950/40 text-green-300"
+									: "bg-yellow-950/40 text-yellow-300"
+						}`}
+					>
+						{openrouterKeyStatus.message}
+					</div>
+				)}
+			</SettingsPanel>
 
 			<SettingsPanel
 				title="OPENAI CODEX (CHATGPT SUBSCRIPTION)"
