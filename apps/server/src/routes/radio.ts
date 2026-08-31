@@ -1,9 +1,11 @@
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { requireUserActor } from "../auth/actor";
 import {
 	generationLimiter,
+	radioControlLimiter,
+	radioFeedbackLimiter,
 	radioRequestLimiter,
 	stationPresetLimiter,
 } from "../middleware/limiters";
@@ -39,6 +41,31 @@ import * as songService from "../services/song-service";
 import { songReadAccess } from "./songs/access";
 
 const app = new Hono();
+
+const requireProductionUser: MiddlewareHandler = async (c, next) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	await next();
+};
+
+const requireOpenRouterProductionUser: MiddlewareHandler = async (c, next) => {
+	if (process.env.NODE_ENV === "production") {
+		const settings = await settingsService.getAll();
+		if (
+			normalizeLlmProvider(settings.textProvider) === "openrouter" &&
+			!(await requireUserActor(c))
+		) {
+			return c.json(
+				{
+					error: "Authentication is required to use the server OpenRouter key",
+				},
+				401,
+			);
+		}
+	}
+	await next();
+};
 
 const ListenerSchema = z.object({
 	listenerId: z.string().min(1),
@@ -80,19 +107,14 @@ app.get("/library", async (c) => {
 	});
 });
 
-app.post("/play", generationLimiter, async (c) => {
-	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
+app.post("/play", requireProductionUser, radioControlLimiter, async (c) => {
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	return c.json(await activateListener(result.data.listenerId));
 });
 
-// HTTP play/pause are a no-WebSocket fallback (the client only uses them when
-// its socket send fails). They deactivate by listener id directly and do not
-// participate in the WS per-socket refcount — acceptable because a client
-// without a live socket has no socket to count.
+// REST owns authenticated listener activation in production. Pause deactivates
+// by listener id directly; WebSockets carry state updates and heartbeats.
 app.post("/pause", async (c) => {
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
@@ -106,51 +128,43 @@ app.post("/heartbeat", async (c) => {
 	return c.json({ ok: true, state: getStationSnapshot() });
 });
 
-app.post("/seek", generationLimiter, async (c) => {
-	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
+app.post("/seek", requireProductionUser, radioControlLimiter, async (c) => {
 	const result = SeekSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	heartbeatListener(result.data.listenerId);
 	return c.json(seekStation(result.data.offsetSeconds));
 });
 
-app.post("/skip", async (c) => {
-	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
+app.post("/skip", requireProductionUser, radioControlLimiter, async (c) => {
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	heartbeatListener(result.data.listenerId);
 	return c.json(await skipStation());
 });
 
-app.post("/feedback", async (c) => {
-	const result = FeedbackSchema.safeParse(await c.req.json());
-	if (!result.success) return c.json({ error: result.error.message }, 400);
-	return c.json(await addFeedback(result.data.songId, result.data.kind));
-});
+app.post(
+	"/feedback",
+	requireProductionUser,
+	radioFeedbackLimiter,
+	async (c) => {
+		const result = FeedbackSchema.safeParse(await c.req.json());
+		if (!result.success) return c.json({ error: result.error.message }, 400);
+		const snapshot = await addFeedback(result.data.songId, result.data.kind);
+		if (!snapshot) return c.json({ error: "Radio song not found" }, 404);
+		return c.json(snapshot);
+	},
+);
 
-app.post("/requests", radioRequestLimiter, async (c) => {
-	const result = RequestSchema.safeParse(await c.req.json());
-	if (!result.success) return c.json({ error: result.error.message }, 400);
-	if (process.env.NODE_ENV === "production") {
-		const settings = await settingsService.getAll();
-		if (
-			normalizeLlmProvider(settings.textProvider) === "openrouter" &&
-			!(await requireUserActor(c))
-		) {
-			return c.json(
-				{
-					error: "Authentication is required to use the server OpenRouter key",
-				},
-				401,
-			);
-		}
-	}
-	return c.json(await submitRadioRequest(result.data.prompt));
-});
+app.post(
+	"/requests",
+	requireOpenRouterProductionUser,
+	radioRequestLimiter,
+	async (c) => {
+		const result = RequestSchema.safeParse(await c.req.json());
+		if (!result.success) return c.json({ error: result.error.message }, 400);
+		return c.json(await submitRadioRequest(result.data.prompt));
+	},
+);
 
 // ─── Station presets (text-only station intents, one active at a time) ──
 
@@ -213,12 +227,14 @@ app.delete("/presets/:id", stationPresetLimiter, async (c) => {
 	return c.json({ ok: true });
 });
 
-app.post("/force-generate-album", generationLimiter, async (c) => {
-	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-	return c.json(await topUpInventory({ force: true }));
-});
+app.post(
+	"/force-generate-album",
+	requireProductionUser,
+	generationLimiter,
+	async (c) => {
+		return c.json(await topUpInventory({ force: true }));
+	},
+);
 
 const AddSourceSchema = z.object({
 	url: z.string().url().max(500),

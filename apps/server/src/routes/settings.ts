@@ -5,14 +5,32 @@ import * as settingsService from "../services/settings-service";
 
 const app = new Hono();
 
+const ACE_STEP_ENV_LOCK_KEY = "aceStepUrlManagedByEnvironment";
+
+function environmentAceStepUrl(): string {
+	return process.env.ACE_STEP_URL?.trim() || "";
+}
+
 // GET /api/settings
 app.get("/", async (c) => {
-	return c.json(await settingsService.getAll());
+	const values = await settingsService.getAll();
+	const aceStepUrl = environmentAceStepUrl();
+	return c.json({
+		...values,
+		...(aceStepUrl ? { aceStepUrl } : {}),
+		[ACE_STEP_ENV_LOCK_KEY]: String(Boolean(aceStepUrl)),
+	});
 });
 
 // GET /api/settings/:key
 app.get("/:key", async (c) => {
-	return c.json(await settingsService.get(c.req.param("key")));
+	const key = c.req.param("key");
+	const aceStepUrl = environmentAceStepUrl();
+	if (key === ACE_STEP_ENV_LOCK_KEY) {
+		return c.json(String(Boolean(aceStepUrl)));
+	}
+	if (key === "aceStepUrl" && aceStepUrl) return c.json(aceStepUrl);
+	return c.json(await settingsService.get(key));
 });
 
 // POST /api/settings

@@ -69,6 +69,60 @@ describe("settings-service cache", () => {
 		expect(await settingsService.get("openrouterApiKey")).toBeNull();
 	});
 
+	it("keeps the OpenRouter credential owner private", async () => {
+		await getTestDb().insert(settings).values({
+			key: "openrouterCredentialOwnerUserId",
+			value: "user-1",
+		});
+
+		expect(await settingsService.getOpenRouterCredentialOwnerUserId()).toBe(
+			"user-1",
+		);
+		expect(
+			await settingsService.get("openrouterCredentialOwnerUserId"),
+		).toBeNull();
+		expect(await settingsService.getAll()).not.toHaveProperty(
+			"openrouterCredentialOwnerUserId",
+		);
+	});
+
+	it("rejects owner writes through the generic settings service", async () => {
+		await expect(
+			settingsService.set("openrouterCredentialOwnerUserId", "user-1"),
+		).rejects.toThrow("dedicated credential endpoint");
+		expect(
+			await settingsService.getOpenRouterCredentialOwnerUserId(),
+		).toBeNull();
+	});
+
+	it("claims OpenRouter credential ownership once without overwriting it", async () => {
+		expect(
+			await settingsService.claimOpenRouterCredentialOwner("user-1"),
+		).toEqual({ status: "owner", claimed: true });
+		expect(
+			await settingsService.claimOpenRouterCredentialOwner("user-1"),
+		).toEqual({ status: "owner", claimed: false });
+		expect(
+			await settingsService.claimOpenRouterCredentialOwner("user-2"),
+		).toEqual({ status: "other", claimed: false });
+		expect(await settingsService.getOpenRouterCredentialOwnerUserId()).toBe(
+			"user-1",
+		);
+	});
+
+	it("allows exactly one concurrent OpenRouter owner claim", async () => {
+		const [first, second] = await Promise.all([
+			settingsService.claimOpenRouterCredentialOwner("user-1"),
+			settingsService.claimOpenRouterCredentialOwner("user-2"),
+		]);
+		const owner = await settingsService.getOpenRouterCredentialOwnerUserId();
+
+		expect([first, second].filter((result) => result.claimed)).toHaveLength(1);
+		expect(owner === "user-1" || owner === "user-2").toBe(true);
+		expect(owner === "user-1" ? first.status : second.status).toBe("owner");
+		expect(owner === "user-1" ? second.status : first.status).toBe("other");
+	});
+
 	it("removes a legacy key only after its protected replacement is written", async () => {
 		await getTestDb().insert(settings).values({
 			key: "openrouterApiKey",

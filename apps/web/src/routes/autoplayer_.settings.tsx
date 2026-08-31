@@ -124,6 +124,10 @@ interface CodexAuthSession {
 interface OpenRouterAuthStatus {
 	configured: boolean;
 	source: "stored" | "environment" | "runtime" | "fallback" | null;
+	canManage: boolean;
+	setupAllowed: boolean;
+	claimRequired: boolean;
+	managedExternally: boolean;
 }
 
 function normalizeFallbackModel(value: string | undefined | null): string {
@@ -197,6 +201,10 @@ function SettingsPage() {
 	const [openrouterAuth, setOpenrouterAuth] = useState<OpenRouterAuthStatus>({
 		configured: false,
 		source: null,
+		canManage: false,
+		setupAllowed: false,
+		claimRequired: false,
+		managedExternally: false,
 	});
 
 	function readSetting(key: string): string {
@@ -400,7 +408,6 @@ function SettingsPage() {
 			const normalizedAceModel = normalizeAceModel(readSetting("aceModel"));
 			const payload: Record<string, string> = {
 				ollamaUrl: readSetting("ollamaUrl"),
-				aceStepUrl: readSetting("aceStepUrl"),
 				textProvider,
 				textModel:
 					readSetting("textModel") ||
@@ -474,6 +481,9 @@ function SettingsPage() {
 				),
 				aceAutoDuration: "false",
 			};
+			if (readSetting("aceStepUrlManagedByEnvironment") !== "true") {
+				payload.aceStepUrl = readSetting("aceStepUrl");
+			}
 			for (const agentId of INFINITUNE_AGENT_IDS) {
 				payload[getAgentReasoningSettingKey(agentId)] = agentReasoning[agentId];
 			}
@@ -742,6 +752,9 @@ function SettingsPage() {
 						setOllamaUrl={(value) => writeSetting("ollamaUrl", value)}
 						aceStepUrl={readSetting("aceStepUrl")}
 						setAceStepUrl={(value) => writeSetting("aceStepUrl", value)}
+						aceStepUrlManagedByEnvironment={
+							readSetting("aceStepUrlManagedByEnvironment") === "true"
+						}
 						imageProvider={imageProvider}
 						ollamaTest={ollamaTest}
 						aceTest={aceTest}

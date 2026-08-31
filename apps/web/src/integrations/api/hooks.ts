@@ -762,7 +762,6 @@ export const useRadioPlay = createMutation<
 			await api.post<RadioSnapshot>("/api/radio/play", args),
 		),
 	[["radio"]],
-	{ silent: true },
 );
 
 export const useRadioPause = createMutation<

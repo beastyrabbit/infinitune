@@ -475,8 +475,8 @@ export async function advanceSong(
 }
 
 export async function addFeedback(songId: string, kind: "like" | "dislike") {
-	await songService.incrementRadioFeedback(songId, kind);
-	recomputeRadioSchedule(`feedback-${kind}`);
+	if (!(await songService.incrementRadioFeedback(songId, kind))) return null;
+	recomputeRadioSchedule(`feedback-${kind}`, { refineWithLlm: false });
 	emit("radio.state_changed", { stationId: RADIO_STATION_ID });
 	return getStationSnapshot();
 }

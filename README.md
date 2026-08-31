@@ -30,6 +30,9 @@
 - **Gapless Playback** — next song preloads in background, zero gaps between tracks
 - **Rating & Feedback** — thumbs up/down to influence future generation
 - **Cover Art** — AI-generated vinyl-style album covers for every song
+- **Exact Cover Lyrics** — match identified source tracks through LRCLIB and verify the audio duration before generation
+- **Share Links** — publish revocable permanent or timed links without exposing private playlist controls
+- **Global Radio** — run one synchronized station and switch the genre and vocal preset used for future albums
 - **Configurable AI** — choose OpenRouter or OpenAI Codex (ChatGPT subscription) for lyrics and metadata
 
 ## Screenshots
@@ -236,7 +239,7 @@ Infinitune requires external AI services running on your network:
 | Service | Role | Default Port |
 |:--------|:-----|:-------------|
 | **ACE-Step 1.5** | Text-to-music synthesis | `:8001` |
-| **Inference.sh CLI** | Cover art generation | local CLI |
+| **Inference.sh CLI** | Cover art generation (bundled in the container; install locally for development) | local CLI |
 | **LRCLIB** *(optional)* | Exact lyrics for identified cover sources | HTTPS |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
 | **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
@@ -260,7 +263,8 @@ INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
 # Optional — public LRCLIB instance used for exact cover lyrics
 LRCLIB_URL=https://lrclib.net
 
-# Optional downloaded cover-source cache bounds (defaults: 1 GiB / 168 hours)
+# Optional downloaded cover-source cache bounds (defaults: 1 GiB / 168 hours).
+# The byte limit is clamped to 200 MiB + 64 KiB for one safe transcode slot.
 REIMAGINE_CACHE_MAX_BYTES=1073741824
 REIMAGINE_CACHE_TTL_HOURS=168
 

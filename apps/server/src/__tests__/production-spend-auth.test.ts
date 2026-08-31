@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 	answerDirectorQuestion: vi.fn(),
 	settingsGetAll: vi.fn(),
 	settingsSet: vi.fn(),
+	addFeedback: vi.fn(),
 	topUpInventory: vi.fn(),
 	submitRadioRequest: vi.fn(),
 }));
@@ -50,9 +51,17 @@ vi.mock("../events/event-bus", () => ({
 }));
 
 vi.mock("../middleware/limiters", () => ({
+	credentialMutationLimiter: async (
+		_context: unknown,
+		next: () => Promise<void>,
+	) => next(),
 	generationLimiter: async (_context: unknown, next: () => Promise<void>) =>
 		next(),
 	llmLimiter: async (_context: unknown, next: () => Promise<void>) => next(),
+	radioControlLimiter: async (_context: unknown, next: () => Promise<void>) =>
+		next(),
+	radioFeedbackLimiter: async (_context: unknown, next: () => Promise<void>) =>
+		next(),
 	radioRequestLimiter: async (_context: unknown, next: () => Promise<void>) =>
 		next(),
 	stationPresetLimiter: async (_context: unknown, next: () => Promise<void>) =>
@@ -116,7 +125,7 @@ vi.mock("../services/radio-station-presets-service", () => ({
 
 vi.mock("../services/radio-station-service", () => ({
 	activateListener: vi.fn(),
-	addFeedback: vi.fn(),
+	addFeedback: mocks.addFeedback,
 	deactivateListener: vi.fn(),
 	getStationSnapshot: vi.fn().mockReturnValue({}),
 	heartbeatListener: vi.fn(),
@@ -213,6 +222,7 @@ describe("production OpenRouter spend authentication", () => {
 		});
 		mocks.answerDirectorQuestion.mockResolvedValue({ messageId: "message-1" });
 		mocks.settingsGetAll.mockResolvedValue({});
+		mocks.addFeedback.mockResolvedValue({ station: {} });
 		mocks.topUpInventory.mockResolvedValue({ created: 1 });
 		mocks.submitRadioRequest.mockResolvedValue({ id: "request-1" });
 	});
@@ -456,6 +466,21 @@ describe("production OpenRouter spend authentication", () => {
 		expect(mocks.settingsSet).toHaveBeenCalledTimes(2);
 	});
 
+	it("reports when ACE_STEP_URL controls the effective settings value", async () => {
+		vi.stubEnv("ACE_STEP_URL", "http://ace-from-env:8001");
+		mocks.settingsGetAll.mockResolvedValue({
+			aceStepUrl: "http://ace-from-db:8001",
+		});
+
+		const response = await settingsRoutes.request("/");
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			aceStepUrl: "http://ace-from-env:8001",
+			aceStepUrlManagedByEnvironment: "true",
+		});
+	});
+
 	it("guards manual radio generation in production", async () => {
 		const forceResponse = await radioRoutes.request("/force-generate-album", {
 			method: "POST",
@@ -488,6 +513,29 @@ describe("production OpenRouter spend authentication", () => {
 		expect(seekResponse.status).toBe(401);
 		expect(skipResponse.status).toBe(401);
 		expect(mocks.requireUserActor).toHaveBeenCalledTimes(3);
+	});
+
+	it("requires production authentication for radio feedback", async () => {
+		const response = await requestJson(radioRoutes, "/feedback", "POST", {
+			songId: "song-1",
+			kind: "like",
+		});
+
+		expect(response.status).toBe(401);
+		expect(mocks.addFeedback).not.toHaveBeenCalled();
+	});
+
+	it("returns 404 when an authenticated radio feedback target is not eligible", async () => {
+		mocks.requireUserActor.mockResolvedValue(authenticated);
+		mocks.addFeedback.mockResolvedValue(null);
+
+		const response = await requestJson(radioRoutes, "/feedback", "POST", {
+			songId: "missing-song",
+			kind: "like",
+		});
+
+		expect(response.status).toBe(404);
+		expect(await response.json()).toEqual({ error: "Radio song not found" });
 	});
 
 	it("allows authenticated production radio activation and skipping", async () => {
@@ -571,6 +619,7 @@ describe("production OpenRouter spend authentication", () => {
 		["play", "Radio playback must use POST /api/radio/play"],
 		["seek", "Radio seeking must use POST /api/radio/seek"],
 		["skip", "Radio skipping must use POST /api/radio/skip"],
+		["feedback", "Radio feedback must use POST /api/radio/feedback"],
 	] as const)(
 		"rejects production WebSocket %s commands that can trigger generation",
 		async (type, message) => {
@@ -583,6 +632,7 @@ describe("production OpenRouter spend authentication", () => {
 			await vi.waitFor(() => {
 				expect(socket.sent).toContainEqual({ type: "error", message });
 			});
+			expect(mocks.addFeedback).not.toHaveBeenCalled();
 
 			socket.listeners.get("close")?.();
 		},

@@ -119,6 +119,22 @@ describe("findLrclibLyrics", () => {
 		expect(match?.id).toBe(3);
 	});
 
+	it("ignores malformed records when another exact match is valid", async () => {
+		const request = vi.fn<LrclibRequest>(async () =>
+			jsonResponse([
+				{ id: "malformed", plainLyrics: "bad record" },
+				searchResult({ id: 7 }),
+			]),
+		);
+
+		const match = await findLrclibLyrics(
+			{ trackName: "Dear Mr. President", artistName: "P!nk" },
+			{ request },
+		);
+
+		expect(match?.id).toBe(7);
+	});
+
 	it("rejects instrumental, empty, and overlong plain lyrics", async () => {
 		const request = vi.fn<LrclibRequest>(async () =>
 			jsonResponse([

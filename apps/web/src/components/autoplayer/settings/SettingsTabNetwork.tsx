@@ -8,6 +8,7 @@ export interface NetworkTabProps {
 	setOllamaUrl: (v: string) => void;
 	aceStepUrl: string;
 	setAceStepUrl: (v: string) => void;
+	aceStepUrlManagedByEnvironment: boolean;
 	imageProvider: string;
 	ollamaTest: TestStatus;
 	aceTest: TestStatus;
@@ -18,6 +19,10 @@ export interface NetworkTabProps {
 	openrouterAuth: {
 		configured: boolean;
 		source: "stored" | "environment" | "runtime" | "fallback" | null;
+		canManage: boolean;
+		setupAllowed: boolean;
+		claimRequired: boolean;
+		managedExternally: boolean;
 	};
 	codexAuthSession: {
 		id: string;
@@ -40,11 +45,29 @@ const inputClass =
 const DEVICE_AUTH_VERIFICATION_URL_REGEX =
 	/^https?:\/\/auth\.openai\.com\/codex\/device/i;
 
+export type OpenRouterCredentialUiMode =
+	| "owner"
+	| "setup"
+	| "claim"
+	| "external"
+	| "shared";
+
+export function getOpenRouterCredentialUiMode(
+	status: NetworkTabProps["openrouterAuth"],
+): OpenRouterCredentialUiMode {
+	if (status.managedExternally) return "external";
+	if (status.canManage) return "owner";
+	if (status.claimRequired) return "claim";
+	if (status.setupAllowed) return "setup";
+	return "shared";
+}
+
 export function SettingsTabNetwork({
 	ollamaUrl,
 	setOllamaUrl,
 	aceStepUrl,
 	setAceStepUrl,
+	aceStepUrlManagedByEnvironment,
 	imageProvider,
 	ollamaTest,
 	aceTest,
@@ -62,6 +85,8 @@ export function SettingsTabNetwork({
 	onTest,
 }: NetworkTabProps) {
 	const [openrouterApiKey, setOpenrouterApiKey] = useState("");
+	const openrouterCredentialMode =
+		getOpenRouterCredentialUiMode(openrouterAuth);
 	const [openrouterKeyStatus, setOpenrouterKeyStatus] = useState<{
 		state: "idle" | "saving" | "success" | "error";
 		message?: string;
@@ -74,7 +99,10 @@ export function SettingsTabNetwork({
 			setOpenrouterApiKey("");
 			setOpenrouterKeyStatus({
 				state: "success",
-				message: "OpenRouter key saved.",
+				message:
+					openrouterCredentialMode === "claim"
+						? "OpenRouter credential management claimed."
+						: "OpenRouter key saved.",
 			});
 		} catch (error) {
 			setOpenrouterKeyStatus({
@@ -164,6 +192,11 @@ export function SettingsTabNetwork({
 
 				<SettingsField
 					label="ACE-Step URL"
+					hint={
+						aceStepUrlManagedByEnvironment
+							? "Managed by the ACE_STEP_URL environment variable"
+							: undefined
+					}
 					trailing={
 						<TestButton provider="ace-step" status={aceTest} onTest={onTest} />
 					}
@@ -172,6 +205,7 @@ export function SettingsTabNetwork({
 						className={inputClass}
 						placeholder="http://192.168.10.242:8001"
 						value={aceStepUrl}
+						disabled={aceStepUrlManagedByEnvironment}
 						onChange={(e) => setAceStepUrl(e.target.value)}
 					/>
 				</SettingsField>
@@ -233,43 +267,72 @@ export function SettingsTabNetwork({
 					</div>
 				</SettingsField>
 
-				<SettingsField label="Replace API Key">
-					<Input
-						type="password"
-						autoComplete="new-password"
-						className={inputClass}
-						placeholder="PASTE A NEW OPENROUTER KEY"
-						value={openrouterApiKey}
-						onChange={(event) => setOpenrouterApiKey(event.target.value)}
-					/>
-					<p className="mt-1 text-[10px] font-bold uppercase text-white/40">
-						THE BROWSER CANNOT READ A SAVED KEY. THE SERVER STORES IT IN PI
-						AUTH.
-					</p>
-				</SettingsField>
-
-				<div className="flex gap-2">
-					<button
-						type="button"
-						className="flex-1 h-10 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white hover:bg-white/10 disabled:opacity-30"
-						onClick={() => void saveOpenRouterKey()}
-						disabled={
-							!openrouterApiKey.trim() || openrouterKeyStatus.state === "saving"
-						}
-					>
-						SAVE KEY
-					</button>
-					{openrouterAuth.source === "stored" && (
-						<button
-							type="button"
-							className="h-10 px-4 border-4 border-red-500/30 bg-transparent font-mono text-xs font-black uppercase text-red-300 hover:bg-red-950/40 disabled:opacity-30"
-							onClick={() => void clearOpenRouterKey()}
-							disabled={openrouterKeyStatus.state === "saving"}
+				{openrouterCredentialMode === "owner" ||
+				openrouterCredentialMode === "setup" ||
+				openrouterCredentialMode === "claim" ? (
+					<>
+						<SettingsField
+							label={
+								openrouterCredentialMode === "claim"
+									? "Current API Key"
+									: openrouterAuth.configured
+										? "Replace API Key"
+										: "Add API Key"
+							}
 						>
-							REMOVE STORED KEY
-						</button>
-					)}
-				</div>
+							<Input
+								type="password"
+								autoComplete="new-password"
+								className={inputClass}
+								placeholder={
+									openrouterCredentialMode === "claim"
+										? "PASTE THE CURRENT OPENROUTER KEY"
+										: "PASTE A NEW OPENROUTER KEY"
+								}
+								value={openrouterApiKey}
+								onChange={(event) => setOpenrouterApiKey(event.target.value)}
+							/>
+							<p className="mt-1 text-[10px] font-bold uppercase text-white/40">
+								{openrouterCredentialMode === "claim"
+									? "ENTER THE EXISTING KEY ONCE TO CLAIM MANAGEMENT WITHOUT REPLACING IT."
+									: "THE BROWSER CANNOT READ A SAVED KEY. THE SERVER STORES IT IN PI AUTH."}
+							</p>
+						</SettingsField>
+
+						<div className="flex gap-2">
+							<button
+								type="button"
+								className="flex-1 h-10 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white hover:bg-white/10 disabled:opacity-30"
+								onClick={() => void saveOpenRouterKey()}
+								disabled={
+									!openrouterApiKey.trim() ||
+									openrouterKeyStatus.state === "saving"
+								}
+							>
+								{openrouterCredentialMode === "claim"
+									? "CLAIM MANAGEMENT"
+									: "SAVE KEY"}
+							</button>
+							{openrouterCredentialMode === "owner" &&
+								openrouterAuth.source === "stored" && (
+									<button
+										type="button"
+										className="h-10 px-4 border-4 border-red-500/30 bg-transparent font-mono text-xs font-black uppercase text-red-300 hover:bg-red-950/40 disabled:opacity-30"
+										onClick={() => void clearOpenRouterKey()}
+										disabled={openrouterKeyStatus.state === "saving"}
+									>
+										REMOVE STORED KEY
+									</button>
+								)}
+						</div>
+					</>
+				) : (
+					<div className="px-3 py-2 border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/55">
+						{openrouterCredentialMode === "external"
+							? "MANAGED OUTSIDE INFINITUNE. UPDATE THE SERVER ENVIRONMENT TO CHANGE THIS CREDENTIAL."
+							: "SHARED SERVER CREDENTIAL. ONLY ITS OWNER CAN REPLACE OR REMOVE IT."}
+					</div>
+				)}
 				{openrouterKeyStatus.message && (
 					<div
 						className={`px-3 py-2 border-4 border-white/20 font-mono text-xs font-bold uppercase ${

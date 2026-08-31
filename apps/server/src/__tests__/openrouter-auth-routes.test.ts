@@ -4,9 +4,12 @@ const mocks = vi.hoisted(() => ({
 	requireUserActor: vi.fn(),
 	enhancePlaylistPrompt: vi.fn(),
 	getOpenRouterApiKey: vi.fn(),
-	getOpenRouterAuthStatus: vi.fn(),
+	getLocalOpenRouterCredentialStatus: vi.fn(),
+	getOpenRouterCredentialStatus: vi.fn(),
 	saveOpenRouterApiKey: vi.fn(),
+	saveOpenRouterApiKeyForUser: vi.fn(),
 	clearOpenRouterApiKey: vi.fn(),
+	clearOpenRouterApiKeyForUser: vi.fn(),
 }));
 
 vi.mock("../auth/actor", () => ({
@@ -21,39 +24,66 @@ vi.mock("../external/llm", async (importOriginal) => {
 	};
 });
 
-vi.mock("../external/openrouter-auth", () => ({
-	getOpenRouterApiKey: mocks.getOpenRouterApiKey,
-	getOpenRouterAuthStatus: mocks.getOpenRouterAuthStatus,
-	saveOpenRouterApiKey: mocks.saveOpenRouterApiKey,
-	clearOpenRouterApiKey: mocks.clearOpenRouterApiKey,
-}));
+vi.mock("../external/openrouter-auth", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../external/openrouter-auth")>();
+	return {
+		...actual,
+		getOpenRouterApiKey: mocks.getOpenRouterApiKey,
+		getLocalOpenRouterCredentialStatus:
+			mocks.getLocalOpenRouterCredentialStatus,
+		getOpenRouterCredentialStatus: mocks.getOpenRouterCredentialStatus,
+		saveOpenRouterApiKey: mocks.saveOpenRouterApiKey,
+		saveOpenRouterApiKeyForUser: mocks.saveOpenRouterApiKeyForUser,
+		clearOpenRouterApiKey: mocks.clearOpenRouterApiKey,
+		clearOpenRouterApiKeyForUser: mocks.clearOpenRouterApiKeyForUser,
+	};
+});
 
+import {
+	OpenRouterApiKeyValidationError,
+	OpenRouterCredentialAccessError,
+} from "../external/openrouter-auth";
 import autoplayerRoutes from "../routes/autoplayer";
 
 describe("OpenRouter credential routes", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.requireUserActor.mockResolvedValue(null);
-		mocks.getOpenRouterAuthStatus.mockResolvedValue({
+		const status = {
 			configured: false,
 			source: null,
-		});
+			canManage: true,
+			setupAllowed: true,
+			claimRequired: false,
+			managedExternally: false,
+		};
+		mocks.getLocalOpenRouterCredentialStatus.mockResolvedValue(status);
+		mocks.getOpenRouterCredentialStatus.mockResolvedValue(status);
 		mocks.saveOpenRouterApiKey.mockResolvedValue({
 			configured: true,
 			source: "stored",
+		});
+		mocks.saveOpenRouterApiKeyForUser.mockResolvedValue({
+			...status,
+			configured: true,
+			source: "stored",
+			setupAllowed: false,
 		});
 		mocks.clearOpenRouterApiKey.mockResolvedValue({
 			configured: false,
 			source: null,
 		});
+		mocks.clearOpenRouterApiKeyForUser.mockResolvedValue(status);
 		mocks.enhancePlaylistPrompt.mockResolvedValue("enhanced");
 	});
 
 	afterEach(() => vi.unstubAllEnvs());
 
-	it("requires a user for production credential mutations", async () => {
+	it("requires a user for production credential status and mutations", async () => {
 		vi.stubEnv("NODE_ENV", "production");
 
+		const statusResponse = await autoplayerRoutes.request("/openrouter-auth");
 		const saveResponse = await autoplayerRoutes.request("/openrouter-auth", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -63,10 +93,13 @@ describe("OpenRouter credential routes", () => {
 			method: "DELETE",
 		});
 
+		expect(statusResponse.status).toBe(401);
 		expect(saveResponse.status).toBe(401);
 		expect(clearResponse.status).toBe(401);
 		expect(mocks.saveOpenRouterApiKey).not.toHaveBeenCalled();
+		expect(mocks.saveOpenRouterApiKeyForUser).not.toHaveBeenCalled();
 		expect(mocks.clearOpenRouterApiKey).not.toHaveBeenCalled();
+		expect(mocks.clearOpenRouterApiKeyForUser).not.toHaveBeenCalled();
 	});
 
 	it.each([
@@ -199,11 +232,73 @@ describe("OpenRouter credential routes", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(mocks.saveOpenRouterApiKey).toHaveBeenCalledWith("placeholder");
+		expect(mocks.saveOpenRouterApiKeyForUser).toHaveBeenCalledWith(
+			"placeholder",
+			"user-1",
+		);
+	});
+
+	it("keeps shared OpenRouter use available while denying non-owner mutation", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		mocks.requireUserActor.mockResolvedValue({
+			kind: "user",
+			userId: "user-2",
+		});
+		mocks.saveOpenRouterApiKeyForUser.mockRejectedValue(
+			new OpenRouterCredentialAccessError(),
+		);
+
+		const mutationResponse = await autoplayerRoutes.request(
+			"/openrouter-auth",
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ apiKey: "placeholder" }),
+			},
+		);
+		const useResponse = await autoplayerRoutes.request("/enhance-prompt", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				provider: "openrouter",
+				model: "auto",
+				prompt: "playlist",
+			}),
+		});
+
+		expect(mutationResponse.status).toBe(403);
+		expect(await mutationResponse.json()).toEqual({
+			error: "Credential management is not available",
+		});
+		expect(useResponse.status).toBe(200);
+	});
+
+	it("returns invalid API keys as client errors", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		mocks.requireUserActor.mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		mocks.saveOpenRouterApiKeyForUser.mockRejectedValue(
+			new OpenRouterApiKeyValidationError(
+				"OpenRouter API key must not be empty",
+			),
+		);
+
+		const response = await autoplayerRoutes.request("/openrouter-auth", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ apiKey: " " }),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({
+			error: "OpenRouter API key must not be empty",
+		});
 	});
 
 	it("returns a bounded error when auth status storage fails", async () => {
-		mocks.getOpenRouterAuthStatus.mockRejectedValue(
+		mocks.getLocalOpenRouterCredentialStatus.mockRejectedValue(
 			new Error("storage detail"),
 		);
 

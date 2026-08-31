@@ -24,7 +24,7 @@ const LrclibSearchResultSchema = z.object({
 	plainLyrics: z.string().nullable(),
 });
 
-const LrclibSearchResponseSchema = z.array(LrclibSearchResultSchema).max(500);
+const LrclibSearchResponseSchema = z.array(z.unknown()).max(500);
 
 export interface LrclibLyricsQuery {
 	trackName: string;
@@ -239,7 +239,10 @@ export async function findLrclibLyrics(
 		const expectedDuration = parsedQuery.data.durationSeconds;
 		const matches: RankedMatch[] = [];
 
-		for (const candidate of parsedResponse.data) {
+		for (const value of parsedResponse.data) {
+			const parsedCandidate = LrclibSearchResultSchema.safeParse(value);
+			if (!parsedCandidate.success) continue;
+			const candidate = parsedCandidate.data;
 			if (
 				candidate.instrumental ||
 				candidate.plainLyrics === null ||

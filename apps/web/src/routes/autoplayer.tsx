@@ -25,22 +25,17 @@ import {
 	useRadioSkip,
 	useRadioState,
 } from "@/integrations/api/hooks";
-import { API_URL, RADIO_WS_URL, resolveApiMediaUrl } from "@/lib/endpoints";
+import { API_URL, resolveApiMediaUrl } from "@/lib/endpoints";
 import { formatTime } from "@/lib/format-time";
+import {
+	getTabListenerId,
+	rejoinActiveListener,
+	useRadioSocket,
+} from "@/lib/radio-socket";
 
 export const Route = createFileRoute("/autoplayer")({
 	component: AutoplayerPage,
 });
-
-function getListenerId() {
-	if (typeof window === "undefined") return "server";
-	const key = "infinitune-radio-listener-id";
-	const existing = window.localStorage.getItem(key);
-	if (existing) return existing;
-	const next = crypto.randomUUID();
-	window.localStorage.setItem(key, next);
-	return next;
-}
 
 function coverUrl(song: RadioSnapshot["currentSong"]) {
 	return (
@@ -72,90 +67,8 @@ function RadioCover({ song }: { song: RadioSnapshot["currentSong"] }) {
 	);
 }
 
-function useRadioSocket(
-	listenerId: string,
-	onSnapshot: (snapshot: RadioSnapshot) => void,
-) {
-	const wsRef = useRef<WebSocket | null>(null);
-
-	useEffect(() => {
-		let disposed = false;
-		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-		function connect() {
-			if (disposed) return;
-			const ws = new WebSocket(RADIO_WS_URL);
-			wsRef.current = ws;
-			ws.onmessage = (event) => {
-				try {
-					const payload = JSON.parse(event.data) as Partial<RadioSnapshot> & {
-						type?: string;
-					};
-					if (payload.station && payload.schedule) {
-						const currentSong = payload.currentSong
-							? {
-									...payload.currentSong,
-									audioUrl: resolveApiMediaUrl(payload.currentSong.audioUrl),
-									cover: payload.currentSong.cover
-										? {
-												pngUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.pngUrl,
-												),
-												webpUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.webpUrl,
-												),
-												jxlUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.jxlUrl,
-												),
-											}
-										: null,
-								}
-							: null;
-						onSnapshot({
-							station: payload.station,
-							currentSong,
-							schedule: payload.schedule.map((item) => ({
-								...item,
-								audioUrl: resolveApiMediaUrl(item.audioUrl),
-							})),
-						});
-					}
-				} catch {
-					// Ignore non-state messages.
-				}
-			};
-			ws.onclose = () => {
-				wsRef.current = null;
-				if (!disposed) reconnectTimer = setTimeout(connect, 1500);
-			};
-			ws.onerror = () => ws.close();
-		}
-
-		connect();
-		return () => {
-			disposed = true;
-			if (reconnectTimer) clearTimeout(reconnectTimer);
-			wsRef.current?.close();
-		};
-	}, [onSnapshot]);
-
-	const send = useCallback(
-		(payload: Record<string, unknown>) => {
-			const ws = wsRef.current;
-			if (ws?.readyState === WebSocket.OPEN) {
-				ws.send(JSON.stringify({ listenerId, ...payload }));
-				return true;
-			}
-			return false;
-		},
-		[listenerId],
-	);
-
-	return send;
-}
-
 function AutoplayerPage() {
-	const listenerId = useMemo(getListenerId, []);
+	const listenerId = useMemo(getTabListenerId, []);
 	const initialState = useRadioState();
 	const [snapshot, setSnapshot] = useState<RadioSnapshot | null>(null);
 	const [joined, setJoined] = useState(false);
@@ -166,7 +79,22 @@ function AutoplayerPage() {
 	const skipRadio = useRadioSkip();
 	const feedbackRadio = useRadioFeedback();
 
-	const send = useRadioSocket(listenerId, setSnapshot);
+	const rejoinRef = useRef(false);
+	const rejoinRadio = useCallback(async () => {
+		const nextSnapshot = await rejoinActiveListener(
+			listenerId,
+			rejoinRef,
+			playRadio,
+			pauseRadio,
+		);
+		if (nextSnapshot) setSnapshot(nextSnapshot);
+	}, [listenerId, pauseRadio, playRadio]);
+	const { cancelRejoin, send } = useRadioSocket(
+		listenerId,
+		setSnapshot,
+		rejoinRef,
+		rejoinRadio,
+	);
 	const state = snapshot ?? initialState ?? null;
 	const currentSong = state?.currentSong ?? null;
 	const durationSeconds = (currentSong?.durationMs ?? 180_000) / 1000;
@@ -207,14 +135,16 @@ function AutoplayerPage() {
 
 	const handlePlay = useCallback(async () => {
 		setSnapshot(await playRadio({ listenerId }));
+		rejoinRef.current = true;
 		setJoined(true);
 	}, [listenerId, playRadio]);
 
 	const handlePause = useCallback(async () => {
+		cancelRejoin();
 		setJoined(false);
 		audioRef.current?.pause();
 		setSnapshot(await pauseRadio({ listenerId }));
-	}, [listenerId, pauseRadio]);
+	}, [cancelRejoin, listenerId, pauseRadio]);
 
 	const handleSkip = useCallback(async () => {
 		setSnapshot(await skipRadio({ listenerId }));
@@ -223,11 +153,9 @@ function AutoplayerPage() {
 	const handleFeedback = useCallback(
 		async (kind: "like" | "dislike") => {
 			if (!currentSong) return;
-			if (!send({ type: "feedback", songId: currentSong.id, kind })) {
-				setSnapshot(await feedbackRadio({ songId: currentSong.id, kind }));
-			}
+			setSnapshot(await feedbackRadio({ songId: currentSong.id, kind }));
 		},
-		[currentSong, feedbackRadio, send],
+		[currentSong, feedbackRadio],
 	);
 
 	return (

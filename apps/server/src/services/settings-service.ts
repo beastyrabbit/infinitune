@@ -6,7 +6,15 @@ import { db } from "../db/index";
 import { settings } from "../db/schema";
 import { emit } from "../events/event-bus";
 
-const SENSITIVE_SETTING_KEYS = new Set(["openrouterApiKey"]);
+const OPENROUTER_CREDENTIAL_OWNER_KEY = "openrouterCredentialOwnerUserId";
+const SENSITIVE_SETTING_KEYS = new Set([
+	"openrouterApiKey",
+	OPENROUTER_CREDENTIAL_OWNER_KEY,
+]);
+
+export type OpenRouterCredentialOwnerClaim =
+	| { status: "owner"; claimed: boolean }
+	| { status: "other"; claimed: false };
 
 export function isSensitiveSettingKey(key: string): boolean {
 	return SENSITIVE_SETTING_KEYS.has(key);
@@ -63,6 +71,38 @@ export async function get(key: string): Promise<string | null> {
 	if (isSensitiveSettingKey(key)) return null;
 	const all = await getAll();
 	return Object.hasOwn(all, key) ? all[key] : null;
+}
+
+export async function getOpenRouterCredentialOwnerUserId(): Promise<
+	string | null
+> {
+	const [row] = await db
+		.select({ value: settings.value })
+		.from(settings)
+		.where(eq(settings.key, OPENROUTER_CREDENTIAL_OWNER_KEY))
+		.limit(1);
+	return row?.value ?? null;
+}
+
+export async function claimOpenRouterCredentialOwner(
+	userId: string,
+): Promise<OpenRouterCredentialOwnerClaim> {
+	if (!userId) throw new Error("OpenRouter credential owner must not be empty");
+
+	const inserted = await db
+		.insert(settings)
+		.values({ key: OPENROUTER_CREDENTIAL_OWNER_KEY, value: userId })
+		.onConflictDoNothing({ target: settings.key })
+		.returning({ value: settings.value });
+
+	if (inserted.length > 0) {
+		invalidateCache();
+		return { status: "owner", claimed: true };
+	}
+
+	return (await getOpenRouterCredentialOwnerUserId()) === userId
+		? { status: "owner", claimed: false }
+		: { status: "other", claimed: false };
 }
 
 export async function migrateSensitiveSetting(

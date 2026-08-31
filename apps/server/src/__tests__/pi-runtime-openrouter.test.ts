@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,13 +37,16 @@ import {
 describe("OpenRouter Pi runtime", () => {
 	let agentDir: string;
 	let previousAgentDir: string | undefined;
+	let previousCodexHome: string | undefined;
 	let previousEnvironmentKey: string | undefined;
 
 	beforeEach(() => {
 		agentDir = mkdtempSync(path.join(tmpdir(), "infinitune-pi-openrouter-"));
 		previousAgentDir = process.env.INFINITUNE_PI_AGENT_DIR;
+		previousCodexHome = process.env.CODEX_HOME;
 		previousEnvironmentKey = process.env.OPENROUTER_API_KEY;
 		process.env.INFINITUNE_PI_AGENT_DIR = agentDir;
+		process.env.CODEX_HOME = path.join(agentDir, "codex");
 		delete process.env.OPENROUTER_API_KEY;
 		mocks.completeSimple.mockReset();
 		mocks.createAgentSession.mockReset();
@@ -63,6 +66,11 @@ describe("OpenRouter Pi runtime", () => {
 			delete process.env.OPENROUTER_API_KEY;
 		} else {
 			process.env.OPENROUTER_API_KEY = previousEnvironmentKey;
+		}
+		if (previousCodexHome === undefined) {
+			delete process.env.CODEX_HOME;
+		} else {
+			process.env.CODEX_HOME = previousCodexHome;
 		}
 		rmSync(agentDir, { recursive: true, force: true });
 	});
@@ -178,6 +186,40 @@ describe("OpenRouter Pi runtime", () => {
 		stale.reload();
 
 		expect(await stale.getApiKey("openrouter")).toBe("current-openrouter-key");
+	});
+
+	it("keeps stored OpenRouter auth when seeding Codex auth", async () => {
+		const initial = createPiRuntimeHandles().authStorage;
+		initial.set("openrouter", {
+			type: "api_key",
+			key: "stored-openrouter-key",
+		});
+		expect(initial.drainErrors()).toEqual([]);
+
+		mkdirSync(process.env.CODEX_HOME as string, { recursive: true });
+		const payload = Buffer.from(
+			JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 }),
+		).toString("base64url");
+		writeFileSync(
+			path.join(process.env.CODEX_HOME as string, "auth.json"),
+			JSON.stringify({
+				tokens: {
+					access_token: `header.${payload}.signature`,
+					refresh_token: "codex-refresh-token",
+					account_id: "account-1",
+				},
+			}),
+			"utf8",
+		);
+
+		const seeded = createPiRuntimeHandles().authStorage;
+
+		expect(await seeded.getApiKey("openrouter")).toBe("stored-openrouter-key");
+		expect(seeded.get("openai-codex")).toMatchObject({
+			type: "oauth",
+			refresh: "codex-refresh-token",
+			accountId: "account-1",
+		});
 	});
 
 	it("rejects an unknown OpenRouter model before making a request", async () => {

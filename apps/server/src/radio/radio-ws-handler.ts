@@ -171,14 +171,19 @@ export function handleRadioConnection(ws: WebSocket): void {
 						});
 						break;
 					case "feedback":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio feedback must use POST /api/radio/feedback",
+							});
+							break;
+						}
 						if (
 							typeof msg.songId === "string" &&
 							(msg.kind === "like" || msg.kind === "dislike")
 						) {
-							send(ws, {
-								type: "state",
-								...(await addFeedback(msg.songId, msg.kind)),
-							});
+							const snapshot = await addFeedback(msg.songId, msg.kind);
+							if (snapshot) send(ws, { type: "state", ...snapshot });
 						}
 						break;
 					case "request":

@@ -16,6 +16,7 @@ import {
 	parseJsonWithRepair,
 } from "@mariozechner/pi-ai";
 import {
+	type AuthCredential,
 	AuthStorage,
 	createAgentSession,
 	createExtensionRuntime,
@@ -40,10 +41,12 @@ const DEFAULT_PI_AGENT_DIR = path.join(os.homedir(), ".infinitune", "pi");
 const OPENROUTER_PROVIDER = "openrouter";
 const LEGACY_OPENROUTER_SETTING = "openrouterApiKey";
 const MAX_OPENROUTER_API_KEY_LENGTH = 4_096;
-const CODEX_CLI_AUTH_PATH = path.join(
-	process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
-	"auth.json",
-);
+function getCodexCliAuthPath(): string {
+	return path.join(
+		process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
+		"auth.json",
+	);
+}
 
 export function getInfinitunePiAgentDir(): string {
 	return process.env.INFINITUNE_PI_AGENT_DIR || DEFAULT_PI_AGENT_DIR;
@@ -125,11 +128,15 @@ function hasUsableOpenAiCodexAuth(value: unknown): boolean {
 	);
 }
 
-function seedPiAuthFromCodexCli(authPath: string): void {
-	const piAuth = readJsonObject(authPath) ?? {};
-	if (hasUsableOpenAiCodexAuth(piAuth["openai-codex"])) return;
+function throwAuthStorageErrors(authStorage: AuthStorage): void {
+	const [writeError] = authStorage.drainErrors();
+	if (writeError) throw writeError;
+}
 
-	const codexAuth = readJsonObject(CODEX_CLI_AUTH_PATH);
+function seedPiAuthFromCodexCli(authStorage: AuthStorage): void {
+	if (hasUsableOpenAiCodexAuth(authStorage.get("openai-codex"))) return;
+
+	const codexAuth = readJsonObject(getCodexCliAuthPath());
 	const tokens =
 		codexAuth?.tokens &&
 		typeof codexAuth.tokens === "object" &&
@@ -141,19 +148,15 @@ function seedPiAuthFromCodexCli(authPath: string): void {
 	if (typeof access !== "string" || typeof refresh !== "string") return;
 
 	const accountId = tokens?.account_id;
-	piAuth["openai-codex"] = {
+	const credential: AuthCredential = {
 		type: "oauth",
 		access,
 		refresh,
 		expires: getJwtExpiryMs(access) ?? Date.now() - 1,
 		...(typeof accountId === "string" ? { accountId } : {}),
 	};
-	fs.writeFileSync(authPath, JSON.stringify(piAuth, null, 2), "utf8");
-	try {
-		fs.chmodSync(authPath, 0o600);
-	} catch {
-		// Best effort only; AuthStorage also enforces permissions when it writes.
-	}
+	authStorage.set("openai-codex", credential);
+	throwAuthStorageErrors(authStorage);
 }
 
 export function createPiRuntimeHandles(): PiRuntimeHandles {
@@ -161,16 +164,13 @@ export function createPiRuntimeHandles(): PiRuntimeHandles {
 	fs.mkdirSync(agentDir, { recursive: true });
 	const authPath = path.join(agentDir, "auth.json");
 	const modelsJsonPath = path.join(agentDir, "models.json");
-	seedPiAuthFromCodexCli(authPath);
 	const authStorage = AuthStorage.create(authPath);
+	// AuthStorage merges provider updates under a file lock. Seeding through it
+	// prevents a concurrent OpenRouter save from being lost to a raw JSON rewrite.
+	seedPiAuthFromCodexCli(authStorage);
 	pinStoredOpenRouterKeyAsLiteral(authStorage);
 	const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath);
 	return { agentDir, authPath, modelsJsonPath, authStorage, modelRegistry };
-}
-
-function throwAuthStorageErrors(authStorage: AuthStorage): void {
-	const [writeError] = authStorage.drainErrors();
-	if (writeError) throw writeError;
 }
 
 export async function migrateLegacyOpenRouterCredential(

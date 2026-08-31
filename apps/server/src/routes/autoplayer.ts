@@ -8,7 +8,7 @@ import {
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
 import { getModels } from "@mariozechner/pi-ai";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { requireUserActor } from "../auth/actor";
 import { codexAppServerClient } from "../external/codex-app-server-client";
 import {
@@ -39,13 +39,18 @@ import {
 } from "../external/llm";
 import {
 	clearOpenRouterApiKey,
+	clearOpenRouterApiKeyForUser,
+	getLocalOpenRouterCredentialStatus,
 	getOpenRouterApiKey,
-	getOpenRouterAuthStatus,
+	getOpenRouterCredentialStatus,
+	OpenRouterApiKeyValidationError,
+	OpenRouterCredentialAccessError,
 	saveOpenRouterApiKey,
+	saveOpenRouterApiKeyForUser,
 } from "../external/openrouter-auth";
 import { getServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
-import { llmLimiter } from "../middleware/limiters";
+import { credentialMutationLimiter, llmLimiter } from "../middleware/limiters";
 
 interface OllamaModel {
 	name: string;
@@ -294,7 +299,7 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 
 const app = new Hono();
 
-async function canManageServerCredentials(
+async function canUseServerCredentials(
 	c: Parameters<typeof requireUserActor>[0],
 ) {
 	return (
@@ -307,8 +312,15 @@ async function canUseClientSelectedLlmProvider(
 	c: Parameters<typeof requireUserActor>[0],
 	provider: AutoplayerProvider,
 ): Promise<boolean> {
-	return provider !== "openrouter" || (await canManageServerCredentials(c));
+	return provider !== "openrouter" || (await canUseServerCredentials(c));
 }
+
+const requireCredentialMutationUser: MiddlewareHandler = async (c, next) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	await next();
+};
 
 function openRouterAuthorizationError(
 	c: Parameters<typeof requireUserActor>[0],
@@ -442,59 +454,91 @@ app.get("/openrouter-models", (c) => {
 
 app.get("/openrouter-auth", async (c) => {
 	try {
-		return c.json(await getOpenRouterAuthStatus());
+		if (process.env.NODE_ENV !== "production") {
+			return c.json(await getLocalOpenRouterCredentialStatus());
+		}
+		const actor = await requireUserActor(c);
+		if (!actor) return c.json({ error: "Unauthorized" }, 401);
+		return c.json(await getOpenRouterCredentialStatus(actor.userId));
 	} catch (error) {
 		logger.warn({ err: error }, "Failed to read OpenRouter auth status");
 		return c.json({ error: "Failed to read OpenRouter auth status" }, 500);
 	}
 });
 
-app.post("/openrouter-auth", async (c) => {
-	if (!(await canManageServerCredentials(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-	let body: { apiKey?: unknown };
-	try {
-		body = await c.req.json<{ apiKey?: unknown }>();
-	} catch {
-		return c.json({ error: "Expected a JSON request body" }, 400);
-	}
-	if (typeof body.apiKey !== "string") {
-		return c.json({ error: "Missing required field: apiKey" }, 400);
-	}
-	try {
-		return c.json(await saveOpenRouterApiKey(body.apiKey));
-	} catch (error) {
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to save OpenRouter API key",
-			},
-			500,
-		);
-	}
-});
+app.post(
+	"/openrouter-auth",
+	requireCredentialMutationUser,
+	credentialMutationLimiter,
+	async (c) => {
+		let body: { apiKey?: unknown };
+		try {
+			body = await c.req.json<{ apiKey?: unknown }>();
+		} catch {
+			return c.json({ error: "Expected a JSON request body" }, 400);
+		}
+		if (typeof body.apiKey !== "string") {
+			return c.json({ error: "Missing required field: apiKey" }, 400);
+		}
+		try {
+			if (process.env.NODE_ENV !== "production") {
+				await saveOpenRouterApiKey(body.apiKey);
+				return c.json(await getLocalOpenRouterCredentialStatus());
+			}
+			const actor = await requireUserActor(c);
+			if (!actor) return c.json({ error: "Unauthorized" }, 401);
+			return c.json(
+				await saveOpenRouterApiKeyForUser(body.apiKey, actor.userId),
+			);
+		} catch (error) {
+			if (error instanceof OpenRouterCredentialAccessError) {
+				return c.json({ error: "Credential management is not available" }, 403);
+			}
+			if (error instanceof OpenRouterApiKeyValidationError) {
+				return c.json({ error: error.message }, 400);
+			}
+			return c.json(
+				{
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to save OpenRouter API key",
+				},
+				500,
+			);
+		}
+	},
+);
 
-app.delete("/openrouter-auth", async (c) => {
-	if (!(await canManageServerCredentials(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
-	try {
-		return c.json(await clearOpenRouterApiKey());
-	} catch (error) {
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Failed to clear OpenRouter API key",
-			},
-			500,
-		);
-	}
-});
+app.delete(
+	"/openrouter-auth",
+	requireCredentialMutationUser,
+	credentialMutationLimiter,
+	async (c) => {
+		try {
+			if (process.env.NODE_ENV !== "production") {
+				await clearOpenRouterApiKey();
+				return c.json(await getLocalOpenRouterCredentialStatus());
+			}
+			const actor = await requireUserActor(c);
+			if (!actor) return c.json({ error: "Unauthorized" }, 401);
+			return c.json(await clearOpenRouterApiKeyForUser(actor.userId));
+		} catch (error) {
+			if (error instanceof OpenRouterCredentialAccessError) {
+				return c.json({ error: "Credential management is not available" }, 403);
+			}
+			return c.json(
+				{
+					error:
+						error instanceof Error
+							? error.message
+							: "Failed to clear OpenRouter API key",
+				},
+				500,
+			);
+		}
+	},
+);
 
 // ─── GET /ace-models ────────────────────────────────────────────────
 app.get("/ace-models", async (c) => {
@@ -1297,7 +1341,7 @@ app.post("/test-connection", llmLimiter, async (c) => {
 				400,
 			);
 		}
-		if (provider === "openrouter" && !(await canManageServerCredentials(c))) {
+		if (provider === "openrouter" && !(await canUseServerCredentials(c))) {
 			return openRouterAuthorizationError(c);
 		}
 		const urls = await getServiceUrls();
