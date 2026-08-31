@@ -228,6 +228,8 @@ export async function createWithMetadata(
 		sourceSongId?: string;
 		sourceAudioPath?: string;
 		sourceUrl?: string;
+		sourceTrackTitle?: string;
+		sourceArtistName?: string;
 		coverNoiseStrength?: number;
 	},
 ) {
@@ -250,6 +252,8 @@ export async function createWithMetadata(
 			sourceSongId: opts?.sourceSongId,
 			sourceAudioPath: opts?.sourceAudioPath,
 			sourceUrl: opts?.sourceUrl,
+			sourceTrackTitle: opts?.sourceTrackTitle,
+			sourceArtistName: opts?.sourceArtistName,
 			coverNoiseStrength: opts?.coverNoiseStrength,
 			...patch,
 		} as typeof songs.$inferInsert)
@@ -719,6 +723,8 @@ export async function clearCoverSource(id: string) {
 			sourceUrl: null,
 			sourceSongId: null,
 			sourceAudioPath: null,
+			sourceTrackTitle: null,
+			sourceArtistName: null,
 			coverNoiseStrength: null,
 		})
 		.where(eq(songs.id, id));

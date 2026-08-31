@@ -13,6 +13,7 @@ const DOWNLOAD_DIR = path.resolve(
 	process.env.REIMAGINE_SOURCES_DIR || "data/reimagine-sources",
 );
 const DOWNLOAD_TIMEOUT_MS = 180_000;
+const PROBE_TIMEOUT_MS = 10_000;
 const MAX_DURATION_SECONDS = 600;
 const MAX_SEARCH_QUERY_LENGTH = 200;
 
@@ -62,7 +63,44 @@ interface CacheMeta {
 	title: string;
 }
 
-function readCachedResult(cacheKey: string): YoutubeAudioResult | null {
+export type AudioDurationProbe = (filePath: string) => Promise<string>;
+
+const runFfprobe: AudioDurationProbe = async (filePath) => {
+	const { stdout } = await execFileAsync(
+		"ffprobe",
+		[
+			"-v",
+			"error",
+			"-show_entries",
+			"format=duration",
+			"-of",
+			"default=noprint_wrappers=1:nokey=1",
+			filePath,
+		],
+		{ timeout: PROBE_TIMEOUT_MS, maxBuffer: 64 * 1024 },
+	);
+	return stdout;
+};
+
+export async function probeAudioDuration(
+	filePath: string,
+	probe: AudioDurationProbe = runFfprobe,
+): Promise<number> {
+	const durationSeconds = Number((await probe(filePath)).trim());
+	if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+		throw new Error("ffprobe did not return a valid duration");
+	}
+	if (durationSeconds > MAX_DURATION_SECONDS) {
+		throw new Error(
+			`Source is longer than ${MAX_DURATION_SECONDS / 60} minutes`,
+		);
+	}
+	return durationSeconds;
+}
+
+async function readCachedResult(
+	cacheKey: string,
+): Promise<YoutubeAudioResult | null> {
 	const filePath = path.join(DOWNLOAD_DIR, `${cacheKey}.mp3`);
 	let size = 0;
 	try {
@@ -90,9 +128,18 @@ function readCachedResult(cacheKey: string): YoutubeAudioResult | null {
 			);
 		}
 	}
-	const durationSeconds = Number.isFinite(meta?.durationSeconds)
-		? (meta?.durationSeconds as number)
-		: 180;
+	let durationSeconds: number;
+	try {
+		durationSeconds = await probeAudioDuration(filePath);
+	} catch (err) {
+		logger.warn(
+			{ cacheKey, err: errSummary(err) },
+			"Cached reference audio could not be measured; discarding it",
+		);
+		fs.rmSync(filePath, { force: true });
+		fs.rmSync(path.join(DOWNLOAD_DIR, `${cacheKey}.json`), { force: true });
+		return null;
+	}
 	return {
 		filePath,
 		durationSeconds,
@@ -154,7 +201,7 @@ async function runYtDlp(
 ): Promise<YoutubeAudioResult> {
 	fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 	const cacheKey = downloadCacheKey(target);
-	const cached = readCachedResult(cacheKey);
+	const cached = await readCachedResult(cacheKey);
 	if (cached) {
 		logger.info({ target: logTarget }, "Reference audio served from cache");
 		return cached;
@@ -205,7 +252,7 @@ async function runYtDlp(
 		.map((l) => l.trim())
 		.filter(Boolean)
 		.at(-1);
-	const [durationRaw, title, filePath] = (line ?? "").split("\t");
+	const [, title, filePath] = (line ?? "").split("\t");
 	if (!filePath || !fs.existsSync(filePath)) {
 		// yt-dlp exits 0 when --match-filter skips the download
 		if (stderr.includes("duration") || stdout.includes("skipping")) {
@@ -216,12 +263,20 @@ async function runYtDlp(
 		throw new Error("yt-dlp did not produce an audio file");
 	}
 
-	const durationSeconds = Number.parseFloat(durationRaw);
+	let durationSeconds: number;
+	try {
+		durationSeconds = await probeAudioDuration(filePath);
+	} catch (err) {
+		fs.rmSync(filePath, { force: true });
+		logger.warn(
+			{ target: logTarget, err: errSummary(err) },
+			"Downloaded reference audio could not be measured",
+		);
+		throw new Error("Downloaded audio is invalid or too long");
+	}
 	const result: YoutubeAudioResult = {
 		filePath,
-		durationSeconds: Number.isFinite(durationSeconds)
-			? Math.min(durationSeconds, MAX_DURATION_SECONDS)
-			: 180,
+		durationSeconds,
 		title: title?.trim() || "External Source",
 	};
 	writeCacheMeta(cacheKey, {

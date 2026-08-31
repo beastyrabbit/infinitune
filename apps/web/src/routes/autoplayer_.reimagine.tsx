@@ -85,6 +85,8 @@ function ReimaginePage() {
 	const sourceSongs = useReimaginableSongs();
 	const [sourceMode, setSourceMode] = useState<"library" | "url">("library");
 	const [sourceUrl, setSourceUrl] = useState("");
+	const [sourceTrackTitle, setSourceTrackTitle] = useState("");
+	const [sourceArtistName, setSourceArtistName] = useState("");
 	const [urlLyrics, setUrlLyrics] = useState("");
 
 	// Restore an in-flight generation from the URL key
@@ -137,8 +139,13 @@ function ReimaginePage() {
 	const generating =
 		submitting || phase === "creating" || phase === "generating";
 
+	const hasCompleteLrclibIdentity =
+		(!sourceTrackTitle.trim() && !sourceArtistName.trim()) ||
+		Boolean(sourceTrackTitle.trim() && sourceArtistName.trim());
 	const canSubmit =
-		sourceMode === "library" ? !!sourceId : sourceUrl.trim().length > 0;
+		sourceMode === "library"
+			? !!sourceId
+			: sourceUrl.trim().length > 0 && hasCompleteLrclibIdentity;
 
 	const handleGenerate = useCallback(async () => {
 		if (!canSubmit || !style.trim() || generating) return;
@@ -160,6 +167,8 @@ function ReimaginePage() {
 							url: sourceUrl.trim(),
 							style: style.trim(),
 							lyrics: urlLyrics.trim(),
+							sourceTrackTitle: sourceTrackTitle.trim() || undefined,
+							sourceArtistName: sourceArtistName.trim() || undefined,
 							coverNoiseStrength: fidelity,
 							playlistKey,
 						});
@@ -177,6 +186,8 @@ function ReimaginePage() {
 		sourceMode,
 		sourceId,
 		sourceUrl,
+		sourceTrackTitle,
+		sourceArtistName,
 		urlLyrics,
 		style,
 		fidelity,
@@ -327,14 +338,44 @@ function ReimaginePage() {
 											MOMENT.
 										</p>
 									</div>
+									<div className="grid gap-3 sm:grid-cols-2">
+										<div>
+											<p className="text-xs font-bold uppercase text-white/50 mb-1">
+												ORIGINAL TRACK TITLE
+											</p>
+											<Input
+												className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0"
+												placeholder="DEAR MR. PRESIDENT"
+												value={sourceTrackTitle}
+												onChange={(e) => setSourceTrackTitle(e.target.value)}
+												disabled={generating}
+											/>
+										</div>
+										<div>
+											<p className="text-xs font-bold uppercase text-white/50 mb-1">
+												ORIGINAL ARTIST
+											</p>
+											<Input
+												className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0"
+												placeholder="P!NK"
+												value={sourceArtistName}
+												onChange={(e) => setSourceArtistName(e.target.value)}
+												disabled={generating}
+											/>
+										</div>
+									</div>
+									<p className="-mt-2 text-[10px] font-bold uppercase text-white/30">
+										PROVIDE BOTH TO LOAD PLAIN LYRICS FROM LRCLIB. THE
+										DOWNLOADED AUDIO DURATION MUST MATCH WITHIN 2 SECONDS.
+									</p>
 									<div>
 										<p className="text-xs font-bold uppercase text-white/50 mb-1">
-											LYRICS — OPTIONAL, PASTE THE ORIGINAL LYRICS FOR VOCALS
+											LYRICS — OPTIONAL MANUAL OVERRIDE
 										</p>
 										<Textarea
 											className="min-h-[120px] rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-fuchsia-500/50 resize-y"
 											placeholder={
-												"[verse]\nLyrics cannot be pulled from the source — paste them here.\nLeave empty for an instrumental-leaning cover."
+												"[verse]\nPasted lyrics are used instead of LRCLIB.\nLeave empty to load an exact LRCLIB match."
 											}
 											value={urlLyrics}
 											onChange={(e) => setUrlLyrics(e.target.value)}

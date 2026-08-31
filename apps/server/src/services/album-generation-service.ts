@@ -773,6 +773,8 @@ interface TrackCreateOpts {
 	sourceSongId?: string;
 	sourceAudioPath?: string;
 	sourceUrl?: string;
+	sourceTrackTitle?: string;
+	sourceArtistName?: string;
 	coverNoiseStrength?: number;
 }
 
@@ -818,8 +820,18 @@ async function resolveTrackSourceOpts(
 	});
 	switch (sourceSpec.kind) {
 		case "seeded":
-		case "search":
 			return { ...coverOpts, sourceUrl: sourceSpec.sourceUrl };
+		case "search":
+			return {
+				...coverOpts,
+				sourceUrl: sourceSpec.sourceUrl,
+				...(spec.searchTarget
+					? {
+							sourceTrackTitle: spec.searchTarget.title,
+							sourceArtistName: spec.searchTarget.artist,
+						}
+					: {}),
+			};
 		case "nas":
 			return { ...coverOpts, sourceAudioPath: sourceSpec.sourceAudioPath };
 		case "none":

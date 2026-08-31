@@ -1532,6 +1532,8 @@ export const useReimagineFromUrl = createMutation<
 		url: string;
 		style: string;
 		lyrics?: string;
+		sourceTrackTitle?: string;
+		sourceArtistName?: string;
 		coverNoiseStrength?: number;
 		playlistKey?: string;
 	},

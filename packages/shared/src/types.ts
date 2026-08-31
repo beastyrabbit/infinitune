@@ -154,6 +154,8 @@ export interface Song {
 	sourceSongId: string | null;
 	sourceAudioPath: string | null;
 	sourceUrl: string | null;
+	sourceTrackTitle: string | null;
+	sourceArtistName: string | null;
 	coverNoiseStrength: number | null;
 	aceTaskId: string | null;
 	aceSubmittedAt: number | null;

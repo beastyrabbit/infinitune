@@ -12,6 +12,11 @@ import {
 } from "../agents/playlist-director-service";
 import { saveCover } from "../covers";
 import type { PromptDistance, RecentSong, SongMetadata } from "../external/llm";
+import {
+	findLrclibLyrics,
+	type LrclibLyricsMatch,
+	type LrclibLyricsQuery,
+} from "../external/lrclib";
 import { saveSongToNfs } from "../external/storage";
 import { tagMp3 } from "../external/tag-mp3";
 import {
@@ -80,6 +85,26 @@ export interface SongWorkerContext {
 	getCurrentEpoch?: () => number;
 	getSettings: () => Promise<SongWorkerSettings>;
 	capabilities: ProviderCapability;
+}
+
+type CoverLyricsLookup = (
+	query: LrclibLyricsQuery,
+) => Promise<LrclibLyricsMatch | null>;
+
+export async function resolveDurationMatchedCoverLyrics(input: {
+	song: Pick<SongWire, "sourceTrackTitle" | "sourceArtistName">;
+	sourceDurationSeconds: number;
+	lookup?: CoverLyricsLookup;
+}): Promise<LrclibLyricsMatch | null> {
+	const trackName = input.song.sourceTrackTitle?.trim();
+	const artistName = input.song.sourceArtistName?.trim();
+	if (!trackName || !artistName) return null;
+
+	return await (input.lookup ?? findLrclibLyrics)({
+		trackName,
+		artistName,
+		durationSeconds: input.sourceDurationSeconds,
+	});
 }
 
 export function resolveSongTextLlmProfile(input: {
@@ -1124,17 +1149,55 @@ export class SongWorker {
 				sourceUrl: null,
 				sourceSongId: null,
 				sourceAudioPath: null,
+				sourceTrackTitle: null,
+				sourceArtistName: null,
 				coverNoiseStrength: null,
 			};
 			return;
 		}
 
+		await this.replaceCoverLyricsFromLrclib(result.durationSeconds);
 		await songService.updateSourceAudioPath(this.songId, result.filePath);
 		await markSourceUsed(sourceUrl, result.filePath);
 		this.song = { ...this.song, sourceAudioPath: result.filePath };
 		songLogger(this.songId).info(
 			{ title: this.song.title, sourceTitle: result.title },
 			"Cover reference audio resolved",
+		);
+	}
+
+	private async replaceCoverLyricsFromLrclib(
+		sourceDurationSeconds: number,
+	): Promise<void> {
+		const trackName = this.song.sourceTrackTitle?.trim();
+		const artistName = this.song.sourceArtistName?.trim();
+		if (!trackName || !artistName) return;
+
+		const match = await resolveDurationMatchedCoverLyrics({
+			song: this.song,
+			sourceDurationSeconds,
+		});
+		if (!match) {
+			songLogger(this.songId).info(
+				{ trackName, artistName, sourceDurationSeconds },
+				"No exact duration-matched LRCLIB lyrics found; keeping fallback lyrics",
+			);
+			return;
+		}
+
+		await songService.updateMetadata(this.songId, {
+			lyrics: match.plainLyrics,
+		});
+		this.song = { ...this.song, lyrics: match.plainLyrics };
+		songLogger(this.songId).info(
+			{
+				lrclibId: match.id,
+				trackName: match.trackName,
+				artistName: match.artistName,
+				sourceDurationSeconds,
+				matchedDurationSeconds: match.durationSeconds,
+			},
+			"Using duration-matched LRCLIB lyrics for cover generation",
 		);
 	}
 

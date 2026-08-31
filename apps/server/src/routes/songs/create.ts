@@ -5,6 +5,7 @@ import {
 import { Hono } from "hono";
 import z from "zod";
 import { getRequestActor, type RequestActor } from "../../auth/actor";
+import { findLrclibLyrics } from "../../external/lrclib";
 import { downloadYoutubeAudio } from "../../external/youtube-audio";
 import { generationLimiter } from "../../middleware/limiters";
 import * as playlistService from "../../services/playlist-service";
@@ -199,24 +200,43 @@ app.post("/reimagine", generationLimiter, async (c) => {
 	return c.json({ playlist, song });
 });
 
-const ReimagineUrlSchema = z.object({
-	url: z.string().url().max(500),
-	style: z.string().min(1).max(1000),
-	lyrics: z.string().max(20000).optional().default(""),
-	coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
-	playlistKey: z.string().min(1).max(64).optional(),
-});
+const ReimagineUrlSchema = z
+	.object({
+		url: z.string().url().max(500),
+		style: z.string().min(1).max(1000),
+		lyrics: z.string().max(20000).optional().default(""),
+		sourceTrackTitle: z.string().trim().min(1).max(300).optional(),
+		sourceArtistName: z.string().trim().min(1).max(300).optional(),
+		coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
+		playlistKey: z.string().min(1).max(64).optional(),
+	})
+	.refine(
+		(value) =>
+			Boolean(value.sourceTrackTitle) === Boolean(value.sourceArtistName),
+		{
+			message: "Source track title and artist must be provided together",
+		},
+	);
 
 // POST /api/songs/reimagine-url — reimagine an external source (YouTube etc.):
-// yt-dlp downloads the audio, which then drives the ACE cover task. Lyrics
-// can't be extracted from the source, so the caller supplies them (optional).
+// yt-dlp downloads the audio, which then drives the ACE cover task. When the
+// caller identifies the source track, the worker can replace the optional
+// fallback lyrics with an exact, duration-matched LRCLIB result.
 app.post("/reimagine-url", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = ReimagineUrlSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	const { url, style, lyrics, coverNoiseStrength, playlistKey } = result.data;
+	const {
+		url,
+		style,
+		lyrics,
+		sourceTrackTitle,
+		sourceArtistName,
+		coverNoiseStrength,
+		playlistKey,
+	} = result.data;
 	const actor = await getRequestActor(c);
 
 	let download: Awaited<ReturnType<typeof downloadYoutubeAudio>>;
@@ -227,9 +247,18 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		return c.json({ error: `Could not fetch source audio: ${message}` }, 400);
 	}
 
-	const title = `${download.title} (Reimagined)`;
+	const title = `${sourceTrackTitle ?? download.title} (Reimagined)`;
 	const genre = style.split(",")[0]?.trim() || "electronic";
 	const audioDuration = Math.round(download.durationSeconds);
+	const lrclibMatch =
+		!lyrics.trim() && sourceTrackTitle && sourceArtistName
+			? await findLrclibLyrics({
+					trackName: sourceTrackTitle,
+					artistName: sourceArtistName,
+					durationSeconds: download.durationSeconds,
+				})
+			: null;
+	const resolvedLyrics = lrclibMatch?.plainLyrics ?? lyrics;
 
 	const playlist = await playlistService.create({
 		name: `[REIMAGINE] ${title}`,
@@ -251,10 +280,10 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		1,
 		{
 			title,
-			artistName: "Reimagined",
+			artistName: sourceArtistName ?? "Reimagined",
 			genre,
 			subGenre: genre,
-			lyrics,
+			lyrics: resolvedLyrics,
 			caption: style,
 			bpm: 120,
 			keyScale: "C major",
@@ -264,6 +293,8 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		{
 			aceTaskType: "cover",
 			sourceAudioPath: download.filePath,
+			sourceTrackTitle,
+			sourceArtistName,
 			coverNoiseStrength,
 		},
 	);

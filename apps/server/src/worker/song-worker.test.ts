@@ -3,6 +3,7 @@ import type { PlaylistWire, SongWire } from "../wire";
 import {
 	blocksOwnerlessOpenRouterTextGeneration,
 	buildAceSubmitInput,
+	resolveDurationMatchedCoverLyrics,
 	resolveSongTextLlmProfile,
 	SongWorker,
 	type SongWorkerContext,
@@ -167,6 +168,51 @@ describe("buildAceSubmitInput", () => {
 		expect(input.aceDcwWavelet).toBe("haar");
 		expect(input.aceThinking).toBe(false);
 		expect(input.aceAutoDuration).toBe(true);
+	});
+});
+
+describe("resolveDurationMatchedCoverLyrics", () => {
+	it("passes canonical source identity and measured audio duration to LRCLIB", async () => {
+		const lookup = vi.fn(async () => ({
+			id: 42,
+			trackName: "Dear Mr. President",
+			artistName: "P!nk",
+			albumName: "I'm Not Dead",
+			durationSeconds: 273.63,
+			plainLyrics: "matched lyrics",
+		}));
+
+		const match = await resolveDurationMatchedCoverLyrics({
+			song: {
+				sourceTrackTitle: "  Dear Mr. President ",
+				sourceArtistName: " P!nk  ",
+			},
+			sourceDurationSeconds: 273.6,
+			lookup,
+		});
+
+		expect(lookup).toHaveBeenCalledWith({
+			trackName: "Dear Mr. President",
+			artistName: "P!nk",
+			durationSeconds: 273.6,
+		});
+		expect(match?.plainLyrics).toBe("matched lyrics");
+	});
+
+	it("does not query LRCLIB unless both source fields are present", async () => {
+		const lookup = vi.fn();
+
+		await expect(
+			resolveDurationMatchedCoverLyrics({
+				song: {
+					sourceTrackTitle: "Dear Mr. President",
+					sourceArtistName: null,
+				},
+				sourceDurationSeconds: 273.6,
+				lookup,
+			}),
+		).resolves.toBeNull();
+		expect(lookup).not.toHaveBeenCalled();
 	});
 });
 

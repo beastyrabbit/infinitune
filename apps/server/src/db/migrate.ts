@@ -586,6 +586,8 @@ export function ensureSchema() {
 	addColumn("songs", "source_song_id TEXT");
 	addColumn("songs", "source_audio_path TEXT");
 	addColumn("songs", "source_url TEXT");
+	addColumn("songs", "source_track_title TEXT");
+	addColumn("songs", "source_artist_name TEXT");
 	addColumn("songs", "cover_noise_strength REAL");
 	addColumn(
 		"songs",
