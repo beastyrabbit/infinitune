@@ -22,9 +22,15 @@ vi.mock("../events/event-bus", () => ({
 	removeAllListeners: vi.fn(),
 }));
 
-const { downloadYoutubeAudioMock, findLrclibLyricsMock } = vi.hoisted(() => ({
-	downloadYoutubeAudioMock: vi.fn(),
-	findLrclibLyricsMock: vi.fn(),
+const { downloadYoutubeAudioMock, findLrclibLyricsMock, getRequestActorMock } =
+	vi.hoisted(() => ({
+		downloadYoutubeAudioMock: vi.fn(),
+		findLrclibLyricsMock: vi.fn(),
+		getRequestActorMock: vi.fn(),
+	}));
+
+vi.mock("../auth/actor", () => ({
+	getRequestActor: getRequestActorMock,
 }));
 
 vi.mock("../external/youtube-audio", () => ({
@@ -43,6 +49,8 @@ describe("POST /reimagine-url LRCLIB lyrics", () => {
 		setupTestDb();
 		downloadYoutubeAudioMock.mockReset();
 		findLrclibLyricsMock.mockReset();
+		getRequestActorMock.mockReset();
+		getRequestActorMock.mockResolvedValue({ kind: "anonymous" });
 		downloadYoutubeAudioMock.mockResolvedValue({
 			filePath: "/tmp/dear-mr-president.mp3",
 			durationSeconds: 273.6,
@@ -50,7 +58,25 @@ describe("POST /reimagine-url LRCLIB lyrics", () => {
 		});
 	});
 
-	afterEach(() => teardownTestDb());
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		teardownTestDb();
+	});
+
+	it("rejects anonymous production downloads before fetching the source", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		const response = await createRoutes.request("/reimagine-url", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				url: "https://www.youtube.com/watch?v=example",
+				style: "acoustic protest folk",
+			}),
+		});
+
+		expect(response.status).toBe(401);
+		expect(downloadYoutubeAudioMock).not.toHaveBeenCalled();
+	});
 
 	it("uses exact duration-matched plain lyrics when the fallback is empty", async () => {
 		findLrclibLyricsMock.mockResolvedValue({
@@ -112,6 +138,28 @@ describe("POST /reimagine-url LRCLIB lyrics", () => {
 			.from(songs)
 			.where(eq(songs.id, payload.song.id));
 		expect(song.lyrics).toBe("rights-approved manual lyrics");
+	});
+
+	it("does not create a cover job when an expected LRCLIB match is missing", async () => {
+		findLrclibLyricsMock.mockResolvedValue(null);
+
+		const response = await createRoutes.request("/reimagine-url", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				url: "https://www.youtube.com/watch?v=example",
+				style: "acoustic protest folk",
+				sourceTrackTitle: "Dear Mr. President",
+				sourceArtistName: "P!nk",
+			}),
+		});
+
+		expect(response.status).toBe(422);
+		expect(await response.json()).toEqual({
+			error:
+				"No exact duration-matched LRCLIB lyrics found. Check the original title and artist, or paste lyrics manually.",
+		});
+		expect(await getTestDb().select().from(songs)).toEqual([]);
 	});
 
 	it("requires source title and artist together", async () => {

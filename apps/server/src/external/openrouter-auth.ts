@@ -3,11 +3,11 @@ import * as settingsService from "../services/settings-service";
 import {
 	createPiRuntimeHandles,
 	migrateLegacyOpenRouterCredential,
+	normalizeOpenRouterApiKey,
 } from "./pi-runtime";
 
 const OPENROUTER_PROVIDER = "openrouter";
 const LEGACY_OPENROUTER_SETTING = "openrouterApiKey";
-const MAX_API_KEY_LENGTH = 4_096;
 
 export interface OpenRouterAuthStatus {
 	configured: boolean;
@@ -53,19 +53,14 @@ export async function getOpenRouterAuthStatus(): Promise<OpenRouterAuthStatus> {
 export async function saveOpenRouterApiKey(
 	apiKey: string,
 ): Promise<OpenRouterAuthStatus> {
-	const normalizedKey = apiKey.trim();
-	if (!normalizedKey) {
-		throw new Error("OpenRouter API key must not be empty");
-	}
-	if (normalizedKey.length > MAX_API_KEY_LENGTH) {
-		throw new Error("OpenRouter API key is too long");
-	}
+	const normalizedKey = normalizeOpenRouterApiKey(apiKey);
 
 	const { authStorage } = createPiRuntimeHandles();
 	authStorage.set(OPENROUTER_PROVIDER, {
 		type: "api_key",
 		key: normalizedKey,
 	});
+	authStorage.setRuntimeApiKey(OPENROUTER_PROVIDER, normalizedKey);
 	throwAuthStorageErrors(authStorage);
 	await settingsService.deleteSensitiveSetting(LEGACY_OPENROUTER_SETTING);
 
@@ -78,6 +73,7 @@ export async function saveOpenRouterApiKey(
 export async function clearOpenRouterApiKey(): Promise<OpenRouterAuthStatus> {
 	await settingsService.deleteSensitiveSetting(LEGACY_OPENROUTER_SETTING);
 	const { authStorage } = createPiRuntimeHandles();
+	authStorage.removeRuntimeApiKey(OPENROUTER_PROVIDER);
 	authStorage.remove(OPENROUTER_PROVIDER);
 	throwAuthStorageErrors(authStorage);
 

@@ -5,6 +5,8 @@ const LRCLIB_TIMEOUT_MS = 5_000;
 const LRCLIB_MAX_RESPONSE_BYTES = 512 * 1024;
 const LRCLIB_MAX_LYRICS_LENGTH = 20_000;
 const LRCLIB_DURATION_TOLERANCE_SECONDS = 2;
+const LRCLIB_CLIENT_ID =
+	"Infinitune (https://git.heerlab.com/beasty/infinitune)";
 
 const LrclibQuerySchema = z.object({
 	trackName: z.string().trim().min(1).max(500),
@@ -209,7 +211,11 @@ export async function findLrclibLyrics(
 		const response = await abortable(
 			request(url, {
 				method: "GET",
-				headers: { accept: "application/json" },
+				headers: {
+					accept: "application/json",
+					"user-agent": LRCLIB_CLIENT_ID,
+					"lrclib-client": LRCLIB_CLIENT_ID,
+				},
 				redirect: "error",
 				signal: lifetime.signal,
 			}),

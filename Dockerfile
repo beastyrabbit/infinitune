@@ -35,10 +35,20 @@ RUN pnpm install --frozen-lockfile --prod
 # ── Stage 4: runtime ───────────────────────────────────────────
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
+ENV INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
+
+ARG YT_DLP_VERSION=2026.08.19
+ARG YT_DLP_SHA256=58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg tini ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+	apt-get install -y --no-install-recommends ffmpeg tini ca-certificates curl && \
+	curl --fail --silent --show-error --location \
+		"https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp_linux" \
+		--output /usr/local/bin/yt-dlp && \
+	echo "${YT_DLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum --check --strict && \
+	chmod 0755 /usr/local/bin/yt-dlp && \
+	apt-get purge -y --auto-remove curl && \
+	rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @openai/codex@0.111.0
 
@@ -73,6 +83,8 @@ RUN mkdir -p /app/data
 # Verify tsx binary exists (fail build early rather than at runtime)
 RUN test -x node_modules/.bin/tsx
 RUN test -x /usr/local/bin/codex
+RUN test -x /usr/local/bin/yt-dlp
+RUN test -x /usr/bin/ffprobe
 
 EXPOSE 3000 5175
 

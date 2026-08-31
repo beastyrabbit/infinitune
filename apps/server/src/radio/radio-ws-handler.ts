@@ -103,6 +103,13 @@ export function handleRadioConnection(ws: WebSocket): void {
 			.then(async () => {
 				switch (msg.type) {
 					case "play": {
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio playback must use POST /api/radio/play",
+							});
+							break;
+						}
 						const snapshot = await activateListener(effectiveListenerId);
 						// Count this socket against the listener id, releasing any
 						// previously held id (e.g. the client changed listenerId).
@@ -139,10 +146,24 @@ export function handleRadioConnection(ws: WebSocket): void {
 						send(ws, { type: "pong", serverTime: Date.now() });
 						break;
 					case "skip":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio skipping must use POST /api/radio/skip",
+							});
+							break;
+						}
 						heartbeatListener(effectiveListenerId);
 						send(ws, { type: "state", ...(await skipStation()) });
 						break;
 					case "seek":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio seeking must use POST /api/radio/seek",
+							});
+							break;
+						}
 						heartbeatListener(effectiveListenerId);
 						send(ws, {
 							type: "state",

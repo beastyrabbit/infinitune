@@ -13,7 +13,6 @@ import {
 	ThumbsDown,
 	Zap,
 } from "lucide-react";
-import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShareButton } from "@/components/autoplayer/ShareButton";
 import { StationPresets } from "@/components/autoplayer/StationPresets";
@@ -76,7 +75,6 @@ function RadioCover({ song }: { song: RadioSnapshot["currentSong"] }) {
 function useRadioSocket(
 	listenerId: string,
 	onSnapshot: (snapshot: RadioSnapshot) => void,
-	rejoinRef: RefObject<boolean>,
 ) {
 	const wsRef = useRef<WebSocket | null>(null);
 
@@ -88,14 +86,6 @@ function useRadioSocket(
 			if (disposed) return;
 			const ws = new WebSocket(RADIO_WS_URL);
 			wsRef.current = ws;
-			ws.onopen = () => {
-				// The server deactivates this listener when the socket drops.
-				// If the user was playing, re-register on (re)connect so the
-				// station doesn't stay paused and heartbeats aren't ignored.
-				if (rejoinRef.current) {
-					ws.send(JSON.stringify({ listenerId, type: "play" }));
-				}
-			};
 			ws.onmessage = (event) => {
 				try {
 					const payload = JSON.parse(event.data) as Partial<RadioSnapshot> & {
@@ -147,7 +137,7 @@ function useRadioSocket(
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			wsRef.current?.close();
 		};
-	}, [onSnapshot, listenerId, rejoinRef]);
+	}, [onSnapshot]);
 
 	const send = useCallback(
 		(payload: Record<string, unknown>) => {
@@ -176,11 +166,7 @@ function AutoplayerPage() {
 	const skipRadio = useRadioSkip();
 	const feedbackRadio = useRadioFeedback();
 
-	// Mirror `joined` into a ref so the socket's reconnect handler can read the
-	// latest intent without re-subscribing the socket on every toggle.
-	const joinedRef = useRef(false);
-	joinedRef.current = joined;
-	const send = useRadioSocket(listenerId, setSnapshot, joinedRef);
+	const send = useRadioSocket(listenerId, setSnapshot);
 	const state = snapshot ?? initialState ?? null;
 	const currentSong = state?.currentSong ?? null;
 	const durationSeconds = (currentSong?.durationMs ?? 180_000) / 1000;
@@ -220,25 +206,19 @@ function AutoplayerPage() {
 	}, [joined, send, state?.station.offsetMs]);
 
 	const handlePlay = useCallback(async () => {
+		setSnapshot(await playRadio({ listenerId }));
 		setJoined(true);
-		if (!send({ type: "play" })) {
-			setSnapshot(await playRadio({ listenerId }));
-		}
-	}, [listenerId, playRadio, send]);
+	}, [listenerId, playRadio]);
 
 	const handlePause = useCallback(async () => {
 		setJoined(false);
 		audioRef.current?.pause();
-		if (!send({ type: "pause" })) {
-			setSnapshot(await pauseRadio({ listenerId }));
-		}
-	}, [listenerId, pauseRadio, send]);
+		setSnapshot(await pauseRadio({ listenerId }));
+	}, [listenerId, pauseRadio]);
 
 	const handleSkip = useCallback(async () => {
-		if (!send({ type: "skip" })) {
-			setSnapshot(await skipRadio({ listenerId }));
-		}
-	}, [listenerId, send, skipRadio]);
+		setSnapshot(await skipRadio({ listenerId }));
+	}, [listenerId, skipRadio]);
 
 	const handleFeedback = useCallback(
 		async (kind: "like" | "dislike") => {

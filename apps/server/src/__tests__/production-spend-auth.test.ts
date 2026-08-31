@@ -472,6 +472,38 @@ describe("production OpenRouter spend authentication", () => {
 		expect(mocks.topUpInventory).toHaveBeenCalledWith({ force: true });
 	});
 
+	it("blocks anonymous production radio activation, seeking, and skipping", async () => {
+		const playResponse = await requestJson(radioRoutes, "/play", "POST", {
+			listenerId: "listener-1",
+		});
+		const seekResponse = await requestJson(radioRoutes, "/seek", "POST", {
+			listenerId: "listener-1",
+			offsetSeconds: 180,
+		});
+		const skipResponse = await requestJson(radioRoutes, "/skip", "POST", {
+			listenerId: "listener-1",
+		});
+
+		expect(playResponse.status).toBe(401);
+		expect(seekResponse.status).toBe(401);
+		expect(skipResponse.status).toBe(401);
+		expect(mocks.requireUserActor).toHaveBeenCalledTimes(3);
+	});
+
+	it("allows authenticated production radio activation and skipping", async () => {
+		mocks.requireUserActor.mockResolvedValue(authenticated);
+
+		const playResponse = await requestJson(radioRoutes, "/play", "POST", {
+			listenerId: "listener-1",
+		});
+		const skipResponse = await requestJson(radioRoutes, "/skip", "POST", {
+			listenerId: "listener-1",
+		});
+
+		expect(playResponse.status).toBe(200);
+		expect(skipResponse.status).toBe(200);
+	});
+
 	it("blocks anonymous production radio requests when OpenRouter is selected", async () => {
 		mocks.settingsGetAll.mockResolvedValue({ textProvider: "openrouter" });
 
@@ -534,4 +566,25 @@ describe("production OpenRouter spend authentication", () => {
 
 		socket.listeners.get("close")?.();
 	});
+
+	it.each([
+		["play", "Radio playback must use POST /api/radio/play"],
+		["seek", "Radio seeking must use POST /api/radio/seek"],
+		["skip", "Radio skipping must use POST /api/radio/skip"],
+	] as const)(
+		"rejects production WebSocket %s commands that can trigger generation",
+		async (type, message) => {
+			const socket = fakeWebSocket();
+			handleRadioConnection(socket.ws);
+
+			socket.listeners.get("message")?.(
+				Buffer.from(JSON.stringify({ type, listenerId: "listener-1" })),
+			);
+			await vi.waitFor(() => {
+				expect(socket.sent).toContainEqual({ type: "error", message });
+			});
+
+			socket.listeners.get("close")?.();
+		},
+	);
 });

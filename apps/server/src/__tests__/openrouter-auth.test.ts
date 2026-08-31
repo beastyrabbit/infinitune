@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -122,12 +128,27 @@ describe("OpenRouter auth storage", () => {
 		expect(await getOpenRouterApiKey()).toBe("legacy-test-key");
 	});
 
-	it("rejects empty and oversized keys", async () => {
+	it("treats a pre-fix command-shaped stored key as inert text", async () => {
+		writeFileSync(
+			path.join(agentDir, "auth.json"),
+			JSON.stringify({
+				openrouter: { type: "api_key", key: "!printf should-not-run" },
+			}),
+			"utf8",
+		);
+
+		expect(await getOpenRouterApiKey()).toBe("!printf should-not-run");
+	});
+
+	it("rejects empty, oversized, and command-shaped keys", async () => {
 		await expect(saveOpenRouterApiKey("   ")).rejects.toThrow(
 			"must not be empty",
 		);
 		await expect(saveOpenRouterApiKey("x".repeat(4_097))).rejects.toThrow(
 			"too long",
 		);
+		await expect(
+			saveOpenRouterApiKey("!printf should-not-run"),
+		).rejects.toThrow("must be a literal value");
 	});
 });

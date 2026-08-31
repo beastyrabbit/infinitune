@@ -255,10 +255,14 @@ ACE_STEP_URL=http://192.168.10.242:8001
 OPENROUTER_API_KEY=sk-or-v1-...
 
 # Persist UI-saved Pi/OpenRouter credentials on the mounted data volume
-INFINITUNE_PI_AGENT_DIR=/app/data/pi
+INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
 
 # Optional — public LRCLIB instance used for exact cover lyrics
 LRCLIB_URL=https://lrclib.net
+
+# Optional downloaded cover-source cache bounds (defaults: 1 GiB / 168 hours)
+REIMAGINE_CACHE_MAX_BYTES=1073741824
+REIMAGINE_CACHE_TTL_HOURS=168
 
 # Optional Pangolin identity headers. Leave false unless the proxy boundary
 # described below is enforced for both the web and server processes.
@@ -342,12 +346,19 @@ Use OpenRouter when you want to choose from its text-model catalog for song meta
 
 You can also set `OPENROUTER_API_KEY` on the server instead of saving a key in the UI. Radio planning and song generation use the selected global text provider and model.
 
+On the first start of this release, Infinitune resets OpenRouter selections
+saved by older versions to OpenAI Codex. This prevents existing ownerless jobs
+from silently starting billed OpenRouter work. Save the key, then select
+OpenRouter again for the global text profile or create a new owned playlist.
+
 For a cover whose source title and artist are known, Infinitune asks LRCLIB for
 `plainLyrics` after resolving the reference audio. It accepts only an exact
 title/artist match whose duration differs by no more than two seconds. If
 LRCLIB is unavailable or has no exact match, generation keeps the existing
 fallback lyrics. In `Reimagine` URL mode, fill in both original-track fields
-to enable the lookup; explicitly pasted lyrics always take priority.
+to enable the lookup; explicitly pasted lyrics always take priority. If no
+exact duration match exists, Infinitune stops before creating the cover job and
+asks you to correct the source identity or paste lyrics.
 
 ### OpenAI Codex (ChatGPT Subscription) setup
 

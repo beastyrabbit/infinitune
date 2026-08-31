@@ -80,7 +80,10 @@ app.get("/library", async (c) => {
 	});
 });
 
-app.post("/play", async (c) => {
+app.post("/play", generationLimiter, async (c) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	return c.json(await activateListener(result.data.listenerId));
@@ -103,7 +106,10 @@ app.post("/heartbeat", async (c) => {
 	return c.json({ ok: true, state: getStationSnapshot() });
 });
 
-app.post("/seek", async (c) => {
+app.post("/seek", generationLimiter, async (c) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
 	const result = SeekSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	heartbeatListener(result.data.listenerId);
@@ -111,6 +117,9 @@ app.post("/seek", async (c) => {
 });
 
 app.post("/skip", async (c) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	heartbeatListener(result.data.listenerId);

@@ -3,11 +3,17 @@ import {
 	ACE_GENERATION_DEFAULTS,
 	ACE_QUALITY_DEFAULT_MODEL,
 } from "@infinitune/shared/ace-settings";
+import {
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
+} from "@infinitune/shared/text-llm-profile";
 import { logger } from "../logger";
 import { sqlite } from "./index";
 
 const ACE_PRESET_M_MIGRATION_KEY = "migration.acePresetMVersion";
 const ACE_PRESET_M_MIGRATION_VERSION = "1";
+const OPENROUTER_RESTORE_MIGRATION_KEY = "migration.openrouterRestoreVersion";
+const OPENROUTER_RESTORE_MIGRATION_VERSION = "1";
 const LEGACY_ACE_STEP_URL = "http://192.168.10.120:8001";
 const DEFAULT_ACE_STEP_URL = "http://192.168.10.242:8001";
 
@@ -150,6 +156,54 @@ function migrateLegacyAceStepUrl(): void {
 			 WHERE key = 'aceStepUrl' AND value = ?`,
 		)
 		.run(DEFAULT_ACE_STEP_URL, LEGACY_ACE_STEP_URL);
+}
+
+function migrateRestoredOpenRouterSelections(): void {
+	const migrate = sqlite.transaction(() => {
+		const marker = sqlite
+			.prepare("SELECT value FROM settings WHERE key = ?")
+			.get(OPENROUTER_RESTORE_MIGRATION_KEY) as { value: string } | undefined;
+		if (marker?.value === OPENROUTER_RESTORE_MIGRATION_VERSION) return;
+
+		const readSetting = sqlite.prepare(
+			"SELECT value FROM settings WHERE key = ?",
+		);
+		const upsertSetting = sqlite.prepare(`
+			INSERT INTO settings (id, created_at, key, value)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`);
+		const now = Date.now();
+
+		for (const [providerKey, modelKey] of [
+			["textProvider", "textModel"],
+			["personaProvider", "personaModel"],
+		] as const) {
+			const provider = readSetting.get(providerKey) as
+				| { value: string }
+				| undefined;
+			if (provider?.value !== "openrouter") continue;
+
+			upsertSetting.run(now, providerKey, DEFAULT_TEXT_PROVIDER);
+			upsertSetting.run(now, modelKey, DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+		}
+
+		sqlite
+			.prepare(
+				`UPDATE playlists
+				 SET llm_provider = ?, llm_model = ?
+				 WHERE llm_provider = 'openrouter'`,
+			)
+			.run(DEFAULT_TEXT_PROVIDER, DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+
+		upsertSetting.run(
+			now,
+			OPENROUTER_RESTORE_MIGRATION_KEY,
+			OPENROUTER_RESTORE_MIGRATION_VERSION,
+		);
+	});
+
+	migrate();
 }
 
 /**
@@ -692,6 +746,7 @@ export function ensureSchema() {
 
 	migrateAcePresetM();
 	migrateLegacyAceStepUrl();
+	migrateRestoredOpenRouterSelections();
 
 	logger.info("Database schema ensured");
 }

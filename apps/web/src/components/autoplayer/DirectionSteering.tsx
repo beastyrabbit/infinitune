@@ -1,5 +1,6 @@
 import { Compass } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/integrations/api/client";
@@ -50,8 +51,12 @@ export function DirectionSteering({
 				});
 				setValue("");
 			}
-		} catch {
-			// Silently fail — prompt stays unchanged
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not refine the playlist direction",
+			);
 		} finally {
 			setLoading(false);
 		}

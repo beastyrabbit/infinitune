@@ -238,6 +238,9 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 		playlistKey,
 	} = result.data;
 	const actor = await getRequestActor(c);
+	if (process.env.NODE_ENV === "production" && actor.kind !== "user") {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
 
 	let download: Awaited<ReturnType<typeof downloadYoutubeAudio>>;
 	try {
@@ -258,6 +261,15 @@ app.post("/reimagine-url", generationLimiter, async (c) => {
 					durationSeconds: download.durationSeconds,
 				})
 			: null;
+	if (!lyrics.trim() && sourceTrackTitle && sourceArtistName && !lrclibMatch) {
+		return c.json(
+			{
+				error:
+					"No exact duration-matched LRCLIB lyrics found. Check the original title and artist, or paste lyrics manually.",
+			},
+			422,
+		);
+	}
 	const resolvedLyrics = lrclibMatch?.plainLyrics ?? lyrics;
 
 	const playlist = await playlistService.create({

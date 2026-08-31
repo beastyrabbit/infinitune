@@ -4,6 +4,7 @@ import { lookup } from "node:dns/promises";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { sqlite } from "../db/index";
 import { logger } from "../logger";
 import { isPrivateIp } from "../utils/public-http";
 
@@ -16,6 +17,46 @@ const DOWNLOAD_TIMEOUT_MS = 180_000;
 const PROBE_TIMEOUT_MS = 10_000;
 const MAX_DURATION_SECONDS = 600;
 const MAX_SEARCH_QUERY_LENGTH = 200;
+const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
+const CACHE_METADATA_HEADROOM_BYTES = 64 * 1024;
+const DEFAULT_CACHE_MAX_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHE_FILE_PATTERN = /^([a-f0-9]{32})\./;
+const CACHE_RETURN_LEASE_MS = 60_000;
+const ACTIVE_SOURCE_STATUSES = [
+	"pending",
+	"generating_metadata",
+	"metadata_ready",
+	"submitting_to_ace",
+	"generating_audio",
+	"saving",
+	"retry_pending",
+] as const;
+const returnedCacheLeases = new Map<string, number>();
+
+function positiveIntegerSetting(
+	value: string | undefined,
+	fallback: number,
+): number {
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const CACHE_MAX_BYTES = Math.max(
+	MAX_SOURCE_BYTES + CACHE_METADATA_HEADROOM_BYTES,
+	positiveIntegerSetting(
+		process.env.REIMAGINE_CACHE_MAX_BYTES,
+		DEFAULT_CACHE_MAX_BYTES,
+	),
+);
+const CACHE_TTL_MS =
+	positiveIntegerSetting(
+		process.env.REIMAGINE_CACHE_TTL_HOURS,
+		DEFAULT_CACHE_TTL_MS / (60 * 60 * 1000),
+	) *
+	60 *
+	60 *
+	1000;
 
 /**
  * Bound yt-dlp to known media extractors. This kills the arbitrary-URL SSRF
@@ -61,6 +102,171 @@ export function downloadCacheKey(target: string): string {
 interface CacheMeta {
 	durationSeconds: number;
 	title: string;
+}
+
+interface CacheEntry {
+	cacheKey: string;
+	filePaths: string[];
+	lastUsedAt: number;
+	sizeBytes: number;
+}
+
+export interface DownloadCachePruneOptions {
+	directory: string;
+	maxBytes: number;
+	ttlMs: number;
+	now?: number;
+	excludeCacheKey?: string;
+	excludeCacheKeys?: ReadonlySet<string>;
+}
+
+/** Remove expired entries, then least-recently-used entries until under quota. */
+export function pruneDownloadCache({
+	directory,
+	maxBytes,
+	ttlMs,
+	now = Date.now(),
+	excludeCacheKey,
+	excludeCacheKeys,
+}: DownloadCachePruneOptions): { removedEntries: number; sizeBytes: number } {
+	let dirEntries: fs.Dirent[];
+	try {
+		dirEntries = fs.readdirSync(directory, { withFileTypes: true });
+	} catch (err) {
+		if ((err as { code?: string }).code === "ENOENT") {
+			return { removedEntries: 0, sizeBytes: 0 };
+		}
+		throw err;
+	}
+
+	const grouped = new Map<string, CacheEntry>();
+	for (const entry of dirEntries) {
+		if (!entry.isFile()) continue;
+		const match = CACHE_FILE_PATTERN.exec(entry.name);
+		if (!match) continue;
+		const filePath = path.join(directory, entry.name);
+		let stat: fs.Stats;
+		try {
+			stat = fs.statSync(filePath);
+		} catch {
+			continue;
+		}
+		const cacheKey = match[1];
+		const current = grouped.get(cacheKey) ?? {
+			cacheKey,
+			filePaths: [],
+			lastUsedAt: 0,
+			sizeBytes: 0,
+		};
+		current.filePaths.push(filePath);
+		current.lastUsedAt = Math.max(current.lastUsedAt, stat.mtimeMs);
+		current.sizeBytes += stat.size;
+		grouped.set(cacheKey, current);
+	}
+
+	const entries = [...grouped.values()];
+	let sizeBytes = entries.reduce((total, entry) => total + entry.sizeBytes, 0);
+	let removedEntries = 0;
+	const removeEntry = (entry: CacheEntry) => {
+		for (const filePath of entry.filePaths) {
+			fs.rmSync(filePath, { force: true });
+		}
+		sizeBytes -= entry.sizeBytes;
+		removedEntries++;
+	};
+
+	const retained: CacheEntry[] = [];
+	for (const entry of entries) {
+		const excluded =
+			entry.cacheKey === excludeCacheKey ||
+			excludeCacheKeys?.has(entry.cacheKey);
+		if (!excluded && now - entry.lastUsedAt >= ttlMs) {
+			removeEntry(entry);
+		} else {
+			retained.push(entry);
+		}
+	}
+
+	for (const entry of retained
+		.filter(
+			(entry) =>
+				entry.cacheKey !== excludeCacheKey &&
+				!excludeCacheKeys?.has(entry.cacheKey),
+		)
+		.sort((a, b) => a.lastUsedAt - b.lastUsedAt)) {
+		if (sizeBytes <= maxBytes) break;
+		removeEntry(entry);
+	}
+
+	return { removedEntries, sizeBytes: Math.max(0, sizeBytes) };
+}
+
+function cacheKeyFromFilePath(filePath: string): string | null {
+	if (path.dirname(path.resolve(filePath)) !== DOWNLOAD_DIR) return null;
+	return CACHE_FILE_PATTERN.exec(path.basename(filePath))?.[1] ?? null;
+}
+
+function protectedCacheKeys(now = Date.now()): Set<string> {
+	const protectedKeys = new Set<string>();
+	for (const [cacheKey, expiresAt] of returnedCacheLeases) {
+		if (expiresAt > now) protectedKeys.add(cacheKey);
+		else returnedCacheLeases.delete(cacheKey);
+	}
+
+	try {
+		const placeholders = ACTIVE_SOURCE_STATUSES.map(() => "?").join(", ");
+		const rows = sqlite
+			.prepare(
+				`SELECT source_audio_path AS filePath
+				 FROM songs
+				 WHERE source_audio_path IS NOT NULL
+				   AND status IN (${placeholders})`,
+			)
+			.all(...ACTIVE_SOURCE_STATUSES) as Array<{ filePath: string }>;
+		for (const row of rows) {
+			const cacheKey = cacheKeyFromFilePath(row.filePath);
+			if (cacheKey) protectedKeys.add(cacheKey);
+		}
+	} catch {
+		// Schema setup and isolated utility tests can run before `songs` exists.
+	}
+
+	return protectedKeys;
+}
+
+function leaseReturnedCacheEntry(cacheKey: string): void {
+	returnedCacheLeases.set(cacheKey, Date.now() + CACHE_RETURN_LEASE_MS);
+}
+
+function pruneRuntimeCache(
+	maxBytes: number,
+	excludeCacheKey?: string,
+): { removedEntries: number; sizeBytes: number } {
+	try {
+		const result = pruneDownloadCache({
+			directory: DOWNLOAD_DIR,
+			maxBytes,
+			ttlMs: CACHE_TTL_MS,
+			excludeCacheKey,
+			excludeCacheKeys: protectedCacheKeys(),
+		});
+		if (result.removedEntries > 0) {
+			logger.info(
+				{ removedEntries: result.removedEntries, sizeBytes: result.sizeBytes },
+				"Pruned reference audio cache",
+			);
+		}
+		if (result.sizeBytes > maxBytes) {
+			throw new Error("Reference audio cache remains above its byte quota");
+		}
+		return result;
+	} catch (err) {
+		logger.warn(
+			{ err: errSummary(err) },
+			"Reference audio cache pruning failed",
+		);
+		throw new Error("Reference audio cache capacity check failed");
+	}
 }
 
 export type AudioDurationProbe = (filePath: string) => Promise<string>;
@@ -164,6 +370,21 @@ function writeCacheMeta(cacheKey: string, meta: CacheMeta): void {
 	}
 }
 
+function removeCacheEntryFiles(cacheKey: string): void {
+	let entries: string[];
+	try {
+		entries = fs.readdirSync(DOWNLOAD_DIR);
+	} catch (err) {
+		if ((err as { code?: string }).code === "ENOENT") return;
+		throw err;
+	}
+	for (const entry of entries) {
+		if (entry.startsWith(`${cacheKey}.`)) {
+			fs.rmSync(path.join(DOWNLOAD_DIR, entry), { force: true });
+		}
+	}
+}
+
 /**
  * SSRF guard: only public http(s) hosts may be fetched. Rejects URLs whose
  * hostname resolves to loopback, RFC1918, link-local, or other private
@@ -195,7 +416,7 @@ async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
  * Run yt-dlp against a target (URL or ytsearch query) and cache the MP3 under
  * DOWNLOAD_DIR keyed by the target hash, so repeat requests are free.
  */
-async function runYtDlp(
+async function runYtDlpOnce(
 	target: string,
 	logTarget: string,
 ): Promise<YoutubeAudioResult> {
@@ -203,13 +424,30 @@ async function runYtDlp(
 	const cacheKey = downloadCacheKey(target);
 	const cached = await readCachedResult(cacheKey);
 	if (cached) {
+		const now = new Date();
+		try {
+			fs.utimesSync(cached.filePath, now, now);
+		} catch {
+			// The already-open cache entry remains usable; pruning can retry later.
+		}
+		try {
+			pruneRuntimeCache(CACHE_MAX_BYTES, cacheKey);
+		} catch {
+			// A cache hit does not add bytes. Serve it, but block the next miss if
+			// the capacity check still cannot run.
+		}
 		logger.info({ target: logTarget }, "Reference audio served from cache");
+		leaseReturnedCacheEntry(cacheKey);
 		return cached;
 	}
+	removeCacheEntryFiles(cacheKey);
+	pruneRuntimeCache(CACHE_MAX_BYTES - MAX_SOURCE_BYTES);
 
 	const outTemplate = path.join(DOWNLOAD_DIR, `${cacheKey}.%(ext)s`);
 	const args = [
 		"--no-playlist",
+		"--js-runtimes",
+		"node",
 		"--use-extractors",
 		EXTRACTOR_ALLOWLIST,
 		"--extract-audio",
@@ -238,6 +476,7 @@ async function runYtDlp(
 			maxBuffer: 4 * 1024 * 1024,
 		}));
 	} catch (err) {
+		removeCacheEntryFiles(cacheKey);
 		// Don't surface yt-dlp output to clients or logs — it can echo response
 		// content from the fetched host.
 		logger.warn(
@@ -254,6 +493,7 @@ async function runYtDlp(
 		.at(-1);
 	const [, title, filePath] = (line ?? "").split("\t");
 	if (!filePath || !fs.existsSync(filePath)) {
+		removeCacheEntryFiles(cacheKey);
 		// yt-dlp exits 0 when --match-filter skips the download
 		if (stderr.includes("duration") || stdout.includes("skipping")) {
 			throw new Error(
@@ -262,12 +502,16 @@ async function runYtDlp(
 		}
 		throw new Error("yt-dlp did not produce an audio file");
 	}
+	if (fs.statSync(filePath).size > MAX_SOURCE_BYTES) {
+		removeCacheEntryFiles(cacheKey);
+		throw new Error("Downloaded source exceeds the cache file-size limit");
+	}
 
 	let durationSeconds: number;
 	try {
 		durationSeconds = await probeAudioDuration(filePath);
 	} catch (err) {
-		fs.rmSync(filePath, { force: true });
+		removeCacheEntryFiles(cacheKey);
 		logger.warn(
 			{ target: logTarget, err: errSummary(err) },
 			"Downloaded reference audio could not be measured",
@@ -283,7 +527,34 @@ async function runYtDlp(
 		durationSeconds: result.durationSeconds,
 		title: result.title,
 	});
+	try {
+		pruneRuntimeCache(CACHE_MAX_BYTES, cacheKey);
+	} catch (err) {
+		fs.rmSync(filePath, { force: true });
+		fs.rmSync(path.join(DOWNLOAD_DIR, `${cacheKey}.json`), { force: true });
+		throw err;
+	}
+	leaseReturnedCacheEntry(cacheKey);
 	return result;
+}
+
+// Serialize cache mutations. Concurrent 100 MB downloads could each pass the
+// same preflight quota check and collectively exceed the configured bound.
+let downloadQueue: Promise<unknown> = Promise.resolve();
+
+export function serializeDownloadCacheMutation<T>(
+	task: () => Promise<T>,
+): Promise<T> {
+	const run = downloadQueue.catch(() => undefined).then(task);
+	downloadQueue = run.catch(() => undefined);
+	return run;
+}
+
+function runYtDlp(
+	target: string,
+	logTarget: string,
+): Promise<YoutubeAudioResult> {
+	return serializeDownloadCacheMutation(() => runYtDlpOnce(target, logTarget));
 }
 
 /**

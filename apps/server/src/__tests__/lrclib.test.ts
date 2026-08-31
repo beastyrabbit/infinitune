@@ -71,7 +71,12 @@ describe("findLrclibLyrics", () => {
 		});
 		expect(init).toMatchObject({
 			method: "GET",
-			headers: { accept: "application/json" },
+			headers: {
+				accept: "application/json",
+				"user-agent": "Infinitune (https://git.heerlab.com/beasty/infinitune)",
+				"lrclib-client":
+					"Infinitune (https://git.heerlab.com/beasty/infinitune)",
+			},
 			redirect: "error",
 		});
 		expect(init.signal).toBeInstanceOf(AbortSignal);

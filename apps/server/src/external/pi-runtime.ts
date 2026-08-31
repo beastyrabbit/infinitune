@@ -39,6 +39,7 @@ import * as settingsService from "../services/settings-service";
 const DEFAULT_PI_AGENT_DIR = path.join(os.homedir(), ".infinitune", "pi");
 const OPENROUTER_PROVIDER = "openrouter";
 const LEGACY_OPENROUTER_SETTING = "openrouterApiKey";
+const MAX_OPENROUTER_API_KEY_LENGTH = 4_096;
 const CODEX_CLI_AUTH_PATH = path.join(
 	process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
 	"auth.json",
@@ -54,6 +55,32 @@ export interface PiRuntimeHandles {
 	modelsJsonPath: string;
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
+}
+
+export function normalizeOpenRouterApiKey(apiKey: string): string {
+	const normalizedKey = apiKey.trim();
+	if (!normalizedKey) {
+		throw new Error("OpenRouter API key must not be empty");
+	}
+	if (normalizedKey.length > MAX_OPENROUTER_API_KEY_LENGTH) {
+		throw new Error("OpenRouter API key is too long");
+	}
+	if (normalizedKey.startsWith("!")) {
+		throw new Error("OpenRouter API key must be a literal value");
+	}
+	return normalizedKey;
+}
+
+function pinStoredOpenRouterKeyAsLiteral(authStorage: AuthStorage): void {
+	const credential = authStorage.get(OPENROUTER_PROVIDER);
+	if (credential?.type === "api_key") {
+		// Pi treats a stored key beginning with `!` as a shell command. A runtime
+		// override has higher priority and always returns the exact string, which
+		// keeps manually written and pre-fix credentials inert as well.
+		authStorage.setRuntimeApiKey(OPENROUTER_PROVIDER, credential.key);
+	} else {
+		authStorage.removeRuntimeApiKey(OPENROUTER_PROVIDER);
+	}
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> | null {
@@ -136,6 +163,7 @@ export function createPiRuntimeHandles(): PiRuntimeHandles {
 	const modelsJsonPath = path.join(agentDir, "models.json");
 	seedPiAuthFromCodexCli(authPath);
 	const authStorage = AuthStorage.create(authPath);
+	pinStoredOpenRouterKeyAsLiteral(authStorage);
 	const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath);
 	return { agentDir, authPath, modelsJsonPath, authStorage, modelRegistry };
 }
@@ -152,13 +180,16 @@ export async function migrateLegacyOpenRouterCredential(
 		LEGACY_OPENROUTER_SETTING,
 		(legacyKey) => {
 			authStorage.reload();
-			if (authStorage.has(OPENROUTER_PROVIDER)) return;
-			const normalizedKey = legacyKey.trim();
-			if (!normalizedKey) return;
+			if (authStorage.has(OPENROUTER_PROVIDER)) {
+				pinStoredOpenRouterKeyAsLiteral(authStorage);
+				return;
+			}
+			const normalizedKey = normalizeOpenRouterApiKey(legacyKey);
 			authStorage.set(OPENROUTER_PROVIDER, {
 				type: "api_key",
 				key: normalizedKey,
 			});
+			pinStoredOpenRouterKeyAsLiteral(authStorage);
 			throwAuthStorageErrors(authStorage);
 		},
 	);
