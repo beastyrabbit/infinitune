@@ -241,6 +241,53 @@ describe("global radio services", () => {
 		expect(schedule.map((item) => item.songId)).toEqual([song.id]);
 	});
 
+	it("applies the library limit after excluding radio album tracks", async () => {
+		const playlist = await createPlaylist();
+		await getTestDb().insert(albums).values({
+			id: "album-1",
+			title: "Newest album",
+			theme: "test",
+			status: "ready",
+			generationKind: "default",
+		});
+		await getTestDb()
+			.insert(songs)
+			.values([
+				{
+					playlistId: playlist.id,
+					orderIndex: 1,
+					createdAt: 1,
+					title: "Older legacy",
+					status: "ready",
+					radioEligible: false,
+				},
+				{
+					playlistId: playlist.id,
+					orderIndex: 2,
+					createdAt: 2,
+					title: "Newer legacy",
+					status: "ready",
+					radioEligible: false,
+				},
+				{
+					playlistId: playlist.id,
+					orderIndex: 3,
+					createdAt: 3,
+					title: "Newest album track",
+					status: "ready",
+					albumId: "album-1",
+					radioEligible: true,
+				},
+			]);
+
+		const legacySongs = await songService.listLegacy(2, { ownerUserId: null });
+
+		expect(legacySongs.map((song) => song.title)).toEqual([
+			"Newer legacy",
+			"Older legacy",
+		]);
+	});
+
 	it("spaces album runs in the fallback radio schedule", async () => {
 		const playlist = await createPlaylist();
 		const makeAlbum = async (title: string, startOrder: number) => {

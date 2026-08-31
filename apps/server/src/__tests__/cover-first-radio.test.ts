@@ -35,7 +35,7 @@ vi.mock("../external/llm-client", () => ({
 }));
 
 // Import after mocks are set up
-import { albums, songs } from "../db/schema";
+import { albums, radioStationPresets, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
 import {
 	buildYtSearchTarget,
@@ -43,7 +43,10 @@ import {
 } from "../external/youtube-audio";
 import {
 	createRadioAlbum,
+	listRadioAlbums,
 	markAlbumReadyIfComplete,
+	RADIO_LIBRARY_ALBUM_LIMIT,
+	RADIO_LIBRARY_TRACK_LIMIT,
 } from "../services/album-generation-service";
 import {
 	type AlbumPlan,
@@ -553,6 +556,96 @@ describe("createRadioAlbum", () => {
 		expect(tracks.some((t) => !t.aceTaskType)).toBe(true);
 	});
 
+	it("passes the complete active station intent to the album planner", async () => {
+		const genrePrompt =
+			"Slow-burning analog synthwave with evolving modular sequences, cavernous drums, dub delays, and a patient neon-noir atmosphere that keeps building.";
+		const vocalStyle =
+			"Low contralto lead with intimate verses and wide, layered harmonies in each chorus";
+		await getTestDb().insert(radioStationPresets).values({
+			name: "Midnight Signal",
+			genrePrompt,
+			vocalStyle,
+			isActive: true,
+		});
+		callLlmObjectMock.mockResolvedValue({
+			album: {
+				targetGenre: "synthwave",
+				era: "1980s",
+				vibe: "neon night drive",
+				bandName: "Chrome Mirage",
+				albumTitle: "Night Circuit",
+			},
+			tracks: Array.from({ length: 12 }, (_, i) => makePlanTrack(i + 1, true)),
+		});
+
+		await createRadioAlbum({ kind: "manual" });
+
+		const plannerCall = callLlmObjectMock.mock.calls[0]?.[0] as
+			| { prompt?: string }
+			| undefined;
+		expect(plannerCall?.prompt).toContain(genrePrompt);
+		expect(plannerCall?.prompt).toContain(vocalStyle);
+	});
+
+	it("keeps station intent when a listener request seeds the album", async () => {
+		const genrePrompt = "Dub techno with patient chords and deep sub bass";
+		const vocalStyle = "Soft spoken-word phrases with distant harmonies";
+		await getTestDb().insert(radioStationPresets).values({
+			name: "Deep Current",
+			genrePrompt,
+			vocalStyle,
+			isActive: true,
+		});
+		callLlmObjectMock.mockResolvedValue({
+			album: {
+				targetGenre: "dub techno",
+				era: "2000s",
+				vibe: "submerged",
+				bandName: "Deep Current",
+				albumTitle: "Pressure Lines",
+			},
+			tracks: Array.from({ length: 12 }, (_, i) => makePlanTrack(i + 1, true)),
+		});
+
+		await createRadioAlbum({
+			kind: "request",
+			prompt: "A hopeful song about coming home",
+			targetTrackPrompt: "A hopeful song about coming home",
+		});
+
+		const plannerCall = callLlmObjectMock.mock.calls[0]?.[0] as
+			| { prompt?: string }
+			| undefined;
+		expect(plannerCall?.prompt).toContain(genrePrompt);
+		expect(plannerCall?.prompt).toContain(vocalStyle);
+		expect(plannerCall?.prompt).toContain("A hopeful song about coming home");
+	});
+
+	it("keeps the active station intent when the planner falls back", async () => {
+		const genrePrompt =
+			"Dusty trip-hop drums, bowed bass, detuned tape loops, and spacious nocturnal production";
+		const vocalStyle = "Close-miked smoky alto with restrained harmonies";
+		await getTestDb().insert(radioStationPresets).values({
+			name: "After Hours",
+			genrePrompt,
+			vocalStyle,
+			isActive: true,
+		});
+		callLlmObjectMock.mockRejectedValue(new Error("planner down"));
+
+		const album = await createRadioAlbum({ kind: "manual" });
+		const tracks = await getTestDb()
+			.select()
+			.from(songs)
+			.where(eq(songs.albumId, album.id));
+
+		expect(tracks).toHaveLength(12);
+		expect(tracks.every((track) => track.vocalStyle === vocalStyle)).toBe(true);
+		expect(tracks.every((track) => track.caption?.includes(genrePrompt))).toBe(
+			true,
+		);
+	});
+
 	it("demotes cover slots to plain tracks when no source is acquirable", async () => {
 		callLlmObjectMock.mockResolvedValue({
 			album: {
@@ -653,5 +746,55 @@ describe("markAlbumReadyIfComplete", () => {
 			.from(albums)
 			.where(eq(albums.id, albumId));
 		expect(row.status).toBe("generating");
+	});
+});
+
+describe("listRadioAlbums", () => {
+	beforeEach(() => {
+		setupTestDb();
+		insertTestPlaylist();
+	});
+	afterEach(() => teardownTestDb());
+
+	it("bounds both album rows and their radio-track rows", async () => {
+		const sqlite = getTestSqlite();
+		const insertAlbum = sqlite.prepare(
+			"INSERT INTO albums (id, created_at, title, theme) VALUES (?, ?, ?, 'test')",
+		);
+		const insertTrack = sqlite.prepare(
+			`INSERT INTO songs (
+				id, created_at, playlist_id, order_index, status,
+				album_id, album_track_number, radio_eligible
+			) VALUES (?, ?, 'p1', ?, 'ready', ?, ?, 1)`,
+		);
+		sqlite.transaction(() => {
+			for (
+				let albumIndex = 0;
+				albumIndex <= RADIO_LIBRARY_ALBUM_LIMIT;
+				albumIndex++
+			) {
+				const albumId = `album-${albumIndex}`;
+				insertAlbum.run(albumId, albumIndex, `Album ${albumIndex}`);
+				for (let trackNumber = 1; trackNumber <= 13; trackNumber++) {
+					insertTrack.run(
+						`${albumId}-track-${trackNumber}`,
+						albumIndex * 100 + trackNumber,
+						trackNumber,
+						albumId,
+						trackNumber,
+					);
+				}
+			}
+		})();
+
+		const result = await listRadioAlbums();
+		expect(result).toHaveLength(RADIO_LIBRARY_ALBUM_LIMIT);
+		expect(result.map((album) => album.id)).not.toContain("album-0");
+		expect(result.map((album) => album.id)).toContain(
+			`album-${RADIO_LIBRARY_ALBUM_LIMIT}`,
+		);
+		expect(result.reduce((sum, album) => sum + album.tracks.length, 0)).toBe(
+			RADIO_LIBRARY_TRACK_LIMIT,
+		);
 	});
 });

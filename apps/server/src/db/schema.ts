@@ -542,6 +542,51 @@ export const agentRuns = sqliteTable(
 	],
 );
 
+// ─── Station presets & share links ──────────────────────────────────
+
+export const radioStationPresets = sqliteTable(
+	"radio_station_presets",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		updatedAt: integer("updated_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		name: text("name").notNull(),
+		description: text("description"),
+		genrePrompt: text("genre_prompt").notNull(),
+		vocalStyle: text("vocal_style"),
+		isActive: integer("is_active", { mode: "boolean" })
+			.notNull()
+			.default(false),
+	},
+	(table) => [index("radio_station_presets_by_active").on(table.isActive)],
+);
+
+export const shareLinks = sqliteTable(
+	"share_links",
+	{
+		id: text("id")
+			.primaryKey()
+			.$defaultFn(() => createId()),
+		createdAt: integer("created_at", { mode: "number" })
+			.notNull()
+			.$defaultFn(() => Date.now()),
+		token: text("token").notNull().unique(),
+		resourceType: text("resource_type").notNull(),
+		resourceId: text("resource_id").notNull(),
+		expiresAt: integer("expires_at", { mode: "number" }),
+		revokedAt: integer("revoked_at", { mode: "number" }),
+	},
+	(table) => [
+		index("share_links_by_resource").on(table.resourceType, table.resourceId),
+	],
+);
+
 // ─── Type exports ───────────────────────────────────────────────────
 
 export type User = typeof users.$inferSelect;
@@ -575,3 +620,7 @@ export type AgentMemoryEntry = typeof agentMemoryEntries.$inferSelect;
 export type NewAgentMemoryEntry = typeof agentMemoryEntries.$inferInsert;
 export type AgentRun = typeof agentRuns.$inferSelect;
 export type NewAgentRun = typeof agentRuns.$inferInsert;
+export type RadioStationPreset = typeof radioStationPresets.$inferSelect;
+export type NewRadioStationPreset = typeof radioStationPresets.$inferInsert;
+export type ShareLink = typeof shareLinks.$inferSelect;
+export type NewShareLink = typeof shareLinks.$inferInsert;

@@ -18,6 +18,7 @@ import {
 	markRequestPlayedForSong,
 	markRequestSongReady,
 } from "./radio-request-service";
+import { getActivePreset } from "./radio-station-presets-service";
 import * as songService from "./song-service";
 
 const LISTENER_STALE_MS = 25_000;
@@ -491,6 +492,7 @@ export function getStationSnapshot() {
 	return {
 		station: {
 			id: station.id,
+			name: getActivePreset()?.name ?? "Infinitune Radio",
 			isPlaying: Boolean(station.isPlaying),
 			activeListenerCount: station.activeListenerCount,
 			scheduleVersion: station.scheduleVersion,

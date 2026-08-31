@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ShareButton } from "@/components/autoplayer/ShareButton";
+import { StationPresets } from "@/components/autoplayer/StationPresets";
 import { Button } from "@/components/ui/button";
 import {
 	type RadioSnapshot,
@@ -260,7 +262,7 @@ function AutoplayerPage() {
 						</div>
 						<div>
 							<h1 className="font-mono text-xl font-black uppercase tracking-[0.18em]">
-								Infinitune Radio
+								{state?.station.name ?? "Infinitune Radio"}
 							</h1>
 							<p className="font-mono text-xs uppercase tracking-[0.22em] text-white/40">
 								{state?.station.activeListenerCount ?? 0} active listeners
@@ -390,6 +392,14 @@ function AutoplayerPage() {
 								<ThumbsDown className="mr-2 h-5 w-5" />
 								{currentSong?.dislikeCount ?? 0}
 							</Button>
+							{currentSong && (
+								<ShareButton
+									resourceType="song"
+									resourceId={currentSong.id}
+									label="Share current song"
+									className="h-12 w-12 rounded-none"
+								/>
+							)}
 						</div>
 					</div>
 
@@ -486,6 +496,10 @@ function AutoplayerPage() {
 							)}
 						</div>
 					</section>
+
+					<div className="mt-6">
+						<StationPresets />
+					</div>
 				</section>
 			</main>
 

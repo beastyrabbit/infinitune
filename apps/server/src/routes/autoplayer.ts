@@ -37,6 +37,7 @@ import {
 } from "../external/llm";
 import { getServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
+import { llmLimiter } from "../middleware/limiters";
 
 interface OllamaModel {
 	name: string;
@@ -524,29 +525,6 @@ app.get("/inference-sh-image-models", (c) => {
 	return c.json({ models: getInferenceShImageModels() });
 });
 
-// ─── Legacy OpenRouter model endpoint ───────────────────────────────
-app.get("/openrouter-models", (c) => {
-	try {
-		void c.req.query("type");
-		return c.json({
-			error: "OpenRouter image generation was replaced by Inference.sh",
-			models: [],
-		});
-	} catch (error: unknown) {
-		logger.warn({ err: error }, "Failed to serve legacy OpenRouter models");
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "OpenRouter image generation was replaced by Inference.sh",
-				models: [],
-			},
-			500,
-		);
-	}
-});
-
 // ─── GET /prompt-contract?distance=close|general|faithful|album ─────
 app.get("/prompt-contract", async (c) => {
 	try {
@@ -569,7 +547,7 @@ app.get("/prompt-contract", async (c) => {
 });
 
 // ─── POST /generate-song ─────────────────────────────────────────────
-app.post("/generate-song", async (c) => {
+app.post("/generate-song", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -643,7 +621,7 @@ app.post("/generate-song", async (c) => {
 });
 
 // ─── POST /generate-album-track ──────────────────────────────────────
-app.post("/generate-album-track", async (c) => {
+app.post("/generate-album-track", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -724,7 +702,7 @@ app.post("/generate-album-track", async (c) => {
 });
 
 // ─── POST /extract-persona ───────────────────────────────────────────
-app.post("/extract-persona", async (c) => {
+app.post("/extract-persona", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -760,7 +738,7 @@ app.post("/extract-persona", async (c) => {
 });
 
 // ─── POST /enhance-prompt ────────────────────────────────────────────
-app.post("/enhance-prompt", async (c) => {
+app.post("/enhance-prompt", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -806,7 +784,7 @@ app.post("/enhance-prompt", async (c) => {
 });
 
 // ─── POST /enhance-request ───────────────────────────────────────────
-app.post("/enhance-request", async (c) => {
+app.post("/enhance-request", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -837,7 +815,7 @@ app.post("/enhance-request", async (c) => {
 });
 
 // ─── POST /refine-prompt ─────────────────────────────────────────────
-app.post("/refine-prompt", async (c) => {
+app.post("/refine-prompt", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -872,7 +850,7 @@ app.post("/refine-prompt", async (c) => {
 });
 
 // ─── POST /enhance-session ───────────────────────────────────────────
-app.post("/enhance-session", async (c) => {
+app.post("/enhance-session", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<Record<string, unknown>>();
 		const provider = parseProvider(body.provider);
@@ -972,7 +950,7 @@ app.get("/codex-models", async (c) => {
 });
 
 // ─── POST /codex/text ───────────────────────────────────────────────
-app.post("/codex/text", async (c) => {
+app.post("/codex/text", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<{
 			model?: string;
@@ -1009,7 +987,7 @@ app.post("/codex/text", async (c) => {
 });
 
 // ─── POST /codex/object ─────────────────────────────────────────────
-app.post("/codex/object", async (c) => {
+app.post("/codex/object", llmLimiter, async (c) => {
 	try {
 		const body = await c.req.json<{
 			model?: string;

@@ -2,6 +2,8 @@ name: Build & Push Container Image
 
 on:
   push:
+    branches:
+      - "**"
     tags:
       - "v*"
   workflow_dispatch:
@@ -18,7 +20,42 @@ env:
   FJ_REGISTRY_SECRET_PATH: ${{ vars.FJ_REGISTRY_SECRET_PATH }}
 
 jobs:
+  quality:
+    name: Lint, typecheck & test
+    runs-on: personal
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable && corepack prepare pnpm@10.28.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint & format check
+        run: pnpm check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
   build:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: personal
     defaults:
       run:

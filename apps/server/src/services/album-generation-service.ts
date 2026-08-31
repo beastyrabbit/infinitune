@@ -19,6 +19,7 @@ import {
 	resolveCoverSourceSpec,
 } from "./cover-source-service";
 import * as playlistService from "./playlist-service";
+import { getActivePreset } from "./radio-station-presets-service";
 import * as settingsService from "./settings-service";
 import * as songService from "./song-service";
 
@@ -26,6 +27,9 @@ export const RADIO_PLAYLIST_KEY = "global-radio";
 export const RADIO_STATION_ID = "global";
 export const RADIO_ALBUM_TRACK_COUNT = 12;
 export const RADIO_TRACK_DURATION_SECONDS = 180;
+export const RADIO_LIBRARY_ALBUM_LIMIT = 50;
+export const RADIO_LIBRARY_TRACK_LIMIT =
+	RADIO_LIBRARY_ALBUM_LIMIT * RADIO_ALBUM_TRACK_COUNT;
 
 export type AlbumGenerationKind = "default" | "request" | "manual";
 
@@ -683,13 +687,18 @@ function buildTrackMetadata(input: {
 	albumTitle: string;
 	bandName: string;
 	theme: string;
+	stationGenrePrompt?: string;
+	stationVocalStyle?: string;
 	trackNumber: number;
 	kind: AlbumGenerationKind;
 	targetTrackPrompt?: string;
 	coverPrompt?: string;
 }) {
 	const genre = GENRES[(input.trackNumber - 1) % GENRES.length];
-	const vocal = VOCAL_PLAN[input.trackNumber - 1]?.texture ?? "layered vocals";
+	const vocal =
+		input.stationVocalStyle ||
+		VOCAL_PLAN[input.trackNumber - 1]?.texture ||
+		"layered vocals";
 	const trackTitle = TRACK_TITLE_TEMPLATES[input.trackNumber - 1].replace(
 		"{theme}",
 		themePhrase(input.theme, 2),
@@ -719,7 +728,7 @@ function buildTrackMetadata(input: {
 		genre,
 		subGenre: `${genre} transmission`,
 		lyrics: `[Verse]\n${input.theme} on the wire tonight\nEvery signal lands in time\n\n[Chorus]\nHold the frequency, keep it bright\nThree minutes moving through the light`,
-		caption: `${input.bandName} - ${trackTitle}. From ${input.albumTitle}, track ${input.trackNumber}. ${vocal}.${targetHint}`,
+		caption: `${input.bandName} - ${trackTitle}. From ${input.albumTitle}, track ${input.trackNumber}.${input.stationGenrePrompt ? ` Station direction: ${input.stationGenrePrompt}.` : ""} Vocal direction: ${vocal}.${targetHint}`,
 		vocalStyle: vocal,
 		coverPrompt: input.coverPrompt,
 		bpm: 96 + ((input.trackNumber * 7) % 42),
@@ -832,7 +841,8 @@ async function resolveTrackSourceOpts(
 export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 	const playlist = await ensureRadioPlaylist();
 	const kind = input.kind ?? "default";
-	const theme = compactTheme(input.prompt);
+	const preset = getActivePreset();
+	const theme = compactTheme(input.prompt ?? preset?.genrePrompt);
 
 	const sourceSettings = await getRadioSourceSettings();
 	const trackTypes = buildTrackTypeMix(sourceSettings, RADIO_ALBUM_TRACK_COUNT);
@@ -841,6 +851,8 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 	try {
 		plan = await planAlbumWithLlm({
 			theme,
+			stationGenrePrompt: preset?.genrePrompt,
+			stationVocalStyle: preset?.vocalStyle ?? undefined,
 			kind,
 			trackTypes,
 			targetTrackPrompt: input.targetTrackPrompt,
@@ -865,7 +877,10 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 	}
 
 	if (!plan) {
-		return createRadioAlbumFallback(input, theme, kind);
+		return createRadioAlbumFallback(input, theme, kind, {
+			genrePrompt: preset?.genrePrompt,
+			vocalStyle: preset?.vocalStyle ?? undefined,
+		});
 	}
 
 	const albumId = createId();
@@ -920,6 +935,8 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 			albumTitle: title,
 			bandName,
 			theme: albumTheme,
+			stationGenrePrompt: preset?.genrePrompt,
+			stationVocalStyle: preset?.vocalStyle ?? undefined,
 			trackNumber,
 			kind,
 			targetTrackPrompt: input.targetTrackPrompt,
@@ -990,6 +1007,10 @@ async function createRadioAlbumFallback(
 	input: CreateRadioAlbumInput,
 	theme: string,
 	kind: AlbumGenerationKind,
+	stationIntent: {
+		genrePrompt?: string;
+		vocalStyle?: string;
+	} = {},
 ) {
 	const playlist = await ensureRadioPlaylist();
 	const title = buildAlbumTitle(theme);
@@ -1028,6 +1049,8 @@ async function createRadioAlbumFallback(
 			albumTitle: title,
 			bandName,
 			theme,
+			stationGenrePrompt: stationIntent.genrePrompt,
+			stationVocalStyle: stationIntent.vocalStyle,
 			trackNumber,
 			kind,
 			targetTrackPrompt: input.targetTrackPrompt,
@@ -1360,18 +1383,27 @@ export async function markAlbumFirstPlayed(
 
 export async function listRadioAlbums() {
 	const albumRows = sqlite
-		.prepare("SELECT * FROM albums ORDER BY created_at DESC")
-		.all() as Array<Record<string, unknown>>;
+		.prepare("SELECT * FROM albums ORDER BY created_at DESC LIMIT ?")
+		.all(RADIO_LIBRARY_ALBUM_LIMIT) as Array<Record<string, unknown>>;
 	const trackRows = sqlite
 		.prepare(
 			`
-				SELECT *
-				FROM songs
-				WHERE album_id IS NOT NULL AND radio_eligible = 1
-				ORDER BY album_track_number ASC
+				SELECT s.*
+				FROM songs s
+				INNER JOIN (
+					SELECT id, created_at
+					FROM albums
+					ORDER BY created_at DESC
+					LIMIT ?
+				) recent_albums ON recent_albums.id = s.album_id
+				WHERE s.radio_eligible = 1
+				ORDER BY recent_albums.created_at DESC, s.album_track_number ASC
+				LIMIT ?
 			`,
 		)
-		.all() as Array<Record<string, unknown>>;
+		.all(RADIO_LIBRARY_ALBUM_LIMIT, RADIO_LIBRARY_TRACK_LIMIT) as Array<
+		Record<string, unknown>
+	>;
 	const tracksByAlbum = new Map<string, Array<Record<string, unknown>>>();
 	for (const track of trackRows) {
 		const albumId = String(track.album_id);

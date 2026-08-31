@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
+import { ShareButton } from "@/components/autoplayer/ShareButton";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -444,16 +445,25 @@ function RawOneshotPage() {
 														</div>
 													</div>
 
-													{song.audioUrl && (
-														<a
-															href={song.audioUrl}
-															download={`${song.title || "oneshot"}.mp3`}
-															className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
-														>
-															<Download className="h-3.5 w-3.5" />
-															DOWNLOAD
-														</a>
-													)}
+													<div className="flex items-center gap-2">
+														{playlistId && (
+															<ShareButton
+																resourceType="playlist"
+																resourceId={playlistId}
+																label="Share this oneshot"
+															/>
+														)}
+														{song.audioUrl && (
+															<a
+																href={song.audioUrl}
+																download={`${song.title || "oneshot"}.mp3`}
+																className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
+															>
+																<Download className="h-3.5 w-3.5" />
+																DOWNLOAD
+															</a>
+														)}
+													</div>
 												</div>
 											</div>
 										</div>

@@ -80,7 +80,7 @@ Live dashboard showing LLM, image, and audio pipeline status with active/waiting
 <summary><strong>More screenshots</strong></summary>
 
 #### Settings
-Configure service endpoints (Ollama, ACE-Step, ComfyUI), API keys, model preferences, and ACE-Step audio defaults.
+Configure AI runtimes and service endpoints (Ollama, ACE-Step, Inference.sh), API keys, model preferences, and ACE-Step audio defaults.
 
 <div align="center">
 <img src="docs/screenshots/settings-page.png" alt="Settings page" width="100%">
@@ -99,7 +99,7 @@ Create rooms for synchronized multi-device playback. Name your devices, join as 
 
 > **1.** Describe your music — *"2010 techno beats with English lyrics, S3RL energy, heavy 808 bass"*
 >
-> **2.** Hit Start — the unified backend kicks off the pipeline: LLM writes metadata + lyrics, ComfyUI renders cover art, ACE-Step synthesizes audio
+> **2.** Hit Start — the unified backend kicks off the pipeline: LLM writes metadata + lyrics, Inference.sh renders cover art, ACE-Step synthesizes audio
 >
 > **3.** Listen endlessly — songs appear in real-time. Rate them up/down to steer the direction. Request one-offs or generate entire albums from a single track.
 
@@ -108,6 +108,11 @@ Create rooms for synchronized multi-device playback. Name your devices, join as 
 Each song flows through: `pending` → `generating_metadata` → `metadata_ready` → `submitting_to_ace` → `generating_audio` → `saving` → `ready` → `played`
 
 The unified server runs a per-song worker pipeline with concurrency queues managing throughput across three lanes: **LLM** (metadata/lyrics), **Image** (cover art), and **Audio** (ACE-Step synthesis).
+
+ACE queue depth is the number of submitted tasks Infinitune keeps in ACE-Step's
+backlog; it does not create ACE workers or guarantee parallel synthesis. Match
+the depth to the worker capacity configured in ACE-Step when responsive
+prioritization matters.
 
 ### Multi-Device Playback
 
@@ -195,7 +200,7 @@ pnpm infi service uninstall
 | **Rooms** | Integrated WebSocket room service · multi-device sync · REST API |
 | **Worker Pipeline** | Event-driven background pipeline · per-song workers · concurrency queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
-| **Cover Art** | ComfyUI (image generation) |
+| **Cover Art** | Inference.sh (image generation) |
 | **LLM** | Vercel AI SDK (Ollama/OpenRouter) + Codex App Server (`openai-codex`, ChatGPT subscription auth) |
 | **Build** | Vite 7 · TypeScript 5.7 · Biome (lint/format) · pnpm monorepo |
 
@@ -232,7 +237,7 @@ Infinitune requires external AI services running on your network:
 |:--------|:-----|:-------------|
 | **ACE-Step 1.5** | Text-to-music synthesis | `:8001` |
 | **Ollama** | Local LLM (metadata, lyrics) | `:11434` |
-| **ComfyUI** | Cover art generation | `:8188` |
+| **Inference.sh CLI** | Cover art generation | local CLI |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
 | **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
 
@@ -246,7 +251,6 @@ Configure in `apps/server/.env.local`:
 # AI service endpoints (replace with your server addresses)
 OLLAMA_URL=http://<your-server>:11434
 ACE_STEP_URL=http://<your-server>:8001
-COMFYUI_URL=http://<your-server>:8188
 
 # Optional — cloud LLM via OpenRouter
 OPENROUTER_API_KEY=sk-or-v1-...
@@ -256,7 +260,58 @@ CODEX_TURN_TIMEOUT_MS=360000
 
 # Where to store generated audio files
 MUSIC_STORAGE_PATH=/path/to/your/music/storage
+
+# Required for SSR share pages and reverse proxies: comma-separated IPs or
+# CIDRs for the frontend server and proxy hops allowed to supply X-Forwarded-For.
+RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
+
+# Optional public-share read cap per client and minute (default: 120)
+RATE_LIMIT_SHARE_READS_PER_MIN=120
+
+# Optional global backstops for routes that can spend external compute.
+# These remain effective when clients rotate source addresses.
+RATE_LIMIT_GENERATION_GLOBAL_PER_MIN=100
+RATE_LIMIT_LLM_GLOBAL_PER_MIN=200
+RATE_LIMIT_RADIO_REQUESTS_GLOBAL_PER_MIN=50
 ```
+
+Every production frontend and server process requires `APP_ORIGIN`. Set it to
+the public web origin, such as `https://music.example.com`, even when the
+frontend and API share one public origin. The container entrypoint refuses to
+start either process when it is missing or is not an absolute HTTP(S) origin.
+You may also set `INTERNAL_API_URL` on the frontend process to a private backend
+origin, such as
+`http://infinitune-api:5175`; it is used only for server-side API fetches.
+Rendered cover and audio URLs always use the public `APP_ORIGIN`. Browser
+requests remain same-origin when production builds leave `VITE_API_URL` empty.
+
+Set `RATE_LIMIT_TRUSTED_PROXY_IPS` for every standard deployment because the SSR
+share loader forwards client addresses to the API. The list must include the
+frontend container or network and every trusted reverse-proxy hop. Configure
+the edge proxy to overwrite `X-Forwarded-For`. Infinitune walks that chain from
+the right and uses the first untrusted address as the client. Requests containing
+`X-Forwarded-For` are rejected with 503 when no trust list is configured, and
+the production server refuses to start without one. Do not expose the frontend
+without an edge proxy that is responsible for overwriting `X-Forwarded-For`.
+Infinitune ignores `X-Real-IP` for rate limiting.
+
+Authenticated owners can create permanent or timed share links. A permanent link
+for temporary music promotes its playlist by clearing the cleanup expiry. Later
+revocation does not make that playlist temporary again because the service cannot
+safely reconstruct the original cleanup deadline. Timed owner links extend a
+temporary playlist only to the link expiry.
+
+Ownerless music receives a server-forced share expiry of at most 24 hours. If the
+music has an earlier cleanup deadline, the link uses that deadline and never
+extends or disables cleanup. Anonymous users cannot list or revoke these links
+because the service has no anonymous identity to prove who created the link.
+
+Revoking or expiring a link removes access to its shared page and public
+metadata. Audio delivery keeps Infinitune's existing public-by-song-ID contract
+so native browser media elements, downloads, and room playback work without an
+authorization header. A shared song ID does not grant access to private metadata
+or mutations, but audio that a recipient has already opened or downloaded cannot
+be revoked.
 
 ### OpenAI Codex (ChatGPT Subscription) Setup
 
@@ -270,7 +325,7 @@ Use this when you want LLM generation to run through your ChatGPT subscription i
 
 Notes:
 - This project uses `codex app-server` for the `openai-codex` provider (not the Vercel AI SDK transport).
-- `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio still use ComfyUI + ACE-Step.
+- `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio use Inference.sh + ACE-Step.
 
 ### Playlist Lifecycle
 
@@ -293,7 +348,7 @@ Unified Server (Hono on :5175)
   ├── WebSocket bridge → Browser (event invalidation)
   └── External services:
       ├── LLM (Ollama/OpenRouter via Vercel AI SDK + OpenAI Codex via Codex App Server)
-      ├── ComfyUI → cover art
+      ├── Inference.sh → cover art
       └── ACE-Step 1.5 → audio synthesis
 ```
 

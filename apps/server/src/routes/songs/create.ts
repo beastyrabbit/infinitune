@@ -4,12 +4,19 @@ import {
 } from "@infinitune/shared/validation/song-schemas";
 import { Hono } from "hono";
 import z from "zod";
+import { getRequestActor, type RequestActor } from "../../auth/actor";
 import { downloadYoutubeAudio } from "../../external/youtube-audio";
+import { generationLimiter } from "../../middleware/limiters";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
 import { resolveSongAudioFile } from "../../utils/song-audio-path";
+import { canActorAccessPlaylist } from "./access";
 
 const app = new Hono();
+
+function ownerFields(actor: RequestActor): { ownerUserId?: string } {
+	return actor.kind === "user" ? { ownerUserId: actor.userId } : {};
+}
 
 const CreateWithMetadataSchema = CompleteSongMetadataSchema.extend({
 	playlistId: CreatePendingSongSchema.shape.playlistId,
@@ -18,26 +25,34 @@ const CreateWithMetadataSchema = CompleteSongMetadataSchema.extend({
 });
 
 // POST /api/songs — create a song with full metadata (status=generating_metadata)
-app.post("/", async (c) => {
+app.post("/", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreateWithMetadataSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...metadata } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(
 		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);
 });
 
 // POST /api/songs/create-pending — create a pending song
-app.post("/create-pending", async (c) => {
+app.post("/create-pending", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreatePendingSongSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...opts } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(await songService.createPending(playlistId, orderIndex, opts));
 });
 
@@ -63,13 +78,14 @@ function deriveOneshotTitle(lyrics: string): string {
 // Text goes straight to ACE-Step with zero LLM processing. The playlist is
 // created without emitting playlist.created until the song row exists, so the
 // worker's oneshot buffer check never auto-creates a pending (LLM) song.
-app.post("/oneshot-raw", async (c) => {
+app.post("/oneshot-raw", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = OneshotRawSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { lyrics, style, audioDuration, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	const title = deriveOneshotTitle(lyrics);
 	const genre = style.split(",")[0]?.trim() || "electronic";
@@ -87,6 +103,7 @@ app.post("/oneshot-raw", async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(playlist.id, 1, {
@@ -118,16 +135,17 @@ const ReimagineSchema = z.object({
 // POST /api/songs/reimagine — re-render an existing song in a new style via
 // the ACE "cover" task. The source song's audio is uploaded as the reference,
 // so structure/melody stay recognizable while the style follows the prompt.
-app.post("/reimagine", async (c) => {
+app.post("/reimagine", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = ReimagineSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { sourceSongId, style, coverNoiseStrength, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	const source = await songService.getById(sourceSongId);
-	if (!source) {
+	if (!source || !(await canActorAccessPlaylist(actor, source.playlistId))) {
 		return c.json({ error: "Source song not found" }, 404);
 	}
 	if (!resolveSongAudioFile(source.storagePath)) {
@@ -151,6 +169,7 @@ app.post("/reimagine", async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(
@@ -191,13 +210,14 @@ const ReimagineUrlSchema = z.object({
 // POST /api/songs/reimagine-url — reimagine an external source (YouTube etc.):
 // yt-dlp downloads the audio, which then drives the ACE cover task. Lyrics
 // can't be extracted from the source, so the caller supplies them (optional).
-app.post("/reimagine-url", async (c) => {
+app.post("/reimagine-url", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = ReimagineUrlSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { url, style, lyrics, coverNoiseStrength, playlistKey } = result.data;
+	const actor = await getRequestActor(c);
 
 	let download: Awaited<ReturnType<typeof downloadYoutubeAudio>>;
 	try {
@@ -223,6 +243,7 @@ app.post("/reimagine-url", async (c) => {
 		isTemporary: true,
 		expiresAt: Date.now() + ONESHOT_PLAYLIST_TTL_MS,
 		emitCreated: false,
+		...ownerFields(actor),
 	});
 
 	const song = await songService.createWithMetadata(
@@ -253,13 +274,17 @@ app.post("/reimagine-url", async (c) => {
 });
 
 // POST /api/songs/create-metadata-ready — create with metadata already done
-app.post("/create-metadata-ready", async (c) => {
+app.post("/create-metadata-ready", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreateWithMetadataSchema.safeParse(body);
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
 	const { playlistId, orderIndex, ...metadata } = result.data;
+	const actor = await getRequestActor(c);
+	if (!(await canActorAccessPlaylist(actor, playlistId))) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
 	return c.json(
 		await songService.createWithMetadata(playlistId, orderIndex, metadata),
 	);

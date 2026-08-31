@@ -1,5 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requireUserActor } from "../auth/actor";
+import {
+	generationLimiter,
+	radioRequestLimiter,
+	stationPresetLimiter,
+} from "../middleware/limiters";
 import {
 	getInventoryStats,
 	getRadioAnalytics,
@@ -17,6 +23,7 @@ import {
 	listRadioRequests,
 	submitRadioRequest,
 } from "../services/radio-request-service";
+import * as presetService from "../services/radio-station-presets-service";
 import {
 	activateListener,
 	addFeedback,
@@ -27,6 +34,7 @@ import {
 	skipStation,
 } from "../services/radio-station-service";
 import * as songService from "../services/song-service";
+import { songReadAccess } from "./songs/access";
 
 const app = new Hono();
 
@@ -59,12 +67,14 @@ app.get("/queue", async (c) => {
 });
 
 app.get("/library", async (c) => {
-	const allSongs = await songService.listAll(1000);
+	const limitParam = Number(c.req.query("limit"));
+	const limit =
+		Number.isFinite(limitParam) && limitParam > 0
+			? Math.min(Math.floor(limitParam), 1000)
+			: 300;
 	return c.json({
 		albums: await listRadioAlbums(),
-		legacySongs: allSongs.filter(
-			(song) => !song.radioEligible || !song.albumId,
-		),
+		legacySongs: await songService.listLegacy(limit, await songReadAccess(c)),
 	});
 });
 
@@ -111,13 +121,74 @@ app.post("/feedback", async (c) => {
 	return c.json(await addFeedback(result.data.songId, result.data.kind));
 });
 
-app.post("/requests", async (c) => {
+app.post("/requests", radioRequestLimiter, async (c) => {
 	const result = RequestSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	return c.json(await submitRadioRequest(result.data.prompt));
 });
 
-app.post("/force-generate-album", async (c) => {
+// ─── Station presets (text-only station intents, one active at a time) ──
+
+const PresetSchema = z.object({
+	name: z.string().trim().min(1).max(80),
+	description: z.string().trim().max(500).nullish(),
+	genrePrompt: z.string().trim().min(1).max(500),
+	vocalStyle: z.string().trim().max(300).nullish(),
+});
+
+const PresetUpdateSchema = PresetSchema.partial();
+
+app.get("/presets", (c) => c.json({ presets: presetService.listPresets() }));
+
+app.post("/presets", stationPresetLimiter, async (c) => {
+	if (!(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	const result = PresetSchema.safeParse(await c.req.json());
+	if (!result.success) return c.json({ error: result.error.message }, 400);
+	try {
+		return c.json(await presetService.createPreset(result.data), 201);
+	} catch (error) {
+		if (error instanceof presetService.StationPresetLimitError) {
+			return c.json({ error: error.message }, 409);
+		}
+		throw error;
+	}
+});
+
+app.patch("/presets/:id", stationPresetLimiter, async (c) => {
+	if (!(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	const result = PresetUpdateSchema.safeParse(await c.req.json());
+	if (!result.success) return c.json({ error: result.error.message }, 400);
+	const preset = await presetService.updatePreset(
+		c.req.param("id"),
+		result.data,
+	);
+	if (!preset) return c.json({ error: "Preset not found" }, 404);
+	return c.json(preset);
+});
+
+app.post("/presets/:id/activate", stationPresetLimiter, async (c) => {
+	if (!(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	const preset = await presetService.activatePreset(c.req.param("id"));
+	if (!preset) return c.json({ error: "Preset not found" }, 404);
+	return c.json(preset);
+});
+
+app.delete("/presets/:id", stationPresetLimiter, async (c) => {
+	if (!(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	const deleted = await presetService.deletePreset(c.req.param("id"));
+	if (!deleted) return c.json({ error: "Preset not found" }, 404);
+	return c.json({ ok: true });
+});
+
+app.post("/force-generate-album", generationLimiter, async (c) => {
 	return c.json(await topUpInventory({ force: true }));
 });
 

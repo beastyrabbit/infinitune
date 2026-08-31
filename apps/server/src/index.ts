@@ -26,6 +26,7 @@ import playlistsRoutes from "./routes/playlists";
 import radioRoutes from "./routes/radio";
 import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
+import shareRoutes from "./routes/share";
 import songsRoutes from "./routes/songs/index";
 import * as playlistService from "./services/playlist-service";
 import { startRadioServiceEventSync } from "./services/radio-station-service";
@@ -107,6 +108,17 @@ function getNoisyRoute(method: string, path: string): string | undefined {
 		if (pattern.pattern.test(path)) return pattern.route;
 	}
 	return undefined;
+}
+
+function getRequestLogPath(method: string, path: string): string {
+	const sharePathPrefix = "/api/share/";
+	if (
+		!path.startsWith(sharePathPrefix) ||
+		path.length === sharePathPrefix.length
+	) {
+		return path;
+	}
+	return method === "DELETE" ? "/api/share/:id" : "/api/share/:token";
 }
 
 function recordNoisyRequest(route: string, durationMs: number): void {
@@ -196,7 +208,11 @@ app.onError((err, c) => {
 		return c.json({ error: err.message }, 422);
 	}
 	logger.error(
-		{ err, method: c.req.method, path: c.req.path },
+		{
+			err,
+			method: c.req.method,
+			path: getRequestLogPath(c.req.method, c.req.path),
+		},
 		"Unhandled request error",
 	);
 	return c.json(
@@ -231,6 +247,7 @@ app.use(
 			"x-device-token",
 			"x-admin-token",
 		],
+		exposeHeaders: ["retry-after", "x-request-id"],
 	}),
 );
 
@@ -240,8 +257,9 @@ app.use("*", async (c, next) => {
 	c.header("x-request-id", requestId);
 	const startedAt = performance.now();
 	const method = c.req.method;
-	const path = c.req.path;
-	const noisyRoute = getNoisyRoute(method, path);
+	const requestPath = c.req.path;
+	const path = getRequestLogPath(method, requestPath);
+	const noisyRoute = getNoisyRoute(method, requestPath);
 	const requestLogger = logger.child({
 		requestId,
 		method,
@@ -357,6 +375,7 @@ app.route("/api/playlists", playlistsRoutes);
 app.route("/api/agent-memory", agentMemoryRoutes);
 app.route("/api/songs", songsRoutes);
 app.route("/api/radio", radioRoutes);
+app.route("/api/share", shareRoutes);
 app.route("/api/v1", createControlRoutes(roomManager));
 // Legacy compatibility endpoints (`/rooms`, `/now-playing`) while clients migrate.
 app.route("/api/v1", createRoomRoutes(roomManager));

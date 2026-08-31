@@ -4,7 +4,16 @@ import {
 	type SongStatus,
 } from "@infinitune/shared/types";
 import { validateSongTransition } from "@infinitune/shared/validation/song-status";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+	and,
+	desc,
+	eq,
+	inArray,
+	isNotNull,
+	isNull,
+	or,
+	sql,
+} from "drizzle-orm";
 import { db, sqlite } from "../db/index";
 import type { Song } from "../db/schema";
 import { albums, playlists, songs } from "../db/schema";
@@ -53,6 +62,21 @@ function buildMetadataPatch(
 
 // ─── Queries ─────────────────────────────────────────────────────────
 
+export interface SongReadAccess {
+	/** The authenticated owner to include. `null` means anonymous access. */
+	ownerUserId: string | null;
+}
+
+function playlistAccessCondition(access?: SongReadAccess) {
+	if (!access) return undefined;
+	return access.ownerUserId
+		? or(
+				eq(playlists.ownerUserId, access.ownerUserId),
+				isNull(playlists.ownerUserId),
+			)
+		: isNull(playlists.ownerUserId);
+}
+
 export async function getById(id: string): Promise<Song | null> {
 	const [row] = await db.select().from(songs).where(eq(songs.id, id));
 	return row ?? null;
@@ -66,14 +90,32 @@ export async function listByPlaylist(playlistId: string) {
 	return rows.sort((a, b) => a.orderIndex - b.orderIndex).map(songToWire);
 }
 
-export async function listAll(limit = 200) {
+export async function listAll(limit = 200, access?: SongReadAccess) {
 	const rows = await db
-		.select()
+		.select({ song: songs })
 		.from(songs)
-		.where(isNotNull(songs.title))
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(and(isNotNull(songs.title), playlistAccessCondition(access)))
 		.orderBy(desc(songs.createdAt))
 		.limit(limit);
-	return rows.map(songToWire);
+	return rows.map(({ song }) => songToWire(song));
+}
+
+export async function listLegacy(limit = 200, access?: SongReadAccess) {
+	const rows = await db
+		.select({ song: songs })
+		.from(songs)
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(
+			and(
+				isNotNull(songs.title),
+				playlistAccessCondition(access),
+				or(eq(songs.radioEligible, false), isNull(songs.albumId)),
+			),
+		)
+		.orderBy(desc(songs.createdAt))
+		.limit(limit);
+	return rows.map(({ song }) => songToWire(song));
 }
 
 export async function getNextOrderIndex(playlistId: string): Promise<number> {
@@ -85,45 +127,58 @@ export async function getNextOrderIndex(playlistId: string): Promise<number> {
 	return Math.ceil(Math.max(...rows.map((s) => s.orderIndex))) + 1;
 }
 
-export async function getByIds(ids: string[]) {
+export async function getByIds(ids: string[], access?: SongReadAccess) {
 	if (!ids.length) return [];
-	const rows = await db.select().from(songs).where(inArray(songs.id, ids));
-	return rows.filter(Boolean).map(songToWire);
-}
-
-export async function getInAudioPipeline() {
 	const rows = await db
-		.select()
+		.select({ song: songs })
 		.from(songs)
-		.where(
-			inArray(songs.status, [
-				"submitting_to_ace",
-				"generating_audio",
-				"saving",
-			]),
-		);
-	return rows.map(songToWire);
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(and(inArray(songs.id, ids), playlistAccessCondition(access)));
+	return rows.map(({ song }) => songToWire(song));
 }
 
-export async function getNeedsPersona() {
-	const rows = await db.select().from(songs).where(isNotNull(songs.userRating));
+export async function getInAudioPipeline(access?: SongReadAccess) {
+	const rows = await db
+		.select({ song: songs })
+		.from(songs)
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(
+			and(
+				inArray(songs.status, [
+					"submitting_to_ace",
+					"generating_audio",
+					"saving",
+				]),
+				playlistAccessCondition(access),
+			),
+		);
+	return rows.map(({ song }) => songToWire(song));
+}
+
+export async function getNeedsPersona(access?: SongReadAccess) {
+	const rows = await db
+		.select({ song: songs })
+		.from(songs)
+		.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+		.where(and(isNotNull(songs.userRating), playlistAccessCondition(access)));
 	return rows
-		.filter((s) => !s.personaExtract && s.title)
+		.map(({ song }) => song)
+		.filter((song) => !song.personaExtract && song.title)
 		.slice(0, 20)
-		.map((s) => ({
-			id: s.id,
-			title: s.title ?? "Untitled",
-			artistName: s.artistName,
-			genre: s.genre,
-			subGenre: s.subGenre,
-			mood: s.mood,
-			energy: s.energy,
-			era: s.era,
-			vocalStyle: s.vocalStyle,
-			instruments: parseJsonField<string[]>(s.instruments),
-			themes: parseJsonField<string[]>(s.themes),
-			description: s.description,
-			lyrics: s.lyrics,
+		.map((song) => ({
+			id: song.id,
+			title: song.title ?? "Untitled",
+			artistName: song.artistName,
+			genre: song.genre,
+			subGenre: song.subGenre,
+			mood: song.mood,
+			energy: song.energy,
+			era: song.era,
+			vocalStyle: song.vocalStyle,
+			instruments: parseJsonField<string[]>(song.instruments),
+			themes: parseJsonField<string[]>(song.themes),
+			description: song.description,
+			lyrics: song.lyrics,
 		}));
 }
 

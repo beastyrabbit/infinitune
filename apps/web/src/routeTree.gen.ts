@@ -9,10 +9,10 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as McpRouteImport } from './routes/mcp'
 import { Route as HouseRouteImport } from './routes/house'
 import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ShareTokenRouteImport } from './routes/share_.$token'
 import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
 import { Route as AutoplayerSourcesRouteImport } from './routes/autoplayer_.sources'
 import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
@@ -35,7 +35,6 @@ import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplay
 import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
 import { Route as ApiAutoplayerPromptContractRouteImport } from './routes/api.autoplayer.prompt-contract'
 import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplayer.poll-ace'
-import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
 import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
@@ -47,11 +46,6 @@ import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.aut
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
 import { Route as ApiAutoplayerAudioSongIdRouteImport } from './routes/api.autoplayer.audio.$songId'
 
-const McpRoute = McpRouteImport.update({
-  id: '/mcp',
-  path: '/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HouseRoute = HouseRouteImport.update({
   id: '/house',
   path: '/house',
@@ -65,6 +59,11 @@ const AutoplayerRoute = AutoplayerRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share_/$token',
+  path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
@@ -181,12 +180,6 @@ const ApiAutoplayerPollAceRoute = ApiAutoplayerPollAceRouteImport.update({
   path: '/api/autoplayer/poll-ace',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAutoplayerOpenrouterModelsRoute =
-  ApiAutoplayerOpenrouterModelsRouteImport.update({
-    id: '/api/autoplayer/openrouter-models',
-    path: '/api/autoplayer/openrouter-models',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiAutoplayerOllamaModelsRoute =
   ApiAutoplayerOllamaModelsRouteImport.update({
     id: '/api/autoplayer/ollama-models',
@@ -251,7 +244,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/house': typeof HouseRoute
-  '/mcp': typeof McpRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
@@ -262,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/sources': typeof AutoplayerSourcesRoute
   '/autoplayer/testlab': typeof AutoplayerTestlabRouteWithChildren
+  '/share/$token': typeof ShareTokenRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -271,7 +264,6 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
-  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
@@ -290,7 +282,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/house': typeof HouseRoute
-  '/mcp': typeof McpRoute
   '/autoplayer/library': typeof AutoplayerLibraryRoute
   '/autoplayer/mini': typeof AutoplayerMiniRoute
   '/autoplayer/oneshot': typeof AutoplayerOneshotRoute
@@ -300,6 +291,7 @@ export interface FileRoutesByTo {
   '/autoplayer/reimagine': typeof AutoplayerReimagineRoute
   '/autoplayer/settings': typeof AutoplayerSettingsRoute
   '/autoplayer/sources': typeof AutoplayerSourcesRoute
+  '/share/$token': typeof ShareTokenRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -309,7 +301,6 @@ export interface FileRoutesByTo {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
-  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
@@ -329,7 +320,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/autoplayer': typeof AutoplayerRoute
   '/house': typeof HouseRoute
-  '/mcp': typeof McpRoute
   '/autoplayer_/library': typeof AutoplayerLibraryRoute
   '/autoplayer_/mini': typeof AutoplayerMiniRoute
   '/autoplayer_/oneshot': typeof AutoplayerOneshotRoute
@@ -340,6 +330,7 @@ export interface FileRoutesById {
   '/autoplayer_/settings': typeof AutoplayerSettingsRoute
   '/autoplayer_/sources': typeof AutoplayerSourcesRoute
   '/autoplayer_/testlab': typeof AutoplayerTestlabRouteWithChildren
+  '/share_/$token': typeof ShareTokenRoute
   '/api/autoplayer/ace-models': typeof ApiAutoplayerAceModelsRoute
   '/api/autoplayer/enhance-prompt': typeof ApiAutoplayerEnhancePromptRoute
   '/api/autoplayer/enhance-request': typeof ApiAutoplayerEnhanceRequestRoute
@@ -349,7 +340,6 @@ export interface FileRoutesById {
   '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
-  '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
   '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
@@ -370,7 +360,6 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/house'
-    | '/mcp'
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
@@ -381,6 +370,7 @@ export interface FileRouteTypes {
     | '/autoplayer/settings'
     | '/autoplayer/sources'
     | '/autoplayer/testlab'
+    | '/share/$token'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -390,7 +380,6 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
-    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
@@ -409,7 +398,6 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/house'
-    | '/mcp'
     | '/autoplayer/library'
     | '/autoplayer/mini'
     | '/autoplayer/oneshot'
@@ -419,6 +407,7 @@ export interface FileRouteTypes {
     | '/autoplayer/reimagine'
     | '/autoplayer/settings'
     | '/autoplayer/sources'
+    | '/share/$token'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -428,7 +417,6 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
-    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
@@ -447,7 +435,6 @@ export interface FileRouteTypes {
     | '/'
     | '/autoplayer'
     | '/house'
-    | '/mcp'
     | '/autoplayer_/library'
     | '/autoplayer_/mini'
     | '/autoplayer_/oneshot'
@@ -458,6 +445,7 @@ export interface FileRouteTypes {
     | '/autoplayer_/settings'
     | '/autoplayer_/sources'
     | '/autoplayer_/testlab'
+    | '/share_/$token'
     | '/api/autoplayer/ace-models'
     | '/api/autoplayer/enhance-prompt'
     | '/api/autoplayer/enhance-request'
@@ -467,7 +455,6 @@ export interface FileRouteTypes {
     | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
-    | '/api/autoplayer/openrouter-models'
     | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
@@ -487,7 +474,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AutoplayerRoute: typeof AutoplayerRoute
   HouseRoute: typeof HouseRoute
-  McpRoute: typeof McpRoute
   AutoplayerLibraryRoute: typeof AutoplayerLibraryRoute
   AutoplayerMiniRoute: typeof AutoplayerMiniRoute
   AutoplayerOneshotRoute: typeof AutoplayerOneshotRoute
@@ -498,6 +484,7 @@ export interface RootRouteChildren {
   AutoplayerSettingsRoute: typeof AutoplayerSettingsRoute
   AutoplayerSourcesRoute: typeof AutoplayerSourcesRoute
   AutoplayerTestlabRoute: typeof AutoplayerTestlabRouteWithChildren
+  ShareTokenRoute: typeof ShareTokenRoute
   ApiAutoplayerAceModelsRoute: typeof ApiAutoplayerAceModelsRoute
   ApiAutoplayerEnhancePromptRoute: typeof ApiAutoplayerEnhancePromptRoute
   ApiAutoplayerEnhanceRequestRoute: typeof ApiAutoplayerEnhanceRequestRoute
@@ -507,7 +494,6 @@ export interface RootRouteChildren {
   ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
-  ApiAutoplayerOpenrouterModelsRoute: typeof ApiAutoplayerOpenrouterModelsRoute
   ApiAutoplayerPollAceRoute: typeof ApiAutoplayerPollAceRoute
   ApiAutoplayerPromptContractRoute: typeof ApiAutoplayerPromptContractRoute
   ApiAutoplayerRefinePromptRoute: typeof ApiAutoplayerRefinePromptRoute
@@ -519,13 +505,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/mcp': {
-      id: '/mcp'
-      path: '/mcp'
-      fullPath: '/mcp'
-      preLoaderRoute: typeof McpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/house': {
       id: '/house'
       path: '/house'
@@ -545,6 +524,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share_/$token': {
+      id: '/share_/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/testlab': {
@@ -701,13 +687,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerPollAceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/openrouter-models': {
-      id: '/api/autoplayer/openrouter-models'
-      path: '/api/autoplayer/openrouter-models'
-      fullPath: '/api/autoplayer/openrouter-models'
-      preLoaderRoute: typeof ApiAutoplayerOpenrouterModelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/autoplayer/ollama-models': {
       id: '/api/autoplayer/ollama-models'
       path: '/api/autoplayer/ollama-models'
@@ -806,7 +785,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AutoplayerRoute: AutoplayerRoute,
   HouseRoute: HouseRoute,
-  McpRoute: McpRoute,
   AutoplayerLibraryRoute: AutoplayerLibraryRoute,
   AutoplayerMiniRoute: AutoplayerMiniRoute,
   AutoplayerOneshotRoute: AutoplayerOneshotRoute,
@@ -817,6 +795,7 @@ const rootRouteChildren: RootRouteChildren = {
   AutoplayerSettingsRoute: AutoplayerSettingsRoute,
   AutoplayerSourcesRoute: AutoplayerSourcesRoute,
   AutoplayerTestlabRoute: AutoplayerTestlabRouteWithChildren,
+  ShareTokenRoute: ShareTokenRoute,
   ApiAutoplayerAceModelsRoute: ApiAutoplayerAceModelsRoute,
   ApiAutoplayerEnhancePromptRoute: ApiAutoplayerEnhancePromptRoute,
   ApiAutoplayerEnhanceRequestRoute: ApiAutoplayerEnhanceRequestRoute,
@@ -826,7 +805,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,
-  ApiAutoplayerOpenrouterModelsRoute: ApiAutoplayerOpenrouterModelsRoute,
   ApiAutoplayerPollAceRoute: ApiAutoplayerPollAceRoute,
   ApiAutoplayerPromptContractRoute: ApiAutoplayerPromptContractRoute,
   ApiAutoplayerRefinePromptRoute: ApiAutoplayerRefinePromptRoute,

@@ -6,13 +6,29 @@ import { stream } from "hono/streaming";
 import { logger } from "../../logger";
 import * as songService from "../../services/song-service";
 import { songToWire } from "../../wire";
+import {
+	requirePlaybackPlaylistAccess,
+	requirePlaylistAccess,
+	requireSongAccess,
+	songReadAccess,
+} from "./access";
 
 const app = new Hono();
 
 // GET /api/songs — list all songs (with metadata), newest first
 app.get("/", async (c) => {
-	return c.json(await songService.listAll());
+	return c.json(await songService.listAll(200, await songReadAccess(c)));
 });
+
+for (const path of ["/by-playlist/:playlistId", "/queue/:playlistId"]) {
+	app.use(path, requirePlaybackPlaylistAccess);
+}
+for (const path of [
+	"/next-order-index/:playlistId",
+	"/work-queue/:playlistId",
+]) {
+	app.use(path, requirePlaylistAccess);
+}
 
 // GET /api/songs/by-playlist/:playlistId
 app.get("/by-playlist/:playlistId", async (c) => {
@@ -31,12 +47,12 @@ app.get("/next-order-index/:playlistId", async (c) => {
 
 // GET /api/songs/in-audio-pipeline
 app.get("/in-audio-pipeline", async (c) => {
-	return c.json(await songService.getInAudioPipeline());
+	return c.json(await songService.getInAudioPipeline(await songReadAccess(c)));
 });
 
 // GET /api/songs/needs-persona
 app.get("/needs-persona", async (c) => {
-	return c.json(await songService.getNeedsPersona());
+	return c.json(await songService.getNeedsPersona(await songReadAccess(c)));
 });
 
 // GET /api/songs/work-queue/:playlistId
@@ -51,7 +67,9 @@ app.post("/batch", async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	return c.json(await songService.getByIds(result.data.ids));
+	return c.json(
+		await songService.getByIds(result.data.ids, await songReadAccess(c)),
+	);
 });
 
 // GET /api/songs/:id/audio — stream audio from NFS
@@ -114,7 +132,7 @@ app.get("/:id/audio", async (c) => {
 });
 
 // GET /api/songs/:id
-app.get("/:id", async (c) => {
+app.get("/:id", requireSongAccess, async (c) => {
 	const song = await songService.getById(c.req.param("id"));
 	if (!song) return c.json(null, 404);
 	return c.json(songToWire(song));

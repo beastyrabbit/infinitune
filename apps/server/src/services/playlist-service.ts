@@ -3,7 +3,7 @@ import { normalizeLyricsLanguage } from "@infinitune/shared/lyrics-language";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { PlaylistStatus } from "@infinitune/shared/types";
 import { validatePlaylistTransition } from "@infinitune/shared/validation/song-status";
-import { and, desc, eq, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lte, ne, or, sql } from "drizzle-orm";
 import { db } from "../db/index";
 import type { Playlist } from "../db/schema";
 import { playlists } from "../db/schema";
@@ -419,7 +419,7 @@ export async function heartbeat(id: string) {
 export async function deleteExpiredTemporaryPlaylists(
 	now = Date.now(),
 ): Promise<number> {
-	const expired = await db
+	const candidates = await db
 		.select({ id: playlists.id })
 		.from(playlists)
 		.where(
@@ -430,12 +430,33 @@ export async function deleteExpiredTemporaryPlaylists(
 			),
 		);
 
-	if (expired.length === 0) return 0;
+	return deleteExpiredTemporaryPlaylistCandidates(
+		candidates.map((playlist) => playlist.id),
+		now,
+	);
+}
 
-	for (const playlist of expired) {
-		await db.delete(playlists).where(eq(playlists.id, playlist.id));
+export async function deleteExpiredTemporaryPlaylistCandidates(
+	candidateIds: string[],
+	now = Date.now(),
+): Promise<number> {
+	if (candidateIds.length === 0) return 0;
+
+	const deleted = await db
+		.delete(playlists)
+		.where(
+			and(
+				inArray(playlists.id, candidateIds),
+				eq(playlists.isTemporary, true),
+				lte(playlists.expiresAt, now),
+				ne(playlists.status, "active"),
+			),
+		)
+		.returning({ id: playlists.id });
+
+	for (const playlist of deleted) {
 		emit("playlist.deleted", { playlistId: playlist.id });
 	}
 
-	return expired.length;
+	return deleted.length;
 }

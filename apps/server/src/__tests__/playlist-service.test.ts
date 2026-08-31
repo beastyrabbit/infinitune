@@ -20,6 +20,7 @@ vi.mock("../events/event-bus", () => ({
 
 import { playlists } from "../db/schema";
 import * as playlistService from "../services/playlist-service";
+import * as shareService from "../services/share-link-service";
 
 describe("playlist-service", () => {
 	beforeEach(() => {
@@ -479,6 +480,68 @@ describe("playlist-service", () => {
 				event: "playlist.deleted",
 				data: { playlistId: pl.id },
 			});
+		});
+	});
+
+	describe("deleteExpiredTemporaryPlaylists", () => {
+		it("deletes only stale candidates still eligible after permanent promotion", async () => {
+			const db = getTestDb();
+			const now = Date.now();
+			const [promoted, expired] = await db
+				.insert(playlists)
+				.values([
+					{
+						name: "Promoted oneshot",
+						prompt: "test",
+						llmProvider: "ollama",
+						llmModel: "llama3",
+						mode: "oneshot",
+						status: "closed",
+						isTemporary: true,
+						expiresAt: now - 1,
+					},
+					{
+						name: "Expired oneshot",
+						prompt: "test",
+						llmProvider: "ollama",
+						llmModel: "llama3",
+						mode: "oneshot",
+						status: "closed",
+						isTemporary: true,
+						expiresAt: now - 1,
+					},
+				])
+				.returning();
+
+			const staleCandidates = [promoted.id, expired.id];
+			const link = await shareService.createShareLink({
+				resourceType: "playlist",
+				resourceId: promoted.id,
+			});
+			emittedEvents.length = 0;
+
+			const removed =
+				await playlistService.deleteExpiredTemporaryPlaylistCandidates(
+					staleCandidates,
+					now,
+				);
+
+			expect(link).not.toBeNull();
+			expect(removed).toBe(1);
+			expect(await playlistService.getById(promoted.id)).toMatchObject({
+				isTemporary: false,
+				expiresAt: null,
+			});
+			expect(await playlistService.getById(expired.id)).toBeNull();
+			expect(
+				await shareService.resolveShareLink(link?.token ?? ""),
+			).not.toBeNull();
+			expect(emittedEvents).toEqual([
+				{
+					event: "playlist.deleted",
+					data: { playlistId: expired.id },
+				},
+			]);
 		});
 	});
 

@@ -17,7 +17,9 @@ import {
 	postHumanChat,
 } from "../agents/playlist-director-service";
 import { getRequestActor, type RequestActor } from "../auth/actor";
+import { getDeviceActor } from "../auth/device";
 import { logger } from "../logger";
+import { generationLimiter, llmLimiter } from "../middleware/limiters";
 import * as playlistService from "../services/playlist-service";
 import { type PlaylistWire, playlistToWire } from "../wire";
 
@@ -39,6 +41,39 @@ function filterAccessiblePlaylists<T extends PlaylistWire>(
 	return playlists.filter((playlist) => canAccessPlaylist(actor, playlist));
 }
 
+type PlaybackAccess = {
+	actor: RequestActor;
+	deviceOwnerUserId: string | null;
+};
+
+async function getPlaybackAccess(c: Context): Promise<PlaybackAccess> {
+	const [actor, device] = await Promise.all([
+		getRequestActor(c),
+		getDeviceActor(c),
+	]);
+	return { actor, deviceOwnerUserId: device?.ownerUserId ?? null };
+}
+
+function canPlaybackAccessPlaylist(
+	access: PlaybackAccess,
+	playlist: PlaylistWire,
+): boolean {
+	return (
+		canAccessPlaylist(access.actor, playlist) ||
+		(Boolean(playlist.ownerUserId) &&
+			playlist.ownerUserId === access.deviceOwnerUserId)
+	);
+}
+
+function filterPlaybackAccessiblePlaylists<T extends PlaylistWire>(
+	access: PlaybackAccess,
+	playlists: T[],
+): T[] {
+	return playlists.filter((playlist) =>
+		canPlaybackAccessPlaylist(access, playlist),
+	);
+}
+
 /** The global radio's hidden generation playlist must not surface in
  *  normal playlist listings or as the user's "current" playlist. */
 function isHiddenRadioPlaylist(playlist: PlaylistWire): boolean {
@@ -58,23 +93,40 @@ async function loadAccessiblePlaylist(
 	return { playlist: wire };
 }
 
+async function loadPlaybackAccessiblePlaylist(
+	c: Context,
+): Promise<{ playlist: PlaylistWire } | Response> {
+	const access = await getPlaybackAccess(c);
+	const playlist = await playlistService.getById(c.req.param("id"));
+	if (!playlist) return c.json(null, 404);
+	const wire = playlistToWire(playlist);
+	if (!canPlaybackAccessPlaylist(access, wire)) {
+		return c.json({ error: "Playlist not found" }, 404);
+	}
+	return { playlist: wire };
+}
+
 // ─── Queries ────────────────────────────────────────────────────────
 
 // GET /api/playlists
 app.get("/", async (c) => {
-	const actor = await getRequestActor(c);
+	const access = await getPlaybackAccess(c);
 	return c.json(
-		filterAccessiblePlaylists(actor, await playlistService.listAll()).filter(
-			(playlist) => !isHiddenRadioPlaylist(playlist),
-		),
+		filterPlaybackAccessiblePlaylists(
+			access,
+			await playlistService.listAll(),
+		).filter((playlist) => !isHiddenRadioPlaylist(playlist)),
 	);
 });
 
 // GET /api/playlists/current
 app.get("/current", async (c) => {
-	const actor = await getRequestActor(c);
+	const access = await getPlaybackAccess(c);
 	const current =
-		filterAccessiblePlaylists(actor, await playlistService.listActive())
+		filterPlaybackAccessiblePlaylists(
+			access,
+			await playlistService.listActive(),
+		)
 			.filter(
 				(playlist) =>
 					playlist.mode !== "oneshot" && !isHiddenRadioPlaylist(playlist),
@@ -85,9 +137,12 @@ app.get("/current", async (c) => {
 
 // GET /api/playlists/closed
 app.get("/closed", async (c) => {
-	const actor = await getRequestActor(c);
+	const access = await getPlaybackAccess(c);
 	return c.json(
-		filterAccessiblePlaylists(actor, await playlistService.listClosed()),
+		filterPlaybackAccessiblePlaylists(
+			access,
+			await playlistService.listClosed(),
+		),
 	);
 });
 
@@ -101,16 +156,16 @@ app.get("/worker", async (c) => {
 
 // GET /api/playlists/by-key/:key
 app.get("/by-key/:key", async (c) => {
-	const actor = await getRequestActor(c);
+	const access = await getPlaybackAccess(c);
 	const playlist = await playlistService.getByKey(c.req.param("key"));
-	if (!playlist || !canAccessPlaylist(actor, playlist))
+	if (!playlist || !canPlaybackAccessPlaylist(access, playlist))
 		return c.json(null, 404);
 	return c.json(playlist);
 });
 
 // GET /api/playlists/:id
 app.get("/:id", async (c) => {
-	const access = await loadAccessiblePlaylist(c);
+	const access = await loadPlaybackAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	return c.json(access.playlist);
 });
@@ -147,21 +202,26 @@ app.get("/:id/agent-chat/messages", async (c) => {
 });
 
 // POST /api/playlists/:id/agent-chat/messages
-app.post("/:id/agent-chat/messages", async (c) => {
-	const access = await loadAccessiblePlaylist(c);
-	if (access instanceof Response) return access;
-	const body = await c.req.json();
-	const result = ChatMessageSchema.safeParse(body);
-	if (!result.success) return c.json({ error: result.error.message }, 400);
-	return c.json(
-		await postHumanChat({
-			playlistId: c.req.param("id"),
-			content: result.data.content,
-			threadId: result.data.threadId,
-			commitDirection: result.data.commitDirection,
-		}),
-	);
-});
+app.post(
+	"/:id/agent-chat/messages",
+	llmLimiter,
+	generationLimiter,
+	async (c) => {
+		const access = await loadAccessiblePlaylist(c);
+		if (access instanceof Response) return access;
+		const body = await c.req.json();
+		const result = ChatMessageSchema.safeParse(body);
+		if (!result.success) return c.json({ error: result.error.message }, 400);
+		return c.json(
+			await postHumanChat({
+				playlistId: c.req.param("id"),
+				content: result.data.content,
+				threadId: result.data.threadId,
+				commitDirection: result.data.commitDirection,
+			}),
+		);
+	},
+);
 
 // GET /api/playlists/:id/agent-chat/state
 app.get("/:id/agent-chat/state", async (c) => {
@@ -171,7 +231,7 @@ app.get("/:id/agent-chat/state", async (c) => {
 });
 
 // POST /api/playlists/:id/agent-chat/answer
-app.post("/:id/agent-chat/answer", async (c) => {
+app.post("/:id/agent-chat/answer", llmLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	const body = await c.req.json();
@@ -194,7 +254,7 @@ app.post("/:id/agent-chat/answer", async (c) => {
 // ─── Mutations ──────────────────────────────────────────────────────
 
 // POST /api/playlists
-app.post("/", async (c) => {
+app.post("/", generationLimiter, async (c) => {
 	const body = await c.req.json();
 	const result = CreatePlaylistSchema.safeParse(body);
 	if (!result.success) {
@@ -274,7 +334,7 @@ app.patch("/:id/status", async (c) => {
 
 // PATCH /api/playlists/:id/position
 app.patch("/:id/position", async (c) => {
-	const access = await loadAccessiblePlaylist(c);
+	const access = await loadPlaybackAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	const body = await c.req.json();
 	const result = UpdatePlaylistPositionSchema.safeParse(body);
@@ -305,7 +365,7 @@ app.post("/:id/reset-defaults", async (c) => {
 });
 
 // PATCH /api/playlists/:id/prompt — steering
-app.patch("/:id/prompt", async (c) => {
+app.patch("/:id/prompt", generationLimiter, async (c) => {
 	const access = await loadAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	const body = await c.req.json();
@@ -336,7 +396,7 @@ app.delete("/:id", async (c) => {
 
 // POST /api/playlists/:id/heartbeat
 app.post("/:id/heartbeat", async (c) => {
-	const access = await loadAccessiblePlaylist(c);
+	const access = await loadPlaybackAccessiblePlaylist(c);
 	if (access instanceof Response) return access;
 	await playlistService.heartbeat(c.req.param("id"));
 	return c.json({ ok: true });

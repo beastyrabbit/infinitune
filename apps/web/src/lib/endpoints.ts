@@ -3,44 +3,93 @@ import type { SongCover } from "@/types";
 /**
  * Centralized endpoint URLs for the Infinitune API server.
  *
- * Resolution order:
- *   1. VITE_API_URL (baked at build time by Vite, available via import.meta.env in browser)
- *   2. process.env.VITE_API_URL (available during SSR / Nitro)
- *   3. window.location.origin (browser same-origin — works behind reverse proxy)
- *   4. Fallback to localhost:5175 (local dev without env, SSR without env)
+ * Browser requests stay same-origin unless VITE_API_URL explicitly selects a
+ * split API. During SSR, APP_ORIGIN remains the public base used in rendered
+ * media URLs while INTERNAL_API_URL may select a private API endpoint for the
+ * loader fetch itself.
  */
 
-function resolveApiUrl(): string {
-	// Explicit override via env var (local dev, split deployments)
-	const envUrl = import.meta.env?.VITE_API_URL;
-	if (typeof envUrl === "string" && envUrl.length > 0) {
-		console.info("[endpoints] API_URL from VITE_API_URL:", envUrl);
-		return envUrl;
-	}
-	// SSR (Nitro) — process.env is available
-	// biome-ignore lint/complexity/useOptionalChain: typeof guard needed for undeclared global
-	if (typeof process !== "undefined" && process.env?.VITE_API_URL) {
-		console.info(
-			"[endpoints] API_URL from process.env:",
-			process.env.VITE_API_URL,
-		);
-		return process.env.VITE_API_URL;
-	}
-	// Browser: same-origin (API served from same host via reverse proxy)
-	if (typeof window !== "undefined") {
-		console.info(
-			"[endpoints] API_URL from window.location.origin:",
-			window.location.origin,
-		);
-		return window.location.origin;
-	}
-	// Final fallback (local dev without env, SSR without env)
-	console.warn("[endpoints] API_URL falling back to http://localhost:5175");
-	return "http://localhost:5175";
+const LOCAL_API_URL = "http://localhost:5175";
+
+export interface ApiUrlSources {
+	viteApiUrl?: string;
+	processViteApiUrl?: string;
+	appOrigin?: string;
+	internalApiUrl?: string;
+	browserOrigin?: string;
 }
 
+export interface ProductionOriginSources {
+	nodeEnv?: string;
+	appOrigin?: string;
+}
+
+const APP_ORIGIN_ERROR =
+	"APP_ORIGIN must be an absolute HTTP(S) origin in production (for example, https://music.example.com).";
+
+function cleanBaseUrl(value: string | undefined): string | undefined {
+	const trimmed = value?.trim();
+	return trimmed ? trimmed.replace(/\/+$/, "") : undefined;
+}
+
+export function assertProductionAppOrigin(
+	sources: ProductionOriginSources,
+): void {
+	if (sources.nodeEnv !== "production") return;
+	const raw = sources.appOrigin;
+	try {
+		if (!raw || !/^https?:\/\/[^\s/?#@\\]+\/?$/i.test(raw)) {
+			throw new Error(APP_ORIGIN_ERROR);
+		}
+		const url = new URL(raw);
+		if (
+			(url.protocol !== "http:" && url.protocol !== "https:") ||
+			url.username ||
+			url.password ||
+			url.pathname !== "/" ||
+			url.search ||
+			url.hash
+		) {
+			throw new Error(APP_ORIGIN_ERROR);
+		}
+	} catch {
+		throw new Error(APP_ORIGIN_ERROR);
+	}
+}
+
+/** Pure URL selection kept separate so SSR and browser behavior stay tested. */
+export function selectApiUrls(sources: ApiUrlSources): {
+	publicApiUrl: string;
+	fetchApiUrl: string;
+} {
+	const viteApiUrl =
+		cleanBaseUrl(sources.viteApiUrl) ?? cleanBaseUrl(sources.processViteApiUrl);
+	const browserOrigin = cleanBaseUrl(sources.browserOrigin);
+	const publicApiUrl = browserOrigin
+		? (viteApiUrl ?? browserOrigin)
+		: (cleanBaseUrl(sources.appOrigin) ?? viteApiUrl ?? LOCAL_API_URL);
+	const fetchApiUrl = browserOrigin
+		? publicApiUrl
+		: (cleanBaseUrl(sources.internalApiUrl) ?? publicApiUrl);
+
+	return { publicApiUrl, fetchApiUrl };
+}
+
+const processEnv = typeof process !== "undefined" ? process.env : undefined;
+const runtimeApiUrls = selectApiUrls({
+	viteApiUrl: import.meta.env?.VITE_API_URL,
+	processViteApiUrl: processEnv?.VITE_API_URL,
+	appOrigin: processEnv?.APP_ORIGIN,
+	internalApiUrl: processEnv?.INTERNAL_API_URL,
+	browserOrigin:
+		typeof window !== "undefined" ? window.location.origin : undefined,
+});
+
 /** Base HTTP URL for the API server (no trailing slash). */
-export const API_URL: string = resolveApiUrl();
+export const API_URL: string = runtimeApiUrls.publicApiUrl;
+
+/** HTTP base used by loaders. It differs from API_URL only during SSR. */
+export const API_FETCH_URL: string = runtimeApiUrls.fetchApiUrl;
 
 /** WebSocket URL for the event invalidation bridge (/ws). */
 export const EVENT_WS_URL: string = `${API_URL.replace(/^http/, "ws")}/ws`;
