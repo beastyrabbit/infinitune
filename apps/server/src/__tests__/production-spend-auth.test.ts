@@ -439,35 +439,46 @@ describe("production OpenRouter spend authentication", () => {
 		expect(deleteResponse.status).toBe(200);
 	});
 
-	it("guards global settings only in production", async () => {
+	it("guards global settings reads and writes only in production", async () => {
+		const productionReadResponse = await settingsRoutes.request("/");
+		const productionKeyReadResponse =
+			await settingsRoutes.request("/aceStepUrl");
 		const productionResponse = await requestJson(settingsRoutes, "/", "POST", {
 			key: "textProvider",
 			value: "openrouter",
 		});
+		expect(productionReadResponse.status).toBe(401);
+		expect(productionKeyReadResponse.status).toBe(401);
 		expect(productionResponse.status).toBe(401);
+		expect(mocks.settingsGetAll).not.toHaveBeenCalled();
 		expect(mocks.settingsSet).not.toHaveBeenCalled();
 
 		mocks.requireUserActor.mockResolvedValue(authenticated);
+		const authenticatedReadResponse = await settingsRoutes.request("/");
 		const authenticatedResponse = await requestJson(
 			settingsRoutes,
 			"/",
 			"POST",
 			{ key: "textProvider", value: "openrouter" },
 		);
+		expect(authenticatedReadResponse.status).toBe(200);
 		expect(authenticatedResponse.status).toBe(200);
 
 		vi.stubEnv("NODE_ENV", "development");
 		mocks.requireUserActor.mockResolvedValue(null);
+		const localReadResponse = await settingsRoutes.request("/");
 		const localResponse = await requestJson(settingsRoutes, "/", "POST", {
 			key: "textModel",
 			value: "auto",
 		});
+		expect(localReadResponse.status).toBe(200);
 		expect(localResponse.status).toBe(200);
 		expect(mocks.settingsSet).toHaveBeenCalledTimes(2);
 	});
 
 	it("reports when ACE_STEP_URL controls the effective settings value", async () => {
 		vi.stubEnv("ACE_STEP_URL", "http://ace-from-env:8001");
+		mocks.requireUserActor.mockResolvedValue(authenticated);
 		mocks.settingsGetAll.mockResolvedValue({
 			aceStepUrl: "http://ace-from-db:8001",
 		});

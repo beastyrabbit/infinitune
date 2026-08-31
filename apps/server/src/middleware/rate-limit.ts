@@ -131,6 +131,25 @@ function createTrustedProxyMatcher(
 	};
 }
 
+/**
+ * Whether the request's direct socket peer belongs to the configured proxy
+ * allowlist. Identity headers must never be trusted merely because they are
+ * present: only an allowed reverse proxy may assert them.
+ */
+export function isTrustedProxyPeer(c: Context): boolean {
+	const trustedProxies = createTrustedProxyMatcher(configuredTrustedProxyIps());
+	if (!trustedProxies.configured) return false;
+
+	try {
+		const remoteAddress = normalizeIp(getConnInfo(c).remote.address);
+		return Boolean(remoteAddress && trustedProxies.matches(remoteAddress));
+	} catch {
+		// Hono's in-process request helper has no Node socket binding. Production
+		// identity checks must fail closed when the direct peer is unavailable.
+		return false;
+	}
+}
+
 function warnIgnoredProxyHeader(
 	reason: "untrusted-peer" | "invalid-header",
 	remoteAddress: string | undefined,

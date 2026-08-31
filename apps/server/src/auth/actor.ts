@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { isTrustedProxyPeer } from "../middleware/rate-limit";
 import * as userService from "../services/user-service";
 import { parseBearerToken, verifyShooIdToken } from "./shoo";
 
@@ -78,7 +79,10 @@ function readOptionalPangolinMetadata(
 }
 
 async function resolvePangolinActor(c: Context): Promise<UserActor | null> {
-	if (process.env.INFINITUNE_TRUST_PANGOLIN_HEADERS !== "true") {
+	if (
+		process.env.INFINITUNE_TRUST_PANGOLIN_HEADERS !== "true" ||
+		!isTrustedProxyPeer(c)
+	) {
 		return null;
 	}
 

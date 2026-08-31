@@ -268,8 +268,8 @@ LRCLIB_URL=https://lrclib.net
 REIMAGINE_CACHE_MAX_BYTES=1073741824
 REIMAGINE_CACHE_TTL_HOURS=168
 
-# Optional Pangolin identity headers. Leave false unless the proxy boundary
-# described below is enforced for both the web and server processes.
+# Required in both web and server processes when Pangolin is the deployment's
+# only browser identity provider. Leave false when clients use Shoo tokens.
 INFINITUNE_TRUST_PANGOLIN_HEADERS=false
 
 # Optional — override Codex turn timeout (default: 360000 / 6 minutes)
@@ -312,14 +312,16 @@ the production server refuses to start without one. Do not expose the frontend
 without an edge proxy that is responsible for overwriting `X-Forwarded-For`.
 Infinitune ignores `X-Real-IP` for rate limiting.
 
-Pangolin deployments that do not issue a Shoo token to the browser can set
-`INFINITUNE_TRUST_PANGOLIN_HEADERS=true` in both the web and server processes.
+Pangolin deployments that do not issue a Shoo token to the browser must set
+`INFINITUNE_TRUST_PANGOLIN_HEADERS=true` in both the web and server processes;
+otherwise production settings and radio mutations remain read-only.
 Infinitune then accepts Pangolin's `Remote-User-Id` header as the user identity;
 `Remote-Email` and `Remote-Name` are optional. Enable this only when Pangolin is
 the sole reachable upstream, the edge proxy removes or overwrites incoming
 `Remote-*` headers, and network rules block direct access to the frontend,
-backend, and load balancer. A reachable direct path would let a client forge
-these headers.
+backend, and load balancer. The server also requires the direct proxy peer to
+match `RATE_LIMIT_TRUSTED_PROXY_IPS`; requests from other peers cannot assert a
+Pangolin identity.
 
 Authenticated owners can create permanent or timed share links. A permanent link
 for temporary music promotes its playlist by clearing the cleanup expiry. Later
@@ -349,6 +351,15 @@ Use OpenRouter when you want to choose from its text-model catalog for song meta
 4. Open `Settings` → `Models`, select `OPENROUTER`, and choose a model. `auto` is the default.
 
 You can also set `OPENROUTER_API_KEY` on the server instead of saving a key in the UI. Radio planning and song generation use the selected global text provider and model.
+
+Deleting the UI-saved key intentionally keeps its owner lock so another user
+cannot immediately claim the shared credential slot. If the owner's upstream
+identity changes permanently, stop the server, back up `data/infinitune.db`,
+and remove only the stale lock with
+`DELETE FROM settings WHERE key = 'openrouterCredentialOwnerUserId';` before
+restarting. When a stored key still exists, the replacement owner must enter
+that same key once to prove possession; when no key exists, the next save
+establishes the new owner.
 
 On the first start of this release, Infinitune resets OpenRouter selections
 saved by older versions to OpenAI Codex. This prevents existing ownerless jobs

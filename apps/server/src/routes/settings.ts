@@ -1,9 +1,18 @@
 import { SetSettingSchema } from "@infinitune/shared/validation/playlist-schemas";
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { requireUserActor } from "../auth/actor";
 import * as settingsService from "../services/settings-service";
 
 const app = new Hono();
+
+const requireProductionUser: MiddlewareHandler = async (c, next) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	await next();
+};
+
+app.use("*", requireProductionUser);
 
 const ACE_STEP_ENV_LOCK_KEY = "aceStepUrlManagedByEnvironment";
 
@@ -35,9 +44,6 @@ app.get("/:key", async (c) => {
 
 // POST /api/settings
 app.post("/", async (c) => {
-	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
-		return c.json({ error: "Unauthorized" }, 401);
-	}
 	const body = await c.req.json();
 	const result = SetSettingSchema.safeParse(body);
 	if (!result.success) {

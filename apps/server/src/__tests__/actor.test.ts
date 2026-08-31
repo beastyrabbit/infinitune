@@ -1,6 +1,10 @@
 import type { Context } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@hono/node-server/conninfo", () => ({
+	getConnInfo: vi.fn(),
+}));
+
 vi.mock("../auth/shoo", () => ({
 	parseBearerToken: vi.fn(),
 	verifyShooIdToken: vi.fn(),
@@ -11,6 +15,7 @@ vi.mock("../services/user-service", () => ({
 	upsertFromShoo: vi.fn(),
 }));
 
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { getRequestActor, requireUserActor } from "../auth/actor";
 import * as shoo from "../auth/shoo";
 import * as userService from "../services/user-service";
@@ -34,6 +39,10 @@ describe("auth actor", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "false");
+		vi.stubEnv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1");
+		vi.mocked(getConnInfo).mockReturnValue({
+			remote: { address: "127.0.0.1" },
+		});
 		vi.mocked(shoo.parseBearerToken).mockImplementation((header) => {
 			if (!header) return null;
 			const match = /^Bearer\s+(.+)$/i.exec(header.trim());
@@ -142,6 +151,32 @@ describe("auth actor", () => {
 	});
 
 	it("ignores Pangolin headers when proxy trust is disabled", async () => {
+		const actor = await getRequestActor(
+			createContext({ "Remote-User-Id": "pangolin-user-1" }),
+		);
+
+		expect(actor).toEqual({ kind: "anonymous" });
+		expect(vi.mocked(userService.upsertFromIdentity)).not.toHaveBeenCalled();
+	});
+
+	it("ignores Pangolin headers from a socket peer outside the proxy allowlist", async () => {
+		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "true");
+		vi.mocked(getConnInfo).mockReturnValueOnce({
+			remote: { address: "192.0.2.10" },
+		});
+
+		const actor = await getRequestActor(
+			createContext({ "Remote-User-Id": "pangolin-user-1" }),
+		);
+
+		expect(actor).toEqual({ kind: "anonymous" });
+		expect(vi.mocked(userService.upsertFromIdentity)).not.toHaveBeenCalled();
+	});
+
+	it("ignores Pangolin headers when the proxy allowlist is missing", async () => {
+		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "true");
+		vi.stubEnv("RATE_LIMIT_TRUSTED_PROXY_IPS", "");
+
 		const actor = await getRequestActor(
 			createContext({ "Remote-User-Id": "pangolin-user-1" }),
 		);
