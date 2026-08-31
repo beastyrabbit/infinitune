@@ -223,6 +223,33 @@ async function post<T>(
 	}
 }
 
+async function postForm<T>(
+	path: string,
+	body: FormData,
+	init?: Omit<RequestInit, "body" | "method">,
+	options?: ApiRequestOptions,
+): Promise<T> {
+	const retries = options?.retries ?? 0;
+	const { init: finalInit, cleanup } = applyTimeout(
+		{
+			...init,
+			method: "POST",
+			redirect: "manual" as const,
+			headers: buildHeaders(init?.headers, false),
+			body,
+		},
+		options,
+	);
+	try {
+		const res = await fetchWithRetry(`${API_URL}${path}`, finalInit, retries);
+		if (!res.ok)
+			throw new Error(await extractErrorMessage(res, `POST ${path}`));
+		return res.json() as Promise<T>;
+	} finally {
+		cleanup();
+	}
+}
+
 async function patch<T>(
 	path: string,
 	body: unknown,
@@ -275,5 +302,5 @@ async function del<T>(
 	}
 }
 
-export const api = { get, post, patch, del };
+export const api = { get, post, postForm, patch, del };
 export { API_URL };

@@ -63,7 +63,6 @@ import {
 	useSetSetting,
 	useSettings,
 } from "@/integrations/api/hooks";
-import { API_URL } from "@/lib/endpoints";
 
 export const Route = createFileRoute("/autoplayer_/settings")({
 	component: SettingsPage,
@@ -228,12 +227,10 @@ function SettingsPage() {
 
 	const refreshCodexAuthStatus = useCallback(async () => {
 		try {
-			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/status`);
-			if (!res.ok) return;
-			const data = (await res.json()) as {
+			const data = await api.get<{
 				session?: CodexAuthSession | null;
 				loginStatus?: { mode?: string };
-			};
+			}>("/api/autoplayer/codex-auth/status");
 			setCodexAuthSession(data.session ?? null);
 
 			if (data.session?.state === "authenticated") {
@@ -255,28 +252,20 @@ function SettingsPage() {
 	const startCodexAuth = useCallback(async () => {
 		setCodexTest({ state: "testing" });
 		try {
-			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/start`, {
-				method: "POST",
-			});
-			const data = (await res.json()) as {
+			const data = await api.post<{
 				session?: CodexAuthSession;
-				error?: string;
-			};
-			if (!res.ok || data.error) {
-				setCodexTest({
-					state: "error",
-					message: data.error || "Failed to start device auth",
-				});
-				return;
-			}
+			}>("/api/autoplayer/codex-auth/start");
 			setCodexAuthSession(data.session ?? null);
 			setCodexTest(
 				data.session?.state === "authenticated"
 					? { state: "ok", message: "Authenticated with ChatGPT" }
 					: { state: "idle" },
 			);
-		} catch {
-			setCodexTest({ state: "error", message: "Request failed" });
+		} catch (error) {
+			setCodexTest({
+				state: "error",
+				message: getRequestErrorMessage(error),
+			});
 		}
 	}, []);
 
@@ -284,18 +273,10 @@ function SettingsPage() {
 		async (file: File) => {
 			const formData = new FormData();
 			formData.append("authFile", file, "auth.json");
-			const res = await fetch(
-				`${API_URL}/api/autoplayer/codex-auth/upload-cache`,
-				{ method: "POST", body: formData },
-			);
-			const data = (await res.json()) as {
+			const data = await api.postForm<{
 				session?: CodexAuthSession;
 				loginStatus?: { mode?: string };
-				error?: string;
-			};
-			if (!res.ok || data.error) {
-				throw new Error(data.error || "Failed to upload auth.json");
-			}
+			}>("/api/autoplayer/codex-auth/upload-cache", formData);
 			setCodexAuthSession(data.session ?? null);
 			if (data.loginStatus?.mode === "chatgpt") {
 				setCodexTest({ state: "ok", message: "Authenticated with ChatGPT" });
@@ -309,12 +290,10 @@ function SettingsPage() {
 
 	const cancelCodexAuth = useCallback(async () => {
 		try {
-			const res = await fetch(`${API_URL}/api/autoplayer/codex-auth/cancel`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ sessionId: codexAuthSession?.id }),
-			});
-			const data = (await res.json()) as { session?: CodexAuthSession };
+			const data = await api.post<{ session?: CodexAuthSession }>(
+				"/api/autoplayer/codex-auth/cancel",
+				{ sessionId: codexAuthSession?.id },
+			);
 			setCodexAuthSession(data.session ?? null);
 			setCodexTest({ state: "idle" });
 		} catch {
