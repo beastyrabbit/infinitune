@@ -53,6 +53,7 @@ describe("ShareButton", () => {
 			expect(post).toHaveBeenCalledWith("/api/share", {
 				resourceType: "playlist",
 				resourceId: "playlist-1",
+				permanent: true,
 			});
 		});
 		expect(writeText).toHaveBeenCalledWith(

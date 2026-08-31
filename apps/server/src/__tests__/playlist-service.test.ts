@@ -517,6 +517,7 @@ describe("playlist-service", () => {
 			const link = await shareService.createShareLink({
 				resourceType: "playlist",
 				resourceId: promoted.id,
+				permanent: true,
 			});
 			emittedEvents.length = 0;
 

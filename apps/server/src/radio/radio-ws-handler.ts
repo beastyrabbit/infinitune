@@ -14,6 +14,11 @@ import {
 const clients = new Set<WebSocket>();
 let eventBridgeStarted = false;
 
+// The frontend sends one heartbeat per second. Allow brief timer/reconnect
+// bursts, but bound sustained work from a single socket to twice that rate.
+const HEARTBEAT_BURST_CAPACITY = 10;
+const HEARTBEAT_REFILL_PER_MS = 2 / 1000;
+
 // Number of open sockets currently holding each listener id active. Several
 // browser tabs share one persisted listenerId, so a listener must only be
 // deactivated once the LAST socket holding it releases — otherwise closing
@@ -76,6 +81,20 @@ export function handleRadioConnection(ws: WebSocket): void {
 	startEventBridge();
 	clients.add(ws);
 	const listenerId = crypto.randomUUID();
+	let heartbeatTokens = HEARTBEAT_BURST_CAPACITY;
+	let heartbeatLastRefillAt = Date.now();
+	const consumeHeartbeatToken = () => {
+		const now = Date.now();
+		heartbeatTokens = Math.min(
+			HEARTBEAT_BURST_CAPACITY,
+			heartbeatTokens +
+				Math.max(0, now - heartbeatLastRefillAt) * HEARTBEAT_REFILL_PER_MS,
+		);
+		heartbeatLastRefillAt = now;
+		if (heartbeatTokens < 1) return false;
+		heartbeatTokens -= 1;
+		return true;
+	};
 	// The id this connection currently holds active (null while paused). The
 	// client usually supplies its own persisted listenerId, which differs
 	// from the connection-local UUID and may be shared across tabs.
@@ -93,6 +112,9 @@ export function handleRadioConnection(ws: WebSocket): void {
 			send(ws, { type: "error", message: "Invalid radio message" });
 			return;
 		}
+		// Drop excess heartbeats before queueing async command work. Responding to
+		// each rejected message would amplify traffic from a flooding client.
+		if (msg.type === "heartbeat" && !consumeHeartbeatToken()) return;
 
 		const effectiveListenerId =
 			typeof msg.listenerId === "string" && msg.listenerId.trim()

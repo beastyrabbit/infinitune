@@ -42,14 +42,16 @@ export function ShareButton({
 }: ShareButtonProps) {
 	const [busy, setBusy] = useState(false);
 
-	const handleShare = async (expiresInDays?: number) => {
+	const handleShare = async (
+		lifetime: { expiresInDays: number } | { permanent: true },
+	) => {
 		if (busy) return;
 		setBusy(true);
 		try {
 			const link = await api.post<ShareLinkResponse>("/api/share", {
 				resourceType,
 				resourceId,
-				...(expiresInDays ? { expiresInDays } : {}),
+				...lifetime,
 			});
 			const url = buildShareUrl(link.token);
 			const linkKind = link.expiresAt === null ? "Permanent" : "Timed";
@@ -98,13 +100,15 @@ export function ShareButton({
 					className="z-50 w-64 border-2 border-white/20 bg-[#111415] p-1 font-mono text-left text-white shadow-xl"
 				>
 					<DropdownMenuPrimitive.Item
-						onSelect={() => void handleShare(DEFAULT_SHARE_EXPIRY_DAYS)}
+						onSelect={() =>
+							void handleShare({ expiresInDays: DEFAULT_SHARE_EXPIRY_DAYS })
+						}
 						className="cursor-pointer px-3 py-2 text-xs font-bold uppercase outline-none hover:bg-emerald-500 hover:text-black focus:bg-emerald-500 focus:text-black"
 					>
 						Share for 30 days
 					</DropdownMenuPrimitive.Item>
 					<DropdownMenuPrimitive.Item
-						onSelect={() => void handleShare()}
+						onSelect={() => void handleShare({ permanent: true })}
 						className="cursor-pointer px-3 py-2 text-xs font-bold uppercase outline-none hover:bg-yellow-500 hover:text-black focus:bg-yellow-500 focus:text-black"
 					>
 						<span className="block">

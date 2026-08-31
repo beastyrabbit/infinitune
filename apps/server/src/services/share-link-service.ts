@@ -95,11 +95,16 @@ export async function getShareResource(
 		: null;
 }
 
-interface CreateShareLinkInput {
+interface ShareResourceInput {
 	resourceType: ShareResourceType;
 	resourceId: string;
-	expiresInDays?: number;
 }
+
+export type CreateShareLinkInput = ShareResourceInput &
+	(
+		| { expiresInDays: number; permanent?: never }
+		| { permanent: true; expiresInDays?: never }
+	);
 
 type ShareCreationPolicy =
 	| { kind: "trusted" }
@@ -110,10 +115,27 @@ async function createShareLinkWithPolicy(
 	policy: ShareCreationPolicy,
 ): Promise<ShareLink | null> {
 	const now = Date.now();
-	let expiresAt =
-		input.expiresInDays && input.expiresInDays > 0
-			? now + input.expiresInDays * 24 * 60 * 60 * 1000
-			: null;
+	const hasTimedLifetime = input.expiresInDays !== undefined;
+	const hasPermanentOption = input.permanent !== undefined;
+	if (hasTimedLifetime === hasPermanentOption) {
+		throw new TypeError(
+			"Share links require exactly one lifetime: expiresInDays or permanent",
+		);
+	}
+	if (hasPermanentOption && input.permanent !== true) {
+		throw new TypeError("permanent must be true when selected");
+	}
+	if (
+		hasTimedLifetime &&
+		(!Number.isInteger(input.expiresInDays) ||
+			(input.expiresInDays as number) < 1 ||
+			(input.expiresInDays as number) > 365)
+	) {
+		throw new RangeError("expiresInDays must be an integer from 1 through 365");
+	}
+	let expiresAt = hasTimedLifetime
+		? now + (input.expiresInDays as number) * 24 * 60 * 60 * 1000
+		: null;
 	return db.transaction((tx) => {
 		const resource =
 			input.resourceType === "playlist"

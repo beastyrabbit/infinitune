@@ -16,11 +16,21 @@ import {
 
 const app = new Hono();
 
-const CreateSchema = z.object({
+const ShareResourceSchema = z.object({
 	resourceType: z.enum(["playlist", "song"]),
 	resourceId: z.string().min(1),
-	expiresInDays: z.number().int().min(1).max(365).optional(),
 });
+
+const CreateSchema = z.union([
+	ShareResourceSchema.extend({
+		expiresInDays: z.number().int().min(1).max(365),
+		permanent: z.never().optional(),
+	}),
+	ShareResourceSchema.extend({
+		permanent: z.literal(true),
+		expiresInDays: z.never().optional(),
+	}),
+]);
 
 async function canManageShareForResource(
 	c: Context,
