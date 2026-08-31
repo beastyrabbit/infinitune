@@ -50,7 +50,11 @@ import {
 } from "../external/openrouter-auth";
 import { getServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
-import { credentialMutationLimiter, llmLimiter } from "../middleware/limiters";
+import {
+	credentialMutationLimiter,
+	credentialStatusLimiter,
+	llmLimiter,
+} from "../middleware/limiters";
 
 interface OllamaModel {
 	name: string;
@@ -315,11 +319,18 @@ async function canUseClientSelectedLlmProvider(
 	return provider !== "openrouter" || (await canUseServerCredentials(c));
 }
 
-const requireCredentialMutationUser: MiddlewareHandler = async (c, next) => {
+const credentialMutationAccess: MiddlewareHandler = async (c, next) => {
 	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
-	await next();
+	return credentialMutationLimiter(c, next);
+};
+
+const credentialStatusAccess: MiddlewareHandler = async (c, next) => {
+	if (process.env.NODE_ENV === "production" && !(await requireUserActor(c))) {
+		return c.json({ error: "Unauthorized" }, 401);
+	}
+	return credentialStatusLimiter(c, next);
 };
 
 function openRouterAuthorizationError(
@@ -466,79 +477,67 @@ app.get("/openrouter-auth", async (c) => {
 	}
 });
 
-app.post(
-	"/openrouter-auth",
-	requireCredentialMutationUser,
-	credentialMutationLimiter,
-	async (c) => {
-		let body: { apiKey?: unknown };
-		try {
-			body = await c.req.json<{ apiKey?: unknown }>();
-		} catch {
-			return c.json({ error: "Expected a JSON request body" }, 400);
+app.post("/openrouter-auth", credentialMutationAccess, async (c) => {
+	let body: { apiKey?: unknown };
+	try {
+		body = await c.req.json<{ apiKey?: unknown }>();
+	} catch {
+		return c.json({ error: "Expected a JSON request body" }, 400);
+	}
+	if (typeof body.apiKey !== "string") {
+		return c.json({ error: "Missing required field: apiKey" }, 400);
+	}
+	try {
+		if (process.env.NODE_ENV !== "production") {
+			await saveOpenRouterApiKey(body.apiKey);
+			return c.json(await getLocalOpenRouterCredentialStatus());
 		}
-		if (typeof body.apiKey !== "string") {
-			return c.json({ error: "Missing required field: apiKey" }, 400);
+		const actor = await requireUserActor(c);
+		if (!actor) return c.json({ error: "Unauthorized" }, 401);
+		return c.json(await saveOpenRouterApiKeyForUser(body.apiKey, actor.userId));
+	} catch (error) {
+		if (error instanceof OpenRouterCredentialAccessError) {
+			return c.json({ error: "Credential management is not available" }, 403);
 		}
-		try {
-			if (process.env.NODE_ENV !== "production") {
-				await saveOpenRouterApiKey(body.apiKey);
-				return c.json(await getLocalOpenRouterCredentialStatus());
-			}
-			const actor = await requireUserActor(c);
-			if (!actor) return c.json({ error: "Unauthorized" }, 401);
-			return c.json(
-				await saveOpenRouterApiKeyForUser(body.apiKey, actor.userId),
-			);
-		} catch (error) {
-			if (error instanceof OpenRouterCredentialAccessError) {
-				return c.json({ error: "Credential management is not available" }, 403);
-			}
-			if (error instanceof OpenRouterApiKeyValidationError) {
-				return c.json({ error: error.message }, 400);
-			}
-			return c.json(
-				{
-					error:
-						error instanceof Error
-							? error.message
-							: "Failed to save OpenRouter API key",
-				},
-				500,
-			);
+		if (error instanceof OpenRouterApiKeyValidationError) {
+			return c.json({ error: error.message }, 400);
 		}
-	},
-);
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to save OpenRouter API key",
+			},
+			500,
+		);
+	}
+});
 
-app.delete(
-	"/openrouter-auth",
-	requireCredentialMutationUser,
-	credentialMutationLimiter,
-	async (c) => {
-		try {
-			if (process.env.NODE_ENV !== "production") {
-				await clearOpenRouterApiKey();
-				return c.json(await getLocalOpenRouterCredentialStatus());
-			}
-			const actor = await requireUserActor(c);
-			if (!actor) return c.json({ error: "Unauthorized" }, 401);
-			return c.json(await clearOpenRouterApiKeyForUser(actor.userId));
-		} catch (error) {
-			if (error instanceof OpenRouterCredentialAccessError) {
-				return c.json({ error: "Credential management is not available" }, 403);
-			}
-			return c.json(
-				{
-					error:
-						error instanceof Error
-							? error.message
-							: "Failed to clear OpenRouter API key",
-				},
-				500,
-			);
+app.delete("/openrouter-auth", credentialMutationAccess, async (c) => {
+	try {
+		if (process.env.NODE_ENV !== "production") {
+			await clearOpenRouterApiKey();
+			return c.json(await getLocalOpenRouterCredentialStatus());
 		}
-	},
-);
+		const actor = await requireUserActor(c);
+		if (!actor) return c.json({ error: "Unauthorized" }, 401);
+		return c.json(await clearOpenRouterApiKeyForUser(actor.userId));
+	} catch (error) {
+		if (error instanceof OpenRouterCredentialAccessError) {
+			return c.json({ error: "Credential management is not available" }, 403);
+		}
+		return c.json(
+			{
+				error:
+					error instanceof Error
+						? error.message
+						: "Failed to clear OpenRouter API key",
+			},
+			500,
+		);
+	}
+});
 
 // ─── GET /ace-models ────────────────────────────────────────────────
 app.get("/ace-models", async (c) => {
@@ -1199,7 +1198,7 @@ app.post("/codex/object", llmLimiter, async (c) => {
 });
 
 // ─── POST /codex-auth/start ─────────────────────────────────────────
-app.post("/codex-auth/start", async (c) => {
+app.post("/codex-auth/start", credentialMutationAccess, async (c) => {
 	try {
 		const session = await startCodexDeviceAuth();
 		return c.json({ session });
@@ -1218,7 +1217,7 @@ app.post("/codex-auth/start", async (c) => {
 });
 
 // ─── GET /codex-auth/status ────────────────────────────────────────
-app.get("/codex-auth/status", async (c) => {
+app.get("/codex-auth/status", credentialStatusAccess, async (c) => {
 	try {
 		const session = getCodexDeviceAuthStatus();
 		const loginStatus = await getCodexLoginStatus();
@@ -1238,7 +1237,7 @@ app.get("/codex-auth/status", async (c) => {
 });
 
 // ─── POST /codex-auth/cancel ───────────────────────────────────────
-app.post("/codex-auth/cancel", async (c) => {
+app.post("/codex-auth/cancel", credentialMutationAccess, async (c) => {
 	try {
 		let sessionId: string | undefined;
 		try {
@@ -1265,7 +1264,7 @@ app.post("/codex-auth/cancel", async (c) => {
 });
 
 // ─── POST /codex-auth/upload-cache ────────────────────────────────
-app.post("/codex-auth/upload-cache", async (c) => {
+app.post("/codex-auth/upload-cache", credentialMutationAccess, async (c) => {
 	try {
 		const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
 		if (!contentType.includes("multipart/form-data")) {
@@ -1305,7 +1304,9 @@ app.post("/codex-auth/upload-cache", async (c) => {
 			return c.json({ error: "auth.json must be a JSON object" }, 400);
 		}
 
-		await mkdir(path.dirname(CODEX_AUTH_CACHE_FILE_PATH), { recursive: true });
+		await mkdir(path.dirname(CODEX_AUTH_CACHE_FILE_PATH), {
+			recursive: true,
+		});
 		await writeFile(CODEX_AUTH_CACHE_FILE_PATH, rawAuthCache, "utf8");
 		await codexAppServerClient.dispose();
 		const loginStatus = await getCodexLoginStatus();

@@ -67,6 +67,22 @@ export const credentialMutationLimiter = withGlobalCap(
 	}),
 );
 
+/** Authenticated polling of shared provider credential state. */
+export const credentialStatusLimiter = withGlobalCap(
+	createRateLimiter({
+		limit: envLimit("RATE_LIMIT_CREDENTIAL_STATUS_PER_MIN", 30),
+		windowMs: 60_000,
+		prefix: "credential-status",
+	}),
+	createRateLimiter({
+		limit: envLimit("RATE_LIMIT_CREDENTIAL_STATUS_GLOBAL_PER_MIN", 100),
+		windowMs: 60_000,
+		prefix: "credential-status-global",
+		keyBy: () => "all-clients",
+		maxBuckets: 1,
+	}),
+);
+
 /** Radio requests (each may trigger album/song generation). */
 export const radioRequestLimiter = withGlobalCap(
 	createRateLimiter({
