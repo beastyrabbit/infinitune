@@ -25,6 +25,18 @@ export type UserActor = {
 
 export type RequestActor = AnonymousActor | UserActor;
 
+const PANGOLIN_ACTOR_CACHE_TTL_MS = 60_000;
+const MAX_PANGOLIN_ACTOR_CACHE_ENTRIES = 1_000;
+
+interface PangolinActorCacheEntry {
+	expiresAt: number;
+	email?: string;
+	name?: string;
+	actor: Promise<UserActor>;
+}
+
+const pangolinActorCache = new Map<string, PangolinActorCacheEntry>();
+
 async function resolveShooActor(token: string): Promise<UserActor> {
 	const identity = await verifyShooIdToken(token);
 	const user = await userService.upsertFromShoo(identity);
@@ -88,28 +100,66 @@ async function resolvePangolinActor(c: Context): Promise<UserActor | null> {
 
 	const userId = readPangolinUserId(c);
 	if (!userId) return null;
+	const email = readOptionalPangolinMetadata(
+		c,
+		PANGOLIN_EMAIL_HEADER,
+		MAX_PANGOLIN_EMAIL_LENGTH,
+	);
+	const name = readOptionalPangolinMetadata(
+		c,
+		PANGOLIN_NAME_HEADER,
+		MAX_PANGOLIN_NAME_LENGTH,
+	);
+	const now = Date.now();
+	const cached = pangolinActorCache.get(userId);
+	if (
+		cached &&
+		cached.expiresAt > now &&
+		cached.email === email &&
+		cached.name === name
+	) {
+		return cached.actor;
+	}
 
-	const user = await userService.upsertFromIdentity({
-		subject: `pangolin:${userId}`,
-		email: readOptionalPangolinMetadata(
-			c,
-			PANGOLIN_EMAIL_HEADER,
-			MAX_PANGOLIN_EMAIL_LENGTH,
-		),
-		name: readOptionalPangolinMetadata(
-			c,
-			PANGOLIN_NAME_HEADER,
-			MAX_PANGOLIN_NAME_LENGTH,
-		),
-	});
-
-	return {
-		kind: "user",
-		userId: user.id,
-		email: user.email ?? undefined,
-		name: user.displayName ?? undefined,
-		picture: user.picture ?? undefined,
+	const actor = userService
+		.upsertFromIdentity({
+			subject: `pangolin:${userId}`,
+			email,
+			name,
+		})
+		.then((user) => ({
+			kind: "user" as const,
+			userId: user.id,
+			email: user.email ?? undefined,
+			name: user.displayName ?? undefined,
+			picture: user.picture ?? undefined,
+		}));
+	const entry: PangolinActorCacheEntry = {
+		expiresAt: now + PANGOLIN_ACTOR_CACHE_TTL_MS,
+		email,
+		name,
+		actor,
 	};
+	pangolinActorCache.delete(userId);
+	pangolinActorCache.set(userId, entry);
+	while (pangolinActorCache.size > MAX_PANGOLIN_ACTOR_CACHE_ENTRIES) {
+		const oldestUserId = pangolinActorCache.keys().next().value;
+		if (oldestUserId === undefined) break;
+		pangolinActorCache.delete(oldestUserId);
+	}
+
+	try {
+		return await actor;
+	} catch (error) {
+		if (pangolinActorCache.get(userId) === entry) {
+			pangolinActorCache.delete(userId);
+		}
+		throw error;
+	}
+}
+
+export function resetPangolinActorCache(): void {
+	pangolinActorCache.clear();
 }
 
 async function resolveUserActor(c: Context): Promise<UserActor | null> {

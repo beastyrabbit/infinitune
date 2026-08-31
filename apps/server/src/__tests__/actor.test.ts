@@ -16,7 +16,11 @@ vi.mock("../services/user-service", () => ({
 }));
 
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { getRequestActor, requireUserActor } from "../auth/actor";
+import {
+	getRequestActor,
+	requireUserActor,
+	resetPangolinActorCache,
+} from "../auth/actor";
 import * as shoo from "../auth/shoo";
 import * as userService from "../services/user-service";
 
@@ -38,6 +42,7 @@ function createContext(
 describe("auth actor", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		resetPangolinActorCache();
 		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "false");
 		vi.stubEnv("RATE_LIMIT_TRUSTED_PROXY_IPS", "127.0.0.1");
 		vi.mocked(getConnInfo).mockReturnValue({
@@ -126,6 +131,36 @@ describe("auth actor", () => {
 			email: "proxy@example.com",
 			name: "Proxy Person",
 		});
+	});
+
+	it("reuses a recent Pangolin actor without rewriting the user row", async () => {
+		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "true");
+		const context = createContext({
+			"Remote-User-Id": "pangolin-user-1",
+			"Remote-Email": "proxy@example.com",
+			"Remote-Name": "Proxy Person",
+		});
+
+		const first = await requireUserActor(context);
+		const second = await requireUserActor(context);
+
+		expect(second).toEqual(first);
+		expect(vi.mocked(userService.upsertFromIdentity)).toHaveBeenCalledOnce();
+	});
+
+	it("evicts a failed Pangolin actor lookup so the next request can recover", async () => {
+		vi.stubEnv("INFINITUNE_TRUST_PANGOLIN_HEADERS", "true");
+		vi.mocked(userService.upsertFromIdentity).mockRejectedValueOnce(
+			new Error("database unavailable"),
+		);
+		const context = createContext({
+			"Remote-User-Id": "pangolin-user-1",
+			"Remote-Email": "proxy@example.com",
+		});
+
+		expect(await getRequestActor(context)).toEqual({ kind: "anonymous" });
+		expect((await requireUserActor(context))?.userId).toBe("usr_proxy_1");
+		expect(vi.mocked(userService.upsertFromIdentity)).toHaveBeenCalledTimes(2);
 	});
 
 	it("does not require optional Pangolin metadata", async () => {

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	requireUserActor: vi.fn(),
 	activateListener: vi.fn(),
+	deactivateListener: vi.fn(),
+	heartbeatListener: vi.fn(),
 	addFeedback: vi.fn(),
 	topUpInventory: vi.fn(),
 	submitRadioRequest: vi.fn(),
@@ -45,9 +47,9 @@ vi.mock("../services/radio-station-presets-service", () => ({
 vi.mock("../services/radio-station-service", () => ({
 	activateListener: mocks.activateListener,
 	addFeedback: mocks.addFeedback,
-	deactivateListener: vi.fn(),
+	deactivateListener: mocks.deactivateListener,
 	getStationSnapshot: vi.fn().mockReturnValue({}),
-	heartbeatListener: vi.fn(),
+	heartbeatListener: mocks.heartbeatListener,
 	seekStation: vi.fn(),
 	skipStation: vi.fn(),
 }));
@@ -78,8 +80,8 @@ describe("radio control rate-limit ordering", () => {
 		vi.stubEnv("NODE_ENV", "production");
 		vi.stubEnv("RATE_LIMIT_GENERATION_PER_MIN", "1");
 		vi.stubEnv("RATE_LIMIT_GENERATION_GLOBAL_PER_MIN", "1");
-		vi.stubEnv("RATE_LIMIT_RADIO_CONTROLS_PER_MIN", "1");
-		vi.stubEnv("RATE_LIMIT_RADIO_CONTROLS_GLOBAL_PER_MIN", "1");
+		vi.stubEnv("RATE_LIMIT_RADIO_CONTROLS_PER_MIN", "2");
+		vi.stubEnv("RATE_LIMIT_RADIO_CONTROLS_GLOBAL_PER_MIN", "2");
 		vi.stubEnv("RATE_LIMIT_RADIO_FEEDBACK_PER_MIN", "1");
 		vi.stubEnv("RATE_LIMIT_RADIO_FEEDBACK_GLOBAL_PER_MIN", "1");
 		vi.stubEnv("RATE_LIMIT_RADIO_REQUESTS_PER_MIN", "1");
@@ -87,6 +89,7 @@ describe("radio control rate-limit ordering", () => {
 		mocks.requireUserActor.mockReset();
 		mocks.requireUserActor.mockResolvedValue(null);
 		mocks.activateListener.mockResolvedValue({ station: {} });
+		mocks.deactivateListener.mockReturnValue({ station: {} });
 		mocks.addFeedback.mockResolvedValue({ station: {} });
 		mocks.topUpInventory.mockResolvedValue({ created: 1 });
 		mocks.submitRadioRequest.mockResolvedValue({ id: "request-1" });
@@ -100,6 +103,7 @@ describe("radio control rate-limit ordering", () => {
 
 		for (const [path, body] of [
 			["/play", { listenerId: "anonymous" }],
+			["/pause", { listenerId: "anonymous" }],
 			["/feedback", { songId: "song-1", kind: "like" }],
 			["/force-generate-album", undefined],
 			["/requests", { prompt: "anonymous request" }],
@@ -136,6 +140,24 @@ describe("radio control rate-limit ordering", () => {
 		).toBe(200);
 		expect(
 			(
+				await radioRoutes.request("/pause", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ listenerId: "authenticated" }),
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(
+				await radioRoutes.request("/heartbeat", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ listenerId: "authenticated" }),
+				})
+			).status,
+		).toBe(429);
+		expect(
+			(
 				await radioRoutes.request("/feedback", {
 					method: "POST",
 					headers: { "content-type": "application/json" },
@@ -161,6 +183,8 @@ describe("radio control rate-limit ordering", () => {
 		).toBe(200);
 
 		expect(mocks.activateListener).toHaveBeenCalledOnce();
+		expect(mocks.deactivateListener).toHaveBeenCalledOnce();
+		expect(mocks.heartbeatListener).not.toHaveBeenCalled();
 		expect(mocks.addFeedback).toHaveBeenCalledOnce();
 		expect(mocks.topUpInventory).toHaveBeenCalledOnce();
 		expect(mocks.submitRadioRequest).toHaveBeenCalledOnce();

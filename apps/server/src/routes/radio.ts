@@ -113,15 +113,15 @@ app.post("/play", requireProductionUser, radioControlLimiter, async (c) => {
 	return c.json(await activateListener(result.data.listenerId));
 });
 
-// REST owns authenticated listener activation in production. Pause deactivates
-// by listener id directly; WebSockets carry state updates and heartbeats.
-app.post("/pause", async (c) => {
+// REST owns authenticated listener activation and deactivation in production;
+// WebSockets carry state updates and heartbeats.
+app.post("/pause", requireProductionUser, radioControlLimiter, async (c) => {
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	return c.json(deactivateListener(result.data.listenerId));
 });
 
-app.post("/heartbeat", async (c) => {
+app.post("/heartbeat", radioControlLimiter, async (c) => {
 	const result = ListenerSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	heartbeatListener(result.data.listenerId);
