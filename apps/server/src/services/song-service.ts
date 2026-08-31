@@ -228,6 +228,8 @@ export async function createWithMetadata(
 		sourceSongId?: string;
 		sourceAudioPath?: string;
 		sourceUrl?: string;
+		sourceTrackTitle?: string;
+		sourceArtistName?: string;
 		coverNoiseStrength?: number;
 	},
 ) {
@@ -250,6 +252,8 @@ export async function createWithMetadata(
 			sourceSongId: opts?.sourceSongId,
 			sourceAudioPath: opts?.sourceAudioPath,
 			sourceUrl: opts?.sourceUrl,
+			sourceTrackTitle: opts?.sourceTrackTitle,
+			sourceArtistName: opts?.sourceArtistName,
 			coverNoiseStrength: opts?.coverNoiseStrength,
 			...patch,
 		} as typeof songs.$inferInsert)
@@ -719,6 +723,8 @@ export async function clearCoverSource(id: string) {
 			sourceUrl: null,
 			sourceSongId: null,
 			sourceAudioPath: null,
+			sourceTrackTitle: null,
+			sourceArtistName: null,
 			coverNoiseStrength: null,
 		})
 		.where(eq(songs.id, id));
@@ -754,21 +760,24 @@ export async function incrementListenCount(id: string) {
 export async function incrementRadioFeedback(
 	id: string,
 	kind: "like" | "dislike" | "skip",
-) {
+): Promise<boolean> {
 	const patch =
 		kind === "like"
 			? { likeCount: sql`coalesce(${songs.likeCount}, 0) + 1` }
 			: kind === "dislike"
 				? { dislikeCount: sql`coalesce(${songs.dislikeCount}, 0) + 1` }
 				: { skipCount: sql`coalesce(${songs.skipCount}, 0) + 1` };
-	await db.update(songs).set(patch).where(eq(songs.id, id));
-	const [row] = await db.select().from(songs).where(eq(songs.id, id));
-	if (row) {
-		emit("song.metadata_updated", {
-			songId: id,
-			playlistId: row.playlistId,
-		});
-	}
+	const [row] = await db
+		.update(songs)
+		.set(patch)
+		.where(and(eq(songs.id, id), eq(songs.radioEligible, true)))
+		.returning({ playlistId: songs.playlistId });
+	if (!row) return false;
+	emit("song.metadata_updated", {
+		songId: id,
+		playlistId: row.playlistId,
+	});
+	return true;
 }
 
 export async function addPlayDuration(id: string, durationMs: number) {

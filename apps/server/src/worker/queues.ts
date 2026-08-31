@@ -11,6 +11,7 @@ import { AudioQueue, RequestResponseQueue } from "./runtime/queue-actors";
 // ─── Concurrency defaults by provider ────────────────────────────────
 const LLM_CONCURRENCY: Record<string, number> = {
 	"openai-codex": CODEX_LLM_CONCURRENCY,
+	openrouter: 5,
 };
 
 const IMAGE_CONCURRENCY: Record<string, number> = {

@@ -1,5 +1,210 @@
+import {
+	ACE_DCW_DEFAULTS,
+	ACE_GENERATION_DEFAULTS,
+	ACE_QUALITY_DEFAULT_MODEL,
+} from "@infinitune/shared/ace-settings";
+import {
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_TEXT_PROVIDER,
+} from "@infinitune/shared/text-llm-profile";
 import { logger } from "../logger";
 import { sqlite } from "./index";
+
+const ACE_PRESET_M_MIGRATION_KEY = "migration.acePresetMVersion";
+const ACE_PRESET_M_MIGRATION_VERSION = "1";
+const OPENROUTER_RESTORE_MIGRATION_KEY = "migration.openrouterRestoreVersion";
+const OPENROUTER_RESTORE_MIGRATION_VERSION = "1";
+const LEGACY_ACE_STEP_URL = "http://192.168.10.120:8001";
+const DEFAULT_ACE_STEP_URL = "http://192.168.10.242:8001";
+
+const LEGACY_ACE_DEFAULTS = {
+	aceModel: "acestep-v15-xl-turbo",
+	aceInferenceSteps: "8",
+	aceInferMethod: "ode",
+	aceDcwEnabled: "true",
+	aceDcwMode: "double",
+	aceDcwScaler: "0.05",
+	aceDcwHighScaler: "0.02",
+	aceDcwWavelet: "haar",
+	aceThinking: "false",
+} as const;
+
+const ACE_PRESET_M_NEW_SETTINGS = {
+	aceGuidanceScale: String(ACE_GENERATION_DEFAULTS.guidanceScale),
+	aceSamplerMode: ACE_GENERATION_DEFAULTS.samplerMode,
+	aceShift: String(ACE_GENERATION_DEFAULTS.shift),
+	aceVelocityNormThreshold: String(
+		ACE_GENERATION_DEFAULTS.velocityNormThreshold,
+	),
+	aceVelocityEmaFactor: String(ACE_GENERATION_DEFAULTS.velocityEmaFactor),
+	aceUseAdg: String(ACE_GENERATION_DEFAULTS.useAdg),
+} as const;
+
+const ACE_PRESET_M_SETTINGS = {
+	aceModel: ACE_QUALITY_DEFAULT_MODEL,
+	aceInferenceSteps: String(ACE_GENERATION_DEFAULTS.inferenceSteps),
+	aceInferMethod: ACE_GENERATION_DEFAULTS.inferMethod,
+	...ACE_PRESET_M_NEW_SETTINGS,
+	aceDcwEnabled: String(ACE_DCW_DEFAULTS.enabled),
+	aceDcwMode: ACE_DCW_DEFAULTS.mode,
+	aceDcwScaler: String(ACE_DCW_DEFAULTS.scaler),
+	aceDcwHighScaler: String(ACE_DCW_DEFAULTS.highScaler),
+	aceDcwWavelet: ACE_DCW_DEFAULTS.wavelet,
+	aceThinking: String(ACE_GENERATION_DEFAULTS.thinking),
+} as const;
+
+type SettingRow = { key: string; value: string };
+
+function migrateAcePresetM(): void {
+	const migrate = sqlite.transaction(() => {
+		const marker = sqlite
+			.prepare("SELECT value FROM settings WHERE key = ?")
+			.get(ACE_PRESET_M_MIGRATION_KEY) as { value: string } | undefined;
+		if (marker?.value === ACE_PRESET_M_MIGRATION_VERSION) return;
+
+		const settings = Object.fromEntries(
+			(
+				sqlite.prepare("SELECT key, value FROM settings").all() as SettingRow[]
+			).map(({ key, value }) => [key, value]),
+		) as Record<string, string>;
+		const presetKeys = Object.keys(ACE_PRESET_M_SETTINGS);
+		const isFreshProfile = presetKeys.every(
+			(key) => !Object.hasOwn(settings, key),
+		);
+		const hasNoNewPresetSettings = Object.keys(ACE_PRESET_M_NEW_SETTINGS).every(
+			(key) => !Object.hasOwn(settings, key),
+		);
+		const isLegacyDefaultProfile =
+			hasNoNewPresetSettings &&
+			Object.entries(LEGACY_ACE_DEFAULTS).every(
+				([key, value]) => settings[key] === value,
+			);
+
+		const insertMissingSetting = sqlite.prepare(`
+			INSERT OR IGNORE INTO settings (id, created_at, key, value)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?)
+		`);
+		const upsertSetting = sqlite.prepare(`
+			INSERT INTO settings (id, created_at, key, value)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`);
+		const now = Date.now();
+
+		if (isFreshProfile || isLegacyDefaultProfile) {
+			for (const [key, value] of Object.entries(ACE_PRESET_M_SETTINGS)) {
+				upsertSetting.run(now, key, value);
+			}
+		} else {
+			for (const [key, value] of Object.entries(ACE_PRESET_M_NEW_SETTINGS)) {
+				insertMissingSetting.run(now, key, value);
+			}
+		}
+
+		if (isFreshProfile || isLegacyDefaultProfile) {
+			sqlite
+				.prepare(
+					`
+						UPDATE playlists
+						SET
+							ace_model = NULL,
+							inference_steps = NULL,
+							infer_method = NULL,
+							ace_dcw_enabled = NULL,
+							ace_dcw_mode = NULL,
+							ace_dcw_scaler = NULL,
+							ace_dcw_high_scaler = NULL,
+							ace_dcw_wavelet = NULL,
+							ace_thinking = NULL
+						WHERE ace_model = ?
+							AND inference_steps = ?
+							AND infer_method = ?
+							AND ace_dcw_enabled = 1
+							AND ace_dcw_mode = ?
+							AND ace_dcw_scaler = ?
+							AND ace_dcw_high_scaler = ?
+							AND ace_dcw_wavelet = ?
+							AND ace_thinking = 0
+					`,
+				)
+				.run(
+					LEGACY_ACE_DEFAULTS.aceModel,
+					Number(LEGACY_ACE_DEFAULTS.aceInferenceSteps),
+					LEGACY_ACE_DEFAULTS.aceInferMethod,
+					LEGACY_ACE_DEFAULTS.aceDcwMode,
+					Number(LEGACY_ACE_DEFAULTS.aceDcwScaler),
+					Number(LEGACY_ACE_DEFAULTS.aceDcwHighScaler),
+					LEGACY_ACE_DEFAULTS.aceDcwWavelet,
+				);
+		}
+
+		upsertSetting.run(
+			now,
+			ACE_PRESET_M_MIGRATION_KEY,
+			ACE_PRESET_M_MIGRATION_VERSION,
+		);
+	});
+
+	migrate();
+}
+
+function migrateLegacyAceStepUrl(): void {
+	sqlite
+		.prepare(
+			`UPDATE settings
+			 SET value = ?
+			 WHERE key = 'aceStepUrl' AND value = ?`,
+		)
+		.run(DEFAULT_ACE_STEP_URL, LEGACY_ACE_STEP_URL);
+}
+
+function migrateRestoredOpenRouterSelections(): void {
+	const migrate = sqlite.transaction(() => {
+		const marker = sqlite
+			.prepare("SELECT value FROM settings WHERE key = ?")
+			.get(OPENROUTER_RESTORE_MIGRATION_KEY) as { value: string } | undefined;
+		if (marker?.value === OPENROUTER_RESTORE_MIGRATION_VERSION) return;
+
+		const readSetting = sqlite.prepare(
+			"SELECT value FROM settings WHERE key = ?",
+		);
+		const upsertSetting = sqlite.prepare(`
+			INSERT INTO settings (id, created_at, key, value)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`);
+		const now = Date.now();
+
+		for (const [providerKey, modelKey] of [
+			["textProvider", "textModel"],
+			["personaProvider", "personaModel"],
+		] as const) {
+			const provider = readSetting.get(providerKey) as
+				| { value: string }
+				| undefined;
+			if (provider?.value !== "openrouter") continue;
+
+			upsertSetting.run(now, providerKey, DEFAULT_TEXT_PROVIDER);
+			upsertSetting.run(now, modelKey, DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+		}
+
+		sqlite
+			.prepare(
+				`UPDATE playlists
+				 SET llm_provider = ?, llm_model = ?
+				 WHERE llm_provider = 'openrouter'`,
+			)
+			.run(DEFAULT_TEXT_PROVIDER, DEFAULT_OPENAI_CODEX_TEXT_MODEL);
+
+		upsertSetting.run(
+			now,
+			OPENROUTER_RESTORE_MIGRATION_KEY,
+			OPENROUTER_RESTORE_MIGRATION_VERSION,
+		);
+	});
+
+	migrate();
+}
 
 /**
  * Idempotent ALTER TABLE ADD COLUMN — silently ignores "duplicate column" errors.
@@ -435,6 +640,8 @@ export function ensureSchema() {
 	addColumn("songs", "source_song_id TEXT");
 	addColumn("songs", "source_audio_path TEXT");
 	addColumn("songs", "source_url TEXT");
+	addColumn("songs", "source_track_title TEXT");
+	addColumn("songs", "source_artist_name TEXT");
 	addColumn("songs", "cover_noise_strength REAL");
 	addColumn(
 		"songs",
@@ -536,6 +743,10 @@ export function ensureSchema() {
 		)
 		WHERE id IN (SELECT id FROM radio_song_order);
 	`);
+
+	migrateAcePresetM();
+	migrateLegacyAceStepUrl();
+	migrateRestoredOpenRouterSelections();
 
 	logger.info("Database schema ensured");
 }

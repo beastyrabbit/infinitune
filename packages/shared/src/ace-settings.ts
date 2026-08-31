@@ -1,8 +1,8 @@
-export const ACE_QUALITY_DEFAULT_MODEL = "acestep-v15-xl-turbo";
+export const ACE_QUALITY_DEFAULT_MODEL = "acestep-v15-xl-sft";
 
 export const ACE_KNOWN_MODELS = [
-	"acestep-v15-xl-turbo",
 	"acestep-v15-xl-sft",
+	"acestep-v15-xl-turbo",
 	"acestep-v15-xl-base",
 	"acestep-v15-base",
 	"acestep-v15-sft",
@@ -10,12 +10,14 @@ export const ACE_KNOWN_MODELS = [
 ] as const;
 
 export const ACE_DCW_MODES = ["low", "high", "double", "pix"] as const;
+export const ACE_SAMPLER_MODES = ["euler", "heun"] as const;
 
 export type AceKnownModel = (typeof ACE_KNOWN_MODELS)[number];
 export type AceDcwMode = (typeof ACE_DCW_MODES)[number];
+export type AceSamplerMode = (typeof ACE_SAMPLER_MODES)[number];
 
 export const ACE_DCW_DEFAULTS = {
-	enabled: true,
+	enabled: false,
 	mode: "double" as AceDcwMode,
 	scaler: 0.05,
 	highScaler: 0.02,
@@ -23,17 +25,21 @@ export const ACE_DCW_DEFAULTS = {
 } as const;
 
 /**
- * Quality defaults for ACE generation, shared by server payloads,
- * web payloads, and the Settings UI. The homelab ACE build clamps
- * turbo (dmd_gan) inference to 8 steps and renders a 180s song in
- * ~30s of GPU time at that setting, so 8 steps + ODE + thinking off
- * is both the quality ceiling and comfortably sub-realtime.
+ * Preset M quality defaults for ACE generation, shared by server payloads,
+ * web payloads, the worker, and the Settings UI.
  */
 export const ACE_GENERATION_DEFAULTS = {
-	inferenceSteps: 8,
+	inferenceSteps: 50,
+	guidanceScale: 7,
 	lmTemperature: 0.85,
 	lmCfgScale: 2.5,
 	inferMethod: "ode",
+	samplerMode: "heun" as AceSamplerMode,
+	shift: 1,
+	velocityNormThreshold: 2,
+	velocityEmaFactor: 0.1,
+	useAdg: false,
+	thinking: false,
 } as const;
 
 export const ACE_VAE_DEFAULT = "official";
@@ -89,6 +95,63 @@ export function normalizeAceDcwScaler(
 	return Math.min(1, Math.max(0, parsed));
 }
 
+function normalizeBoundedAceNumber(
+	value: string | number | null | undefined,
+	fallback: number,
+	minimum: number,
+	maximum: number,
+): number {
+	const normalizedFallback = Number.isFinite(fallback)
+		? Math.min(maximum, Math.max(minimum, fallback))
+		: minimum;
+	const parsed =
+		typeof value === "number"
+			? value
+			: value?.trim()
+				? Number(value.trim())
+				: Number.NaN;
+	if (!Number.isFinite(parsed)) return normalizedFallback;
+	return Math.min(maximum, Math.max(minimum, parsed));
+}
+
+export function normalizeAceGuidanceScale(
+	value: string | number | null | undefined,
+	fallback = ACE_GENERATION_DEFAULTS.guidanceScale,
+): number {
+	return normalizeBoundedAceNumber(value, fallback, 1, 15);
+}
+
+export function normalizeAceShift(
+	value: string | number | null | undefined,
+	fallback = ACE_GENERATION_DEFAULTS.shift,
+): number {
+	return normalizeBoundedAceNumber(value, fallback, 1, 5);
+}
+
+export function normalizeAceVelocityNormThreshold(
+	value: string | number | null | undefined,
+	fallback = ACE_GENERATION_DEFAULTS.velocityNormThreshold,
+): number {
+	return normalizeBoundedAceNumber(value, fallback, 0, 5);
+}
+
+export function normalizeAceVelocityEmaFactor(
+	value: string | number | null | undefined,
+	fallback = ACE_GENERATION_DEFAULTS.velocityEmaFactor,
+): number {
+	return normalizeBoundedAceNumber(value, fallback, 0, 0.5);
+}
+
+export function normalizeAceSamplerMode(
+	value: string | null | undefined,
+	fallback: AceSamplerMode = ACE_GENERATION_DEFAULTS.samplerMode,
+): AceSamplerMode {
+	const normalized = value?.trim().toLowerCase();
+	return normalized === "euler" || normalized === "heun"
+		? normalized
+		: fallback;
+}
+
 export function parseBooleanSetting(
 	value: string | null | undefined,
 	fallback: boolean,
@@ -128,11 +191,11 @@ export function isAceXlModel(value: string | null | undefined): boolean {
 export function resolveAceQualityDefaultModel(
 	models: Array<{ name: string; is_default?: boolean }> = [],
 ): string {
-	const xlTurbo = models.find(
+	const qualityDefault = models.find(
 		(model) => getAceModelKey(model.name) === ACE_QUALITY_DEFAULT_MODEL,
 	);
-	if (xlTurbo) {
-		return xlTurbo.name;
+	if (qualityDefault) {
+		return qualityDefault.name;
 	}
 	const serverDefault = models.find((model) => model.is_default)?.name;
 	return normalizeAceModel(serverDefault) || ACE_QUALITY_DEFAULT_MODEL;

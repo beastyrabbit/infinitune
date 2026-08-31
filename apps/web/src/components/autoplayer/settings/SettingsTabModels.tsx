@@ -13,8 +13,12 @@ import {
 	INFINITUNE_AGENT_IDS,
 	type InfinituneAgentId,
 } from "@infinitune/shared/agent-reasoning";
-import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
-import { useMemo, useState } from "react";
+import {
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_OPENROUTER_TEXT_MODEL,
+} from "@infinitune/shared/text-llm-profile";
+import type { LlmProvider } from "@infinitune/shared/types";
+import { useId, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -45,6 +49,8 @@ export interface InferenceShImageModelOption {
 }
 
 export interface ModelsTabProps {
+	textProvider: LlmProvider;
+	setTextProvider: (v: LlmProvider) => void;
 	textModel: string;
 	setTextModel: (v: string) => void;
 	imageProvider: string;
@@ -59,6 +65,8 @@ export interface ModelsTabProps {
 	setAceVaeCheckpoint: (v: string) => void;
 	personaModel: string;
 	setPersonaModel: (v: string) => void;
+	personaProvider: LlmProvider;
+	setPersonaProvider: (v: LlmProvider) => void;
 	agentReasoning: Record<InfinituneAgentId, AgentReasoningLevel>;
 	setAgentReasoningLevel: (
 		agentId: InfinituneAgentId,
@@ -69,6 +77,8 @@ export interface ModelsTabProps {
 	inferenceShLoading: boolean;
 	codexModels: ModelOption[];
 	codexLoading: boolean;
+	openrouterModels: ModelOption[];
+	openrouterLoading: boolean;
 	activePlaylist: boolean;
 }
 
@@ -114,10 +124,45 @@ function PriceStrip({ model }: { model: InferenceShImageModelOption }) {
 	);
 }
 
-function StaticProviderLabel({ label }: { label: string }) {
+function OpenRouterModelInput({
+	models,
+	value,
+	onChange,
+	loading,
+	allowFallback = false,
+}: {
+	models: ModelOption[];
+	value: string;
+	onChange: (v: string) => void;
+	loading: boolean;
+	allowFallback?: boolean;
+}) {
+	const datalistId = useId();
 	return (
-		<div className="flex h-10 items-center border-4 border-white/20 bg-white px-3 font-mono text-xs font-black uppercase text-black">
-			{label}
+		<div>
+			<Input
+				list={datalistId}
+				className={inputClass}
+				placeholder={
+					allowFallback
+						? "USES TEXT MODEL IF EMPTY"
+						: DEFAULT_OPENROUTER_TEXT_MODEL.toUpperCase()
+				}
+				value={value}
+				onChange={(event) => onChange(event.target.value)}
+			/>
+			<datalist id={datalistId}>
+				{models.map((model) => (
+					<option key={model.name} value={model.name}>
+						{model.displayName || model.name}
+					</option>
+				))}
+			</datalist>
+			<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
+				{loading
+					? "LOADING OPENROUTER MODELS..."
+					: `${models.length} BUILT-IN MODEL IDS AVAILABLE; CUSTOM IDS MUST EXIST IN PI MODELS.JSON`}
+			</p>
 		</div>
 	);
 }
@@ -243,6 +288,8 @@ function InferenceShModelSelect({
 }
 
 export function SettingsTabModels({
+	textProvider,
+	setTextProvider,
 	textModel,
 	setTextModel,
 	imageProvider,
@@ -257,6 +304,8 @@ export function SettingsTabModels({
 	setAceVaeCheckpoint,
 	personaModel,
 	setPersonaModel,
+	personaProvider,
+	setPersonaProvider,
 	agentReasoning,
 	setAgentReasoningLevel,
 	aceModels,
@@ -264,6 +313,8 @@ export function SettingsTabModels({
 	inferenceShLoading,
 	codexModels,
 	codexLoading,
+	openrouterModels,
+	openrouterLoading,
 	activePlaylist,
 }: ModelsTabProps) {
 	const aceModelOptions = useMemo(() => {
@@ -301,11 +352,25 @@ export function SettingsTabModels({
 			{/* TEXT MODEL */}
 			<SettingsPanel title="TEXT MODEL — LYRICS & METADATA">
 				<SettingsField label="Provider">
-					<StaticProviderLabel label="OPENAI CODEX" />
+					<ProviderToggle
+						options={[
+							{ value: "openai-codex", label: "OPENAI CODEX" },
+							{ value: "openrouter", label: "OPENROUTER" },
+						]}
+						value={textProvider}
+						onChange={(value) => setTextProvider(value as LlmProvider)}
+					/>
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{codexLoading ? (
+					{textProvider === "openrouter" ? (
+						<OpenRouterModelInput
+							models={openrouterModels}
+							value={textModel}
+							onChange={setTextModel}
+							loading={openrouterLoading}
+						/>
+					) : codexLoading ? (
 						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
 							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
 								LOADING CODEX MODELS...
@@ -449,7 +514,7 @@ export function SettingsTabModels({
 			>
 				<SettingsField
 					label="Model"
-					hint="XL TURBO IS THE QUALITY DEFAULT; USE SERVER DEFAULT FOR LOWER VRAM HOSTS"
+					hint="XL SFT PRESET M IS RECOMMENDED; USE A SMALLER MODEL ON LOWER VRAM HOSTS"
 				>
 					<Select
 						value={selectedAceModelValue}
@@ -458,7 +523,9 @@ export function SettingsTabModels({
 						}
 					>
 						<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-							<SelectValue placeholder="ACESTEP-V15-XL-TURBO" />
+							<SelectValue
+								placeholder={ACE_QUALITY_DEFAULT_MODEL.toUpperCase()}
+							/>
 						</SelectTrigger>
 						<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
 							<SelectItem
@@ -548,11 +615,26 @@ export function SettingsTabModels({
 			{/* PERSONA MODEL */}
 			<SettingsPanel title="PERSONA MODEL — SONG DNA EXTRACTION">
 				<SettingsField label="Provider">
-					<StaticProviderLabel label="OPENAI CODEX" />
+					<ProviderToggle
+						options={[
+							{ value: "openai-codex", label: "OPENAI CODEX" },
+							{ value: "openrouter", label: "OPENROUTER" },
+						]}
+						value={personaProvider}
+						onChange={(value) => setPersonaProvider(value as LlmProvider)}
+					/>
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{codexLoading ? (
+					{personaProvider === "openrouter" ? (
+						<OpenRouterModelInput
+							models={openrouterModels}
+							value={personaModel}
+							onChange={setPersonaModel}
+							loading={openrouterLoading}
+							allowFallback
+						/>
+					) : codexLoading ? (
 						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
 							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
 								LOADING CODEX MODELS...

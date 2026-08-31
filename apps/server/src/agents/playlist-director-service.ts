@@ -1,4 +1,7 @@
-import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
+import {
+	normalizeLlmProvider,
+	resolveTextLlmProfile,
+} from "@infinitune/shared/text-llm-profile";
 import type {
 	LlmProvider,
 	PlaylistManagerPlan,
@@ -497,15 +500,23 @@ export async function wakePlaylistDirector(input: {
 		input,
 	});
 	try {
-		const recent = await readChannelMessages({
-			playlistId: input.playlistId,
-			limit: 20,
-		});
+		const [playlist, recent] = await Promise.all([
+			playlistService.getById(input.playlistId),
+			readChannelMessages({
+				playlistId: input.playlistId,
+				limit: 20,
+			}),
+		]);
+		if (!playlist) throw new Error("Playlist not found");
 		let text = "";
 		try {
 			text = await promptInfinituneAgent({
 				agentId: "playlist-director",
 				scopeId: input.playlistId,
+				modelProfile: resolveTextLlmProfile({
+					provider: playlist.llmProvider,
+					model: playlist.llmModel,
+				}),
 				prompt: [
 					`Playlist ID: ${input.playlistId}`,
 					`Trigger: ${input.trigger}`,

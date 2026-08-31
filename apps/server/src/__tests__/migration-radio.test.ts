@@ -78,5 +78,12 @@ describe("radio migration", () => {
 		expect(song.albumId).toBeNull();
 		expect(song.radioEligible).toBe(0);
 		expect(stationCount.count).toBe(1);
+
+		const songColumns = testSqlite
+			.prepare("PRAGMA table_info(songs)")
+			.all() as Array<{ name: string }>;
+		expect(songColumns.map(({ name }) => name)).toEqual(
+			expect.arrayContaining(["source_track_title", "source_artist_name"]),
+		);
 	});
 });

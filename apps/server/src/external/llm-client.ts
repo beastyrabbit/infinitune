@@ -7,6 +7,7 @@ import {
 } from "@infinitune/shared/agent-reasoning";
 import {
 	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
+	DEFAULT_OPENROUTER_TEXT_MODEL,
 	normalizeLlmProvider,
 } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
@@ -20,9 +21,11 @@ import { piCompleteObject, piCompleteText } from "./pi-runtime";
 // ---------------------------------------------------------------------------
 
 type Provider = LlmProvider;
+const OPENROUTER_LLM_CONCURRENCY = 5;
 
 const LIMITS: Record<Provider, number> = {
 	"openai-codex": CODEX_LLM_CONCURRENCY,
+	openrouter: OPENROUTER_LLM_CONCURRENCY,
 };
 
 interface Waiter {
@@ -81,6 +84,7 @@ class ProviderSemaphore {
 
 const semaphores: Record<Provider, ProviderSemaphore> = {
 	"openai-codex": new ProviderSemaphore(LIMITS["openai-codex"]),
+	openrouter: new ProviderSemaphore(LIMITS.openrouter),
 };
 
 // ---------------------------------------------------------------------------
@@ -88,13 +92,15 @@ const semaphores: Record<Provider, ProviderSemaphore> = {
 // ---------------------------------------------------------------------------
 
 async function resolveModelForProvider(
-	_provider: Provider,
+	provider: Provider,
 	model: string,
 ): Promise<string> {
 	const explicitModel = model.trim();
 	if (explicitModel) return explicitModel;
 
-	return DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+	return provider === "openrouter"
+		? DEFAULT_OPENROUTER_TEXT_MODEL
+		: DEFAULT_OPENAI_CODEX_TEXT_MODEL;
 }
 
 async function resolveReasoningForAgent(

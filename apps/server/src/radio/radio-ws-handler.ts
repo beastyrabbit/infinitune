@@ -1,7 +1,6 @@
 import type { WebSocket } from "ws";
 import { on } from "../events/event-bus";
 import { logger } from "../logger";
-import { submitRadioRequest } from "../services/radio-request-service";
 import {
 	activateListener,
 	addFeedback,
@@ -14,6 +13,11 @@ import {
 
 const clients = new Set<WebSocket>();
 let eventBridgeStarted = false;
+
+// The frontend sends one heartbeat per second plus occasional controls. Allow
+// brief timer/reconnect bursts, but bound all inbound work from one socket.
+const INBOUND_MESSAGE_BURST_CAPACITY = 10;
+const INBOUND_MESSAGE_REFILL_PER_MS = 2 / 1000;
 
 // Number of open sockets currently holding each listener id active. Several
 // browser tabs share one persisted listenerId, so a listener must only be
@@ -77,6 +81,21 @@ export function handleRadioConnection(ws: WebSocket): void {
 	startEventBridge();
 	clients.add(ws);
 	const listenerId = crypto.randomUUID();
+	let inboundMessageTokens = INBOUND_MESSAGE_BURST_CAPACITY;
+	let inboundMessageLastRefillAt = Date.now();
+	const consumeInboundMessageToken = () => {
+		const now = Date.now();
+		inboundMessageTokens = Math.min(
+			INBOUND_MESSAGE_BURST_CAPACITY,
+			inboundMessageTokens +
+				Math.max(0, now - inboundMessageLastRefillAt) *
+					INBOUND_MESSAGE_REFILL_PER_MS,
+		);
+		inboundMessageLastRefillAt = now;
+		if (inboundMessageTokens < 1) return false;
+		inboundMessageTokens -= 1;
+		return true;
+	};
 	// The id this connection currently holds active (null while paused). The
 	// client usually supplies its own persisted listenerId, which differs
 	// from the connection-local UUID and may be shared across tabs.
@@ -89,6 +108,9 @@ export function handleRadioConnection(ws: WebSocket): void {
 	send(ws, { type: "hello", listenerId, ...getStationSnapshot() });
 
 	ws.on("message", (raw) => {
+		// Limit before parsing or dispatching, and silently drop excess messages
+		// to avoid turning an inbound flood into outbound response amplification.
+		if (!consumeInboundMessageToken()) return;
 		const msg = parseMessage(raw);
 		if (!msg || typeof msg.type !== "string") {
 			send(ws, { type: "error", message: "Invalid radio message" });
@@ -104,6 +126,13 @@ export function handleRadioConnection(ws: WebSocket): void {
 			.then(async () => {
 				switch (msg.type) {
 					case "play": {
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio playback must use POST /api/radio/play",
+							});
+							break;
+						}
 						const snapshot = await activateListener(effectiveListenerId);
 						// Count this socket against the listener id, releasing any
 						// previously held id (e.g. the client changed listenerId).
@@ -140,10 +169,24 @@ export function handleRadioConnection(ws: WebSocket): void {
 						send(ws, { type: "pong", serverTime: Date.now() });
 						break;
 					case "skip":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio skipping must use POST /api/radio/skip",
+							});
+							break;
+						}
 						heartbeatListener(effectiveListenerId);
 						send(ws, { type: "state", ...(await skipStation()) });
 						break;
 					case "seek":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio seeking must use POST /api/radio/seek",
+							});
+							break;
+						}
 						heartbeatListener(effectiveListenerId);
 						send(ws, {
 							type: "state",
@@ -151,23 +194,26 @@ export function handleRadioConnection(ws: WebSocket): void {
 						});
 						break;
 					case "feedback":
+						if (process.env.NODE_ENV === "production") {
+							send(ws, {
+								type: "error",
+								message: "Radio feedback must use POST /api/radio/feedback",
+							});
+							break;
+						}
 						if (
 							typeof msg.songId === "string" &&
 							(msg.kind === "like" || msg.kind === "dislike")
 						) {
-							send(ws, {
-								type: "state",
-								...(await addFeedback(msg.songId, msg.kind)),
-							});
+							const snapshot = await addFeedback(msg.songId, msg.kind);
+							if (snapshot) send(ws, { type: "state", ...snapshot });
 						}
 						break;
 					case "request":
-						if (typeof msg.prompt === "string") {
-							send(ws, {
-								type: "request",
-								request: await submitRadioRequest(msg.prompt),
-							});
-						}
+						send(ws, {
+							type: "error",
+							message: "Radio requests must use POST /api/radio/requests",
+						});
 						break;
 					default:
 						send(ws, {

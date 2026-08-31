@@ -620,6 +620,24 @@ export function useAutoplayerCodexModels(
 	return data;
 }
 
+export function useAutoplayerOpenRouterModelsQuery(enabled = true) {
+	return useQuery({
+		queryKey: ["autoplayer", "models", "openrouter", "text"],
+		queryFn: async () =>
+			extractAutoplayerModelOptions(
+				await api.get<unknown>("/api/autoplayer/openrouter-models"),
+			),
+		enabled,
+	});
+}
+
+export function useAutoplayerOpenRouterModels(
+	enabled = true,
+): AutoplayerModelOption[] | undefined {
+	const { data } = useAutoplayerOpenRouterModelsQuery(enabled);
+	return data;
+}
+
 export function useAutoplayerInferenceShImageModelsQuery(enabled = true) {
 	return useQuery({
 		queryKey: ["autoplayer", "models", "inference-sh", "image"],
@@ -744,7 +762,6 @@ export const useRadioPlay = createMutation<
 			await api.post<RadioSnapshot>("/api/radio/play", args),
 		),
 	[["radio"]],
-	{ silent: true },
 );
 
 export const useRadioPause = createMutation<
@@ -1514,6 +1531,8 @@ export const useReimagineFromUrl = createMutation<
 		url: string;
 		style: string;
 		lyrics?: string;
+		sourceTrackTitle?: string;
+		sourceArtistName?: string;
 		coverNoiseStrength?: number;
 		playlistKey?: string;
 	},

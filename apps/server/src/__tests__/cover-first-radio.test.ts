@@ -40,6 +40,7 @@ import { emit } from "../events/event-bus";
 import {
 	buildYtSearchTarget,
 	downloadYoutubeAudio,
+	probeAudioDuration,
 } from "../external/youtube-audio";
 import {
 	createRadioAlbum,
@@ -286,6 +287,32 @@ describe("downloadYoutubeAudio SSRF guard", () => {
 	});
 });
 
+describe("probeAudioDuration", () => {
+	it("returns the measured media duration", async () => {
+		const probe = vi.fn(async () => "273.626667\n");
+
+		await expect(probeAudioDuration("/tmp/source.mp3", probe)).resolves.toBe(
+			273.626667,
+		);
+		expect(probe).toHaveBeenCalledWith("/tmp/source.mp3");
+	});
+
+	it.each(["", "not-a-duration", "0", "-1"])(
+		"rejects an invalid measured duration (%s)",
+		async (stdout) => {
+			await expect(
+				probeAudioDuration("/tmp/source.mp3", async () => stdout),
+			).rejects.toThrow("ffprobe did not return a valid duration");
+		},
+	);
+
+	it("rejects measured audio longer than ten minutes", async () => {
+		await expect(
+			probeAudioDuration("/tmp/source.mp3", async () => "600.1"),
+		).rejects.toThrow("Source is longer than 10 minutes");
+	});
+});
+
 describe("chooseAcquisitionMethod", () => {
 	it("routes by the configured ratio", () => {
 		expect(chooseAcquisitionMethod(0.5, 0.75)).toBe("search");
@@ -449,6 +476,8 @@ describe("song-service cover source persistence", () => {
 				sourceUrl: "ytsearch1:billie jean official audio",
 				sourceSongId: "other-song",
 				sourceAudioPath: "/tmp/ref.mp3",
+				sourceTrackTitle: "Billie Jean",
+				sourceArtistName: "Michael Jackson",
 				coverNoiseStrength: 0.5,
 			})
 			.returning({ id: songs.id });
@@ -466,6 +495,8 @@ describe("song-service cover source persistence", () => {
 		expect(row.sourceUrl).toBeNull();
 		expect(row.sourceSongId).toBeNull();
 		expect(row.sourceAudioPath).toBeNull();
+		expect(row.sourceTrackTitle).toBeNull();
+		expect(row.sourceArtistName).toBeNull();
 		expect(row.coverNoiseStrength).toBeNull();
 	});
 
@@ -549,6 +580,8 @@ describe("createRadioAlbum", () => {
 		expect(covers.length).toBeGreaterThanOrEqual(9);
 		for (const cover of covers) {
 			expect(cover.sourceUrl).toMatch(/^ytsearch1:/);
+			expect(cover.sourceTrackTitle).toMatch(/^Song \d+$/);
+			expect(cover.sourceArtistName).toBe("Artist");
 			expect(cover.coverNoiseStrength).toBe(0.5);
 			expect(cover.genre).toBe("synthwave");
 		}

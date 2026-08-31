@@ -1,6 +1,13 @@
 import {
+	ACE_DCW_DEFAULTS,
 	ACE_GENERATION_DEFAULTS,
+	ACE_QUALITY_DEFAULT_MODEL,
+	normalizeAceGuidanceScale,
 	normalizeAceModel,
+	normalizeAceSamplerMode,
+	normalizeAceShift,
+	normalizeAceVelocityEmaFactor,
+	normalizeAceVelocityNormThreshold,
 } from "@infinitune/shared/ace-settings";
 import { getServiceUrls } from "@/lib/server-settings";
 
@@ -38,6 +45,12 @@ export async function submitToAce(options: {
 	lmTemperature?: number;
 	lmCfgScale?: number;
 	inferMethod?: string;
+	guidanceScale?: number;
+	samplerMode?: string;
+	shift?: number;
+	velocityNormThreshold?: number;
+	velocityEmaFactor?: number;
+	useAdg?: boolean;
 	aceDcwEnabled?: boolean;
 	aceDcwMode?: string;
 	aceDcwScaler?: number;
@@ -61,6 +74,12 @@ export async function submitToAce(options: {
 		lmTemperature,
 		lmCfgScale,
 		inferMethod,
+		guidanceScale,
+		samplerMode,
+		shift,
+		velocityNormThreshold,
+		velocityEmaFactor,
+		useAdg,
 		aceDcwEnabled,
 		aceDcwMode,
 		aceDcwScaler,
@@ -76,7 +95,7 @@ export async function submitToAce(options: {
 
 	const fullPrompt = vocalStyle ? `${caption}, ${vocalStyle}` : caption;
 
-	const thinking = aceThinking ?? false;
+	const thinking = aceThinking ?? ACE_GENERATION_DEFAULTS.thinking;
 	// -1 signals ACE-Step to auto-detect duration from lyrics
 	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
 
@@ -99,16 +118,25 @@ export async function submitToAce(options: {
 		lm_temperature: lmTemperature ?? ACE_GENERATION_DEFAULTS.lmTemperature,
 		lm_cfg_scale: lmCfgScale ?? ACE_GENERATION_DEFAULTS.lmCfgScale,
 		infer_method: inferMethod || ACE_GENERATION_DEFAULTS.inferMethod,
-		shift: 3.0,
+		guidance_scale: normalizeAceGuidanceScale(guidanceScale),
+		sampler_mode: normalizeAceSamplerMode(samplerMode),
+		shift: normalizeAceShift(shift),
+		velocity_norm_threshold: normalizeAceVelocityNormThreshold(
+			velocityNormThreshold,
+		),
+		velocity_ema_factor: normalizeAceVelocityEmaFactor(velocityEmaFactor),
+		use_adg: useAdg ?? ACE_GENERATION_DEFAULTS.useAdg,
+		dcw_enabled: aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled,
 		audio_format: "mp3",
 	};
 
 	const normalizedAceModel = normalizeAceModel(aceModel);
 	if (normalizedAceModel) {
 		payload.model = normalizedAceModel;
+	} else if (aceModel === undefined) {
+		payload.model = ACE_QUALITY_DEFAULT_MODEL;
 	}
 
-	if (aceDcwEnabled !== undefined) payload.dcw_enabled = aceDcwEnabled;
 	if (aceDcwMode !== undefined) payload.dcw_mode = aceDcwMode;
 	if (aceDcwScaler !== undefined) payload.dcw_scaler = aceDcwScaler;
 	if (aceDcwHighScaler !== undefined) {

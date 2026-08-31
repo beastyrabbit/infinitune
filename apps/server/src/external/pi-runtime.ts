@@ -7,6 +7,7 @@ import {
 	normalizeAgentReasoningLevel,
 } from "@infinitune/shared/agent-reasoning";
 import { resolveTextLlmProfile } from "@infinitune/shared/text-llm-profile";
+import type { LlmProvider } from "@infinitune/shared/types";
 import {
 	type Api,
 	type Context,
@@ -15,6 +16,7 @@ import {
 	parseJsonWithRepair,
 } from "@mariozechner/pi-ai";
 import {
+	type AuthCredential,
 	AuthStorage,
 	createAgentSession,
 	createExtensionRuntime,
@@ -36,10 +38,15 @@ import { createAgentTools } from "../agents/tools";
 import * as settingsService from "../services/settings-service";
 
 const DEFAULT_PI_AGENT_DIR = path.join(os.homedir(), ".infinitune", "pi");
-const CODEX_CLI_AUTH_PATH = path.join(
-	process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
-	"auth.json",
-);
+const OPENROUTER_PROVIDER = "openrouter";
+const LEGACY_OPENROUTER_SETTING = "openrouterApiKey";
+const MAX_OPENROUTER_API_KEY_LENGTH = 4_096;
+function getCodexCliAuthPath(): string {
+	return path.join(
+		process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
+		"auth.json",
+	);
+}
 
 export function getInfinitunePiAgentDir(): string {
 	return process.env.INFINITUNE_PI_AGENT_DIR || DEFAULT_PI_AGENT_DIR;
@@ -51,6 +58,32 @@ export interface PiRuntimeHandles {
 	modelsJsonPath: string;
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
+}
+
+export function normalizeOpenRouterApiKey(apiKey: string): string {
+	const normalizedKey = apiKey.trim();
+	if (!normalizedKey) {
+		throw new Error("OpenRouter API key must not be empty");
+	}
+	if (normalizedKey.length > MAX_OPENROUTER_API_KEY_LENGTH) {
+		throw new Error("OpenRouter API key is too long");
+	}
+	if (normalizedKey.startsWith("!")) {
+		throw new Error("OpenRouter API key must be a literal value");
+	}
+	return normalizedKey;
+}
+
+function pinStoredOpenRouterKeyAsLiteral(authStorage: AuthStorage): void {
+	const credential = authStorage.get(OPENROUTER_PROVIDER);
+	if (credential?.type === "api_key") {
+		// Pi treats a stored key beginning with `!` as a shell command. A runtime
+		// override has higher priority and always returns the exact string, which
+		// keeps manually written and pre-fix credentials inert as well.
+		authStorage.setRuntimeApiKey(OPENROUTER_PROVIDER, credential.key);
+	} else {
+		authStorage.removeRuntimeApiKey(OPENROUTER_PROVIDER);
+	}
 }
 
 function readJsonObject(filePath: string): Record<string, unknown> | null {
@@ -95,11 +128,15 @@ function hasUsableOpenAiCodexAuth(value: unknown): boolean {
 	);
 }
 
-function seedPiAuthFromCodexCli(authPath: string): void {
-	const piAuth = readJsonObject(authPath) ?? {};
-	if (hasUsableOpenAiCodexAuth(piAuth["openai-codex"])) return;
+function throwAuthStorageErrors(authStorage: AuthStorage): void {
+	const [writeError] = authStorage.drainErrors();
+	if (writeError) throw writeError;
+}
 
-	const codexAuth = readJsonObject(CODEX_CLI_AUTH_PATH);
+function seedPiAuthFromCodexCli(authStorage: AuthStorage): void {
+	if (hasUsableOpenAiCodexAuth(authStorage.get("openai-codex"))) return;
+
+	const codexAuth = readJsonObject(getCodexCliAuthPath());
 	const tokens =
 		codexAuth?.tokens &&
 		typeof codexAuth.tokens === "object" &&
@@ -111,19 +148,15 @@ function seedPiAuthFromCodexCli(authPath: string): void {
 	if (typeof access !== "string" || typeof refresh !== "string") return;
 
 	const accountId = tokens?.account_id;
-	piAuth["openai-codex"] = {
+	const credential: AuthCredential = {
 		type: "oauth",
 		access,
 		refresh,
 		expires: getJwtExpiryMs(access) ?? Date.now() - 1,
 		...(typeof accountId === "string" ? { accountId } : {}),
 	};
-	fs.writeFileSync(authPath, JSON.stringify(piAuth, null, 2), "utf8");
-	try {
-		fs.chmodSync(authPath, 0o600);
-	} catch {
-		// Best effort only; AuthStorage also enforces permissions when it writes.
-	}
+	authStorage.set("openai-codex", credential);
+	throwAuthStorageErrors(authStorage);
 }
 
 export function createPiRuntimeHandles(): PiRuntimeHandles {
@@ -131,10 +164,45 @@ export function createPiRuntimeHandles(): PiRuntimeHandles {
 	fs.mkdirSync(agentDir, { recursive: true });
 	const authPath = path.join(agentDir, "auth.json");
 	const modelsJsonPath = path.join(agentDir, "models.json");
-	seedPiAuthFromCodexCli(authPath);
 	const authStorage = AuthStorage.create(authPath);
+	// AuthStorage merges provider updates under a file lock. Seeding through it
+	// prevents a concurrent OpenRouter save from being lost to a raw JSON rewrite.
+	seedPiAuthFromCodexCli(authStorage);
+	pinStoredOpenRouterKeyAsLiteral(authStorage);
 	const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath);
 	return { agentDir, authPath, modelsJsonPath, authStorage, modelRegistry };
+}
+
+export async function migrateLegacyOpenRouterCredential(
+	authStorage: AuthStorage,
+): Promise<void> {
+	await settingsService.migrateSensitiveSetting(
+		LEGACY_OPENROUTER_SETTING,
+		(legacyKey) => {
+			authStorage.reload();
+			if (authStorage.has(OPENROUTER_PROVIDER)) {
+				pinStoredOpenRouterKeyAsLiteral(authStorage);
+				return;
+			}
+			const normalizedKey = normalizeOpenRouterApiKey(legacyKey);
+			authStorage.set(OPENROUTER_PROVIDER, {
+				type: "api_key",
+				key: normalizedKey,
+			});
+			pinStoredOpenRouterKeyAsLiteral(authStorage);
+			throwAuthStorageErrors(authStorage);
+		},
+	);
+}
+
+async function createPreparedPiRuntimeHandles(
+	provider: LlmProvider,
+): Promise<PiRuntimeHandles> {
+	const handles = createPiRuntimeHandles();
+	if (provider === OPENROUTER_PROVIDER) {
+		await migrateLegacyOpenRouterCredential(handles.authStorage);
+	}
+	return handles;
 }
 
 function minimalResourceLoader(systemPrompt: string): ResourceLoader {
@@ -167,7 +235,7 @@ export function buildAgentSystemPrompt(agentId: AgentId): string {
 }
 
 type PiModelProfile = {
-	provider: "openai-codex";
+	provider: LlmProvider;
 	model: string;
 };
 
@@ -186,6 +254,13 @@ function resolveAgentModel(
 	modelPolicy: AgentModelPolicy,
 	preferred?: PiModelProfile,
 ): { model: Model<Api>; provider: string; modelId: string } {
+	if (preferred?.provider === OPENROUTER_PROVIDER) {
+		return {
+			model: resolveModel(modelRegistry, preferred.provider, preferred.model),
+			provider: preferred.provider,
+			modelId: preferred.model,
+		};
+	}
 	const candidates = [preferred, modelPolicy.primary].filter(
 		(candidate): candidate is PiModelProfile => !!candidate,
 	);
@@ -208,14 +283,18 @@ function resolveAgentModel(
 	);
 }
 
-export function createPiSessionOptions(input: {
+type PiSessionOptionsInput = {
 	agentId: AgentId;
 	scopeId?: string | null;
 	customTools?: ToolDefinition[];
 	thinkingLevel?: AgentReasoningLevel;
 	modelProfile?: PiModelProfile;
-}) {
-	const handles = createPiRuntimeHandles();
+};
+
+function buildPiSessionOptions(
+	input: PiSessionOptionsInput,
+	handles: PiRuntimeHandles,
+) {
 	const spec = getAgentSpec(input.agentId);
 	const sessionKey = getAgentSessionKey(input.agentId, input.scopeId);
 	const sessionDir = path.join(handles.agentDir, "sessions", sessionKey);
@@ -251,6 +330,10 @@ export function createPiSessionOptions(input: {
 	};
 }
 
+export function createPiSessionOptions(input: PiSessionOptionsInput) {
+	return buildPiSessionOptions(input, createPiRuntimeHandles());
+}
+
 export async function getInfinituneAgentReasoningLevel(
 	agentId: AgentId,
 ): Promise<AgentReasoningLevel> {
@@ -268,17 +351,21 @@ export async function createInfinituneAgentSession(input: {
 	agentId: AgentId;
 	scopeId?: string | null;
 	customTools?: ToolDefinition[];
+	modelProfile?: PiModelProfile;
 }) {
 	const [thinkingLevel, settings] = await Promise.all([
 		getInfinituneAgentReasoningLevel(input.agentId),
 		settingsService.getAll().catch((): Record<string, string> => ({})),
 	]);
-	const modelProfile = resolveTextLlmProfile({
-		provider: settings.textProvider,
-		model: settings.textModel,
-	});
+	const modelProfile =
+		input.modelProfile ??
+		resolveTextLlmProfile({
+			provider: settings.textProvider,
+			model: settings.textModel,
+		});
+	const handles = await createPreparedPiRuntimeHandles(modelProfile.provider);
 	return await createAgentSession(
-		createPiSessionOptions({ ...input, thinkingLevel, modelProfile }),
+		buildPiSessionOptions({ ...input, thinkingLevel, modelProfile }, handles),
 	);
 }
 
@@ -287,6 +374,7 @@ export async function promptInfinituneAgent(input: {
 	scopeId?: string | null;
 	prompt: string;
 	customTools?: ToolDefinition[];
+	modelProfile?: PiModelProfile;
 	signal?: AbortSignal;
 }): Promise<string> {
 	const { session } = await createInfinituneAgentSession(input);
@@ -340,7 +428,7 @@ function extractText(
 }
 
 export async function piCompleteText(input: {
-	provider: "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	system: string;
 	prompt: string;
@@ -348,7 +436,7 @@ export async function piCompleteText(input: {
 	reasoning?: AgentReasoningLevel;
 	signal?: AbortSignal;
 }): Promise<string> {
-	const handles = createPiRuntimeHandles();
+	const handles = await createPreparedPiRuntimeHandles(input.provider);
 	const model = resolveModel(
 		handles.modelRegistry,
 		input.provider,
@@ -369,6 +457,7 @@ export async function piCompleteText(input: {
 	const message = await completeSimple(model, context, {
 		apiKey: auth.apiKey,
 		headers: auth.headers,
+		...(model.reasoning ? {} : { temperature: input.temperature }),
 		reasoning: model.reasoning ? (input.reasoning ?? "medium") : undefined,
 		signal: input.signal,
 	});
@@ -391,7 +480,7 @@ function parseJsonFromText(text: string): unknown {
 }
 
 export async function piCompleteObject<T>(input: {
-	provider: "openai-codex";
+	provider: LlmProvider;
 	model: string;
 	system: string;
 	prompt: string;

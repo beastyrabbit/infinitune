@@ -30,7 +30,10 @@
 - **Gapless Playback** — next song preloads in background, zero gaps between tracks
 - **Rating & Feedback** — thumbs up/down to influence future generation
 - **Cover Art** — AI-generated vinyl-style album covers for every song
-- **Configurable AI** — switch between local (Ollama), cloud (OpenRouter), and OpenAI Codex (ChatGPT subscription) for LLM generation
+- **Exact Cover Lyrics** — match identified source tracks through LRCLIB and verify the audio duration before generation
+- **Share Links** — publish revocable permanent or timed links without exposing private playlist controls
+- **Global Radio** — run one synchronized station and switch the genre and vocal preset used for future albums
+- **Configurable AI** — choose OpenRouter or OpenAI Codex (ChatGPT subscription) for lyrics and metadata
 
 ## Screenshots
 
@@ -201,7 +204,7 @@ pnpm infi service uninstall
 | **Worker Pipeline** | Event-driven background pipeline · per-song workers · concurrency queues |
 | **Audio** | ACE-Step 1.5 (text-to-music synthesis) |
 | **Cover Art** | Inference.sh (image generation) |
-| **LLM** | Vercel AI SDK (Ollama/OpenRouter) + Codex App Server (`openai-codex`, ChatGPT subscription auth) |
+| **LLM** | Pi AI runtime with OpenRouter API-key auth or OpenAI Codex through a ChatGPT subscription |
 | **Build** | Vite 7 · TypeScript 5.7 · Biome (lint/format) · pnpm monorepo |
 
 ## Quick Start
@@ -236,24 +239,38 @@ Infinitune requires external AI services running on your network:
 | Service | Role | Default Port |
 |:--------|:-----|:-------------|
 | **ACE-Step 1.5** | Text-to-music synthesis | `:8001` |
-| **Ollama** | Local LLM (metadata, lyrics) | `:11434` |
-| **Inference.sh CLI** | Cover art generation | local CLI |
+| **Inference.sh CLI** | Cover art generation (bundled in the container; install locally for development) | local CLI |
+| **LRCLIB** *(optional)* | Exact lyrics for identified cover sources | HTTPS |
 | **OpenRouter** *(optional)* | Cloud LLM access | — |
 | **Codex CLI** *(optional)* | OpenAI Codex provider bridge (`codex app-server`) | — |
 
-ACE-Step defaults are quality-biased for v0.1.7+: Infinitune prefers `acestep-v15-xl-turbo` for new playlists, with turbo-style `8` inference steps and DCW enabled (`double`, `0.05`, `0.02`, `haar`). XL models need substantially more VRAM; choose server default or `acestep-v15-turbo` in Settings on smaller hosts. Alternate VAEs are ACE service-level configuration; set `ACESTEP_VAE_CHECKPOINT=scragvae` or a custom checkpoint/path on the ACE-Step server to match the app setting.
+The default ACE-Step profile is Preset M: `acestep-v15-xl-sft`, 50 inference steps, Heun sampling, ODE inference, CFG 7, Shift 1, Velocity Clamp 2, and Velocity EMA 0.1. Thinking, ADG, and DCW are off. You can change every value in Settings. XL models need more VRAM, so choose a smaller model on hosts that cannot load XL SFT. Alternate VAEs remain ACE service settings; set `ACESTEP_VAE_CHECKPOINT=scragvae` or a custom checkpoint or path on the ACE-Step server to match the app setting.
 
 ### Environment Variables
 
 Configure in `apps/server/.env.local`:
 
 ```env
-# AI service endpoints (replace with your server addresses)
-OLLAMA_URL=http://<your-server>:11434
-ACE_STEP_URL=http://<your-server>:8001
+# ACE-Step lazy-load service on the Windows generation host
+ACE_STEP_URL=http://192.168.10.242:8001
 
 # Optional — cloud LLM via OpenRouter
 OPENROUTER_API_KEY=sk-or-v1-...
+
+# Persist UI-saved Pi/OpenRouter credentials on the mounted data volume
+INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
+
+# Optional — public LRCLIB instance used for exact cover lyrics
+LRCLIB_URL=https://lrclib.net
+
+# Optional downloaded cover-source cache bounds (defaults: 1 GiB / 168 hours).
+# The byte limit is clamped to 200 MiB + 64 KiB for one safe transcode slot.
+REIMAGINE_CACHE_MAX_BYTES=1073741824
+REIMAGINE_CACHE_TTL_HOURS=168
+
+# Required in both web and server processes when Pangolin is the deployment's
+# only browser identity provider. Leave false when clients use Shoo tokens.
+INFINITUNE_TRUST_PANGOLIN_HEADERS=false
 
 # Optional — override Codex turn timeout (default: 360000 / 6 minutes)
 CODEX_TURN_TIMEOUT_MS=360000
@@ -295,6 +312,17 @@ the production server refuses to start without one. Do not expose the frontend
 without an edge proxy that is responsible for overwriting `X-Forwarded-For`.
 Infinitune ignores `X-Real-IP` for rate limiting.
 
+Pangolin deployments that do not issue a Shoo token to the browser must set
+`INFINITUNE_TRUST_PANGOLIN_HEADERS=true` in both the web and server processes;
+otherwise production settings and radio mutations remain read-only.
+Infinitune then accepts Pangolin's `Remote-User-Id` header as the user identity;
+`Remote-Email` and `Remote-Name` are optional. Enable this only when Pangolin is
+the sole reachable upstream, the edge proxy removes or overwrites incoming
+`Remote-*` headers, and network rules block direct access to the frontend,
+backend, and load balancer. The server also requires the direct proxy peer to
+match `RATE_LIMIT_TRUSTED_PROXY_IPS`; requests from other peers cannot assert a
+Pangolin identity.
+
 Authenticated owners can create permanent or timed share links. A permanent link
 for temporary music promotes its playlist by clearing the cleanup expiry. Later
 revocation does not make that playlist temporary again because the service cannot
@@ -313,7 +341,41 @@ authorization header. A shared song ID does not grant access to private metadata
 or mutations, but audio that a recipient has already opened or downloaded cannot
 be revoked.
 
-### OpenAI Codex (ChatGPT Subscription) Setup
+### OpenRouter setup
+
+Use OpenRouter when you want to choose from its text-model catalog for song metadata, lyrics, prompt enhancement, and persona extraction.
+
+1. Open `Settings` → `Network` → `OPENROUTER — SONG TEXT`.
+2. Paste an OpenRouter API key and click `SAVE KEY`. Infinitune stores the key in Pi's protected auth file and never returns it to the browser.
+3. Click `TEST` if you want to validate the saved credential.
+4. Open `Settings` → `Models`, select `OPENROUTER`, and choose a model. `auto` is the default.
+
+You can also set `OPENROUTER_API_KEY` on the server instead of saving a key in the UI. Radio planning and song generation use the selected global text provider and model.
+
+Deleting the UI-saved key intentionally keeps its owner lock so another user
+cannot immediately claim the shared credential slot. If the owner's upstream
+identity changes permanently, stop the server, back up `data/infinitune.db`,
+and remove only the stale lock with
+`DELETE FROM settings WHERE key = 'openrouterCredentialOwnerUserId';` before
+restarting. When a stored key still exists, the replacement owner must enter
+that same key once to prove possession; when no key exists, the next save
+establishes the new owner.
+
+On the first start of this release, Infinitune resets OpenRouter selections
+saved by older versions to OpenAI Codex. This prevents existing ownerless jobs
+from silently starting billed OpenRouter work. Save the key, then select
+OpenRouter again for the global text profile or create a new owned playlist.
+
+For a cover whose source title and artist are known, Infinitune asks LRCLIB for
+`plainLyrics` after resolving the reference audio. It accepts only an exact
+title/artist match whose duration differs by no more than two seconds. If
+LRCLIB is unavailable or has no exact match, generation keeps the existing
+fallback lyrics. In `Reimagine` URL mode, fill in both original-track fields
+to enable the lookup; explicitly pasted lyrics always take priority. If no
+exact duration match exists, Infinitune stops before creating the cover job and
+asks you to correct the source identity or paste lyrics.
+
+### OpenAI Codex (ChatGPT Subscription) setup
 
 Use this when you want LLM generation to run through your ChatGPT subscription instead of API-key billing.
 
@@ -324,7 +386,7 @@ Use this when you want LLM generation to run through your ChatGPT subscription i
 5. Pick `OPENAI CODEX` as provider in playlist creation or oneshot mode, then select a Codex model.
 
 Notes:
-- This project uses `codex app-server` for the `openai-codex` provider (not the Vercel AI SDK transport).
+- Text completion runs through the Pi AI runtime. The Codex CLI supplies ChatGPT authentication and model discovery.
 - `openai-codex` covers text generation (metadata, lyrics, persona). Cover art and audio use Inference.sh + ACE-Step.
 
 ### Playlist Lifecycle
@@ -347,7 +409,7 @@ Unified Server (Hono on :5175)
   ├── Room manager (multi-device playback)
   ├── WebSocket bridge → Browser (event invalidation)
   └── External services:
-      ├── LLM (Ollama/OpenRouter via Vercel AI SDK + OpenAI Codex via Codex App Server)
+      ├── LLM (OpenRouter or OpenAI Codex through the Pi AI runtime)
       ├── Inference.sh → cover art
       └── ACE-Step 1.5 → audio synthesis
 ```

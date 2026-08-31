@@ -26,7 +26,7 @@ describe("ShareButton", () => {
 		vi.clearAllMocks();
 	});
 
-	it("creates a permanent link directly and copies its public URL", async () => {
+	it("creates a permanent link only after an explicit choice", async () => {
 		post.mockResolvedValue({ token: "share-token", expiresAt: null });
 		const writeText = vi.fn().mockResolvedValue(undefined);
 		Object.defineProperty(navigator, "clipboard", {
@@ -40,12 +40,20 @@ describe("ShareButton", () => {
 				resourceId: "playlist-1",
 			}),
 		);
-		fireEvent.click(view.getByRole("button"));
+		fireEvent.pointerDown(view.getByRole("button"), {
+			button: 0,
+			ctrlKey: false,
+		});
+		expect(post).not.toHaveBeenCalled();
+		fireEvent.click(
+			await view.findByRole("menuitem", { name: /keep permanently/i }),
+		);
 
 		await waitFor(() => {
 			expect(post).toHaveBeenCalledWith("/api/share", {
 				resourceType: "playlist",
 				resourceId: "playlist-1",
+				permanent: true,
 			});
 		});
 		expect(writeText).toHaveBeenCalledWith(
@@ -62,7 +70,7 @@ describe("ShareButton", () => {
 		);
 	});
 
-	it("labels an expiring anonymous link as timed", async () => {
+	it("requests and labels a 30-day share link as timed", async () => {
 		const expiresAt = Date.now() + 60_000;
 		post.mockResolvedValue({ token: "timed-token", expiresAt });
 		Object.defineProperty(navigator, "clipboard", {
@@ -76,9 +84,20 @@ describe("ShareButton", () => {
 				resourceId: "song-1",
 			}),
 		);
-		fireEvent.click(view.getByRole("button"));
+		fireEvent.pointerDown(view.getByRole("button"), {
+			button: 0,
+			ctrlKey: false,
+		});
+		fireEvent.click(
+			await view.findByRole("menuitem", { name: "Share for 30 days" }),
+		);
 
 		await waitFor(() => {
+			expect(post).toHaveBeenCalledWith("/api/share", {
+				resourceType: "song",
+				resourceId: "song-1",
+				expiresInDays: 30,
+			});
 			expect(warning).toHaveBeenCalledWith(
 				"Timed share link ready. Copy it manually.",
 				expect.objectContaining({

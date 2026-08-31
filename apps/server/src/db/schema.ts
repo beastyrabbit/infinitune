@@ -144,6 +144,10 @@ export const songs = sqliteTable(
 		// Pending source spec the worker resolves to a file before ACE submit:
 		// a direct URL or a "ytsearchN:" query for yt-dlp
 		sourceUrl: text("source_url"),
+		// Canonical metadata for deterministic lyrics lookup after the reference
+		// audio duration is known. Only set when the source identity is known.
+		sourceTrackTitle: text("source_track_title"),
+		sourceArtistName: text("source_artist_name"),
 		coverNoiseStrength: real("cover_noise_strength"),
 		aceTaskId: text("ace_task_id"),
 		aceSubmittedAt: integer("ace_submitted_at", { mode: "number" }),

@@ -6,6 +6,7 @@ import {
 	CollapsibleJson,
 	formatElapsed,
 } from "@/components/autoplayer/test/shared";
+import { api } from "@/integrations/api/client";
 import {
 	useAutoplayerPromptContract,
 	useCodexTextModels,
@@ -75,33 +76,12 @@ function LlmTestPage() {
 				prompt,
 			};
 
-			const res = await fetch("/api/autoplayer/generate-song", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(input),
-			});
-
+			const data = await api.post<Record<string, unknown>>(
+				"/api/autoplayer/generate-song",
+				input,
+			);
 			const elapsed = Date.now() - startedAt;
-
-			if (!res.ok) {
-				const errText = await res.text();
-				const gen: Generation = {
-					id: Date.now(),
-					timestamp: startedAt,
-					elapsed,
-					provider,
-					model,
-					prompt,
-					result: null,
-					error: `HTTP ${res.status}: ${errText}`,
-				};
-				setGenerations((prev) => [gen, ...prev]);
-				setExpandedId(gen.id);
-				return;
-			}
-
-			const data = await res.json();
-			if (data.error) {
+			if (typeof data.error === "string") {
 				const gen: Generation = {
 					id: Date.now(),
 					timestamp: startedAt,

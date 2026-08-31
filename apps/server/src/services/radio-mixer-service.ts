@@ -481,12 +481,15 @@ async function applyLlmSchedule(reason: string) {
 	}
 }
 
-export function recomputeRadioSchedule(reason = "mixer-fallback") {
+export function recomputeRadioSchedule(
+	reason = "mixer-fallback",
+	options: { refineWithLlm?: boolean } = {},
+) {
 	const currentSongId = getCurrentSongId();
 	const candidates = getCandidates();
 	const plan = buildPlan(candidates, currentSongId);
 	const snapshot = writeSchedule(plan, reason);
-	scheduleLlmRefinement(reason);
+	if (options.refineWithLlm !== false) scheduleLlmRefinement(reason);
 	return snapshot;
 }
 

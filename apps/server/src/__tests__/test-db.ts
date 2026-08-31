@@ -101,6 +101,8 @@ const SCHEMA_SQL = `
 		source_song_id TEXT,
 		source_audio_path TEXT,
 		source_url TEXT,
+		source_track_title TEXT,
+		source_artist_name TEXT,
 		cover_noise_strength REAL,
 		ace_task_id TEXT,
 		ace_submitted_at INTEGER,

@@ -1,7 +1,9 @@
 import { Compass } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { api } from "@/integrations/api/client";
 import { useUpdatePlaylistPrompt } from "@/integrations/api/hooks";
 import { formatTimeAgo } from "@/lib/format-time";
 import type { Playlist } from "@/types";
@@ -33,17 +35,15 @@ export function DirectionSteering({
 
 		setLoading(true);
 		try {
-			const res = await fetch("/api/autoplayer/refine-prompt", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
+			const data = await api.post<{ result?: string }>(
+				"/api/autoplayer/refine-prompt",
+				{
 					currentPrompt: playlist.prompt,
 					direction: trimmed,
 					provider: playlist.llmProvider,
 					model: playlist.llmModel,
-				}),
-			});
-			const data = await res.json();
+				},
+			);
 			if (data.result) {
 				await updatePrompt({
 					id: playlist.id,
@@ -51,8 +51,12 @@ export function DirectionSteering({
 				});
 				setValue("");
 			}
-		} catch {
-			// Silently fail — prompt stays unchanged
+		} catch (error) {
+			toast.error(
+				error instanceof Error
+					? error.message
+					: "Could not refine the playlist direction",
+			);
 		} finally {
 			setLoading(false);
 		}

@@ -6,9 +6,12 @@ export interface ServiceUrls {
 	aceStepUrl: string;
 }
 
+export const DEFAULT_ACE_STEP_URL = "http://192.168.10.242:8001";
+const envAceStepUrl = process.env.ACE_STEP_URL?.trim() || "";
+
 const defaults: ServiceUrls = {
 	ollamaUrl: process.env.OLLAMA_URL || "",
-	aceStepUrl: process.env.ACE_STEP_URL || "",
+	aceStepUrl: envAceStepUrl || DEFAULT_ACE_STEP_URL,
 };
 
 const warnedMissing = new Set<keyof ServiceUrls>();
@@ -26,9 +29,10 @@ function warnOnce(missing: Array<keyof ServiceUrls>): void {
 export async function getServiceUrls(): Promise<ServiceUrls> {
 	try {
 		const settings = await settingsService.getAll();
+		const persistedAceStepUrl = settings.aceStepUrl?.trim() || "";
 		const resolved = {
 			ollamaUrl: settings.ollamaUrl || defaults.ollamaUrl,
-			aceStepUrl: settings.aceStepUrl || defaults.aceStepUrl,
+			aceStepUrl: envAceStepUrl || persistedAceStepUrl || DEFAULT_ACE_STEP_URL,
 		};
 		const missing = Object.entries(resolved)
 			.filter(([, value]) => !value)

@@ -73,6 +73,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		expect(link?.token).toMatch(/^[A-Za-z0-9_-]+$/);
 		expect(link?.token.length).toBeGreaterThanOrEqual(32);
@@ -81,6 +82,7 @@ describe("share-link-service", () => {
 		const other = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		expect(other?.token).toBe(link?.token);
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(1);
@@ -90,6 +92,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		const resolved = await shareService.resolveShareLink(link?.token ?? "");
 		expect(resolved?.resourceType).toBe("playlist");
@@ -111,6 +114,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 		const resolved = await shareService.resolveShareLink(link?.token ?? "");
 		expect(resolved?.resourceType).toBe("song");
@@ -127,6 +131,7 @@ describe("share-link-service", () => {
 		const playlistLink = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		const playlistShare = await shareService.resolveShareLink(
 			playlistLink?.token ?? "",
@@ -138,6 +143,7 @@ describe("share-link-service", () => {
 		const songLink = await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 		const songShare = await shareService.resolveShareLink(
 			songLink?.token ?? "",
@@ -168,6 +174,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		const resolved = await shareService.resolveShareLink(link?.token ?? "");
 		const payload = resolved?.payload as { songs: Array<{ id: string }> };
@@ -191,6 +198,7 @@ describe("share-link-service", () => {
 		const playlistLink = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		const playlistResolved = await shareService.resolveShareLink(
 			playlistLink?.token ?? "",
@@ -203,6 +211,7 @@ describe("share-link-service", () => {
 		const songLink = await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-no-audio",
+			permanent: true,
 		});
 		expect(
 			await shareService.resolveShareLink(songLink?.token ?? ""),
@@ -229,6 +238,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		const resolved = await shareService.resolveShareLink(link?.token ?? "");
 		const payload = resolved?.payload as { songs: Array<{ id: string }> };
@@ -263,6 +273,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 		expect(await shareService.revokeShareLink(link?.id ?? "")).toBe(true);
 		expect(await shareService.revokeShareLink(link?.id ?? "")).toBe(false);
@@ -390,6 +401,7 @@ describe("share-link-service", () => {
 		await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 
 		const [playlist] = await db
@@ -410,6 +422,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		await shareService.revokeShareLink(link?.id ?? "");
 
@@ -508,6 +521,7 @@ describe("share-link-service", () => {
 			await shareService.createShareLink({
 				resourceType: "playlist",
 				resourceId: "missing",
+				permanent: true,
 			}),
 		).toBeNull();
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(0);
@@ -521,6 +535,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 
@@ -543,6 +558,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(repeatedResponse.status).toBe(201);
@@ -559,6 +575,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(firstResponse.status).toBe(201);
@@ -576,6 +593,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(replacementResponse.status).toBe(201);
@@ -590,6 +608,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(repeatedResponse.status).toBe(201);
@@ -631,6 +650,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "song",
 				resourceId: "song-1",
+				permanent: true,
 			}),
 		});
 		expect(repeatedResponse.status).toBe(201);
@@ -666,6 +686,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 
@@ -725,6 +746,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(createResponse.status).toBe(201);
@@ -756,6 +778,75 @@ describe("share-link-service", () => {
 		expect(response.status).toBe(400);
 		expect(await getTestDb().select().from(shareLinks)).toHaveLength(0);
 	});
+
+	it("rejects an omitted lifetime before changing temporary retention", async () => {
+		const db = getTestDb();
+		const originalExpiry = Date.now() + 60_000;
+		await db
+			.update(playlists)
+			.set({ isTemporary: true, expiresAt: originalExpiry })
+			.where(eq(playlists.id, "pl-1"));
+
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+			}),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await db.select().from(shareLinks)).toHaveLength(0);
+		expect(
+			(await db.select().from(playlists).where(eq(playlists.id, "pl-1")))[0],
+		).toMatchObject({ isTemporary: true, expiresAt: originalExpiry });
+	});
+
+	it("rejects conflicting timed and permanent lifetimes", async () => {
+		const response = await shareRoutes.request("/", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 30,
+				permanent: true,
+			}),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await getTestDb().select().from(shareLinks)).toHaveLength(0);
+	});
+
+	it.each([
+		["omitted", { resourceType: "playlist", resourceId: "pl-1" }, TypeError],
+		[
+			"conflicting",
+			{
+				resourceType: "playlist",
+				resourceId: "pl-1",
+				expiresInDays: 30,
+				permanent: true,
+			},
+			TypeError,
+		],
+		[
+			"out-of-range",
+			{ resourceType: "playlist", resourceId: "pl-1", expiresInDays: 0 },
+			RangeError,
+		],
+	] as const)(
+		"rejects a runtime %s lifetime before entering the service transaction",
+		async (_label, input, errorType) => {
+			await expect(
+				shareService.createShareLink(
+					input as unknown as shareService.CreateShareLinkInput,
+				),
+			).rejects.toBeInstanceOf(errorType);
+			expect(await getTestDb().select().from(shareLinks)).toHaveLength(0);
+		},
+	);
 
 	it("rate-limits share-link listing", async () => {
 		const db = getTestDb();
@@ -803,6 +894,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		await db.insert(users).values({
 			id: "user-1",
@@ -820,6 +912,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 
@@ -869,6 +962,7 @@ describe("share-link-service", () => {
 			body: JSON.stringify({
 				resourceType: "playlist",
 				resourceId: "pl-1",
+				permanent: true,
 			}),
 		});
 		expect(createResponse.status).toBe(201);
@@ -924,7 +1018,11 @@ describe("share-link-service", () => {
 		const response = await shareRoutes.request("/", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ resourceType: "song", resourceId: "song-1" }),
+			body: JSON.stringify({
+				resourceType: "song",
+				resourceId: "song-1",
+				permanent: true,
+			}),
 		});
 
 		expect(response.status).toBe(404);
@@ -944,6 +1042,7 @@ describe("share-link-service", () => {
 		const link = await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 		expect(
 			await shareService.resolveShareLink(link?.token ?? ""),
@@ -978,10 +1077,12 @@ describe("share-link-service", () => {
 		await shareService.createShareLink({
 			resourceType: "playlist",
 			resourceId: "pl-1",
+			permanent: true,
 		});
 		await shareService.createShareLink({
 			resourceType: "song",
 			resourceId: "song-1",
+			permanent: true,
 		});
 
 		await db.delete(playlists).where(eq(playlists.id, "pl-1"));

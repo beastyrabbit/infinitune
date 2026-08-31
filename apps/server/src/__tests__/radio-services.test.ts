@@ -224,6 +224,28 @@ describe("global radio services", () => {
 		expect(row?.dislikeCount).toBe(1);
 	});
 
+	it("rejects feedback for unknown and non-radio songs", async () => {
+		const playlist = await createPlaylist();
+		const [legacySong] = await getTestDb()
+			.insert(songs)
+			.values({
+				playlistId: playlist.id,
+				orderIndex: 1,
+				title: "Legacy",
+				status: "ready",
+				radioEligible: false,
+			})
+			.returning();
+
+		await expect(
+			songService.incrementRadioFeedback("missing-song", "like"),
+		).resolves.toBe(false);
+		await expect(
+			songService.incrementRadioFeedback(legacySong.id, "like"),
+		).resolves.toBe(false);
+		expect((await songService.getById(legacySong.id))?.likeCount).toBe(0);
+	});
+
 	it("mixes only ready songs from radio albums and excludes legacy songs", async () => {
 		const { song } = await createReadyRadioSong();
 		const playlist = await createPlaylist();

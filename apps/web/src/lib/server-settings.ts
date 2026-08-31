@@ -5,9 +5,12 @@ export interface ServiceUrls {
 	aceStepUrl: string;
 }
 
+export const DEFAULT_ACE_STEP_URL = "http://192.168.10.242:8001";
+const envAceStepUrl = process.env.ACE_STEP_URL?.trim() || "";
+
 const defaults: ServiceUrls = {
 	ollamaUrl: process.env.OLLAMA_URL || "http://192.168.10.120:11434",
-	aceStepUrl: process.env.ACE_STEP_URL || "http://192.168.10.120:8001",
+	aceStepUrl: envAceStepUrl || DEFAULT_ACE_STEP_URL,
 };
 
 export async function getServiceUrls(): Promise<ServiceUrls> {
@@ -15,9 +18,10 @@ export async function getServiceUrls(): Promise<ServiceUrls> {
 		const res = await fetch(`${apiUrl}/api/settings`);
 		if (!res.ok) return defaults;
 		const settings: Record<string, string> = await res.json();
+		const persistedAceStepUrl = settings.aceStepUrl?.trim() || "";
 		return {
 			ollamaUrl: settings.ollamaUrl || defaults.ollamaUrl,
-			aceStepUrl: settings.aceStepUrl || defaults.aceStepUrl,
+			aceStepUrl: envAceStepUrl || persistedAceStepUrl || DEFAULT_ACE_STEP_URL,
 		};
 	} catch {
 		return defaults;

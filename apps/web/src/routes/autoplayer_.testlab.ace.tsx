@@ -128,7 +128,7 @@ function AceTestPage() {
 
 						// Build audio URL from ACE-Step server
 						const aceStepUrl =
-							settings?.aceStepUrl || "http://192.168.10.120:8001";
+							settings?.aceStepUrl || "http://192.168.10.242:8001";
 						setAudioUrl(`${aceStepUrl}${pollData.audioPath}`);
 					} else if (pollData.status === "failed") {
 						stopPolling();
