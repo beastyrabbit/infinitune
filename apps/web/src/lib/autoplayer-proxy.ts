@@ -1,4 +1,4 @@
-import { API_URL } from "./endpoints";
+import { API_FETCH_URL } from "./endpoints";
 
 const PANGOLIN_IDENTITY_HEADERS = [
 	"Remote-User-Id",
@@ -11,7 +11,7 @@ export async function proxyAutoplayerRequest(
 	path: string,
 ): Promise<Response> {
 	const sourceUrl = new URL(request.url);
-	const targetUrl = new URL(`${API_URL}/api/autoplayer${path}`);
+	const targetUrl = new URL(`${API_FETCH_URL}/api/autoplayer${path}`);
 	targetUrl.search = sourceUrl.search;
 
 	const method = request.method.toUpperCase();
