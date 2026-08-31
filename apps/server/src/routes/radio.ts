@@ -7,6 +7,7 @@ import {
 	radioControlLimiter,
 	radioFeedbackLimiter,
 	radioRequestLimiter,
+	radioSourceMutationLimiter,
 	stationPresetLimiter,
 } from "../middleware/limiters";
 import {
@@ -241,7 +242,7 @@ const AddSourceSchema = z.object({
 	genreTag: z.string().max(100).optional(),
 });
 
-app.get("/sources", async (c) => {
+app.get("/sources", requireProductionUser, async (c) => {
 	const settings = await getRadioSourceSettings();
 	return c.json({
 		sources: await listCoverSources(),
@@ -249,20 +250,30 @@ app.get("/sources", async (c) => {
 	});
 });
 
-app.post("/sources", async (c) => {
-	const result = AddSourceSchema.safeParse(await c.req.json());
-	if (!result.success) return c.json({ error: result.error.message }, 400);
-	const parsed = new URL(result.data.url);
-	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-		return c.json({ error: "Only http(s) URLs are supported" }, 400);
-	}
-	return c.json(await addCoverSource(result.data.url, result.data.genreTag));
-});
+app.post(
+	"/sources",
+	requireProductionUser,
+	radioSourceMutationLimiter,
+	async (c) => {
+		const result = AddSourceSchema.safeParse(await c.req.json());
+		if (!result.success) return c.json({ error: result.error.message }, 400);
+		const parsed = new URL(result.data.url);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+			return c.json({ error: "Only http(s) URLs are supported" }, 400);
+		}
+		return c.json(await addCoverSource(result.data.url, result.data.genreTag));
+	},
+);
 
-app.delete("/sources/:id", async (c) => {
-	const deleted = await deleteCoverSource(c.req.param("id"));
-	if (!deleted) return c.json({ error: "Source not found" }, 404);
-	return c.json({ ok: true });
-});
+app.delete(
+	"/sources/:id",
+	requireProductionUser,
+	radioSourceMutationLimiter,
+	async (c) => {
+		const deleted = await deleteCoverSource(c.req.param("id"));
+		if (!deleted) return c.json({ error: "Source not found" }, 404);
+		return c.json({ ok: true });
+	},
+);
 
 export default app;

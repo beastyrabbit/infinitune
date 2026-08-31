@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
 	topUpInventory: vi.fn(),
 	submitRadioRequest: vi.fn(),
 	settingsGetAll: vi.fn(),
+	addCoverSource: vi.fn(),
+	deleteCoverSource: vi.fn(),
 }));
 
 vi.mock("../auth/actor", () => ({
@@ -23,8 +25,8 @@ vi.mock("../services/album-generation-service", () => ({
 }));
 
 vi.mock("../services/cover-source-service", () => ({
-	addCoverSource: vi.fn(),
-	deleteCoverSource: vi.fn(),
+	addCoverSource: mocks.addCoverSource,
+	deleteCoverSource: mocks.deleteCoverSource,
 	getNasStatus: vi.fn().mockReturnValue({}),
 	getRadioSourceSettings: vi.fn().mockResolvedValue({ sourceLibraryDir: "" }),
 	listCoverSources: vi.fn().mockResolvedValue([]),
@@ -188,5 +190,50 @@ describe("radio control rate-limit ordering", () => {
 		expect(mocks.addFeedback).toHaveBeenCalledOnce();
 		expect(mocks.topUpInventory).toHaveBeenCalledOnce();
 		expect(mocks.submitRadioRequest).toHaveBeenCalledOnce();
+	});
+
+	it("authenticates source mutations before consuming their shared limit", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		vi.stubEnv("RATE_LIMIT_RADIO_SOURCE_MUTATIONS_PER_MIN", "1");
+		vi.stubEnv("RATE_LIMIT_RADIO_SOURCE_MUTATIONS_GLOBAL_PER_MIN", "1");
+		mocks.requireUserActor.mockReset();
+		mocks.requireUserActor.mockResolvedValue(null);
+		mocks.addCoverSource.mockResolvedValue({ id: "source-1" });
+		mocks.deleteCoverSource.mockResolvedValue(true);
+
+		const [{ default: radioRoutes }, rateLimitModule] = await Promise.all([
+			import("../routes/radio"),
+			import("../middleware/rate-limit"),
+		]);
+		resetRateLimiters = rateLimitModule.resetRateLimiters;
+
+		const anonymousCreate = await radioRoutes.request("/sources", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ url: "https://example.com/source" }),
+		});
+		const anonymousDelete = await radioRoutes.request("/sources/source-1", {
+			method: "DELETE",
+		});
+		expect(anonymousCreate.status).toBe(401);
+		expect(anonymousDelete.status).toBe(401);
+
+		mocks.requireUserActor.mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		const authenticatedCreate = await radioRoutes.request("/sources", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ url: "https://example.com/source" }),
+		});
+		const limitedDelete = await radioRoutes.request("/sources/source-1", {
+			method: "DELETE",
+		});
+
+		expect(authenticatedCreate.status).toBe(200);
+		expect(limitedDelete.status).toBe(429);
+		expect(mocks.addCoverSource).toHaveBeenCalledOnce();
+		expect(mocks.deleteCoverSource).not.toHaveBeenCalled();
 	});
 });

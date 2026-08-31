@@ -42,13 +42,21 @@ async function sendHeartbeat(
 	socket: ReturnType<typeof fakeWebSocket>,
 	listenerId = "listener-1",
 ) {
-	socket.listeners.get("message")?.(
-		Buffer.from(JSON.stringify({ type: "heartbeat", listenerId })),
+	await sendRawMessage(
+		socket,
+		JSON.stringify({ type: "heartbeat", listenerId }),
 	);
+}
+
+async function sendRawMessage(
+	socket: ReturnType<typeof fakeWebSocket>,
+	message: string,
+) {
+	socket.listeners.get("message")?.(Buffer.from(message));
 	await Promise.resolve();
 }
 
-describe("radio WebSocket heartbeat limiting", () => {
+describe("radio WebSocket inbound message limiting", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
@@ -59,12 +67,15 @@ describe("radio WebSocket heartbeat limiting", () => {
 		vi.useRealTimers();
 	});
 
-	it("allows the frontend's normal one-heartbeat-per-second cadence", async () => {
+	it("allows normal one-second heartbeats plus occasional commands", async () => {
 		const socket = fakeWebSocket();
 		handleRadioConnection(socket.ws);
 
 		for (let second = 0; second < 60; second++) {
 			await sendHeartbeat(socket);
+			if (second % 10 === 0) {
+				await sendRawMessage(socket, JSON.stringify({ type: "request" }));
+			}
 			await vi.advanceTimersByTimeAsync(1000);
 		}
 
@@ -78,26 +89,44 @@ describe("radio WebSocket heartbeat limiting", () => {
 					message.type === "pong",
 			),
 		).toHaveLength(60);
+		expect(
+			socket.sent.filter(
+				(message) =>
+					typeof message === "object" &&
+					message !== null &&
+					"message" in message &&
+					message.message ===
+						"Radio requests must use POST /api/radio/requests",
+			),
+		).toHaveLength(6);
 
 		socket.listeners.get("close")?.();
 	});
 
-	it("bounds bursts per socket and refills at two heartbeats per second", async () => {
+	it("drops inbound floods before parsing and refills at two messages per second", async () => {
 		const socket = fakeWebSocket();
 		handleRadioConnection(socket.ws);
 
 		for (let index = 0; index < 12; index++) {
-			await sendHeartbeat(socket);
+			await sendRawMessage(socket, "not-json");
 		}
-		expect(mocks.heartbeatListener).toHaveBeenCalledTimes(10);
+		expect(
+			socket.sent.filter(
+				(message) =>
+					typeof message === "object" &&
+					message !== null &&
+					"type" in message &&
+					message.type === "error",
+			),
+		).toHaveLength(10);
 
 		await vi.advanceTimersByTimeAsync(499);
 		await sendHeartbeat(socket);
-		expect(mocks.heartbeatListener).toHaveBeenCalledTimes(10);
+		expect(mocks.heartbeatListener).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(1);
 		await sendHeartbeat(socket);
-		expect(mocks.heartbeatListener).toHaveBeenCalledTimes(11);
+		expect(mocks.heartbeatListener).toHaveBeenCalledOnce();
 
 		socket.listeners.get("close")?.();
 	});

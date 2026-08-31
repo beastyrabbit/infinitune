@@ -115,6 +115,22 @@ export const radioFeedbackLimiter = withGlobalCap(
 	}),
 );
 
+/** Authenticated mutations to the seeded radio cover-source pool. */
+export const radioSourceMutationLimiter = withGlobalCap(
+	createRateLimiter({
+		limit: envLimit("RATE_LIMIT_RADIO_SOURCE_MUTATIONS_PER_MIN", 20),
+		windowMs: 60_000,
+		prefix: "radio-source-mutation",
+	}),
+	createRateLimiter({
+		limit: envLimit("RATE_LIMIT_RADIO_SOURCE_MUTATIONS_GLOBAL_PER_MIN", 100),
+		windowMs: 60_000,
+		prefix: "radio-source-mutation-global",
+		keyBy: () => "all-clients",
+		maxBuckets: 1,
+	}),
+);
+
 /** Persistent public-link creation. */
 export const shareLinkLimiter = createRateLimiter({
 	limit: envLimit("RATE_LIMIT_SHARE_LINKS_PER_MIN", 20),

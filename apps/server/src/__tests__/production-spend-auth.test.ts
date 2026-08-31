@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
 	addFeedback: vi.fn(),
 	topUpInventory: vi.fn(),
 	submitRadioRequest: vi.fn(),
+	addCoverSource: vi.fn(),
+	deleteCoverSource: vi.fn(),
+	getRadioSourceSettings: vi.fn(),
+	listCoverSources: vi.fn(),
 }));
 
 vi.mock("../auth/actor", () => ({
@@ -64,6 +68,10 @@ vi.mock("../middleware/limiters", () => ({
 		next(),
 	radioRequestLimiter: async (_context: unknown, next: () => Promise<void>) =>
 		next(),
+	radioSourceMutationLimiter: async (
+		_context: unknown,
+		next: () => Promise<void>,
+	) => next(),
 	stationPresetLimiter: async (_context: unknown, next: () => Promise<void>) =>
 		next(),
 }));
@@ -102,11 +110,11 @@ vi.mock("../services/album-generation-service", () => ({
 }));
 
 vi.mock("../services/cover-source-service", () => ({
-	addCoverSource: vi.fn(),
-	deleteCoverSource: vi.fn(),
+	addCoverSource: mocks.addCoverSource,
+	deleteCoverSource: mocks.deleteCoverSource,
 	getNasStatus: vi.fn().mockReturnValue({}),
-	getRadioSourceSettings: vi.fn().mockResolvedValue({ sourceLibraryDir: "" }),
-	listCoverSources: vi.fn().mockResolvedValue([]),
+	getRadioSourceSettings: mocks.getRadioSourceSettings,
+	listCoverSources: mocks.listCoverSources,
 }));
 
 vi.mock("../services/radio-request-service", () => ({
@@ -225,6 +233,10 @@ describe("production OpenRouter spend authentication", () => {
 		mocks.addFeedback.mockResolvedValue({ station: {} });
 		mocks.topUpInventory.mockResolvedValue({ created: 1 });
 		mocks.submitRadioRequest.mockResolvedValue({ id: "request-1" });
+		mocks.addCoverSource.mockResolvedValue({ id: "source-1" });
+		mocks.deleteCoverSource.mockResolvedValue(true);
+		mocks.getRadioSourceSettings.mockResolvedValue({ sourceLibraryDir: "" });
+		mocks.listCoverSources.mockResolvedValue([]);
 	});
 
 	afterEach(() => vi.unstubAllEnvs());
@@ -506,6 +518,56 @@ describe("production OpenRouter spend authentication", () => {
 		);
 		expect(authenticatedResponse.status).toBe(200);
 		expect(mocks.topUpInventory).toHaveBeenCalledWith({ force: true });
+	});
+
+	it("requires a production user for radio source reads and mutations", async () => {
+		const readResponse = await radioRoutes.request("/sources");
+		const createResponse = await requestJson(radioRoutes, "/sources", "POST", {
+			url: "https://example.com/source",
+		});
+		const deleteResponse = await requestJson(
+			radioRoutes,
+			"/sources/source-1",
+			"DELETE",
+		);
+
+		expect(readResponse.status).toBe(401);
+		expect(createResponse.status).toBe(401);
+		expect(deleteResponse.status).toBe(401);
+		expect(mocks.getRadioSourceSettings).not.toHaveBeenCalled();
+		expect(mocks.listCoverSources).not.toHaveBeenCalled();
+		expect(mocks.addCoverSource).not.toHaveBeenCalled();
+		expect(mocks.deleteCoverSource).not.toHaveBeenCalled();
+	});
+
+	it("allows authenticated production and anonymous local source access", async () => {
+		mocks.requireUserActor.mockResolvedValue(authenticated);
+		expect((await radioRoutes.request("/sources")).status).toBe(200);
+		expect(
+			(
+				await requestJson(radioRoutes, "/sources", "POST", {
+					url: "https://example.com/source",
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(await requestJson(radioRoutes, "/sources/source-1", "DELETE")).status,
+		).toBe(200);
+
+		vi.stubEnv("NODE_ENV", "development");
+		mocks.requireUserActor.mockResolvedValue(null);
+		expect((await radioRoutes.request("/sources")).status).toBe(200);
+		expect(
+			(
+				await requestJson(radioRoutes, "/sources", "POST", {
+					url: "https://example.com/local-source",
+				})
+			).status,
+		).toBe(200);
+		expect(
+			(await requestJson(radioRoutes, "/sources/local-source", "DELETE"))
+				.status,
+		).toBe(200);
 	});
 
 	it("blocks anonymous production radio activation, seeking, and skipping", async () => {

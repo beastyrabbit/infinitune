@@ -14,10 +14,10 @@ import {
 const clients = new Set<WebSocket>();
 let eventBridgeStarted = false;
 
-// The frontend sends one heartbeat per second. Allow brief timer/reconnect
-// bursts, but bound sustained work from a single socket to twice that rate.
-const HEARTBEAT_BURST_CAPACITY = 10;
-const HEARTBEAT_REFILL_PER_MS = 2 / 1000;
+// The frontend sends one heartbeat per second plus occasional controls. Allow
+// brief timer/reconnect bursts, but bound all inbound work from one socket.
+const INBOUND_MESSAGE_BURST_CAPACITY = 10;
+const INBOUND_MESSAGE_REFILL_PER_MS = 2 / 1000;
 
 // Number of open sockets currently holding each listener id active. Several
 // browser tabs share one persisted listenerId, so a listener must only be
@@ -81,18 +81,19 @@ export function handleRadioConnection(ws: WebSocket): void {
 	startEventBridge();
 	clients.add(ws);
 	const listenerId = crypto.randomUUID();
-	let heartbeatTokens = HEARTBEAT_BURST_CAPACITY;
-	let heartbeatLastRefillAt = Date.now();
-	const consumeHeartbeatToken = () => {
+	let inboundMessageTokens = INBOUND_MESSAGE_BURST_CAPACITY;
+	let inboundMessageLastRefillAt = Date.now();
+	const consumeInboundMessageToken = () => {
 		const now = Date.now();
-		heartbeatTokens = Math.min(
-			HEARTBEAT_BURST_CAPACITY,
-			heartbeatTokens +
-				Math.max(0, now - heartbeatLastRefillAt) * HEARTBEAT_REFILL_PER_MS,
+		inboundMessageTokens = Math.min(
+			INBOUND_MESSAGE_BURST_CAPACITY,
+			inboundMessageTokens +
+				Math.max(0, now - inboundMessageLastRefillAt) *
+					INBOUND_MESSAGE_REFILL_PER_MS,
 		);
-		heartbeatLastRefillAt = now;
-		if (heartbeatTokens < 1) return false;
-		heartbeatTokens -= 1;
+		inboundMessageLastRefillAt = now;
+		if (inboundMessageTokens < 1) return false;
+		inboundMessageTokens -= 1;
 		return true;
 	};
 	// The id this connection currently holds active (null while paused). The
@@ -107,14 +108,14 @@ export function handleRadioConnection(ws: WebSocket): void {
 	send(ws, { type: "hello", listenerId, ...getStationSnapshot() });
 
 	ws.on("message", (raw) => {
+		// Limit before parsing or dispatching, and silently drop excess messages
+		// to avoid turning an inbound flood into outbound response amplification.
+		if (!consumeInboundMessageToken()) return;
 		const msg = parseMessage(raw);
 		if (!msg || typeof msg.type !== "string") {
 			send(ws, { type: "error", message: "Invalid radio message" });
 			return;
 		}
-		// Drop excess heartbeats before queueing async command work. Responding to
-		// each rejected message would amplify traffic from a flooding client.
-		if (msg.type === "heartbeat" && !consumeHeartbeatToken()) return;
 
 		const effectiveListenerId =
 			typeof msg.listenerId === "string" && msg.listenerId.trim()
