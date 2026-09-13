@@ -285,7 +285,7 @@ MUSIC_STORAGE_PATH=/path/to/your/music/storage
 
 # Required for SSR share pages and reverse proxies: comma-separated IPs or
 # CIDRs for the frontend server and proxy hops allowed to supply X-Forwarded-For.
-RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,10.42.0.0/16
+RATE_LIMIT_TRUSTED_PROXY_IPS=127.0.0.1,<trusted-proxy-cidr>
 
 # Optional public-share read cap per client and minute (default: 120)
 RATE_LIMIT_SHARE_READS_PER_MIN=120
