@@ -16,6 +16,13 @@
 
 </div>
 
+
+## At a glance
+
+An endless music generator that creates lyrics, cover art, and audio from a short prompt.
+
+![INFINITUNE player](docs/screenshots/player-queue.png)
+
 ## Features
 
 - **Endless Generation** — describe a mood, genre, or artist and songs keep appearing in real-time
@@ -252,9 +259,7 @@ Configure in `apps/server/.env.local`:
 
 ```env
 # ACE-Step lazy-load service on the Windows generation host
-ACE_STEP_URL=http://192.168.10.242:8001
-
-# Optional — cloud LLM via OpenRouter
+ACE_STEP_URL=https://<internal-host> Optional — cloud LLM via OpenRouter
 OPENROUTER_API_KEY=sk-or-v1-...
 
 # Persist UI-saved Pi/OpenRouter credentials on the mounted data volume
