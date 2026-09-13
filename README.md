@@ -438,3 +438,9 @@ infinitune/
 <div align="center">
 <sub>Built with mass GPU cycles and human curiosity.</sub>
 </div>
+
+## Live preview
+
+The live interface shows playlist creation, model selection, and local or room playback controls.
+
+![Infinitune interface](https://schaffa.dev/f/9THFPaqYcOOQoldHy2nQpw.webp)
