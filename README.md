@@ -443,4 +443,4 @@ infinitune/
 
 The live interface shows playlist creation, model selection, and local or room playback controls.
 
-![Infinitune interface](https://schaffa.dev/f/9THFPaqYcOOQoldHy2nQpw.webp)
+![Infinitune interface](https://schaffa.dev/f/MhlaSu7yVf81t35srIQJew.webp)
