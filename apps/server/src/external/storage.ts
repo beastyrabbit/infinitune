@@ -21,10 +21,11 @@ const PENDING_AUDIO_MAX_AGE_MS =
 	2 * (ACE_DOWNLOAD_TIMEOUT_MS + 2 * FFMPEG_PASS_TIMEOUT_MS);
 /**
  * Exactly the names this code generates: the save's private audio
- * (`.audio-<uuid>.mp3`) and the silence trim's output (`.trimmed-<ms>.mp3`).
+ * (`.audio-<randomUUID()>.mp3`, a v4 UUID) and the silence trim's output
+ * (`.trimmed-<Date.now()>.mp3`, 13 digits).
  */
 const PENDING_AUDIO_FILE =
-	/^\.(audio-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|trimmed-\d+)\.mp3$/;
+	/^\.(audio-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|trimmed-\d{13})\.mp3$/;
 
 /** Stream ACE audio to disk with a deadline and a hard size cap. */
 export async function downloadAceAudio(

@@ -138,11 +138,15 @@ describe("saveSongToNfs", () => {
 		writeFile(".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3", false);
 		writeFile(".trimmed-1790000900000.mp3", false);
 		writeFile(".trimmed-user.mp3", true);
+		writeFile(".trimmed-123.mp3", true);
+		writeFile(".audio-00000000-0000-0000-0000-000000000000.mp3", true);
 
 		await save();
 
 		expect(pendingFiles()).toEqual([
+			".audio-00000000-0000-0000-0000-000000000000.mp3",
 			".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3",
+			".trimmed-123.mp3",
 			".trimmed-1790000900000.mp3",
 			".trimmed-user.mp3",
 		]);
