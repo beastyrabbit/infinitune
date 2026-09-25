@@ -9,8 +9,8 @@ on:
 # Pushes to main analyse the main branch. Pull requests are analysed as
 # SonarQube pull requests (Community Branch Plugin): only the changed code is
 # rated and SonarQube reports the quality gate as a check plus a summary
-# comment through its GitHub App. PRs from forks are skipped because they
-# cannot read SONAR_TOKEN.
+# comment through its GitHub App. PRs from forks and runs triggered by
+# Dependabot are skipped because they cannot read SONAR_TOKEN.
 permissions:
   contents: read
 
@@ -21,8 +21,9 @@ concurrency:
 jobs:
   sonarqube:
     if: >-
-      github.event_name != 'pull_request' ||
-      (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft)
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft))
     runs-on: arc-infinitune
     timeout-minutes: 30
     steps:
