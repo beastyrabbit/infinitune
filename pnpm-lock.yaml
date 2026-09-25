@@ -299,9 +299,6 @@ importers:
       '@dnd-kit/utilities':
         specifier: ^3.2.2
         version: 3.2.2(react@19.3.0)
-      '@infinitune/room-client':
-        specifier: workspace:*
-        version: link:../../packages/room-client
       '@infinitune/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -420,15 +417,6 @@ importers:
       vitest:
         specifier: ^3.2.7
         version: 3.2.7(@types/debug@4.1.13)(@types/node@22.20.4)(jiti@2.7.0)(jsdom@27.4.0(@noble/hashes@2.4.0))(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
-
-  packages/room-client:
-    dependencies:
-      '@infinitune/shared':
-        specifier: workspace:*
-        version: link:../shared
-      react:
-        specifier: ^19.0.0
-        version: 19.3.0
 
   packages/shared:
     dependencies:

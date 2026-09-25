@@ -430,7 +430,6 @@ Unified Server (Hono on :5175)
 infinitune/
   packages/
     shared/            # @infinitune/shared — types, protocol, pick-next-song
-    room-client/       # @infinitune/room-client — room hooks
   apps/
     web/               # React frontend (Vite + TanStack)
     server/            # Unified backend (Hono — API + worker + rooms)

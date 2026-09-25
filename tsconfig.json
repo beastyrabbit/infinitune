@@ -15,8 +15,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./apps/web/src/*"],
-      "@infinitune/shared/*": ["./packages/shared/src/*"],
-      "@infinitune/room-client/*": ["./packages/room-client/src/*"]
+      "@infinitune/shared/*": ["./packages/shared/src/*"]
     }
   }
 }

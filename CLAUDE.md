@@ -35,7 +35,6 @@ pnpm monorepo with workspace packages.
 infinitune/
   packages/
     shared/            # @infinitune/shared — types, protocol, pick-next-song
-    room-client/       # @infinitune/room-client — room hooks (future)
   apps/
     web/               # @infinitune/web — React frontend (Vite + TanStack)
     server/            # @infinitune/server — Unified backend (Hono)
