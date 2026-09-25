@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import {
 	ACE_KNOWN_MODELS,
 	ACE_QUALITY_DEFAULT_MODEL,
@@ -7,7 +8,6 @@ import {
 } from "@infinitune/shared/ace-settings";
 import { normalizeLlmProvider } from "@infinitune/shared/text-llm-profile";
 import type { LlmProvider } from "@infinitune/shared/types";
-import { getModels } from "@mariozechner/pi-ai";
 import { Hono, type MiddlewareHandler } from "hono";
 import { requireUserActor } from "../auth/actor";
 import { codexAppServerClient } from "../external/codex-app-server-client";
@@ -566,7 +566,7 @@ app.get("/ollama-models", async (c) => {
 
 // ─── OpenRouter models and credentials ─────────────────────────────
 app.get("/openrouter-models", (c) => {
-	const models = getModels("openrouter")
+	const models = getBuiltinModels("openrouter")
 		.filter((model) => model.input.includes("text"))
 		.map((model) => ({
 			name: model.id,

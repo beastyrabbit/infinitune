@@ -1,3 +1,4 @@
+import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -82,13 +83,13 @@ describe("restored OpenRouter migration", () => {
 		expect(readSettings()).toMatchObject({
 			[MIGRATION_KEY]: "1",
 			textProvider: "openai-codex",
-			textModel: "gpt-5.2",
+			textModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 			personaProvider: "openai-codex",
-			personaModel: "gpt-5.2",
+			personaModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 		});
 		expect(readPlaylist("legacy-openrouter")).toEqual({
 			provider: "openai-codex",
-			model: "gpt-5.2",
+			model: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 		});
 		expect(readPlaylist("existing-codex")).toEqual({
 			provider: "openai-codex",
@@ -109,7 +110,7 @@ describe("restored OpenRouter migration", () => {
 			textProvider: "openai-codex",
 			textModel: "custom-codex-model",
 			personaProvider: "openai-codex",
-			personaModel: "gpt-5.2",
+			personaModel: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 		});
 	});
 
