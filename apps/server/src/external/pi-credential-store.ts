@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type {
+	AuthOperationOptions,
 	Credential,
 	CredentialInfo,
 	CredentialStore,
@@ -27,7 +28,8 @@ function isCredential(value: unknown): value is Credential {
 
 /**
  * Pi credentials in Infinitune's own auth.json, in the same
- * `{ [providerId]: credential }` format older Pi releases wrote.
+ * `{ [providerId]: credential }` format older Pi releases wrote. Writes are
+ * serialized within this process, which is the only one using the file.
  *
  * Values are returned literally. Pi's built-in file store would expand API
  * keys starting with `!` (shell command) or containing `$VAR` (environment
@@ -87,9 +89,15 @@ export class FileCredentialStore implements CredentialStore {
 		}));
 	}
 
+	/**
+	 * Per the CredentialStore contract, `fn` returning undefined leaves the
+	 * entry unchanged (OAuth refresh relies on this when another request
+	 * already refreshed); removal goes through delete().
+	 */
 	modify(
 		providerId: string,
 		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+		options?: AuthOperationOptions,
 	): Promise<Credential | undefined> {
 		return this.enqueue(async () => {
 			const raw = this.readRaw();
@@ -97,12 +105,9 @@ export class FileCredentialStore implements CredentialStore {
 				? raw[providerId]
 				: undefined;
 			const next = await fn(current);
-			if (next === current) return next;
-			if (next === undefined) {
-				delete raw[providerId];
-			} else {
-				raw[providerId] = next;
-			}
+			options?.signal?.throwIfAborted();
+			if (next === undefined || next === current) return current;
+			raw[providerId] = next;
 			this.writeAll(raw);
 			return next;
 		});

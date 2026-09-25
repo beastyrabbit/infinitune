@@ -296,6 +296,37 @@ describe("OpenRouter Pi runtime", () => {
 		);
 	});
 
+	it("derives unknown Codex models from the bundled catalog, not models.json", async () => {
+		writeFileSync(
+			path.join(agentDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					"openai-codex": {
+						baseUrl: "http://127.0.0.1:9/v1",
+						api: "openai-completions",
+						apiKey: "unused",
+						models: [{ id: "custom-local" }],
+					},
+				},
+			}),
+		);
+		mocks.createAgentSession.mockResolvedValue({ session: "codex-session" });
+
+		await createInfinituneAgentSession({
+			agentId: "playlist-director",
+			modelProfile: { provider: "openai-codex", model: "gpt-9-future" },
+		});
+
+		expect(mocks.createAgentSession).toHaveBeenCalledWith(
+			expect.objectContaining({
+				model: expect.objectContaining({
+					id: "gpt-9-future",
+					api: "openai-codex-responses",
+				}),
+			}),
+		);
+	});
+
 	it("prefers an explicit playlist model profile over global settings", async () => {
 		mocks.getAll.mockResolvedValue({
 			textProvider: "openai-codex",
@@ -382,6 +413,48 @@ describe("FileCredentialStore", () => {
 		expect(await store.list()).toEqual([
 			{ providerId: "openrouter", type: "api_key" },
 		]);
+	});
+
+	it("leaves an entry unchanged when the update returns undefined", async () => {
+		const store = new FileCredentialStore(path.join(dir, "auth.json"));
+		const refreshed = {
+			type: "oauth" as const,
+			access: "fresh-access",
+			refresh: "fresh-refresh",
+			expires: Date.now() + 60_000,
+		};
+
+		// Two requests race to refresh: the second sees the first's result
+		// and returns undefined, which must keep the refreshed credential.
+		const [first, second] = await Promise.all([
+			store.modify("openai-codex", async () => refreshed),
+			store.modify("openai-codex", async (current) =>
+				current?.type === "oauth" && current.access === "fresh-access"
+					? undefined
+					: refreshed,
+			),
+		]);
+
+		expect(first).toEqual(refreshed);
+		expect(second).toEqual(refreshed);
+		expect(await store.read("openai-codex")).toEqual(refreshed);
+	});
+
+	it("does not write when the operation was aborted", async () => {
+		const store = new FileCredentialStore(path.join(dir, "auth.json"));
+		const controller = new AbortController();
+
+		await expect(
+			store.modify(
+				"openrouter",
+				async () => {
+					controller.abort();
+					return { type: "api_key", key: "late" };
+				},
+				{ signal: controller.signal },
+			),
+		).rejects.toThrow();
+		expect(await store.read("openrouter")).toBeUndefined();
 	});
 
 	it("serializes concurrent modifications of the same file", async () => {

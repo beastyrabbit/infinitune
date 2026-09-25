@@ -9,6 +9,7 @@ import {
 	type Model,
 	parseJsonWithRepair,
 } from "@earendil-works/pi-ai";
+import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import {
 	type CreateAgentSessionOptions,
 	createAgentSession,
@@ -263,7 +264,8 @@ function findModel(
 ): Model<Api> | undefined {
 	const model = modelRuntime.getModel(provider, modelId);
 	if (model || provider !== OPENAI_CODEX_PROVIDER) return model;
-	const [template] = [...modelRuntime.getModels(OPENAI_CODEX_PROVIDER)].sort(
+	// Bundled catalog only: models.json entries must not become the template.
+	const [template] = [...getBuiltinModels(OPENAI_CODEX_PROVIDER)].sort(
 		(a, b) =>
 			Object.keys(a.compat ?? {}).length - Object.keys(b.compat ?? {}).length,
 	);
