@@ -1508,6 +1508,9 @@ export class SongWorker {
 				cover: this.song.cover ?? null,
 				coverPngBase64: coverBase64ForNfs,
 			});
+			// Cancelled during the (possibly slow) save: a replacement worker may
+			// own this song now, so leave its storage metadata alone.
+			if (this.aborted) return;
 			await songService.updateStoragePath(
 				this.songId,
 				saveResult.storagePath,
