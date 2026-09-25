@@ -23,9 +23,6 @@
     "react:doctor": "pnpm exec react-doctor . --yes --project @infinitune/web"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@hono/node-server": "^1.19.17",
     "@hono/node-ws": "^1.3.1",
     "@modelcontextprotocol/sdk": "^1.30.1",
