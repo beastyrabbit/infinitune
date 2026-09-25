@@ -1368,6 +1368,27 @@ export class SongWorker {
 		}
 	}
 
+	/**
+	 * Cover data for the NFS copy: prefer the captured base64 (and free it),
+	 * otherwise read the cover file from local disk.
+	 */
+	private takeCoverBase64ForNfs(): string | null {
+		const captured = this.coverBase64;
+		this.coverBase64 = null; // free memory
+		const pngUrl = this.song.cover?.pngUrl;
+		if (captured || !pngUrl || pngUrl.startsWith("data:")) return captured;
+		try {
+			const coversDir = path.resolve(import.meta.dirname, "../../data/covers");
+			const coverFile = path.join(coversDir, path.basename(pngUrl));
+			if (fs.existsSync(coverFile)) {
+				return fs.readFileSync(coverFile).toString("base64");
+			}
+		} catch (err) {
+			songLogger(this.songId).warn({ err }, "Failed to read cover for NFS");
+		}
+		return captured;
+	}
+
 	private async saveAndFinalize(
 		audioPath: string,
 		audioProcessingMs: number,
@@ -1390,32 +1411,7 @@ export class SongWorker {
 
 		// Save to NFS
 		try {
-			// Determine cover data for NFS — prefer captured base64, fallback to reading from disk
-			let coverBase64ForNfs: string | null = this.coverBase64;
-			this.coverBase64 = null; // free memory
-			if (
-				!coverBase64ForNfs &&
-				this.song.cover?.pngUrl &&
-				!this.song.cover.pngUrl.startsWith("data:")
-			) {
-				try {
-					// Cover is on local disk — read it directly
-					const coversDir = path.resolve(
-						import.meta.dirname,
-						"../../data/covers",
-					);
-					const coverFile = path.join(
-						coversDir,
-						path.basename(this.song.cover.pngUrl),
-					);
-					if (fs.existsSync(coverFile)) {
-						coverBase64ForNfs = fs.readFileSync(coverFile).toString("base64");
-					}
-				} catch (err) {
-					songLogger(this.songId).warn({ err }, "Failed to read cover for NFS");
-				}
-			}
-
+			const coverBase64ForNfs = this.takeCoverBase64ForNfs();
 			const saveResult = await saveSongToNfs({
 				songId: this.songId,
 				title: this.song.title || "Unknown",

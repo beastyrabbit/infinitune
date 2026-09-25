@@ -7,7 +7,7 @@ export function parseByteRange(
 	header: string,
 	size: number,
 ): { start: number; end: number } | "unsatisfiable" | null {
-	const match = header.trim().match(/^bytes=(\d*)-(\d*)$/);
+	const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
 	if (!match || (!match[1] && !match[2])) return null;
 
 	if (!match[1]) {

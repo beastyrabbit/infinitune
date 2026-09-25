@@ -93,15 +93,14 @@ RUN chmod +x docker-entrypoint.sh
 
 # Data directory for SQLite + covers (server resolves to /app/data via relative path).
 # The app runs as the unprivileged node user (uid 1000), which owns only this directory.
-RUN mkdir -p /app/data && chown node:node /app/data
-
-# Verify tsx binary exists (fail build early rather than at runtime)
-RUN test -x node_modules/.bin/tsx
-RUN test -x /usr/local/bin/codex
-RUN test -x /usr/local/bin/infsh
-RUN test -x /usr/local/bin/yt-dlp
-RUN test -x /usr/bin/ffprobe
-RUN test -x /usr/bin/prlimit
+# Then verify the runtime binaries exist (fail the build early rather than at runtime).
+RUN mkdir -p /app/data && chown node:node /app/data && \
+	test -x node_modules/.bin/tsx && \
+	test -x /usr/local/bin/codex && \
+	test -x /usr/local/bin/infsh && \
+	test -x /usr/local/bin/yt-dlp && \
+	test -x /usr/bin/ffprobe && \
+	test -x /usr/bin/prlimit
 
 EXPOSE 3000 5175
 
