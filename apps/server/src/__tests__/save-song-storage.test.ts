@@ -126,18 +126,26 @@ describe("saveSongToNfs", () => {
 	it("removes pending audio a crashed save left, but not a live save's", async () => {
 		fs.mkdirSync(songDir, { recursive: true });
 		const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
+		const writeFile = (name: string, aged: boolean) => {
+			const file = path.join(songDir, name);
+			fs.writeFileSync(file, "data");
+			if (aged) fs.utimesSync(file, twentyMinutesAgo, twentyMinutesAgo);
+		};
 		// A crash can strand the private audio or the trim's second-pass output.
-		for (const orphan of [".audio-crashed.mp3", ".trimmed-1790000000000.mp3"]) {
-			const file = path.join(songDir, orphan);
-			fs.writeFileSync(file, "partial");
-			fs.utimesSync(file, twentyMinutesAgo, twentyMinutesAgo);
-		}
-		fs.writeFileSync(path.join(songDir, ".audio-live.mp3"), "downloading");
-		fs.writeFileSync(path.join(songDir, ".trimmed-live.mp3"), "trimming");
+		writeFile(".audio-0b6b3c4e-5f1a-4d2b-9c3e-1a2b3c4d5e6f.mp3", true);
+		writeFile(".trimmed-1790000000000.mp3", true);
+		// Live saves and files this code did not create stay.
+		writeFile(".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3", false);
+		writeFile(".trimmed-1790000900000.mp3", false);
+		writeFile(".trimmed-user.mp3", true);
 
 		await save();
 
-		expect(pendingFiles()).toEqual([".audio-live.mp3", ".trimmed-live.mp3"]);
+		expect(pendingFiles()).toEqual([
+			".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3",
+			".trimmed-1790000900000.mp3",
+			".trimmed-user.mp3",
+		]);
 	});
 
 	it("removes the pending audio when the download fails", async () => {
