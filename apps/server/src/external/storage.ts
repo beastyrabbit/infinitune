@@ -1,8 +1,56 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { SongCover } from "@infinitune/shared/types";
 import { trimTrailingSilence } from "./audio-processing";
 import { getServiceUrls } from "./service-urls";
+
+const ACE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
+
+/** Stream ACE audio to disk with a deadline and a hard size cap. */
+export async function downloadAceAudio(
+	url: string,
+	targetFile: string,
+	maxBytes = MAX_ACE_AUDIO_BYTES,
+): Promise<void> {
+	const response = await fetch(url, {
+		signal: AbortSignal.timeout(ACE_DOWNLOAD_TIMEOUT_MS),
+	});
+	if (!response.ok || !response.body) {
+		void response.body?.cancel().catch(() => undefined);
+		throw new Error(`Failed to download audio: ${response.status}`);
+	}
+	if (Number(response.headers.get("content-length")) > maxBytes) {
+		void response.body.cancel().catch(() => undefined);
+		throw new Error("ACE audio download is too large");
+	}
+
+	let receivedBytes = 0;
+	const sizeGuard = new Transform({
+		transform(chunk: Buffer, _encoding, callback) {
+			receivedBytes += chunk.length;
+			callback(
+				receivedBytes > maxBytes
+					? new Error("ACE audio download is too large")
+					: null,
+				chunk,
+			);
+		},
+	});
+	try {
+		await pipeline(
+			Readable.fromWeb(response.body as NodeReadableStream),
+			sizeGuard,
+			fs.createWriteStream(targetFile),
+		);
+	} catch (error) {
+		fs.rmSync(targetFile, { force: true });
+		throw error;
+	}
+}
 
 function resolveLocalAudioPath(aceAudioPath: string): string | null {
 	const storagePath = process.env.MUSIC_STORAGE_PATH;
@@ -117,13 +165,7 @@ export async function saveSongToNfs(options: {
 		// Fall back to HTTP download from ACE if local file isn't found
 		const urls = await getServiceUrls();
 		const aceUrl = urls.aceStepUrl;
-		const audioUrl = `${aceUrl}${aceAudioPath}`;
-		const audioResponse = await fetch(audioUrl);
-		if (!audioResponse.ok) {
-			throw new Error(`Failed to download audio: ${audioResponse.status}`);
-		}
-		const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-		fs.writeFileSync(audioFile, audioBuffer);
+		await downloadAceAudio(`${aceUrl}${aceAudioPath}`, audioFile);
 	}
 
 	// Trim trailing silence from audio

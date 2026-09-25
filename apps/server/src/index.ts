@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { WebSocketServer } from "ws";
 import { sqlite } from "./db/index";
@@ -248,6 +249,17 @@ app.use(
 			"x-admin-token",
 		],
 		exposeHeaders: ["retry-after", "x-request-id"],
+	}),
+);
+
+// Reject oversized request bodies before any route parses them. The largest
+// legitimate body is a base64 cover upload (a 1.2 MiB PNG is ~1.6 MiB).
+const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+app.use(
+	"/api/*",
+	bodyLimit({
+		maxSize: MAX_REQUEST_BODY_BYTES,
+		onError: (c) => c.json({ error: "Request body too large" }, 413),
 	}),
 );
 
