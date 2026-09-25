@@ -395,13 +395,27 @@ export async function updateAceTask(id: string, aceTaskId: string) {
 	});
 }
 
+/**
+ * Mark a saved song as ready. Returns false when the song left the saving
+ * step in the meantime (cancelled, recovered or deleted), so a late worker
+ * cannot resurrect it.
+ */
 export async function markReady(
 	id: string,
 	audioUrl: string,
 	audioProcessingMs?: number,
-) {
+): Promise<boolean> {
 	const [current] = await db.select().from(songs).where(eq(songs.id, id));
-	if (!current) return;
+	if (!current) return false;
+
+	const from = current.status as SongStatus;
+	if (!validateSongTransition(from, "ready")) {
+		songLogger(id, current.playlistId).warn(
+			{ from },
+			"Ignoring markReady for a song that is no longer saving",
+		);
+		return false;
+	}
 
 	const patch: Record<string, unknown> = {
 		audioUrl,
@@ -411,14 +425,20 @@ export async function markReady(
 	if (audioProcessingMs !== undefined)
 		patch.audioProcessingMs = audioProcessingMs;
 
-	await db.update(songs).set(patch).where(eq(songs.id, id));
+	const updated = await db
+		.update(songs)
+		.set(patch)
+		.where(and(eq(songs.id, id), eq(songs.status, from)))
+		.returning({ id: songs.id });
+	if (updated.length === 0) return false;
 
 	emit("song.status_changed", {
 		songId: id,
 		playlistId: current.playlistId,
-		from: current.status,
+		from,
 		to: "ready",
 	});
+	return true;
 }
 
 export async function markError(

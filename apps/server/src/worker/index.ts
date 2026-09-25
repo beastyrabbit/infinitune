@@ -930,6 +930,9 @@ async function spawnSongWorker(
 
 	// Fire-and-forget
 	worker.run().finally(() => {
+		// cancelSongWorker() already untracked this worker, and a replacement for
+		// the same song may be registered by now; leave both alone.
+		if (songWorkers.get(song.id) !== worker) return;
 		songWorkers.delete(song.id);
 		const set = playlistSongs.get(playlistId);
 		if (set) {

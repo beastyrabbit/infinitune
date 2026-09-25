@@ -98,6 +98,47 @@ describe("queue actors", () => {
 
 			expect(order).toEqual(["pending-late", "pending-early"]);
 		});
+
+		it("runs at most one task per song and keeps the concurrency count", async () => {
+			const queue = new RequestResponseQueue<string>("llm", 2);
+			const firstGate = createDeferred<string>();
+			const started: string[] = [];
+
+			const first = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => {
+					started.push("a-1");
+					return firstGate.promise;
+				},
+			});
+			const retry = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => {
+					started.push("a-2");
+					return "a-2";
+				},
+			});
+			const other = queue.enqueue({
+				songId: "song-b",
+				priority: 2,
+				execute: async () => {
+					started.push("b");
+					return "b";
+				},
+			});
+
+			await expect(other).resolves.toMatchObject({ result: "b" });
+			expect(started).toEqual(["a-1", "b"]);
+			expect(queue.getStatus()).toMatchObject({ active: 1, pending: 1 });
+
+			firstGate.resolve("a-1");
+			await expect(first).resolves.toMatchObject({ result: "a-1" });
+			await expect(retry).resolves.toMatchObject({ result: "a-2" });
+			expect(started).toEqual(["a-1", "b", "a-2"]);
+			expect(queue.getStatus()).toMatchObject({ active: 0, pending: 0 });
+		});
 	});
 
 	describe("AudioQueue", () => {
@@ -177,6 +218,44 @@ describe("queue actors", () => {
 			});
 			expect(executeB).toHaveBeenCalledTimes(1);
 			expect(pollAudio).toHaveBeenCalledTimes(1);
+		});
+
+		it("keeps a respawned task when the cancelled submission fails late", async () => {
+			const pollAudio = vi.fn(async () => ({
+				status: "succeeded" as const,
+				audioPath: "/tmp/task-audio.mp3",
+			}));
+			const staleSubmit = createDeferred<never>();
+			const queue = new AudioQueue(pollAudio, 1);
+
+			const cancelled = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: () => staleSubmit.promise,
+			});
+			await Promise.resolve();
+			queue.cancelSong("song-a");
+			await expect(cancelled).rejects.toThrow("Cancelled");
+
+			const respawned = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => ({
+					taskId: "task-new",
+					status: "running" as const,
+					submitProcessingMs: 1,
+				}),
+			});
+			await Promise.resolve();
+			staleSubmit.reject(new Error("socket hang up"));
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(queue.getStatus()).toMatchObject({ active: 1 });
+			await queue.tickPolls();
+			await expect(respawned).resolves.toMatchObject({
+				result: { status: "succeeded", taskId: "task-new" },
+			});
 		});
 
 		it("honors a configured single active slot", async () => {

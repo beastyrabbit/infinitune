@@ -32,6 +32,19 @@ const compareQueueItems = <T>(
 	return a.enqueuedAt - b.enqueuedAt;
 };
 
+/**
+ * Remove and return the next pending item whose song has no active task.
+ * Keeping one task per song stops a retried or respawned worker from
+ * overwriting the active entry and running past the concurrency limit.
+ */
+function takeNextRunnable<Item extends { songId: string }>(
+	pending: Item[],
+	active: Map<string, unknown>,
+): Item | undefined {
+	const index = pending.findIndex((item) => !active.has(item.songId));
+	return index === -1 ? undefined : pending.splice(index, 1)[0];
+}
+
 interface RequestResponseQueueEvent<T> {
 	type:
 		| "enqueue"
@@ -157,7 +170,9 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 							error instanceof Error ? error : new Error(String(error)),
 						);
 					} finally {
-						this.state.active.delete(item.songId);
+						if (this.state.active.get(item.songId) === activeItem) {
+							this.state.active.delete(item.songId);
+						}
 						logger.debug(
 							{
 								queueType: this.state.queueType,
@@ -172,11 +187,11 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 				};
 
 				const drain = () => {
-					while (
-						this.state.active.size < this.state.maxConcurrency &&
-						this.state.pending.length > 0
-					) {
-						const item = this.state.pending.shift();
+					while (this.state.active.size < this.state.maxConcurrency) {
+						const item = takeNextRunnable(
+							this.state.pending,
+							this.state.active,
+						);
 						if (!item) return;
 						void executeItem(item);
 					}
@@ -393,8 +408,11 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 			fromCallback<AudioQueueEvent>(({ receive }) => {
 				let pollInFlight = false;
 
-				const clearSlot = (songId: string) => {
-					this.state.active.delete(songId);
+				const clearSlot = (slot: AudioActiveSlot) => {
+					// A cancelled slot can settle after a new task for the same song
+					// started; only release the slot that is still registered.
+					if (this.state.active.get(slot.songId) !== slot) return;
+					this.state.active.delete(slot.songId);
 					this.actor.send({ type: "drain" });
 				};
 
@@ -462,7 +480,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 						.then((result: AudioTaskResult) => {
 							if (abortController.signal.aborted) return;
 							const slot = this.state.active.get(item.songId);
-							if (!slot) return;
+							if (slot !== activeSlot) return;
 							slot.taskId = result.taskId;
 							slot.submittedAt = Date.now();
 							slot.submitProcessingMs = Date.now() - submittedAt;
@@ -479,8 +497,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 							);
 						})
 						.catch((error: unknown) => {
-							const slot = this.state.active.get(item.songId);
-							if (!slot) return;
+							if (this.state.active.get(item.songId) !== activeSlot) return;
 
 							const message =
 								error instanceof Error ? error.message : String(error);
@@ -517,16 +534,16 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								);
 							}
 
-							clearSlot(item.songId);
+							clearSlot(activeSlot);
 						});
 				};
 
 				const drain = () => {
-					while (
-						this.state.active.size < this.state.maxConcurrency &&
-						this.state.pending.length > 0
-					) {
-						const item = this.state.pending.shift();
+					while (this.state.active.size < this.state.maxConcurrency) {
+						const item = takeNextRunnable(
+							this.state.pending,
+							this.state.active,
+						);
 						if (!item) return;
 						startSlot(item);
 					}
@@ -535,7 +552,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 				const pollSlot = async (slot: AudioActiveSlot) => {
 					if (!slot.taskId) return;
 					if (slot.abortController.signal.aborted) {
-						clearSlot(slot.songId);
+						clearSlot(slot);
 						return;
 					}
 
@@ -572,7 +589,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								processingMs: completionMs,
 							});
-							clearSlot(slot.songId);
+							clearSlot(slot);
 						} else if (pollResult.status === "failed") {
 							const message = pollResult.error || "Audio generation failed";
 							this.state.errorCount += 1;
@@ -600,7 +617,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								},
 								processingMs: Date.now() - slot.submittedAt,
 							});
-							clearSlot(slot.songId);
+							clearSlot(slot);
 						} else if (pollResult.status === "not_found") {
 							const elapsed = Date.now() - slot.submittedAt;
 							if (elapsed >= NOT_FOUND_GRACE_MS) {
@@ -625,7 +642,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 									},
 									processingMs: elapsed,
 								});
-								clearSlot(slot.songId);
+								clearSlot(slot);
 							}
 						}
 					} catch (error: unknown) {
@@ -680,7 +697,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 								if (active) {
 									active.abortController.abort();
 									active.reject(new Error("Cancelled"));
-									clearSlot(event.songId);
+									clearSlot(active);
 								}
 							}
 							break;

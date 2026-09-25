@@ -1491,7 +1491,10 @@ export class SongWorker {
 		if (this.aborted) return;
 
 		const audioUrl = `/api/songs/${this.songId}/audio`;
-		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
+		if (
+			!(await songService.markReady(this.songId, audioUrl, audioProcessingMs))
+		)
+			return;
 		await playlistService.incrementGenerated(this.ctx.playlist.id);
 		queueMicrotask(() => {
 			scheduleMemoryCurator({

@@ -272,6 +272,26 @@ describe("song-service", () => {
 			expect(updated.audioProcessingMs).toBe(5000);
 			expect(updated.generationCompletedAt).toBeGreaterThan(0);
 		});
+
+		it("does not resurrect a song that left the saving step", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "metadata_ready",
+			});
+
+			expect(await songService.markReady(song.id, "http://audio.mp3")).toBe(
+				false,
+			);
+
+			const db = getTestDb();
+			const [updated] = await db
+				.select()
+				.from(songs)
+				.where(eq(songs.id, song.id));
+			expect(updated.status).toBe("metadata_ready");
+			expect(updated.audioUrl).toBeNull();
+			expect(emittedEvents).toHaveLength(0);
+		});
 	});
 
 	// ─── markError ─────────────────────────────────────────────────
