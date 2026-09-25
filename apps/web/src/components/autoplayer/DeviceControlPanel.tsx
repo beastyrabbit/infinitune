@@ -356,6 +356,34 @@ function DeviceCard({
 	);
 }
 
+function CurrentSongInfo({ currentSong }: { currentSong: SongData | null }) {
+	if (!currentSong) {
+		return (
+			<div className="mb-4">
+				<h2 className="text-xl font-black uppercase tracking-tight text-white/30">
+					NO SONG PLAYING
+				</h2>
+			</div>
+		);
+	}
+	return (
+		<div className="mb-4">
+			<h2 className="text-xl font-black uppercase tracking-tight truncate">
+				{currentSong.title ?? "UNKNOWN"}
+			</h2>
+			<p className="text-sm font-bold uppercase text-white/50 truncate">
+				{currentSong.artistName ?? "UNKNOWN ARTIST"}
+			</p>
+			{currentSong.genre && (
+				<p className="text-[10px] font-bold uppercase text-white/30 mt-0.5">
+					{currentSong.genre}
+					{currentSong.subGenre ? ` / ${currentSong.subGenre}` : ""}
+				</p>
+			)}
+		</div>
+	);
+}
+
 interface DeviceControlPanelProps {
 	devices: Device[];
 	playback: PlaybackState;
@@ -417,28 +445,7 @@ export function DeviceControlPanel({
 			{/* Top: song info + master controls */}
 			<div className="flex-shrink-0 px-6 py-4">
 				{/* Current song info */}
-				{currentSong ? (
-					<div className="mb-4">
-						<h2 className="text-xl font-black uppercase tracking-tight truncate">
-							{currentSong.title ?? "UNKNOWN"}
-						</h2>
-						<p className="text-sm font-bold uppercase text-white/50 truncate">
-							{currentSong.artistName ?? "UNKNOWN ARTIST"}
-						</p>
-						{currentSong.genre && (
-							<p className="text-[10px] font-bold uppercase text-white/30 mt-0.5">
-								{currentSong.genre}
-								{currentSong.subGenre ? ` / ${currentSong.subGenre}` : ""}
-							</p>
-						)}
-					</div>
-				) : (
-					<div className="mb-4">
-						<h2 className="text-xl font-black uppercase tracking-tight text-white/30">
-							NO SONG PLAYING
-						</h2>
-					</div>
-				)}
+				<CurrentSongInfo currentSong={currentSong} />
 
 				{/* Song action buttons (rating, lyrics, download) */}
 				<div className="flex items-center gap-2 mb-4">

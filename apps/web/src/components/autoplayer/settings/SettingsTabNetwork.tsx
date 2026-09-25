@@ -45,6 +45,9 @@ const inputClass =
 const DEVICE_AUTH_VERIFICATION_URL_REGEX =
 	/^https?:\/\/auth\.openai\.com\/codex\/device/i;
 
+type KeyStatusState = "idle" | "saving" | "success" | "error";
+type AuthUploadState = "idle" | "uploading" | "success" | "error";
+
 export type OpenRouterCredentialUiMode =
 	| "owner"
 	| "setup"
@@ -60,6 +63,100 @@ export function getOpenRouterCredentialUiMode(
 	if (status.claimRequired) return "claim";
 	if (status.setupAllowed) return "setup";
 	return "shared";
+}
+
+function getOpenRouterKeyStatusClass(state: KeyStatusState): string {
+	if (state === "error") return "bg-red-950/40 text-red-300";
+	if (state === "success") return "bg-green-950/40 text-green-300";
+	return "bg-yellow-950/40 text-yellow-300";
+}
+
+function getAuthUploadStatusClass(state: AuthUploadState): string {
+	if (state === "success") return "text-green-300 bg-green-950/40";
+	if (state === "error") return "text-red-300 bg-red-950/40";
+	return "text-yellow-300 bg-yellow-950/40";
+}
+
+function OpenRouterCredentialControls({
+	mode,
+	configured,
+	source,
+	apiKey,
+	onApiKeyChange,
+	saving,
+	onSave,
+	onClear,
+}: {
+	mode: OpenRouterCredentialUiMode;
+	configured: boolean;
+	source: NetworkTabProps["openrouterAuth"]["source"];
+	apiKey: string;
+	onApiKeyChange: (apiKey: string) => void;
+	saving: boolean;
+	onSave: () => Promise<void>;
+	onClear: () => Promise<void>;
+}) {
+	if (mode !== "owner" && mode !== "setup" && mode !== "claim") {
+		return (
+			<div className="px-3 py-2 border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/55">
+				{mode === "external"
+					? "MANAGED OUTSIDE INFINITUNE. UPDATE THE SERVER ENVIRONMENT TO CHANGE THIS CREDENTIAL."
+					: "SHARED SERVER CREDENTIAL. ONLY ITS OWNER CAN REPLACE OR REMOVE IT."}
+			</div>
+		);
+	}
+	return (
+		<>
+			<SettingsField
+				label={
+					mode === "claim"
+						? "Current API Key"
+						: configured
+							? "Replace API Key"
+							: "Add API Key"
+				}
+			>
+				<Input
+					type="password"
+					autoComplete="new-password"
+					className={inputClass}
+					placeholder={
+						mode === "claim"
+							? "PASTE THE CURRENT OPENROUTER KEY"
+							: "PASTE A NEW OPENROUTER KEY"
+					}
+					value={apiKey}
+					onChange={(event) => onApiKeyChange(event.target.value)}
+				/>
+				<p className="mt-1 text-[10px] font-bold uppercase text-white/40">
+					{mode === "claim"
+						? "ENTER THE EXISTING KEY ONCE TO CLAIM MANAGEMENT WITHOUT REPLACING IT."
+						: "THE BROWSER CANNOT READ A SAVED KEY. THE SERVER STORES IT IN PI AUTH."}
+				</p>
+			</SettingsField>
+
+			<div className="flex gap-2">
+				<button
+					type="button"
+					className="flex-1 h-10 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white hover:bg-white/10 disabled:opacity-30"
+					onClick={() => void onSave()}
+					disabled={!apiKey.trim() || saving}
+				>
+					{mode === "claim" ? "CLAIM MANAGEMENT" : "SAVE KEY"}
+				</button>
+				{mode === "owner" && source === "stored" && (
+					<button
+						type="button"
+						className="h-10 px-4 border-4 border-red-500/30 bg-transparent font-mono text-xs font-black uppercase text-red-300 hover:bg-red-950/40 disabled:opacity-30"
+						onClick={() => void onClear()}
+						disabled={saving}
+					>
+						REMOVE STORED KEY
+					</button>
+				)}
+			</div>
+		</>
+	);
 }
 
 export function SettingsTabNetwork({
@@ -88,7 +185,7 @@ export function SettingsTabNetwork({
 	const openrouterCredentialMode =
 		getOpenRouterCredentialUiMode(openrouterAuth);
 	const [openrouterKeyStatus, setOpenrouterKeyStatus] = useState<{
-		state: "idle" | "saving" | "success" | "error";
+		state: KeyStatusState;
 		message?: string;
 	}>({ state: "idle" });
 	const saveOpenRouterKey = async () => {
@@ -149,7 +246,7 @@ export function SettingsTabNetwork({
 		}
 	};
 	const [authUploadStatus, setAuthUploadStatus] = useState<{
-		state: "idle" | "uploading" | "success" | "error";
+		state: AuthUploadState;
 		message?: string;
 	}>({ state: "idle" });
 	const codexAuthInputRef = useRef<HTMLInputElement>(null);
@@ -267,81 +364,21 @@ export function SettingsTabNetwork({
 					</div>
 				</SettingsField>
 
-				{openrouterCredentialMode === "owner" ||
-				openrouterCredentialMode === "setup" ||
-				openrouterCredentialMode === "claim" ? (
-					<>
-						<SettingsField
-							label={
-								openrouterCredentialMode === "claim"
-									? "Current API Key"
-									: openrouterAuth.configured
-										? "Replace API Key"
-										: "Add API Key"
-							}
-						>
-							<Input
-								type="password"
-								autoComplete="new-password"
-								className={inputClass}
-								placeholder={
-									openrouterCredentialMode === "claim"
-										? "PASTE THE CURRENT OPENROUTER KEY"
-										: "PASTE A NEW OPENROUTER KEY"
-								}
-								value={openrouterApiKey}
-								onChange={(event) => setOpenrouterApiKey(event.target.value)}
-							/>
-							<p className="mt-1 text-[10px] font-bold uppercase text-white/40">
-								{openrouterCredentialMode === "claim"
-									? "ENTER THE EXISTING KEY ONCE TO CLAIM MANAGEMENT WITHOUT REPLACING IT."
-									: "THE BROWSER CANNOT READ A SAVED KEY. THE SERVER STORES IT IN PI AUTH."}
-							</p>
-						</SettingsField>
-
-						<div className="flex gap-2">
-							<button
-								type="button"
-								className="flex-1 h-10 border-4 border-white/20 bg-transparent font-mono text-xs font-black uppercase text-white hover:bg-white/10 disabled:opacity-30"
-								onClick={() => void saveOpenRouterKey()}
-								disabled={
-									!openrouterApiKey.trim() ||
-									openrouterKeyStatus.state === "saving"
-								}
-							>
-								{openrouterCredentialMode === "claim"
-									? "CLAIM MANAGEMENT"
-									: "SAVE KEY"}
-							</button>
-							{openrouterCredentialMode === "owner" &&
-								openrouterAuth.source === "stored" && (
-									<button
-										type="button"
-										className="h-10 px-4 border-4 border-red-500/30 bg-transparent font-mono text-xs font-black uppercase text-red-300 hover:bg-red-950/40 disabled:opacity-30"
-										onClick={() => void clearOpenRouterKey()}
-										disabled={openrouterKeyStatus.state === "saving"}
-									>
-										REMOVE STORED KEY
-									</button>
-								)}
-						</div>
-					</>
-				) : (
-					<div className="px-3 py-2 border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/55">
-						{openrouterCredentialMode === "external"
-							? "MANAGED OUTSIDE INFINITUNE. UPDATE THE SERVER ENVIRONMENT TO CHANGE THIS CREDENTIAL."
-							: "SHARED SERVER CREDENTIAL. ONLY ITS OWNER CAN REPLACE OR REMOVE IT."}
-					</div>
-				)}
+				<OpenRouterCredentialControls
+					mode={openrouterCredentialMode}
+					configured={openrouterAuth.configured}
+					source={openrouterAuth.source}
+					apiKey={openrouterApiKey}
+					onApiKeyChange={setOpenrouterApiKey}
+					saving={openrouterKeyStatus.state === "saving"}
+					onSave={saveOpenRouterKey}
+					onClear={clearOpenRouterKey}
+				/>
 				{openrouterKeyStatus.message && (
 					<div
-						className={`px-3 py-2 border-4 border-white/20 font-mono text-xs font-bold uppercase ${
-							openrouterKeyStatus.state === "error"
-								? "bg-red-950/40 text-red-300"
-								: openrouterKeyStatus.state === "success"
-									? "bg-green-950/40 text-green-300"
-									: "bg-yellow-950/40 text-yellow-300"
-						}`}
+						className={`px-3 py-2 border-4 border-white/20 font-mono text-xs font-bold uppercase ${getOpenRouterKeyStatusClass(
+							openrouterKeyStatus.state,
+						)}`}
 					>
 						{openrouterKeyStatus.message}
 					</div>
@@ -432,13 +469,9 @@ export function SettingsTabNetwork({
 						</div>
 						{authUploadStatus.message && (
 							<div
-								className={`px-3 py-2 rounded-none border-4 border-white/20 font-mono text-xs font-bold uppercase ${
-									authUploadStatus.state === "success"
-										? "text-green-300 bg-green-950/40"
-										: authUploadStatus.state === "error"
-											? "text-red-300 bg-red-950/40"
-											: "text-yellow-300 bg-yellow-950/40"
-								}`}
+								className={`px-3 py-2 rounded-none border-4 border-white/20 font-mono text-xs font-bold uppercase ${getAuthUploadStatusClass(
+									authUploadStatus.state,
+								)}`}
 							>
 								{authUploadStatus.message}
 							</div>

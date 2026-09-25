@@ -23,6 +23,52 @@ function getBackoffDelay(attempt: number): number {
 	return Math.max(0, exponential + jitter);
 }
 
+/** Invalidate the React Query keys affected by a WebSocket bridge event. */
+function invalidateForRoutingKey(routingKey: string) {
+	if (routingKey.startsWith("songs.")) {
+		const playlistId = routingKey.replace("songs.", "");
+		queryClient.invalidateQueries({
+			queryKey: ["songs", "queue", playlistId],
+		});
+		queryClient.invalidateQueries({
+			queryKey: ["songs", "by-playlist", playlistId],
+		});
+		queryClient.invalidateQueries({
+			queryKey: ["songs", "all"],
+		});
+		queryClient.invalidateQueries({
+			queryKey: ["worker", "status"],
+		});
+	} else if (routingKey === "playlists") {
+		queryClient.invalidateQueries({
+			queryKey: ["playlists"],
+		});
+	} else if (routingKey === "settings") {
+		queryClient.invalidateQueries({
+			queryKey: ["settings"],
+		});
+	} else if (routingKey.startsWith("agent-chat.")) {
+		const playlistId = routingKey.replace("agent-chat.", "");
+		queryClient.invalidateQueries({
+			queryKey: ["agent-chat", "messages", playlistId],
+		});
+		queryClient.invalidateQueries({
+			queryKey: ["agent-chat", "state", playlistId],
+		});
+	} else if (routingKey.startsWith("agent-memory.")) {
+		const playlistId = routingKey.replace("agent-memory.", "");
+		queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
+		queryClient.invalidateQueries({
+			queryKey: ["agent-memory", "playlist", playlistId],
+		});
+	} else if (routingKey === "agent-memory") {
+		queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
+	} else if (routingKey === "radio") {
+		queryClient.invalidateQueries({ queryKey: ["radio"] });
+		queryClient.invalidateQueries({ queryKey: ["songs", "all"] });
+	}
+}
+
 /**
  * Connects to the API server's WebSocket bridge and invalidates
  * relevant React Query keys when events arrive.
@@ -60,48 +106,7 @@ function useWsInvalidation() {
 				} catch {
 					return;
 				}
-				if (routingKey.startsWith("songs.")) {
-					const playlistId = routingKey.replace("songs.", "");
-					queryClient.invalidateQueries({
-						queryKey: ["songs", "queue", playlistId],
-					});
-					queryClient.invalidateQueries({
-						queryKey: ["songs", "by-playlist", playlistId],
-					});
-					queryClient.invalidateQueries({
-						queryKey: ["songs", "all"],
-					});
-					queryClient.invalidateQueries({
-						queryKey: ["worker", "status"],
-					});
-				} else if (routingKey === "playlists") {
-					queryClient.invalidateQueries({
-						queryKey: ["playlists"],
-					});
-				} else if (routingKey === "settings") {
-					queryClient.invalidateQueries({
-						queryKey: ["settings"],
-					});
-				} else if (routingKey.startsWith("agent-chat.")) {
-					const playlistId = routingKey.replace("agent-chat.", "");
-					queryClient.invalidateQueries({
-						queryKey: ["agent-chat", "messages", playlistId],
-					});
-					queryClient.invalidateQueries({
-						queryKey: ["agent-chat", "state", playlistId],
-					});
-				} else if (routingKey.startsWith("agent-memory.")) {
-					const playlistId = routingKey.replace("agent-memory.", "");
-					queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
-					queryClient.invalidateQueries({
-						queryKey: ["agent-memory", "playlist", playlistId],
-					});
-				} else if (routingKey === "agent-memory") {
-					queryClient.invalidateQueries({ queryKey: ["agent-memory"] });
-				} else if (routingKey === "radio") {
-					queryClient.invalidateQueries({ queryKey: ["radio"] });
-					queryClient.invalidateQueries({ queryKey: ["songs", "all"] });
-				}
+				invalidateForRoutingKey(routingKey);
 			};
 
 			ws.onclose = () => {

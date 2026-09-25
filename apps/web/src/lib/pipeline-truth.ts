@@ -29,6 +29,19 @@ function collectQueueSongIds(status: WorkerStatus | null) {
 	return { llm, audio };
 }
 
+function countPersonaLlmJobs(status: WorkerStatus | null) {
+	let personaLlmJobs = 0;
+	if (status) {
+		for (const item of status.queues.llm.activeItems) {
+			if (item.priority >= 20_000) personaLlmJobs += 1;
+		}
+		for (const item of status.queues.llm.pendingItems) {
+			if (item.priority >= 20_000) personaLlmJobs += 1;
+		}
+	}
+	return personaLlmJobs;
+}
+
 export function computePipelineTruth(
 	songs: Song[] | undefined,
 	status: WorkerStatus | null,
@@ -75,15 +88,7 @@ export function computePipelineTruth(
 		}
 	}
 
-	let personaLlmJobs = 0;
-	if (status) {
-		for (const item of status.queues.llm.activeItems) {
-			if (item.priority >= 20_000) personaLlmJobs += 1;
-		}
-		for (const item of status.queues.llm.pendingItems) {
-			if (item.priority >= 20_000) personaLlmJobs += 1;
-		}
-	}
+	const personaLlmJobs = countPersonaLlmJobs(status);
 
 	return {
 		lyricsInProgress,

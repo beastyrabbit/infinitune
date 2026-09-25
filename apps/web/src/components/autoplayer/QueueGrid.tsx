@@ -30,6 +30,23 @@ interface EpochGroup {
 	songs: Song[];
 }
 
+/** Midpoint between the new neighbors, or one step past the only neighbor at either end. */
+function getDroppedOrderIndex(
+	reordered: Song[],
+	newIndex: number,
+	moved: Song,
+): number {
+	if (newIndex === 0) {
+		return reordered[1] ? reordered[1].orderIndex - 1 : moved.orderIndex;
+	}
+	if (newIndex === reordered.length - 1) {
+		return reordered[newIndex - 1].orderIndex + 1;
+	}
+	const before = reordered[newIndex - 1].orderIndex;
+	const after = reordered[newIndex + 1].orderIndex;
+	return (before + after) / 2;
+}
+
 export function QueueGrid({
 	songs,
 	currentSongId,
@@ -142,18 +159,7 @@ export function QueueGrid({
 		const [moved] = reordered.splice(oldIndex, 1);
 		reordered.splice(newIndex, 0, moved);
 
-		let newOrderIndex: number;
-		if (newIndex === 0) {
-			newOrderIndex = reordered[1]
-				? reordered[1].orderIndex - 1
-				: moved.orderIndex;
-		} else if (newIndex === reordered.length - 1) {
-			newOrderIndex = reordered[newIndex - 1].orderIndex + 1;
-		} else {
-			const before = reordered[newIndex - 1].orderIndex;
-			const after = reordered[newIndex + 1].orderIndex;
-			newOrderIndex = (before + after) / 2;
-		}
+		const newOrderIndex = getDroppedOrderIndex(reordered, newIndex, moved);
 
 		// Apply optimistic reorder immediately so there's no snap-back
 		const orderMap = new Map<string, number>();
