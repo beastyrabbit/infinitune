@@ -47,7 +47,10 @@ describe("saveSongToNfs", () => {
 	}
 
 	const pendingFiles = () =>
-		fs.readdirSync(songDir).filter((name) => name.startsWith(".audio-"));
+		fs
+			.readdirSync(songDir)
+			.filter((name) => /^\.(audio|trimmed)-/.test(name))
+			.sort();
 
 	beforeEach(() => {
 		storageDir = fs.mkdtempSync(path.join(os.tmpdir(), "infinitune-save-"));
@@ -122,16 +125,19 @@ describe("saveSongToNfs", () => {
 
 	it("removes pending audio a crashed save left, but not a live save's", async () => {
 		fs.mkdirSync(songDir, { recursive: true });
-		const orphan = path.join(songDir, ".audio-crashed.mp3");
-		const live = path.join(songDir, ".audio-live.mp3");
-		fs.writeFileSync(orphan, "partial");
-		fs.writeFileSync(live, "downloading");
 		const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-		fs.utimesSync(orphan, twentyMinutesAgo, twentyMinutesAgo);
+		// A crash can strand the private audio or the trim's second-pass output.
+		for (const orphan of [".audio-crashed.mp3", ".trimmed-1790000000000.mp3"]) {
+			const file = path.join(songDir, orphan);
+			fs.writeFileSync(file, "partial");
+			fs.utimesSync(file, twentyMinutesAgo, twentyMinutesAgo);
+		}
+		fs.writeFileSync(path.join(songDir, ".audio-live.mp3"), "downloading");
+		fs.writeFileSync(path.join(songDir, ".trimmed-live.mp3"), "trimming");
 
 		await save();
 
-		expect(pendingFiles()).toEqual([".audio-live.mp3"]);
+		expect(pendingFiles()).toEqual([".audio-live.mp3", ".trimmed-live.mp3"]);
 	});
 
 	it("removes the pending audio when the download fails", async () => {

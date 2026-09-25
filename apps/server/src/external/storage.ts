@@ -19,7 +19,8 @@ const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
  */
 const PENDING_AUDIO_MAX_AGE_MS =
 	2 * (ACE_DOWNLOAD_TIMEOUT_MS + 2 * FFMPEG_PASS_TIMEOUT_MS);
-const PENDING_AUDIO_FILE = /^\.audio-.+\.mp3$/;
+/** The save's private audio and the silence trim's output next to it. */
+const PENDING_AUDIO_FILE = /^\.(audio|trimmed)-.+\.mp3$/;
 
 /** Stream ACE audio to disk with a deadline and a hard size cap. */
 export async function downloadAceAudio(
