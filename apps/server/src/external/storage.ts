@@ -10,6 +10,9 @@ import { getServiceUrls } from "./service-urls";
 
 const ACE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
+/** Longer than any live save holds its pending audio (download deadline plus trimming). */
+const PENDING_AUDIO_MAX_AGE_MS = 15 * 60 * 1000;
+const PENDING_AUDIO_FILE = /^\.audio-.+\.mp3$/;
 
 /** Stream ACE audio to disk with a deadline and a hard size cap. */
 export async function downloadAceAudio(
@@ -71,6 +74,20 @@ function resolveLocalAudioPath(aceAudioPath: string): string | null {
 		return fs.existsSync(localPath) ? localPath : null;
 	} catch {
 		return null;
+	}
+}
+
+/** Remove pending audio that a crashed save left in the song folder. */
+function removeStalePendingAudio(songDir: string): void {
+	const cutoff = Date.now() - PENDING_AUDIO_MAX_AGE_MS;
+	for (const name of fs.readdirSync(songDir)) {
+		if (!PENDING_AUDIO_FILE.test(name)) continue;
+		const file = path.join(songDir, name);
+		try {
+			if (fs.statSync(file).mtimeMs < cutoff) fs.rmSync(file, { force: true });
+		} catch {
+			// Another save removed or committed it in the meantime.
+		}
 	}
 }
 
@@ -192,6 +209,7 @@ export async function saveSongToNfs(options: {
 
 	const songDir = path.join(storagePath, genreDir, subGenreDir, songFolder);
 	fs.mkdirSync(songDir, { recursive: true });
+	removeStalePendingAudio(songDir);
 
 	// Prepare the audio under a private name: a replacement worker for the
 	// same song may save into this folder while this download is running.

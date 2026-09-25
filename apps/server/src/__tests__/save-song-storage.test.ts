@@ -117,6 +117,20 @@ describe("saveSongToNfs", () => {
 		expect(pendingFiles()).toEqual([]);
 	});
 
+	it("removes pending audio a crashed save left, but not a live save's", async () => {
+		fs.mkdirSync(songDir, { recursive: true });
+		const orphan = path.join(songDir, ".audio-crashed.mp3");
+		const live = path.join(songDir, ".audio-live.mp3");
+		fs.writeFileSync(orphan, "partial");
+		fs.writeFileSync(live, "downloading");
+		const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
+		fs.utimesSync(orphan, twentyMinutesAgo, twentyMinutesAgo);
+
+		await save();
+
+		expect(pendingFiles()).toEqual([".audio-live.mp3"]);
+	});
+
 	it("removes the pending audio when the download fails", async () => {
 		getServiceUrls.mockResolvedValue({ aceStepUrl: "http://127.0.0.1:9" });
 
