@@ -408,8 +408,10 @@ export async function markReady(
 	const [current] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!current) return false;
 
+	// Only saving -> ready; the transition table also allows played -> ready
+	// for replays, which a late worker must not trigger.
 	const from = current.status as SongStatus;
-	if (!validateSongTransition(from, "ready")) {
+	if (from !== "saving") {
 		songLogger(id, current.playlistId).warn(
 			{ from },
 			"Ignoring markReady for a song that is no longer saving",

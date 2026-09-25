@@ -273,25 +273,26 @@ describe("song-service", () => {
 			expect(updated.generationCompletedAt).toBeGreaterThan(0);
 		});
 
-		it("does not resurrect a song that left the saving step", async () => {
-			const pl = await createTestPlaylist();
-			const song = await createTestSong(pl.id, 1, {
-				status: "metadata_ready",
-			});
+		it.each(["metadata_ready", "played"] as const)(
+			"does not touch a song that is %s instead of saving",
+			async (status) => {
+				const pl = await createTestPlaylist();
+				const song = await createTestSong(pl.id, 1, { status });
 
-			expect(await songService.markReady(song.id, "http://audio.mp3")).toBe(
-				false,
-			);
+				expect(await songService.markReady(song.id, "http://late.mp3")).toBe(
+					false,
+				);
 
-			const db = getTestDb();
-			const [updated] = await db
-				.select()
-				.from(songs)
-				.where(eq(songs.id, song.id));
-			expect(updated.status).toBe("metadata_ready");
-			expect(updated.audioUrl).toBeNull();
-			expect(emittedEvents).toHaveLength(0);
-		});
+				const db = getTestDb();
+				const [updated] = await db
+					.select()
+					.from(songs)
+					.where(eq(songs.id, song.id));
+				expect(updated.status).toBe(status);
+				expect(updated.audioUrl).not.toBe("http://late.mp3");
+				expect(emittedEvents).toHaveLength(0);
+			},
+		);
 	});
 
 	// ─── markError ─────────────────────────────────────────────────
