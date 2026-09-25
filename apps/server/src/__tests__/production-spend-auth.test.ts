@@ -488,6 +488,30 @@ describe("production OpenRouter spend authentication", () => {
 		expect(mocks.settingsSet).toHaveBeenCalledTimes(2);
 	});
 
+	it("accepts only known settings and http(s) service URLs", async () => {
+		mocks.requireUserActor.mockResolvedValue(authenticated);
+		const write = (key: string, value: string) =>
+			requestJson(settingsRoutes, "/", "POST", { key, value });
+
+		expect((await write("internalSecretFlag", "true")).status).toBe(400);
+		expect((await write("ollamaUrl", "file:///etc/passwd")).status).toBe(400);
+		expect(
+			(await write("aceStepUrl", "http://user:pass@ace.internal:8001")).status,
+		).toBe(400);
+		expect((await write("volume", "x".repeat(5000))).status).toBe(400);
+		expect(mocks.settingsSet).not.toHaveBeenCalled();
+
+		expect((await write("ollamaUrl", "http://192.168.1.10:11434")).status).toBe(
+			200,
+		);
+		expect((await write("aceStepUrl", "")).status).toBe(200);
+		expect(
+			(await write("agentReasoning.playlist-director", "high")).status,
+		).toBe(200);
+		expect((await write("radioSearchRatio", "0.5")).status).toBe(200);
+		expect(mocks.settingsSet).toHaveBeenCalledTimes(4);
+	});
+
 	it("reports when ACE_STEP_URL controls the effective settings value", async () => {
 		vi.stubEnv("ACE_STEP_URL", "http://ace-from-env:8001");
 		mocks.requireUserActor.mockResolvedValue(authenticated);

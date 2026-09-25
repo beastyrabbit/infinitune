@@ -1,5 +1,9 @@
 import z from "zod";
 import { ACE_DCW_MODES, isValidAceModel } from "../ace-settings";
+import {
+	getAgentReasoningSettingKey,
+	INFINITUNE_AGENT_IDS,
+} from "../agent-reasoning";
 import { SUPPORTED_LYRICS_LANGUAGES } from "../lyrics-language";
 import { PLAYLIST_MODES, PLAYLIST_STATUSES } from "../types";
 
@@ -88,8 +92,87 @@ export const UpdatePlaylistParamsSchema = z.object({
 	aceAutoDuration: z.boolean().nullable().optional(),
 });
 
+/** Global settings the web UI writes through POST /api/settings. */
+const WRITABLE_SETTING_KEYS = new Set<string>([
+	"volume",
+	"ollamaUrl",
+	"aceStepUrl",
+	"textProvider",
+	"textModel",
+	"imageProvider",
+	"imageModel",
+	"coversEnabled",
+	"personaProvider",
+	"personaModel",
+	"aceModel",
+	"aceVaeCheckpoint",
+	"aceInferenceSteps",
+	"aceLmTemperature",
+	"aceLmCfgScale",
+	"aceInferMethod",
+	"aceGuidanceScale",
+	"aceSamplerMode",
+	"aceShift",
+	"aceVelocityNormThreshold",
+	"aceVelocityEmaFactor",
+	"aceUseAdg",
+	"aceQueueDepth",
+	"aceDcwEnabled",
+	"aceDcwMode",
+	"aceDcwScaler",
+	"aceDcwHighScaler",
+	"aceDcwWavelet",
+	"aceThinking",
+	"aceAutoDuration",
+	"radioCoversPerAlbum",
+	"radioNewPerAlbum",
+	"radioCoverOfCoverPerAlbum",
+	"radioRandomFill",
+	"radioSearchRatio",
+	"radioSourceLibraryDir",
+	"radioCoverNoiseStrength",
+	...INFINITUNE_AGENT_IDS.map(getAgentReasoningSettingKey),
+]);
+
+/** Settings the server fetches; they must stay plain http(s) URLs. */
+const URL_SETTING_KEYS = new Set(["ollamaUrl", "aceStepUrl"]);
+
+const MAX_SETTING_VALUE_LENGTH = 4096;
+
+function isHttpUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			!url.username &&
+			!url.password
+		);
+	} catch {
+		return false;
+	}
+}
+
 /** Schema for setting a key-value setting */
-export const SetSettingSchema = z.object({
-	key: z.string().min(1),
-	value: z.string(),
-});
+export const SetSettingSchema = z
+	.object({
+		key: z.string().min(1),
+		value: z.string().max(MAX_SETTING_VALUE_LENGTH),
+	})
+	.superRefine(({ key, value }, ctx) => {
+		if (!WRITABLE_SETTING_KEYS.has(key)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["key"],
+				message: `Unknown setting: ${key}`,
+			});
+			return;
+		}
+		const trimmed = value.trim();
+		if (URL_SETTING_KEYS.has(key) && trimmed && !isHttpUrl(trimmed)) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["value"],
+				message: `${key} must be an absolute http(s) URL`,
+			});
+		}
+	});
