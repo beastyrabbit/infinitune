@@ -142,6 +142,29 @@ function asFiniteNumber(value: unknown): number | undefined {
 		: undefined;
 }
 
+function asString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function nonEmptyTrimmed(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim()
+		: undefined;
+}
+
+function activeLocalPlaylist(
+	status: Record<string, unknown>,
+): string | undefined {
+	return (
+		nonEmptyString(status.localPlaylistName) ??
+		nonEmptyString(status.localPlaylistId)
+	);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error("Daemon returned malformed response payload.");
@@ -160,6 +183,22 @@ function formatRuntimeClock(seconds: number): string {
 	return `${String(minutes)}:${String(secs).padStart(2, "0")}`;
 }
 
+function formatRuntimeLine(
+	runtimeSec: number | undefined,
+	durationSec: number | undefined,
+): string | undefined {
+	if (runtimeSec === undefined && durationSec === undefined) return undefined;
+	const runtimeText = formatRuntimeClock(runtimeSec ?? 0);
+	let line = `Runtime: ${runtimeText}`;
+	if (durationSec === undefined) return line;
+	line += ` / ${formatRuntimeClock(durationSec)}`;
+	if (durationSec > 0 && runtimeSec !== undefined) {
+		const ratio = Math.max(0, Math.min(1, runtimeSec / durationSec));
+		line += ` (${Math.round(ratio * 100)}%)`;
+	}
+	return line;
+}
+
 function printSongRuntimeStatus(data: Record<string, unknown>): {
 	hasSongLine: boolean;
 } {
@@ -167,21 +206,12 @@ function printSongRuntimeStatus(data: Record<string, unknown>): {
 	const engine = data.engine as Record<string, unknown> | undefined;
 	const currentSong = data.currentSong as Record<string, unknown> | undefined;
 
-	const title =
-		typeof currentSong?.title === "string" &&
-		currentSong.title.trim().length > 0
-			? currentSong.title.trim()
-			: undefined;
-	const artist =
-		typeof currentSong?.artistName === "string" &&
-		currentSong.artistName.trim().length > 0
-			? currentSong.artistName.trim()
-			: undefined;
+	const title = nonEmptyTrimmed(currentSong?.title);
+	const artist = nonEmptyTrimmed(currentSong?.artistName);
 	const songId =
-		(typeof currentSong?.id === "string" && currentSong.id) ||
-		(typeof playback?.currentSongId === "string" && playback.currentSongId) ||
-		(typeof engine?.songId === "string" && engine.songId) ||
-		undefined;
+		nonEmptyString(currentSong?.id) ??
+		nonEmptyString(playback?.currentSongId) ??
+		nonEmptyString(engine?.songId);
 
 	if (title) {
 		console.log(`Song: ${title}${artist ? ` — ${artist}` : ""}`);
@@ -201,20 +231,67 @@ function printSongRuntimeStatus(data: Record<string, unknown>): {
 			? durationRaw
 			: undefined;
 
-	if (runtimeSec !== undefined || durationSec !== undefined) {
-		const runtimeText = formatRuntimeClock(runtimeSec ?? 0);
-		let line = `Runtime: ${runtimeText}`;
-		if (durationSec !== undefined) {
-			line += ` / ${formatRuntimeClock(durationSec)}`;
-			if (durationSec > 0 && runtimeSec !== undefined) {
-				const ratio = Math.max(0, Math.min(1, runtimeSec / durationSec));
-				line += ` (${Math.round(ratio * 100)}%)`;
-			}
-		}
-		console.log(line);
+	const runtimeLine = formatRuntimeLine(runtimeSec, durationSec);
+	if (runtimeLine) {
+		console.log(runtimeLine);
 	}
 
 	return { hasSongLine: Boolean(title) };
+}
+
+function printPlaybackVolumes(
+	data: Record<string, unknown>,
+	mode: string,
+): void {
+	const playback = data.playback as Record<string, unknown> | undefined;
+	const engine = data.engine as Record<string, unknown> | undefined;
+	if (playback) {
+		console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
+		const volumeLabel = mode === "local" ? "Playback Volume" : "Room Volume";
+		console.log(
+			`${volumeLabel}: ${toDisplayPercent(
+				typeof playback.volume === "number" ? playback.volume : undefined,
+			)}`,
+		);
+	}
+	if (engine) {
+		console.log(
+			`Local Volume: ${toDisplayPercent(
+				typeof engine.volume === "number" ? engine.volume : undefined,
+			)}`,
+		);
+	}
+}
+
+function printLastError(data: Record<string, unknown>): void {
+	const lastError = nonEmptyString(data.lastError);
+	if (lastError) {
+		console.log(`Last Error: ${lastError}`);
+	}
+}
+
+function formatRoomLabel(
+	roomId: string | undefined,
+	roomName: string | undefined,
+): string {
+	return roomId ? `${roomId}${roomName ? ` (${roomName})` : ""}` : "-";
+}
+
+function printDaemonHttpInfo(
+	data: Record<string, unknown>,
+	config: InfiConfig,
+	fallbackHost: string,
+	fallbackPort: number,
+): void {
+	console.log(`Config Server: ${config.serverUrl}`);
+	const daemonHttpUrl =
+		asString(data.daemonHttpUrl) ??
+		formatDaemonHttpUrl(fallbackHost, fallbackPort);
+	console.log(`Daemon HTTP: ${daemonHttpUrl}`);
+	console.log(
+		`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
+	);
+	console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
 }
 
 function printRoomConnectionDiagnostics(data: Record<string, unknown>): void {
@@ -434,11 +511,22 @@ async function ensureDaemonRunning(
 	});
 }
 
-async function cmdDaemon(args: string[]): Promise<void> {
-	const parsed = parseArgs(args);
-	const sub = parsed.positionals[0] ?? "status";
-	const serverUrl = resolveServerUrl(parsed);
-	const config = loadConfig();
+type DaemonLaunchOptions = {
+	serverUrl: string;
+	roomId?: string;
+	playlistKey?: string;
+	roomName?: string;
+	deviceName: string;
+	deviceToken?: string;
+	daemonHttpHost: string;
+	daemonHttpPort: number;
+};
+
+function resolveDaemonLaunchOptions(
+	parsed: ReturnType<typeof parseArgs>,
+	serverUrl: string,
+	config: InfiConfig,
+): DaemonLaunchOptions {
 	const roomId = getFlagString(parsed, "room");
 	const playlistKey = getFlagString(parsed, "playlist-key");
 	const roomName = getFlagString(parsed, "room-name");
@@ -457,174 +545,257 @@ async function cmdDaemon(args: string[]): Promise<void> {
 		typeof daemonHttpPortRaw === "string"
 			? normalizeDaemonPortSetting(daemonHttpPortRaw)
 			: config.daemonHttpPort;
+	return {
+		serverUrl,
+		roomId,
+		playlistKey,
+		roomName,
+		deviceName,
+		deviceToken,
+		daemonHttpHost,
+		daemonHttpPort,
+	};
+}
+
+async function joinLaunchRoom(options: DaemonLaunchOptions): Promise<void> {
+	const { serverUrl, roomId, playlistKey, roomName, deviceName } = options;
+	if (!roomId) return;
+	const response = await sendDaemonRequest("joinRoom", {
+		serverUrl,
+		roomId,
+		playlistKey,
+		roomName,
+		deviceName,
+	});
+	requireOk(response);
+	console.log(`Joined room ${roomId}.`);
+}
+
+async function daemonStart(options: DaemonLaunchOptions): Promise<void> {
+	if (await isDaemonResponsive()) {
+		console.log("Daemon already running.");
+		return;
+	}
+	await startDaemonProcess(options);
+	console.log("Daemon started.");
+	await joinLaunchRoom(options);
+}
+
+async function daemonRestart(options: DaemonLaunchOptions): Promise<void> {
+	if (await isDaemonResponsive()) {
+		const shutdownResponse = await sendDaemonRequest("shutdown");
+		requireOk(shutdownResponse);
+		const stopped = await waitForDaemonStopped();
+		if (!stopped) {
+			throw new Error("Timed out waiting for daemon to stop.");
+		}
+	}
+	await startDaemonProcess(options);
+	console.log("Daemon restarted.");
+	await joinLaunchRoom(options);
+}
+
+async function daemonStop(): Promise<void> {
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon is not running.");
+		return;
+	}
+	const response = await sendDaemonRequest("shutdown");
+	requireOk(response);
+	console.log("Daemon stopping.");
+}
+
+function printDaemonStatusOverview(
+	data: Record<string, unknown>,
+	mode: string,
+): void {
+	const roomDeviceMode = asString(data.roomDeviceMode) ?? "-";
+	const roomName = asString(data.roomName);
+	console.log(`Daemon: running (pid ${String(data.pid ?? "?")})`);
+	console.log(`Mode: ${mode}`);
+	console.log(`Connected: ${data.connected ? "yes" : "no"}`);
+	console.log(
+		`Room: ${formatRoomLabel(nonEmptyString(data.roomId), roomName)}`,
+	);
+	console.log(`Assigned Playlist: ${String(data.assignedPlaylistId ?? "-")}`);
+	console.log(
+		`Device Token: ${data.deviceTokenConfigured ? "configured" : "not set"}`,
+	);
+	if (mode === "room") {
+		console.log(`Device Sync Mode: ${roomDeviceMode}`);
+		printRoomConnectionDiagnostics(data);
+	}
+	if (mode === "local") {
+		console.log(
+			`Local Playlist: ${String(data.localPlaylistName ?? data.localPlaylistId ?? "-")}`,
+		);
+	}
+	console.log(`Server: ${String(data.serverUrl ?? "-")}`);
+}
+
+async function daemonStatus(
+	options: DaemonLaunchOptions,
+	config: InfiConfig,
+): Promise<void> {
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon: not running");
+		return;
+	}
+	const response = await sendDaemonRequest("status");
+	const data = asRecord(requireOk(response));
+	const mode = nonEmptyString(data.mode) ?? "room";
+	printDaemonStatusOverview(data, mode);
+	printDaemonHttpInfo(
+		data,
+		config,
+		options.daemonHttpHost,
+		options.daemonHttpPort,
+	);
+	printPlaybackVolumes(data, mode);
+	printSongRuntimeStatus(data);
+	printLastError(data);
+}
+
+async function cmdDaemon(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const sub = parsed.positionals[0] ?? "status";
+	const serverUrl = resolveServerUrl(parsed);
+	const config = loadConfig();
+	const options = resolveDaemonLaunchOptions(parsed, serverUrl, config);
 
 	switch (sub) {
-		case "run": {
-			await runDaemonRuntime({
-				serverUrl,
-				roomId,
-				playlistKey,
-				roomName,
-				deviceName,
-				deviceToken,
-				daemonHttpHost,
-				daemonHttpPort,
-			});
+		case "run":
+			await runDaemonRuntime(options);
 			return;
-		}
-		case "start": {
-			if (await isDaemonResponsive()) {
-				console.log("Daemon already running.");
-				return;
-			}
-			await startDaemonProcess({
-				serverUrl,
-				roomId,
-				playlistKey,
-				roomName,
-				deviceName,
-				deviceToken,
-				daemonHttpHost,
-				daemonHttpPort,
-			});
-			console.log("Daemon started.");
-			if (roomId) {
-				const response = await sendDaemonRequest("joinRoom", {
-					serverUrl,
-					roomId,
-					playlistKey,
-					roomName,
-					deviceName,
-				});
-				requireOk(response);
-				console.log(`Joined room ${roomId}.`);
-			}
+		case "start":
+			await daemonStart(options);
 			return;
-		}
-		case "restart": {
-			if (await isDaemonResponsive()) {
-				const shutdownResponse = await sendDaemonRequest("shutdown");
-				requireOk(shutdownResponse);
-				const stopped = await waitForDaemonStopped();
-				if (!stopped) {
-					throw new Error("Timed out waiting for daemon to stop.");
-				}
-			}
-			await startDaemonProcess({
-				serverUrl,
-				roomId,
-				playlistKey,
-				roomName,
-				deviceName,
-				deviceToken,
-				daemonHttpHost,
-				daemonHttpPort,
-			});
-			console.log("Daemon restarted.");
-			if (roomId) {
-				const response = await sendDaemonRequest("joinRoom", {
-					serverUrl,
-					roomId,
-					playlistKey,
-					roomName,
-					deviceName,
-				});
-				requireOk(response);
-				console.log(`Joined room ${roomId}.`);
-			}
+		case "restart":
+			await daemonRestart(options);
 			return;
-		}
-		case "stop": {
-			if (!(await isDaemonResponsive())) {
-				console.log("Daemon is not running.");
-				return;
-			}
-			const response = await sendDaemonRequest("shutdown");
-			requireOk(response);
-			console.log("Daemon stopping.");
+		case "stop":
+			await daemonStop();
 			return;
-		}
-		case "status": {
-			if (!(await isDaemonResponsive())) {
-				console.log("Daemon: not running");
-				return;
-			}
-			const response = await sendDaemonRequest("status");
-			const data = asRecord(requireOk(response));
-			const mode =
-				typeof data.mode === "string" && data.mode.length > 0
-					? data.mode
-					: "room";
-			const roomDeviceMode =
-				typeof data.roomDeviceMode === "string" ? data.roomDeviceMode : "-";
-			const roomName =
-				typeof data.roomName === "string" ? data.roomName : undefined;
-			console.log(`Daemon: running (pid ${String(data.pid ?? "?")})`);
-			console.log(`Mode: ${mode}`);
-			console.log(`Connected: ${data.connected ? "yes" : "no"}`);
-			console.log(
-				`Room: ${
-					typeof data.roomId === "string" && data.roomId.length > 0
-						? `${data.roomId}${roomName ? ` (${roomName})` : ""}`
-						: "-"
-				}`,
-			);
-			console.log(
-				`Assigned Playlist: ${String(data.assignedPlaylistId ?? "-")}`,
-			);
-			console.log(
-				`Device Token: ${
-					data.deviceTokenConfigured ? "configured" : "not set"
-				}`,
-			);
-			if (mode === "room") {
-				console.log(`Device Sync Mode: ${roomDeviceMode}`);
-				printRoomConnectionDiagnostics(data);
-			}
-			if (mode === "local") {
-				console.log(
-					`Local Playlist: ${String(data.localPlaylistName ?? data.localPlaylistId ?? "-")}`,
-				);
-			}
-			console.log(`Server: ${String(data.serverUrl ?? "-")}`);
-			console.log(`Config Server: ${config.serverUrl}`);
-			const daemonHttpUrl =
-				typeof data.daemonHttpUrl === "string"
-					? data.daemonHttpUrl
-					: formatDaemonHttpUrl(daemonHttpHost, daemonHttpPort);
-			console.log(`Daemon HTTP: ${daemonHttpUrl}`);
-			console.log(
-				`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
-			);
-			console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
-			const playback = data.playback as Record<string, unknown> | undefined;
-			const engine = data.engine as Record<string, unknown> | undefined;
-			if (playback) {
-				console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
-				const volumeLabel =
-					mode === "local" ? "Playback Volume" : "Room Volume";
-				console.log(
-					`${volumeLabel}: ${toDisplayPercent(
-						typeof playback.volume === "number" ? playback.volume : undefined,
-					)}`,
-				);
-			}
-			if (engine) {
-				console.log(
-					`Local Volume: ${toDisplayPercent(
-						typeof engine.volume === "number" ? engine.volume : undefined,
-					)}`,
-				);
-			}
-			printSongRuntimeStatus(data);
-			if (typeof data.lastError === "string" && data.lastError.length > 0) {
-				console.log(`Last Error: ${data.lastError}`);
-			}
+		case "status":
+			await daemonStatus(options, config);
 			return;
-		}
 		default:
 			throw new Error(`Unknown daemon subcommand: ${sub}`);
 	}
+}
+
+async function playLocalPlaylist(
+	parsed: ReturnType<typeof parseArgs>,
+	config: InfiConfig,
+	serverUrl: string,
+	deviceName: string,
+): Promise<void> {
+	const playlist = await resolvePlaylist(serverUrl, {
+		explicitPlaylistKey: getFlagString(parsed, "playlist-key"),
+		defaultPlaylistKey: config.defaultPlaylistKey,
+		interactivePlaylist: true,
+		deviceToken: config.deviceToken ?? undefined,
+	});
+
+	const startLocalResponse = await sendDaemonRequest("startLocal", {
+		serverUrl,
+		playlistId: playlist.id,
+		playlistKey: playlist.playlistKey ?? undefined,
+		playlistName: playlist.name,
+		deviceName,
+	});
+	requireOk(startLocalResponse);
+
+	const playResponse = await sendDaemonRequest("play");
+	requireOk(playResponse);
+
+	patchConfig({
+		serverUrl,
+		deviceName,
+		defaultPlaylistKey: playlist.playlistKey ?? null,
+	});
+
+	console.log(
+		`Playing locally from playlist ${playlist.playlistKey ?? playlist.id} (${playlist.name}).`,
+	);
+}
+
+async function playJoinedRoom(
+	serverUrl: string,
+	deviceName: string,
+	status: Record<string, unknown>,
+	joinedRoomId: string,
+): Promise<boolean> {
+	const joinedRoomName = nonEmptyString(status.roomName);
+	const joinedPlaylistKey = nonEmptyString(status.playlistKey);
+	const isConnected = isConnectedFlag(status.connected);
+	try {
+		await playInRoomSession(sendDaemonRequest, {
+			serverUrl,
+			roomId: joinedRoomId,
+			playlistKey: joinedPlaylistKey,
+			roomName: joinedRoomName,
+			expectedPlaylistKey: joinedPlaylistKey,
+			deviceName,
+			connected: isConnected,
+		});
+		console.log(`Playing in room ${joinedRoomId}.`);
+		return true;
+	} catch (error) {
+		if (!isStaleRoomPlaybackError(error)) {
+			throw error;
+		}
+		console.warn(
+			`Warning: previous room session ${joinedRoomId} is stale (${toErrorMessage(error)}). Resolving current playlist session...`,
+		);
+		return false;
+	}
+}
+
+async function playAssignedPlaylist(
+	serverUrl: string,
+	deviceName: string,
+	assignedPlaylistId: string,
+): Promise<void> {
+	await playInRoomSession(sendDaemonRequest, {
+		serverUrl,
+		roomId: assignedPlaylistId,
+		expectedPlaylistKey: assignedPlaylistId,
+		deviceName,
+		connected: false,
+	});
+	patchConfig({
+		serverUrl,
+		deviceName,
+		defaultRoomId: assignedPlaylistId,
+	});
+	console.log(`Playing assigned playlist session ${assignedPlaylistId}.`);
+}
+
+/** Resumes the daemon's current room session; returns true when playback started. */
+async function resumeDaemonRoomSession(
+	serverUrl: string,
+	deviceName: string,
+): Promise<boolean> {
+	const statusResponse = await sendDaemonRequest("status");
+	const status = asRecord(requireOk(statusResponse));
+	const daemonMode = asString(status.mode) ?? "room";
+	if (daemonMode !== "room") return false;
+
+	const joinedRoomId = nonEmptyString(status.roomId);
+	if (
+		joinedRoomId &&
+		(await playJoinedRoom(serverUrl, deviceName, status, joinedRoomId))
+	) {
+		return true;
+	}
+
+	const assignedPlaylistId = nonEmptyString(status.assignedPlaylistId);
+	if (assignedPlaylistId) {
+		await playAssignedPlaylist(serverUrl, deviceName, assignedPlaylistId);
+		return true;
+	}
+	return false;
 }
 
 async function cmdPlay(args: string[]): Promise<void> {
@@ -641,101 +812,18 @@ async function cmdPlay(args: string[]): Promise<void> {
 	await ensureDaemonRunning(serverUrl, deviceName, config);
 
 	if (playbackMode === "local") {
-		const playlist = await resolvePlaylist(serverUrl, {
-			explicitPlaylistKey: getFlagString(parsed, "playlist-key"),
-			defaultPlaylistKey: config.defaultPlaylistKey,
-			interactivePlaylist: true,
-			deviceToken: config.deviceToken ?? undefined,
-		});
-
-		const startLocalResponse = await sendDaemonRequest("startLocal", {
-			serverUrl,
-			playlistId: playlist.id,
-			playlistKey: playlist.playlistKey ?? undefined,
-			playlistName: playlist.name,
-			deviceName,
-		});
-		requireOk(startLocalResponse);
-
-		const playResponse = await sendDaemonRequest("play");
-		requireOk(playResponse);
-
-		patchConfig({
-			serverUrl,
-			deviceName,
-			defaultPlaylistKey: playlist.playlistKey ?? null,
-		});
-
-		console.log(
-			`Playing locally from playlist ${playlist.playlistKey ?? playlist.id} (${playlist.name}).`,
-		);
+		await playLocalPlaylist(parsed, config, serverUrl, deviceName);
 		return;
 	}
 
 	const explicitRoomId = getFlagString(parsed, "room");
 	const explicitPlaylistKey = getFlagString(parsed, "playlist-key");
-	if (!explicitRoomId && !explicitPlaylistKey) {
-		const statusResponse = await sendDaemonRequest("status");
-		const status = asRecord(requireOk(statusResponse));
-		const daemonMode = typeof status.mode === "string" ? status.mode : "room";
-		const joinedRoomId =
-			typeof status.roomId === "string" && status.roomId.length > 0
-				? status.roomId
-				: null;
-		const joinedRoomName =
-			typeof status.roomName === "string" && status.roomName.length > 0
-				? status.roomName
-				: null;
-		const joinedPlaylistKey =
-			typeof status.playlistKey === "string" && status.playlistKey.length > 0
-				? status.playlistKey
-				: null;
-		const isConnected = isConnectedFlag(status.connected);
-		const assignedPlaylistId =
-			typeof status.assignedPlaylistId === "string" &&
-			status.assignedPlaylistId.length > 0
-				? status.assignedPlaylistId
-				: null;
-
-		if (daemonMode === "room" && joinedRoomId) {
-			try {
-				await playInRoomSession(sendDaemonRequest, {
-					serverUrl,
-					roomId: joinedRoomId,
-					playlistKey: joinedPlaylistKey ?? undefined,
-					roomName: joinedRoomName ?? undefined,
-					expectedPlaylistKey: joinedPlaylistKey ?? undefined,
-					deviceName,
-					connected: isConnected,
-				});
-				console.log(`Playing in room ${joinedRoomId}.`);
-				return;
-			} catch (error) {
-				if (!isStaleRoomPlaybackError(error)) {
-					throw error;
-				}
-				console.warn(
-					`Warning: previous room session ${joinedRoomId} is stale (${toErrorMessage(error)}). Resolving current playlist session...`,
-				);
-			}
-		}
-
-		if (daemonMode === "room" && assignedPlaylistId) {
-			await playInRoomSession(sendDaemonRequest, {
-				serverUrl,
-				roomId: assignedPlaylistId,
-				expectedPlaylistKey: assignedPlaylistId,
-				deviceName,
-				connected: false,
-			});
-			patchConfig({
-				serverUrl,
-				deviceName,
-				defaultRoomId: assignedPlaylistId,
-			});
-			console.log(`Playing assigned playlist session ${assignedPlaylistId}.`);
-			return;
-		}
+	if (
+		!explicitRoomId &&
+		!explicitPlaylistKey &&
+		(await resumeDaemonRoomSession(serverUrl, deviceName))
+	) {
+		return;
 	}
 
 	const resolved = await resolveRoom(serverUrl, {
@@ -912,6 +1000,36 @@ function printRoomSubcommandHelp(): void {
 	console.log("  infi room help");
 }
 
+async function leaveRoom(): Promise<void> {
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon is not running. No room to leave.");
+		return;
+	}
+	const statusResponse = await sendDaemonRequest("status");
+	const status = requireOk(statusResponse) as Record<string, unknown>;
+	const mode = asString(status.mode) ?? "room";
+	if (mode !== "room") {
+		console.log("Daemon is not in room mode. No room session to leave.");
+		return;
+	}
+	const roomId = nonEmptyString(status.roomId);
+	if (!roomId) {
+		console.log("No active room session.");
+		return;
+	}
+	const response = await sendDaemonRequest("leaveRoom");
+	requireOk(response);
+	const verifyResponse = await sendDaemonRequest("status");
+	const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
+	const remainingRoomId = nonEmptyString(verifyStatus.roomId);
+	if (remainingRoomId) {
+		throw new Error(
+			`Daemon did not leave room session (still in ${remainingRoomId}). Run \`infi daemon restart\` and retry.`,
+		);
+	}
+	console.log(`Left room ${roomId}.`);
+}
+
 async function cmdRoom(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0];
@@ -924,39 +1042,7 @@ async function cmdRoom(args: string[]): Promise<void> {
 	}
 
 	if (sub === "leave") {
-		if (!(await isDaemonResponsive())) {
-			console.log("Daemon is not running. No room to leave.");
-			return;
-		}
-		const statusResponse = await sendDaemonRequest("status");
-		const status = requireOk(statusResponse) as Record<string, unknown>;
-		const mode = typeof status.mode === "string" ? status.mode : "room";
-		if (mode !== "room") {
-			console.log("Daemon is not in room mode. No room session to leave.");
-			return;
-		}
-		const roomId =
-			typeof status.roomId === "string" && status.roomId.length > 0
-				? status.roomId
-				: null;
-		if (!roomId) {
-			console.log("No active room session.");
-			return;
-		}
-		const response = await sendDaemonRequest("leaveRoom");
-		requireOk(response);
-		const verifyResponse = await sendDaemonRequest("status");
-		const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
-		const remainingRoomId =
-			typeof verifyStatus.roomId === "string" && verifyStatus.roomId.length > 0
-				? verifyStatus.roomId
-				: null;
-		if (remainingRoomId) {
-			throw new Error(
-				`Daemon did not leave room session (still in ${remainingRoomId}). Run \`infi daemon restart\` and retry.`,
-			);
-		}
-		console.log(`Left room ${roomId}.`);
+		await leaveRoom();
 		return;
 	}
 
@@ -1008,58 +1094,40 @@ async function cmdRoom(args: string[]): Promise<void> {
 	}
 }
 
+async function leaveLocalPlaylist(): Promise<void> {
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon is not running. No local playlist to leave.");
+		return;
+	}
+	const statusResponse = await sendDaemonRequest("status");
+	const status = requireOk(statusResponse) as Record<string, unknown>;
+	const mode = asString(status.mode) ?? "room";
+	if (mode !== "local") {
+		console.log("Daemon is not in local mode. No playlist session to leave.");
+		return;
+	}
+	const playlistLabel = activeLocalPlaylist(status);
+	const response = await sendDaemonRequest("leavePlaylist");
+	requireOk(response);
+	const verifyResponse = await sendDaemonRequest("status");
+	const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
+	const verifyMode = asString(verifyStatus.mode) ?? "room";
+	const remainingPlaylist = activeLocalPlaylist(verifyStatus);
+	if (verifyMode === "local" && remainingPlaylist) {
+		throw new Error(
+			`Daemon did not leave local playlist (still using ${remainingPlaylist}). Run \`infi daemon restart\` and retry.`,
+		);
+	}
+	console.log(`Left local playlist ${playlistLabel ?? "(unknown)"}.`);
+}
+
 async function cmdPlaylist(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0] ?? "leave";
 	switch (sub) {
-		case "leave": {
-			if (!(await isDaemonResponsive())) {
-				console.log("Daemon is not running. No local playlist to leave.");
-				return;
-			}
-			const statusResponse = await sendDaemonRequest("status");
-			const status = requireOk(statusResponse) as Record<string, unknown>;
-			const mode = typeof status.mode === "string" ? status.mode : "room";
-			if (mode !== "local") {
-				console.log(
-					"Daemon is not in local mode. No playlist session to leave.",
-				);
-				return;
-			}
-			const playlistName =
-				typeof status.localPlaylistName === "string" &&
-				status.localPlaylistName.length > 0
-					? status.localPlaylistName
-					: null;
-			const playlistId =
-				typeof status.localPlaylistId === "string" &&
-				status.localPlaylistId.length > 0
-					? status.localPlaylistId
-					: null;
-			const response = await sendDaemonRequest("leavePlaylist");
-			requireOk(response);
-			const verifyResponse = await sendDaemonRequest("status");
-			const verifyStatus = requireOk(verifyResponse) as Record<string, unknown>;
-			const verifyMode =
-				typeof verifyStatus.mode === "string" ? verifyStatus.mode : "room";
-			const remainingPlaylist =
-				typeof verifyStatus.localPlaylistName === "string" &&
-				verifyStatus.localPlaylistName.length > 0
-					? verifyStatus.localPlaylistName
-					: typeof verifyStatus.localPlaylistId === "string" &&
-							verifyStatus.localPlaylistId.length > 0
-						? verifyStatus.localPlaylistId
-						: null;
-			if (verifyMode === "local" && remainingPlaylist) {
-				throw new Error(
-					`Daemon did not leave local playlist (still using ${remainingPlaylist}). Run \`infi daemon restart\` and retry.`,
-				);
-			}
-			console.log(
-				`Left local playlist ${playlistName ?? playlistId ?? "(unknown)"}.`,
-			);
+		case "leave":
+			await leaveLocalPlaylist();
 			return;
-		}
 		default:
 			throw new Error(`Unknown playlist subcommand: ${sub}`);
 	}
@@ -1104,53 +1172,26 @@ async function cmdSong(args: string[]): Promise<void> {
 	console.log(`Selected song ${songId}.`);
 }
 
-async function cmdStatus(args: string[]): Promise<void> {
-	const parsed = parseArgs(args);
-	const config = loadConfig();
-	const serverUrl = resolveServerUrl(parsed);
-
-	if (!(await isDaemonResponsive())) {
-		console.log("Daemon: not running");
-		return;
-	}
-
-	const daemonResponse = await sendDaemonRequest("status");
-	const daemonData = asRecord(requireOk(daemonResponse));
-	const mode =
-		typeof daemonData.mode === "string" && daemonData.mode.length > 0
-			? daemonData.mode
-			: "room";
-	const roomDeviceMode =
-		typeof daemonData.roomDeviceMode === "string"
-			? daemonData.roomDeviceMode
-			: undefined;
-	const roomId =
-		typeof daemonData.roomId === "string" ? daemonData.roomId : undefined;
-	const roomName =
-		typeof daemonData.roomName === "string" ? daemonData.roomName : undefined;
-	const assignedPlaylistId =
-		typeof daemonData.assignedPlaylistId === "string"
-			? daemonData.assignedPlaylistId
-			: undefined;
+function printStatusOverview(
+	daemonData: Record<string, unknown>,
+	mode: string,
+	serverUrl: string,
+): void {
+	const roomDeviceMode = asString(daemonData.roomDeviceMode);
+	const roomId = asString(daemonData.roomId);
+	const roomName = asString(daemonData.roomName);
+	const assignedPlaylistId = asString(daemonData.assignedPlaylistId);
 	const deviceTokenConfigured =
 		typeof daemonData.deviceTokenConfigured === "boolean"
 			? daemonData.deviceTokenConfigured
 			: false;
-	const localPlaylistName =
-		typeof daemonData.localPlaylistName === "string"
-			? daemonData.localPlaylistName
-			: undefined;
-	const localPlaylistId =
-		typeof daemonData.localPlaylistId === "string"
-			? daemonData.localPlaylistId
-			: undefined;
+	const localPlaylistName = asString(daemonData.localPlaylistName);
+	const localPlaylistId = asString(daemonData.localPlaylistId);
 
 	console.log(`Daemon: running (pid ${String(daemonData.pid ?? "?")})`);
 	console.log(`Mode: ${mode}`);
 	console.log(`Connected: ${daemonData.connected ? "yes" : "no"}`);
-	console.log(
-		`Room: ${roomId ? `${roomId}${roomName ? ` (${roomName})` : ""}` : "-"}`,
-	);
+	console.log(`Room: ${formatRoomLabel(roomId, roomName)}`);
 	console.log(`Assigned Playlist: ${assignedPlaylistId ?? "-"}`);
 	console.log(
 		`Device Token: ${deviceTokenConfigured ? "configured" : "not set"}`,
@@ -1165,59 +1206,165 @@ async function cmdStatus(args: string[]): Promise<void> {
 		);
 	}
 	console.log(`Server: ${String(daemonData.serverUrl ?? serverUrl)}`);
-	console.log(`Config Server: ${config.serverUrl}`);
-	const daemonHttpUrl =
-		typeof daemonData.daemonHttpUrl === "string"
-			? daemonData.daemonHttpUrl
-			: formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort);
-	console.log(`Daemon HTTP: ${daemonHttpUrl}`);
-	console.log(
-		`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
-	);
-	console.log(`Queue Length: ${String(daemonData.queueLength ?? "0")}`);
+}
 
-	const playback = daemonData.playback as Record<string, unknown> | undefined;
-	const engine = daemonData.engine as Record<string, unknown> | undefined;
-	if (playback) {
-		console.log(`Playing: ${playback.isPlaying ? "yes" : "no"}`);
-		const volumeLabel = mode === "local" ? "Playback Volume" : "Room Volume";
-		console.log(
-			`${volumeLabel}: ${toDisplayPercent(
-				typeof playback.volume === "number" ? playback.volume : undefined,
-			)}`,
+async function printRoomSessionNowPlaying(
+	serverUrl: string,
+	roomId: string,
+	config: InfiConfig,
+): Promise<void> {
+	try {
+		const session = await getPlaylistSession(serverUrl, roomId, {
+			deviceToken: config.deviceToken ?? undefined,
+		});
+		if (session.currentSong?.title) {
+			console.log(`Now Playing: ${session.currentSong.title}`);
+			if (session.currentSong.artistName) {
+				console.log(`Artist: ${session.currentSong.artistName}`);
+			}
+		}
+	} catch (error) {
+		console.warn(
+			`Warning: failed to query room session ${roomId}: ${toErrorMessage(error)}`,
 		);
 	}
-	if (engine) {
-		console.log(
-			`Local Volume: ${toDisplayPercent(
-				typeof engine.volume === "number" ? engine.volume : undefined,
-			)}`,
-		);
+}
+
+async function cmdStatus(args: string[]): Promise<void> {
+	const parsed = parseArgs(args);
+	const config = loadConfig();
+	const serverUrl = resolveServerUrl(parsed);
+
+	if (!(await isDaemonResponsive())) {
+		console.log("Daemon: not running");
+		return;
 	}
+
+	const daemonResponse = await sendDaemonRequest("status");
+	const daemonData = asRecord(requireOk(daemonResponse));
+	const mode = nonEmptyString(daemonData.mode) ?? "room";
+	const roomId = asString(daemonData.roomId);
+
+	printStatusOverview(daemonData, mode, serverUrl);
+	printDaemonHttpInfo(
+		daemonData,
+		config,
+		config.daemonHttpHost,
+		config.daemonHttpPort,
+	);
+	printPlaybackVolumes(daemonData, mode);
 	const songStatus = printSongRuntimeStatus(daemonData);
-	if (
-		typeof daemonData.lastError === "string" &&
-		daemonData.lastError.length > 0
-	) {
-		console.log(`Last Error: ${daemonData.lastError}`);
-	}
+	printLastError(daemonData);
 
 	if (mode === "room" && roomId && !songStatus.hasSongLine) {
-		try {
-			const session = await getPlaylistSession(serverUrl, roomId, {
-				deviceToken: config.deviceToken ?? undefined,
-			});
-			if (session.currentSong?.title) {
-				console.log(`Now Playing: ${session.currentSong.title}`);
-				if (session.currentSong.artistName) {
-					console.log(`Artist: ${session.currentSong.artistName}`);
-				}
-			}
-		} catch (error) {
-			console.warn(
-				`Warning: failed to query room session ${roomId}: ${toErrorMessage(error)}`,
-			);
+		await printRoomSessionNowPlaying(serverUrl, roomId, config);
+	}
+}
+
+type DoctorReport = {
+	warn: (text: string) => void;
+	ok: (text: string) => void;
+};
+
+function checkDoctorMode(mode: string, report: DoctorReport): void {
+	if (mode !== "room") {
+		report.warn(`daemon mode is "${mode}" (room checks are limited)`);
+	} else {
+		report.ok("daemon mode is room");
+	}
+}
+
+function checkDoctorServer(
+	daemonServer: string | undefined,
+	serverUrl: string,
+	report: DoctorReport,
+): void {
+	if (daemonServer && daemonServer !== serverUrl) {
+		report.warn(
+			`daemon server (${daemonServer}) differs from target server (${serverUrl})`,
+		);
+	} else if (daemonServer) {
+		report.ok(`daemon server matches target (${daemonServer})`);
+	} else {
+		report.warn("daemon has no server URL configured");
+	}
+}
+
+function checkDoctorRoom(
+	roomId: string | undefined,
+	report: DoctorReport,
+): void {
+	if (!roomId) {
+		report.warn("daemon is not joined to a room");
+	} else {
+		report.ok(`daemon room is ${roomId}`);
+	}
+}
+
+function checkDoctorConnection(
+	connected: boolean,
+	connectionState: string,
+	report: DoctorReport,
+): void {
+	if (connected && connectionState === "connected") {
+		report.ok("room websocket is connected");
+	} else {
+		report.warn(`room websocket is ${connectionState}`);
+	}
+}
+
+function checkDoctorRoomProtocol(
+	daemonData: Record<string, unknown>,
+	report: DoctorReport,
+): void {
+	if (typeof daemonData.joinAcknowledged === "boolean") {
+		if (daemonData.joinAcknowledged) {
+			report.ok("join acknowledgment received");
+		} else {
+			report.warn("join acknowledgment missing");
 		}
+	}
+	if (typeof daemonData.roomProtocolVersion === "number") {
+		report.ok(
+			`room protocol version v${String(daemonData.roomProtocolVersion)}`,
+		);
+	}
+	const lastDisconnectReason = nonEmptyString(daemonData.lastDisconnectReason);
+	if (lastDisconnectReason) {
+		report.warn(`last disconnect reason: ${lastDisconnectReason}`);
+	}
+}
+
+async function checkDoctorPlaylistSession(
+	serverUrl: string,
+	roomId: string,
+	config: InfiConfig,
+	report: DoctorReport,
+): Promise<void> {
+	try {
+		await getPlaylistSession(serverUrl, roomId, {
+			deviceToken: config.deviceToken ?? undefined,
+		});
+		report.ok("playlist session exists on target server");
+	} catch (error) {
+		report.warn(
+			`unable to resolve playlist session on target server (${toErrorMessage(error)})`,
+		);
+	}
+
+	try {
+		const session = await getPlaylistSession(serverUrl, roomId, {
+			deviceToken: config.deviceToken ?? undefined,
+		});
+		if (session.currentSong?.title) {
+			report.ok(
+				`playlist session responds (now playing: ${session.currentSong.title})`,
+			);
+		} else {
+			report.ok("playlist session responds");
+		}
+	} catch (error) {
+		report.warn(`playlist session endpoint failed (${toErrorMessage(error)})`);
 	}
 }
 
@@ -1242,110 +1389,34 @@ async function cmdDoctor(args: string[]): Promise<void> {
 
 	const daemonResponse = await sendDaemonRequest("status");
 	const daemonData = asRecord(requireOk(daemonResponse));
-	const mode =
-		typeof daemonData.mode === "string" && daemonData.mode.length > 0
-			? daemonData.mode
-			: "room";
-	const roomId =
-		typeof daemonData.roomId === "string" && daemonData.roomId.length > 0
-			? daemonData.roomId
-			: null;
+	const mode = nonEmptyString(daemonData.mode) ?? "room";
+	const roomId = nonEmptyString(daemonData.roomId);
 	const connected = Boolean(daemonData.connected);
-	const connectionState =
-		typeof daemonData.connectionState === "string"
-			? daemonData.connectionState
-			: "unknown";
-	const daemonServer =
-		typeof daemonData.serverUrl === "string" ? daemonData.serverUrl : null;
+	const connectionState = asString(daemonData.connectionState) ?? "unknown";
+	const daemonServer = asString(daemonData.serverUrl);
 
 	let issues = 0;
-	const warn = (text: string) => {
-		issues += 1;
-		console.log(`- WARN: ${text}`);
+	const report: DoctorReport = {
+		warn: (text: string) => {
+			issues += 1;
+			console.log(`- WARN: ${text}`);
+		},
+		ok: (text: string) => {
+			console.log(`- OK: ${text}`);
+		},
 	};
-	const ok = (text: string) => {
-		console.log(`- OK: ${text}`);
-	};
 
-	if (mode !== "room") {
-		warn(`daemon mode is "${mode}" (room checks are limited)`);
-	} else {
-		ok("daemon mode is room");
-	}
-
-	if (daemonServer && daemonServer !== serverUrl) {
-		warn(
-			`daemon server (${daemonServer}) differs from target server (${serverUrl})`,
-		);
-	} else if (daemonServer) {
-		ok(`daemon server matches target (${daemonServer})`);
-	} else {
-		warn("daemon has no server URL configured");
-	}
-
-	if (!roomId) {
-		warn("daemon is not joined to a room");
-	} else {
-		ok(`daemon room is ${roomId}`);
-	}
-
-	if (connected && connectionState === "connected") {
-		ok("room websocket is connected");
-	} else {
-		warn(`room websocket is ${connectionState}`);
-	}
+	checkDoctorMode(mode, report);
+	checkDoctorServer(daemonServer, serverUrl, report);
+	checkDoctorRoom(roomId, report);
+	checkDoctorConnection(connected, connectionState, report);
 
 	if (mode === "room") {
-		if (typeof daemonData.joinAcknowledged === "boolean") {
-			if (daemonData.joinAcknowledged) {
-				ok("join acknowledgment received");
-			} else {
-				warn("join acknowledgment missing");
-			}
-		}
-		if (typeof daemonData.roomProtocolVersion === "number") {
-			ok(`room protocol version v${String(daemonData.roomProtocolVersion)}`);
-		}
-		if (
-			typeof daemonData.lastDisconnectReason === "string" &&
-			daemonData.lastDisconnectReason.length > 0
-		) {
-			warn(`last disconnect reason: ${daemonData.lastDisconnectReason}`);
-		}
+		checkDoctorRoomProtocol(daemonData, report);
 	}
 
 	if (roomId) {
-		try {
-			await getPlaylistSession(serverUrl, roomId, {
-				deviceToken: config.deviceToken ?? undefined,
-			});
-			ok("playlist session exists on target server");
-		} catch (error) {
-			warn(
-				`unable to resolve playlist session on target server (${
-					error instanceof Error ? error.message : String(error)
-				})`,
-			);
-		}
-
-		try {
-			const session = await getPlaylistSession(serverUrl, roomId, {
-				deviceToken: config.deviceToken ?? undefined,
-			});
-			if (session.currentSong?.title) {
-				ok(
-					`playlist session responds (now playing: ${session.currentSong.title})`,
-				);
-			} else {
-				ok("playlist session responds");
-			}
-		} catch (error) {
-			warn(
-				`playlist session endpoint failed (${
-					error instanceof Error ? error.message : String(error)
-				})`,
-			);
-		}
+		await checkDoctorPlaylistSession(serverUrl, roomId, config, report);
 	}
 
 	if (issues === 0) {
@@ -1498,6 +1569,164 @@ async function runConfigWizard(
 	}
 }
 
+function readConfigFlags(parsed: ReturnType<typeof parseArgs>) {
+	return {
+		server: getFlagString(parsed, "server"),
+		deviceName: getFlagString(parsed, "device-name", "device"),
+		deviceTokenRaw: getFlagString(parsed, "device-token", "token"),
+		volumeStepRaw: getFlagString(parsed, "volume-step", "step"),
+		playbackModeRaw: getFlagString(parsed, "mode"),
+		daemonHttpHostRaw: getFlagString(parsed, "daemon-host", "http-host"),
+		daemonHttpPortRaw: getFlagString(parsed, "daemon-port", "http-port"),
+		defaultRoomId: getFlagString(parsed, "default-room", "room"),
+		defaultPlaylistKey: getFlagString(
+			parsed,
+			"default-playlist-key",
+			"playlist-key",
+		),
+		localFlag: hasFlag(parsed, "local"),
+		roomModeFlag: hasFlag(parsed, "room-mode"),
+		clearRoom: parsed.flags.has("clear-room"),
+		clearPlaylist: parsed.flags.has("clear-playlist"),
+		clearToken: parsed.flags.has("clear-token"),
+	};
+}
+
+type ConfigFlags = ReturnType<typeof readConfigFlags>;
+
+function hasConfigFlagUpdates(flags: ConfigFlags): boolean {
+	return (
+		typeof flags.server === "string" ||
+		typeof flags.deviceName === "string" ||
+		typeof flags.deviceTokenRaw === "string" ||
+		typeof flags.volumeStepRaw === "string" ||
+		typeof flags.playbackModeRaw === "string" ||
+		typeof flags.daemonHttpHostRaw === "string" ||
+		typeof flags.daemonHttpPortRaw === "string" ||
+		flags.localFlag ||
+		flags.roomModeFlag ||
+		typeof flags.defaultRoomId === "string" ||
+		typeof flags.defaultPlaylistKey === "string" ||
+		flags.clearRoom ||
+		flags.clearPlaylist ||
+		flags.clearToken
+	);
+}
+
+function requireTrimmed(value: string, name: string): string {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		throw new Error(`${name} cannot be empty`);
+	}
+	return trimmed;
+}
+
+function parseVolumeStepSetting(raw: string): number {
+	const value = Number(raw);
+	if (!Number.isFinite(value) || value <= 0 || value > 1) {
+		throw new Error("volume-step must be a number between 0 and 1");
+	}
+	return value;
+}
+
+function applyConfigValueFlags(
+	patch: Partial<InfiConfig>,
+	flags: ConfigFlags,
+	current: InfiConfig,
+): void {
+	if (typeof flags.server === "string") {
+		patch.serverUrl = normalizeServerSetting(flags.server);
+	}
+	if (typeof flags.deviceName === "string") {
+		patch.deviceName = requireTrimmed(flags.deviceName, "device-name");
+	}
+	if (typeof flags.deviceTokenRaw === "string") {
+		patch.deviceToken = requireTrimmed(flags.deviceTokenRaw, "device-token");
+	}
+	if (typeof flags.volumeStepRaw === "string") {
+		patch.volumeStep = parseVolumeStepSetting(flags.volumeStepRaw);
+	}
+	if (typeof flags.playbackModeRaw === "string") {
+		patch.playbackMode = parsePlaybackMode(
+			flags.playbackModeRaw,
+			current.playbackMode,
+		);
+	}
+	if (typeof flags.daemonHttpHostRaw === "string") {
+		patch.daemonHttpHost = normalizeDaemonHostSetting(flags.daemonHttpHostRaw);
+	}
+	if (typeof flags.daemonHttpPortRaw === "string") {
+		patch.daemonHttpPort = normalizeDaemonPortSetting(flags.daemonHttpPortRaw);
+	}
+}
+
+function applyConfigSelectionFlags(
+	patch: Partial<InfiConfig>,
+	flags: ConfigFlags,
+): void {
+	if (flags.localFlag) {
+		patch.playbackMode = "local";
+	}
+	if (flags.roomModeFlag) {
+		patch.playbackMode = "room";
+	}
+	if (typeof flags.defaultRoomId === "string") {
+		patch.defaultRoomId = flags.defaultRoomId.trim() || null;
+	}
+	if (typeof flags.defaultPlaylistKey === "string") {
+		patch.defaultPlaylistKey = flags.defaultPlaylistKey.trim() || null;
+	}
+	if (flags.clearRoom) {
+		patch.defaultRoomId = null;
+	}
+	if (flags.clearPlaylist) {
+		patch.defaultPlaylistKey = null;
+	}
+	if (flags.clearToken) {
+		patch.deviceToken = null;
+	}
+}
+
+function buildDaemonConfigPatch(
+	patch: Partial<InfiConfig>,
+): Record<string, unknown> {
+	const daemonPatch: Record<string, unknown> = {};
+	if (typeof patch.serverUrl === "string") {
+		daemonPatch.serverUrl = patch.serverUrl;
+	}
+	if (typeof patch.deviceName === "string") {
+		daemonPatch.deviceName = patch.deviceName;
+	}
+	if ("deviceToken" in patch) {
+		daemonPatch.deviceToken = patch.deviceToken;
+	}
+	if (typeof patch.playbackMode === "string") {
+		daemonPatch.playbackMode = patch.playbackMode;
+	}
+	if (typeof patch.daemonHttpHost === "string") {
+		daemonPatch.daemonHttpHost = patch.daemonHttpHost;
+	}
+	if (typeof patch.daemonHttpPort === "number") {
+		daemonPatch.daemonHttpPort = patch.daemonHttpPort;
+	}
+	return daemonPatch;
+}
+
+async function applyConfigToDaemon(patch: Partial<InfiConfig>): Promise<void> {
+	if (!(await isDaemonResponsive())) return;
+	const daemonPatch = buildDaemonConfigPatch(patch);
+	if (Object.keys(daemonPatch).length === 0) return;
+	try {
+		const response = await sendDaemonRequest("configure", daemonPatch);
+		requireOk(response);
+		console.log("Applied config changes to running daemon.");
+	} catch (error) {
+		console.log(
+			`Warning: failed to apply config to daemon (${toErrorMessage(error)}). Run \`infi daemon restart\` if needed.`,
+		);
+	}
+}
+
 async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 	const parsed = parseArgs(args);
 	const current = loadConfig();
@@ -1505,41 +1734,8 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		hasFlag(parsed, "interactive", "wizard") ||
 		(setupMode && parsed.positionals.length === 0 && parsed.flags.size === 0);
 
-	const server = getFlagString(parsed, "server");
-	const deviceName = getFlagString(parsed, "device-name", "device");
-	const deviceTokenRaw = getFlagString(parsed, "device-token", "token");
-	const volumeStepRaw = getFlagString(parsed, "volume-step", "step");
-	const playbackModeRaw = getFlagString(parsed, "mode");
-	const daemonHttpHostRaw = getFlagString(parsed, "daemon-host", "http-host");
-	const daemonHttpPortRaw = getFlagString(parsed, "daemon-port", "http-port");
-	const defaultRoomId = getFlagString(parsed, "default-room", "room");
-	const defaultPlaylistKey = getFlagString(
-		parsed,
-		"default-playlist-key",
-		"playlist-key",
-	);
-	const localFlag = hasFlag(parsed, "local");
-	const roomModeFlag = hasFlag(parsed, "room-mode");
-	const clearRoom = parsed.flags.has("clear-room");
-	const clearPlaylist = parsed.flags.has("clear-playlist");
-	const clearToken = parsed.flags.has("clear-token");
-
-	const hasUpdates =
-		interactive ||
-		typeof server === "string" ||
-		typeof deviceName === "string" ||
-		typeof deviceTokenRaw === "string" ||
-		typeof volumeStepRaw === "string" ||
-		typeof playbackModeRaw === "string" ||
-		typeof daemonHttpHostRaw === "string" ||
-		typeof daemonHttpPortRaw === "string" ||
-		localFlag ||
-		roomModeFlag ||
-		typeof defaultRoomId === "string" ||
-		typeof defaultPlaylistKey === "string" ||
-		clearRoom ||
-		clearPlaylist ||
-		clearToken;
+	const flags = readConfigFlags(parsed);
+	const hasUpdates = interactive || hasConfigFlagUpdates(flags);
 
 	if (!hasUpdates) {
 		if (setupMode) {
@@ -1557,102 +1753,14 @@ async function cmdConfig(args: string[], setupMode = false): Promise<void> {
 		? await runConfigWizard(current)
 		: {};
 
-	if (typeof server === "string") {
-		patch.serverUrl = normalizeServerSetting(server);
-	}
-	if (typeof deviceName === "string") {
-		const trimmed = deviceName.trim();
-		if (!trimmed) {
-			throw new Error("device-name cannot be empty");
-		}
-		patch.deviceName = trimmed;
-	}
-	if (typeof deviceTokenRaw === "string") {
-		const trimmed = deviceTokenRaw.trim();
-		if (!trimmed) {
-			throw new Error("device-token cannot be empty");
-		}
-		patch.deviceToken = trimmed;
-	}
-	if (typeof volumeStepRaw === "string") {
-		const value = Number(volumeStepRaw);
-		if (!Number.isFinite(value) || value <= 0 || value > 1) {
-			throw new Error("volume-step must be a number between 0 and 1");
-		}
-		patch.volumeStep = value;
-	}
-	if (typeof playbackModeRaw === "string") {
-		patch.playbackMode = parsePlaybackMode(
-			playbackModeRaw,
-			current.playbackMode,
-		);
-	}
-	if (typeof daemonHttpHostRaw === "string") {
-		patch.daemonHttpHost = normalizeDaemonHostSetting(daemonHttpHostRaw);
-	}
-	if (typeof daemonHttpPortRaw === "string") {
-		patch.daemonHttpPort = normalizeDaemonPortSetting(daemonHttpPortRaw);
-	}
-	if (localFlag) {
-		patch.playbackMode = "local";
-	}
-	if (roomModeFlag) {
-		patch.playbackMode = "room";
-	}
-	if (typeof defaultRoomId === "string") {
-		patch.defaultRoomId = defaultRoomId.trim() || null;
-	}
-	if (typeof defaultPlaylistKey === "string") {
-		patch.defaultPlaylistKey = defaultPlaylistKey.trim() || null;
-	}
-	if (clearRoom) {
-		patch.defaultRoomId = null;
-	}
-	if (clearPlaylist) {
-		patch.defaultPlaylistKey = null;
-	}
-	if (clearToken) {
-		patch.deviceToken = null;
-	}
+	applyConfigValueFlags(patch, flags, current);
+	applyConfigSelectionFlags(patch, flags);
 
 	const next = patchConfig(patch, current);
 	console.log("Updated infi config.");
 	printConfig(next);
 
-	if (await isDaemonResponsive()) {
-		const daemonPatch: Record<string, unknown> = {};
-		if (typeof patch.serverUrl === "string") {
-			daemonPatch.serverUrl = patch.serverUrl;
-		}
-		if (typeof patch.deviceName === "string") {
-			daemonPatch.deviceName = patch.deviceName;
-		}
-		if ("deviceToken" in patch) {
-			daemonPatch.deviceToken = patch.deviceToken;
-		}
-		if (typeof patch.playbackMode === "string") {
-			daemonPatch.playbackMode = patch.playbackMode;
-		}
-		if (typeof patch.daemonHttpHost === "string") {
-			daemonPatch.daemonHttpHost = patch.daemonHttpHost;
-		}
-		if (typeof patch.daemonHttpPort === "number") {
-			daemonPatch.daemonHttpPort = patch.daemonHttpPort;
-		}
-		if (Object.keys(daemonPatch).length > 0) {
-			try {
-				const response = await sendDaemonRequest("configure", daemonPatch);
-				requireOk(response);
-				console.log("Applied config changes to running daemon.");
-			} catch (error) {
-				console.log(
-					`Warning: failed to apply config to daemon (${
-						error instanceof Error ? error.message : String(error)
-					}). Run \`infi daemon restart\` if needed.`,
-				);
-			}
-		}
-	}
+	await applyConfigToDaemon(patch);
 }
 
 async function cmdClear(args: string[]): Promise<void> {
@@ -1679,18 +1787,8 @@ async function cmdClear(args: string[]): Promise<void> {
 		requireOk(response);
 		const statusResponse = await sendDaemonRequest("status");
 		const status = requireOk(statusResponse) as Record<string, unknown>;
-		const roomId =
-			typeof status.roomId === "string" && status.roomId.length > 0
-				? status.roomId
-				: null;
-		const localPlaylist =
-			typeof status.localPlaylistName === "string" &&
-			status.localPlaylistName.length > 0
-				? status.localPlaylistName
-				: typeof status.localPlaylistId === "string" &&
-						status.localPlaylistId.length > 0
-					? status.localPlaylistId
-					: null;
+		const roomId = nonEmptyString(status.roomId);
+		const localPlaylist = activeLocalPlaylist(status);
 		if (roomId || localPlaylist) {
 			console.log(
 				`Warning: daemon session still active (${
@@ -1702,9 +1800,7 @@ async function cmdClear(args: string[]): Promise<void> {
 		console.log("Cleared active daemon session.");
 	} catch (error) {
 		console.log(
-			`Warning: failed to clear daemon session (${
-				error instanceof Error ? error.message : String(error)
-			}). Run \`infi daemon restart\` if needed.`,
+			`Warning: failed to clear daemon session (${toErrorMessage(error)}). Run \`infi daemon restart\` if needed.`,
 		);
 	}
 }
