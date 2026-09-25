@@ -252,8 +252,9 @@ const OPENAI_CODEX_PROVIDER = "openai-codex";
 /**
  * Find a model in Pi's catalog. The Codex model list in the settings UI comes
  * live from the ChatGPT backend and can name models (such as retired or brand
- * new ones) that Pi's bundled catalog lacks; those reuse the metadata of a
- * catalog Codex model under the requested id.
+ * new ones) that Pi's bundled catalog lacks; those reuse the metadata of the
+ * catalog Codex model with the fewest optional capabilities, so Pi never
+ * enables a feature the requested model may not support.
  */
 function findModel(
 	modelRuntime: ModelRuntime,
@@ -262,7 +263,10 @@ function findModel(
 ): Model<Api> | undefined {
 	const model = modelRuntime.getModel(provider, modelId);
 	if (model || provider !== OPENAI_CODEX_PROVIDER) return model;
-	const [template] = modelRuntime.getModels(OPENAI_CODEX_PROVIDER);
+	const [template] = [...modelRuntime.getModels(OPENAI_CODEX_PROVIDER)].sort(
+		(a, b) =>
+			Object.keys(a.compat ?? {}).length - Object.keys(b.compat ?? {}).length,
+	);
 	return template ? { ...template, id: modelId, name: modelId } : undefined;
 }
 
