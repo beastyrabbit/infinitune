@@ -216,7 +216,7 @@ interface ReimagineResultProps {
 	volume: number;
 	isMuted: boolean;
 	onPlayPause: () => void;
-	onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+	onSeek: (time: number) => void;
 	onGenerateAnother: () => void;
 }
 
@@ -493,19 +493,6 @@ function ReimaginePage() {
 		}
 	}, [song, toggle]);
 
-	const handleSeek = useCallback(
-		(e: React.MouseEvent<HTMLDivElement>) => {
-			if (!audioDuration) return;
-			const rect = e.currentTarget.getBoundingClientRect();
-			const pct = Math.max(
-				0,
-				Math.min(1, (e.clientX - rect.left) / rect.width),
-			);
-			seek(pct * audioDuration);
-		},
-		[audioDuration, seek],
-	);
-
 	const isCurrentSong = song && playerStore.state.currentSongId === song.id;
 	const showOutput = phase !== "idle" || submitting;
 
@@ -715,7 +702,7 @@ function ReimaginePage() {
 							volume={volume}
 							isMuted={isMuted}
 							onPlayPause={handlePlayPause}
-							onSeek={handleSeek}
+							onSeek={seek}
 							onGenerateAnother={handleGenerateAnother}
 						/>
 					)}
