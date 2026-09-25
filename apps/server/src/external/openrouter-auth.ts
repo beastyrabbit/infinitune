@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { AuthStorage } from "@mariozechner/pi-coding-agent";
 import * as settingsService from "../services/settings-service";
 import {
+	createPiCredentialStore,
 	createPiRuntimeHandles,
 	migrateLegacyOpenRouterCredential,
 	normalizeOpenRouterApiKey,
@@ -57,19 +57,19 @@ function normalizeStatusSource(
 	return source ? "fallback" : null;
 }
 
-function throwAuthStorageErrors(authStorage: AuthStorage): void {
-	const [writeError] = authStorage.drainErrors();
-	if (writeError) throw writeError;
+async function readOpenRouterAuthStatus(): Promise<OpenRouterAuthStatus> {
+	const { modelRuntime } = await createPiRuntimeHandles();
+	const status = modelRuntime.getProviderAuthStatus(OPENROUTER_PROVIDER);
+	return {
+		configured: status.configured,
+		source: normalizeStatusSource(status.source),
+	};
 }
 
 export async function getOpenRouterAuthStatus(): Promise<OpenRouterAuthStatus> {
-	const { authStorage } = createPiRuntimeHandles();
-	await migrateLegacyOpenRouterCredential(authStorage);
-	const status = authStorage.getAuthStatus(OPENROUTER_PROVIDER);
-	return {
-		configured: authStorage.hasAuth(OPENROUTER_PROVIDER),
-		source: normalizeStatusSource(status.source),
-	};
+	const { credentials } = await createPiCredentialStore();
+	await migrateLegacyOpenRouterCredential(credentials);
+	return readOpenRouterAuthStatus();
 }
 
 function managementStatus(
@@ -110,11 +110,14 @@ export async function getLocalOpenRouterCredentialStatus(): Promise<OpenRouterCr
 	};
 }
 
-function storedOpenRouterKeyMatches(apiKey: string): boolean {
-	const { authStorage } = createPiRuntimeHandles();
-	authStorage.reload();
-	const credential = authStorage.get(OPENROUTER_PROVIDER);
-	if (credential?.type !== "api_key" || credential.key.startsWith("!")) {
+async function storedOpenRouterKeyMatches(apiKey: string): Promise<boolean> {
+	const { credentials } = await createPiCredentialStore();
+	const credential = await credentials.read(OPENROUTER_PROVIDER);
+	if (
+		credential?.type !== "api_key" ||
+		!credential.key ||
+		credential.key.startsWith("!")
+	) {
 		return false;
 	}
 	const expected = createHash("sha256").update(credential.key).digest();
@@ -151,7 +154,10 @@ export async function saveOpenRouterApiKeyForUser(
 		await saveOpenRouterApiKey(normalizedKey);
 		return getOpenRouterCredentialStatus(actorUserId);
 	}
-	if (initial.claimRequired && storedOpenRouterKeyMatches(normalizedKey)) {
+	if (
+		initial.claimRequired &&
+		(await storedOpenRouterKeyMatches(normalizedKey))
+	) {
 		await requireOwnerClaim(actorUserId);
 		return getOpenRouterCredentialStatus(actorUserId);
 	}
@@ -173,13 +179,11 @@ export async function saveOpenRouterApiKey(
 ): Promise<OpenRouterAuthStatus> {
 	const normalizedKey = normalizeOpenRouterApiKey(apiKey);
 
-	const { authStorage } = createPiRuntimeHandles();
-	authStorage.set(OPENROUTER_PROVIDER, {
+	const { credentials } = await createPiCredentialStore();
+	await credentials.modify(OPENROUTER_PROVIDER, async () => ({
 		type: "api_key",
 		key: normalizedKey,
-	});
-	authStorage.setRuntimeApiKey(OPENROUTER_PROVIDER, normalizedKey);
-	throwAuthStorageErrors(authStorage);
+	}));
 	await settingsService.deleteSensitiveSetting(LEGACY_OPENROUTER_SETTING);
 
 	return {
@@ -190,20 +194,15 @@ export async function saveOpenRouterApiKey(
 
 export async function clearOpenRouterApiKey(): Promise<OpenRouterAuthStatus> {
 	await settingsService.deleteSensitiveSetting(LEGACY_OPENROUTER_SETTING);
-	const { authStorage } = createPiRuntimeHandles();
-	authStorage.removeRuntimeApiKey(OPENROUTER_PROVIDER);
-	authStorage.remove(OPENROUTER_PROVIDER);
-	throwAuthStorageErrors(authStorage);
-
-	const status = authStorage.getAuthStatus(OPENROUTER_PROVIDER);
-	return {
-		configured: authStorage.hasAuth(OPENROUTER_PROVIDER),
-		source: normalizeStatusSource(status.source),
-	};
+	const { credentials } = await createPiCredentialStore();
+	await credentials.delete(OPENROUTER_PROVIDER);
+	return readOpenRouterAuthStatus();
 }
 
 export async function getOpenRouterApiKey(): Promise<string | undefined> {
-	const { authStorage } = createPiRuntimeHandles();
-	await migrateLegacyOpenRouterCredential(authStorage);
-	return await authStorage.getApiKey(OPENROUTER_PROVIDER);
+	const { credentials } = await createPiCredentialStore();
+	await migrateLegacyOpenRouterCredential(credentials);
+	const { modelRuntime } = await createPiRuntimeHandles();
+	const auth = await modelRuntime.getAuth(OPENROUTER_PROVIDER);
+	return auth?.auth.apiKey;
 }

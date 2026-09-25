@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { AgentId } from "../agent-registry";
 import { createChannelTools } from "./channel-tools";
 import { createMemoryTools } from "./memory-tools";

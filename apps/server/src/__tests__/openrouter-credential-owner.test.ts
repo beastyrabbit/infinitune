@@ -19,8 +19,13 @@ import {
 	saveOpenRouterApiKey,
 	saveOpenRouterApiKeyForUser,
 } from "../external/openrouter-auth";
-import { createPiRuntimeHandles } from "../external/pi-runtime";
+import { createPiCredentialStore } from "../external/pi-runtime";
 import * as settingsService from "../services/settings-service";
+
+async function readStoredOpenRouterCredential() {
+	const { credentials } = await createPiCredentialStore();
+	return credentials.read("openrouter");
+}
 
 describe("OpenRouter credential ownership", () => {
 	let agentDir: string;
@@ -65,7 +70,7 @@ describe("OpenRouter credential ownership", () => {
 			saveOpenRouterApiKeyForUser("key-from-user-2", "user-2"),
 		]);
 		const owner = await settingsService.getOpenRouterCredentialOwnerUserId();
-		const stored = createPiRuntimeHandles().authStorage.get("openrouter");
+		const stored = await readStoredOpenRouterCredential();
 
 		expect(
 			results.filter((result) => result.status === "fulfilled"),
@@ -98,7 +103,7 @@ describe("OpenRouter credential ownership", () => {
 			saveOpenRouterApiKeyForUser("replacement", "user-2"),
 		).rejects.toBeInstanceOf(OpenRouterCredentialAccessError);
 		await saveOpenRouterApiKeyForUser("replacement", "user-1");
-		expect(createPiRuntimeHandles().authStorage.get("openrouter")).toEqual({
+		expect(await readStoredOpenRouterCredential()).toEqual({
 			type: "api_key",
 			key: "replacement",
 		});
@@ -121,7 +126,7 @@ describe("OpenRouter credential ownership", () => {
 		expect(
 			await settingsService.getOpenRouterCredentialOwnerUserId(),
 		).toBeNull();
-		expect(createPiRuntimeHandles().authStorage.get("openrouter")).toEqual({
+		expect(await readStoredOpenRouterCredential()).toEqual({
 			type: "api_key",
 			key: "existing-key",
 		});
@@ -134,8 +139,6 @@ describe("OpenRouter credential ownership", () => {
 		expect(
 			await settingsService.getOpenRouterCredentialOwnerUserId(),
 		).toBeNull();
-		expect(
-			createPiRuntimeHandles().authStorage.get("openrouter"),
-		).toBeUndefined();
+		expect(await readStoredOpenRouterCredential()).toBeUndefined();
 	});
 });
