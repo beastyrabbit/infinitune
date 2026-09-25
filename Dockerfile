@@ -89,12 +89,13 @@ COPY apps/server/package.json ./apps/server/package.json
 
 # Entrypoint
 COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
 
-# Data directory for SQLite + covers (server resolves to /app/data via relative path).
-# The app runs as the unprivileged node user (uid 1000), which owns only this directory.
-# Then verify the runtime binaries exist (fail the build early rather than at runtime).
-RUN mkdir -p /app/data && chown node:node /app/data && \
+# Make the entrypoint executable and create the data directory for SQLite +
+# covers (server resolves to /app/data via relative path). The app runs as the
+# unprivileged node user (uid 1000), which owns only this directory. Then verify
+# the runtime binaries exist (fail the build early rather than at runtime).
+RUN chmod +x docker-entrypoint.sh && \
+	mkdir -p /app/data && chown node:node /app/data && \
 	test -x node_modules/.bin/tsx && \
 	test -x /usr/local/bin/codex && \
 	test -x /usr/local/bin/infsh && \
