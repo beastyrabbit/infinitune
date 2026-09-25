@@ -1073,6 +1073,9 @@ app.post("/enhance-session", llmLimiter, async (c) => {
 
 // ─── GET /codex-models ──────────────────────────────────────────────
 app.get("/codex-models", async (c) => {
+	if (!(await canUseServerCredentials(c))) {
+		return c.json({ error: "Unauthorized", models: [] }, 401);
+	}
 	try {
 		const account = await codexAppServerClient.readAccount();
 		if (!account.account || account.account.type !== "chatgpt") {
@@ -1095,14 +1098,7 @@ app.get("/codex-models", async (c) => {
 			is_default: m.isDefault,
 		}));
 
-		return c.json({
-			models,
-			account: {
-				type: account.account.type,
-				email: account.account.email,
-				planType: account.account.planType,
-			},
-		});
+		return c.json({ models });
 	} catch (error: unknown) {
 		logger.warn({ err: error }, "Failed to fetch Codex models");
 		return c.json(
@@ -1112,85 +1108,6 @@ app.get("/codex-models", async (c) => {
 						? error.message
 						: "Failed to fetch Codex models",
 				models: [],
-			},
-			500,
-		);
-	}
-});
-
-// ─── POST /codex/text ───────────────────────────────────────────────
-app.post("/codex/text", llmLimiter, async (c) => {
-	try {
-		const body = await c.req.json<{
-			model?: string;
-			system?: string;
-			prompt?: string;
-		}>();
-		if (!body.model || !body.system || !body.prompt) {
-			return c.json(
-				{
-					error: "Missing required fields: model, system, prompt",
-				},
-				400,
-			);
-		}
-
-		const text = await codexAppServerClient.generateText({
-			model: body.model,
-			system: body.system,
-			prompt: body.prompt,
-		});
-		return c.json({ text });
-	} catch (error: unknown) {
-		logger.warn({ err: error }, "Codex text generation failed");
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Codex text generation failed",
-			},
-			500,
-		);
-	}
-});
-
-// ─── POST /codex/object ─────────────────────────────────────────────
-app.post("/codex/object", llmLimiter, async (c) => {
-	try {
-		const body = await c.req.json<{
-			model?: string;
-			system?: string;
-			prompt?: string;
-			schema?: Record<string, unknown>;
-		}>();
-		if (!body.model || !body.system || !body.prompt || !body.schema) {
-			return c.json(
-				{
-					error: "Missing required fields: model, system, prompt, schema",
-				},
-				400,
-			);
-		}
-		if (typeof body.schema !== "object" || Array.isArray(body.schema)) {
-			return c.json({ error: "Schema must be a JSON object" }, 400);
-		}
-
-		const object = await codexAppServerClient.generateJson({
-			model: body.model,
-			system: body.system,
-			prompt: body.prompt,
-			outputSchema: body.schema,
-		});
-		return c.json({ object });
-	} catch (error: unknown) {
-		logger.warn({ err: error }, "Codex object generation failed");
-		return c.json(
-			{
-				error:
-					error instanceof Error
-						? error.message
-						: "Codex object generation failed",
 			},
 			500,
 		);

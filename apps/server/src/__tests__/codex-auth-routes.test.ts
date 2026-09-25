@@ -6,10 +6,19 @@ const mocks = vi.hoisted(() => ({
 	getCodexDeviceAuthStatus: vi.fn(),
 	getCodexLoginStatus: vi.fn(),
 	cancelCodexDeviceAuth: vi.fn(),
+	readAccount: vi.fn(),
+	listModels: vi.fn(),
 }));
 
 vi.mock("../auth/actor", () => ({
 	requireUserActor: mocks.requireUserActor,
+}));
+
+vi.mock("../external/codex-app-server-client", () => ({
+	codexAppServerClient: {
+		readAccount: mocks.readAccount,
+		listModels: mocks.listModels,
+	},
 }));
 
 vi.mock("../external/codex-auth", () => ({
@@ -118,5 +127,53 @@ describe("Codex credential routes", () => {
 		);
 		expect(mocks.getCodexDeviceAuthStatus).toHaveBeenCalledOnce();
 		expect(mocks.getCodexLoginStatus).toHaveBeenCalledOnce();
+	});
+
+	it("requires a production user to list Codex models", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		mocks.requireUserActor.mockResolvedValue(null);
+
+		const { default: autoplayerRoutes } = await import("../routes/autoplayer");
+
+		expect((await autoplayerRoutes.request("/codex-models")).status).toBe(401);
+		expect(mocks.readAccount).not.toHaveBeenCalled();
+		expect(mocks.listModels).not.toHaveBeenCalled();
+	});
+
+	it("lists Codex models without exposing account details", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		mocks.requireUserActor.mockResolvedValue({
+			kind: "user",
+			userId: "user-1",
+		});
+		mocks.readAccount.mockResolvedValue({
+			account: { type: "chatgpt", email: "owner@example.com", planType: "pro" },
+		});
+		mocks.listModels.mockResolvedValue([
+			{
+				id: "gpt-test",
+				displayName: "GPT Test",
+				inputModalities: ["text"],
+				isDefault: true,
+			},
+		]);
+
+		const { default: autoplayerRoutes } = await import("../routes/autoplayer");
+		const response = await autoplayerRoutes.request("/codex-models");
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body).toEqual({
+			models: [
+				{
+					name: "gpt-test",
+					displayName: "GPT Test",
+					type: "text",
+					inputModalities: ["text"],
+					is_default: true,
+				},
+			],
+		});
+		expect(JSON.stringify(body)).not.toContain("owner@example.com");
 	});
 });

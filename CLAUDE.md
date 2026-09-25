@@ -199,7 +199,6 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - Player state: `lib/player-store.ts`
 - Room hooks: `hooks/useRoomConnection.ts`, `hooks/useRoomPlayer.ts`, `hooks/useRoomController.ts`
 - Mini player: `components/mini-player/MiniPlayer.tsx`
-- LLM prompts: `services/llm.ts`
 
 ### CLI (apps/cli/src/)
 - Entry point: `cli.ts`

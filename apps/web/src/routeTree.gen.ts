@@ -25,28 +25,20 @@ import { Route as AutoplayerMiniRouteImport } from './routes/autoplayer_.mini'
 import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
 import { Route as AutoplayerTestlabIndexRouteImport } from './routes/autoplayer_.testlab.index'
 import { Route as AutoplayerTestlabLlmRouteImport } from './routes/autoplayer_.testlab.llm'
-import { Route as AutoplayerTestlabE2eRouteImport } from './routes/autoplayer_.testlab.e2e'
-import { Route as AutoplayerTestlabCoverRouteImport } from './routes/autoplayer_.testlab.cover'
 import { Route as AutoplayerTestlabConnectionsRouteImport } from './routes/autoplayer_.testlab.connections'
-import { Route as AutoplayerTestlabAceRouteImport } from './routes/autoplayer_.testlab.ace'
 import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.autoplayer.test-connection'
-import { Route as ApiAutoplayerSubmitAceRouteImport } from './routes/api.autoplayer.submit-ace'
-import { Route as ApiAutoplayerSaveSongRouteImport } from './routes/api.autoplayer.save-song'
 import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
 import { Route as ApiAutoplayerPromptContractRouteImport } from './routes/api.autoplayer.prompt-contract'
-import { Route as ApiAutoplayerPollAceRouteImport } from './routes/api.autoplayer.poll-ace'
 import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
 import { Route as ApiAutoplayerOpenrouterAuthRouteImport } from './routes/api.autoplayer.openrouter-auth'
 import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
 import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
-import { Route as ApiAutoplayerGenerateCoverRouteImport } from './routes/api.autoplayer.generate-cover'
 import { Route as ApiAutoplayerGenerateAlbumTrackRouteImport } from './routes/api.autoplayer.generate-album-track'
 import { Route as ApiAutoplayerExtractPersonaRouteImport } from './routes/api.autoplayer.extract-persona'
 import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
 import { Route as ApiAutoplayerEnhanceRequestRouteImport } from './routes/api.autoplayer.enhance-request'
 import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
-import { Route as ApiAutoplayerAudioSongIdRouteImport } from './routes/api.autoplayer.audio.$songId'
 
 const HouseRoute = HouseRouteImport.update({
   id: '/house',
@@ -128,43 +120,18 @@ const AutoplayerTestlabLlmRoute = AutoplayerTestlabLlmRouteImport.update({
   path: '/llm',
   getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
-const AutoplayerTestlabE2eRoute = AutoplayerTestlabE2eRouteImport.update({
-  id: '/e2e',
-  path: '/e2e',
-  getParentRoute: () => AutoplayerTestlabRoute,
-} as any)
-const AutoplayerTestlabCoverRoute = AutoplayerTestlabCoverRouteImport.update({
-  id: '/cover',
-  path: '/cover',
-  getParentRoute: () => AutoplayerTestlabRoute,
-} as any)
 const AutoplayerTestlabConnectionsRoute =
   AutoplayerTestlabConnectionsRouteImport.update({
     id: '/connections',
     path: '/connections',
     getParentRoute: () => AutoplayerTestlabRoute,
   } as any)
-const AutoplayerTestlabAceRoute = AutoplayerTestlabAceRouteImport.update({
-  id: '/ace',
-  path: '/ace',
-  getParentRoute: () => AutoplayerTestlabRoute,
-} as any)
 const ApiAutoplayerTestConnectionRoute =
   ApiAutoplayerTestConnectionRouteImport.update({
     id: '/api/autoplayer/test-connection',
     path: '/api/autoplayer/test-connection',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiAutoplayerSubmitAceRoute = ApiAutoplayerSubmitAceRouteImport.update({
-  id: '/api/autoplayer/submit-ace',
-  path: '/api/autoplayer/submit-ace',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAutoplayerSaveSongRoute = ApiAutoplayerSaveSongRouteImport.update({
-  id: '/api/autoplayer/save-song',
-  path: '/api/autoplayer/save-song',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAutoplayerRefinePromptRoute =
   ApiAutoplayerRefinePromptRouteImport.update({
     id: '/api/autoplayer/refine-prompt',
@@ -177,11 +144,6 @@ const ApiAutoplayerPromptContractRoute =
     path: '/api/autoplayer/prompt-contract',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiAutoplayerPollAceRoute = ApiAutoplayerPollAceRouteImport.update({
-  id: '/api/autoplayer/poll-ace',
-  path: '/api/autoplayer/poll-ace',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAutoplayerOpenrouterModelsRoute =
   ApiAutoplayerOpenrouterModelsRouteImport.update({
     id: '/api/autoplayer/openrouter-models',
@@ -204,12 +166,6 @@ const ApiAutoplayerGenerateSongRoute =
   ApiAutoplayerGenerateSongRouteImport.update({
     id: '/api/autoplayer/generate-song',
     path: '/api/autoplayer/generate-song',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerGenerateCoverRoute =
-  ApiAutoplayerGenerateCoverRouteImport.update({
-    id: '/api/autoplayer/generate-cover',
-    path: '/api/autoplayer/generate-cover',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiAutoplayerGenerateAlbumTrackRoute =
@@ -247,12 +203,6 @@ const ApiAutoplayerAceModelsRoute = ApiAutoplayerAceModelsRouteImport.update({
   path: '/api/autoplayer/ace-models',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAutoplayerAudioSongIdRoute =
-  ApiAutoplayerAudioSongIdRouteImport.update({
-    id: '/api/autoplayer/audio/$songId',
-    path: '/api/autoplayer/audio/$songId',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -275,24 +225,16 @@ export interface FileRoutesByFullPath {
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
   '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
-  '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-auth': typeof ApiAutoplayerOpenrouterAuthRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
-  '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
-  '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
-  '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer/testlab/ace': typeof AutoplayerTestlabAceRoute
   '/autoplayer/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
-  '/autoplayer/testlab/cover': typeof AutoplayerTestlabCoverRoute
-  '/autoplayer/testlab/e2e': typeof AutoplayerTestlabE2eRoute
   '/autoplayer/testlab/llm': typeof AutoplayerTestlabLlmRoute
   '/autoplayer/testlab/': typeof AutoplayerTestlabIndexRoute
-  '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -314,24 +256,16 @@ export interface FileRoutesByTo {
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
   '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
-  '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-auth': typeof ApiAutoplayerOpenrouterAuthRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
-  '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
-  '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
-  '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer/testlab/ace': typeof AutoplayerTestlabAceRoute
   '/autoplayer/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
-  '/autoplayer/testlab/cover': typeof AutoplayerTestlabCoverRoute
-  '/autoplayer/testlab/e2e': typeof AutoplayerTestlabE2eRoute
   '/autoplayer/testlab/llm': typeof AutoplayerTestlabLlmRoute
   '/autoplayer/testlab': typeof AutoplayerTestlabIndexRoute
-  '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -355,24 +289,16 @@ export interface FileRoutesById {
   '/api/autoplayer/enhance-session': typeof ApiAutoplayerEnhanceSessionRoute
   '/api/autoplayer/extract-persona': typeof ApiAutoplayerExtractPersonaRoute
   '/api/autoplayer/generate-album-track': typeof ApiAutoplayerGenerateAlbumTrackRoute
-  '/api/autoplayer/generate-cover': typeof ApiAutoplayerGenerateCoverRoute
   '/api/autoplayer/generate-song': typeof ApiAutoplayerGenerateSongRoute
   '/api/autoplayer/ollama-models': typeof ApiAutoplayerOllamaModelsRoute
   '/api/autoplayer/openrouter-auth': typeof ApiAutoplayerOpenrouterAuthRoute
   '/api/autoplayer/openrouter-models': typeof ApiAutoplayerOpenrouterModelsRoute
-  '/api/autoplayer/poll-ace': typeof ApiAutoplayerPollAceRoute
   '/api/autoplayer/prompt-contract': typeof ApiAutoplayerPromptContractRoute
   '/api/autoplayer/refine-prompt': typeof ApiAutoplayerRefinePromptRoute
-  '/api/autoplayer/save-song': typeof ApiAutoplayerSaveSongRoute
-  '/api/autoplayer/submit-ace': typeof ApiAutoplayerSubmitAceRoute
   '/api/autoplayer/test-connection': typeof ApiAutoplayerTestConnectionRoute
-  '/autoplayer_/testlab/ace': typeof AutoplayerTestlabAceRoute
   '/autoplayer_/testlab/connections': typeof AutoplayerTestlabConnectionsRoute
-  '/autoplayer_/testlab/cover': typeof AutoplayerTestlabCoverRoute
-  '/autoplayer_/testlab/e2e': typeof AutoplayerTestlabE2eRoute
   '/autoplayer_/testlab/llm': typeof AutoplayerTestlabLlmRoute
   '/autoplayer_/testlab/': typeof AutoplayerTestlabIndexRoute
-  '/api/autoplayer/audio/$songId': typeof ApiAutoplayerAudioSongIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -397,24 +323,16 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/extract-persona'
     | '/api/autoplayer/generate-album-track'
-    | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-auth'
     | '/api/autoplayer/openrouter-models'
-    | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
-    | '/api/autoplayer/save-song'
-    | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer/testlab/ace'
     | '/autoplayer/testlab/connections'
-    | '/autoplayer/testlab/cover'
-    | '/autoplayer/testlab/e2e'
     | '/autoplayer/testlab/llm'
     | '/autoplayer/testlab/'
-    | '/api/autoplayer/audio/$songId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -436,24 +354,16 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/extract-persona'
     | '/api/autoplayer/generate-album-track'
-    | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-auth'
     | '/api/autoplayer/openrouter-models'
-    | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
-    | '/api/autoplayer/save-song'
-    | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer/testlab/ace'
     | '/autoplayer/testlab/connections'
-    | '/autoplayer/testlab/cover'
-    | '/autoplayer/testlab/e2e'
     | '/autoplayer/testlab/llm'
     | '/autoplayer/testlab'
-    | '/api/autoplayer/audio/$songId'
   id:
     | '__root__'
     | '/'
@@ -476,24 +386,16 @@ export interface FileRouteTypes {
     | '/api/autoplayer/enhance-session'
     | '/api/autoplayer/extract-persona'
     | '/api/autoplayer/generate-album-track'
-    | '/api/autoplayer/generate-cover'
     | '/api/autoplayer/generate-song'
     | '/api/autoplayer/ollama-models'
     | '/api/autoplayer/openrouter-auth'
     | '/api/autoplayer/openrouter-models'
-    | '/api/autoplayer/poll-ace'
     | '/api/autoplayer/prompt-contract'
     | '/api/autoplayer/refine-prompt'
-    | '/api/autoplayer/save-song'
-    | '/api/autoplayer/submit-ace'
     | '/api/autoplayer/test-connection'
-    | '/autoplayer_/testlab/ace'
     | '/autoplayer_/testlab/connections'
-    | '/autoplayer_/testlab/cover'
-    | '/autoplayer_/testlab/e2e'
     | '/autoplayer_/testlab/llm'
     | '/autoplayer_/testlab/'
-    | '/api/autoplayer/audio/$songId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -517,18 +419,13 @@ export interface RootRouteChildren {
   ApiAutoplayerEnhanceSessionRoute: typeof ApiAutoplayerEnhanceSessionRoute
   ApiAutoplayerExtractPersonaRoute: typeof ApiAutoplayerExtractPersonaRoute
   ApiAutoplayerGenerateAlbumTrackRoute: typeof ApiAutoplayerGenerateAlbumTrackRoute
-  ApiAutoplayerGenerateCoverRoute: typeof ApiAutoplayerGenerateCoverRoute
   ApiAutoplayerGenerateSongRoute: typeof ApiAutoplayerGenerateSongRoute
   ApiAutoplayerOllamaModelsRoute: typeof ApiAutoplayerOllamaModelsRoute
   ApiAutoplayerOpenrouterAuthRoute: typeof ApiAutoplayerOpenrouterAuthRoute
   ApiAutoplayerOpenrouterModelsRoute: typeof ApiAutoplayerOpenrouterModelsRoute
-  ApiAutoplayerPollAceRoute: typeof ApiAutoplayerPollAceRoute
   ApiAutoplayerPromptContractRoute: typeof ApiAutoplayerPromptContractRoute
   ApiAutoplayerRefinePromptRoute: typeof ApiAutoplayerRefinePromptRoute
-  ApiAutoplayerSaveSongRoute: typeof ApiAutoplayerSaveSongRoute
-  ApiAutoplayerSubmitAceRoute: typeof ApiAutoplayerSubmitAceRoute
   ApiAutoplayerTestConnectionRoute: typeof ApiAutoplayerTestConnectionRoute
-  ApiAutoplayerAudioSongIdRoute: typeof ApiAutoplayerAudioSongIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -645,20 +542,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutoplayerTestlabLlmRouteImport
       parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/testlab/e2e': {
-      id: '/autoplayer_/testlab/e2e'
-      path: '/e2e'
-      fullPath: '/autoplayer/testlab/e2e'
-      preLoaderRoute: typeof AutoplayerTestlabE2eRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
-    '/autoplayer_/testlab/cover': {
-      id: '/autoplayer_/testlab/cover'
-      path: '/cover'
-      fullPath: '/autoplayer/testlab/cover'
-      preLoaderRoute: typeof AutoplayerTestlabCoverRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
     '/autoplayer_/testlab/connections': {
       id: '/autoplayer_/testlab/connections'
       path: '/connections'
@@ -666,32 +549,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutoplayerTestlabConnectionsRouteImport
       parentRoute: typeof AutoplayerTestlabRoute
     }
-    '/autoplayer_/testlab/ace': {
-      id: '/autoplayer_/testlab/ace'
-      path: '/ace'
-      fullPath: '/autoplayer/testlab/ace'
-      preLoaderRoute: typeof AutoplayerTestlabAceRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
     '/api/autoplayer/test-connection': {
       id: '/api/autoplayer/test-connection'
       path: '/api/autoplayer/test-connection'
       fullPath: '/api/autoplayer/test-connection'
       preLoaderRoute: typeof ApiAutoplayerTestConnectionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/autoplayer/submit-ace': {
-      id: '/api/autoplayer/submit-ace'
-      path: '/api/autoplayer/submit-ace'
-      fullPath: '/api/autoplayer/submit-ace'
-      preLoaderRoute: typeof ApiAutoplayerSubmitAceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/autoplayer/save-song': {
-      id: '/api/autoplayer/save-song'
-      path: '/api/autoplayer/save-song'
-      fullPath: '/api/autoplayer/save-song'
-      preLoaderRoute: typeof ApiAutoplayerSaveSongRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/autoplayer/refine-prompt': {
@@ -706,13 +568,6 @@ declare module '@tanstack/react-router' {
       path: '/api/autoplayer/prompt-contract'
       fullPath: '/api/autoplayer/prompt-contract'
       preLoaderRoute: typeof ApiAutoplayerPromptContractRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/autoplayer/poll-ace': {
-      id: '/api/autoplayer/poll-ace'
-      path: '/api/autoplayer/poll-ace'
-      fullPath: '/api/autoplayer/poll-ace'
-      preLoaderRoute: typeof ApiAutoplayerPollAceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/autoplayer/openrouter-models': {
@@ -741,13 +596,6 @@ declare module '@tanstack/react-router' {
       path: '/api/autoplayer/generate-song'
       fullPath: '/api/autoplayer/generate-song'
       preLoaderRoute: typeof ApiAutoplayerGenerateSongRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/autoplayer/generate-cover': {
-      id: '/api/autoplayer/generate-cover'
-      path: '/api/autoplayer/generate-cover'
-      fullPath: '/api/autoplayer/generate-cover'
-      preLoaderRoute: typeof ApiAutoplayerGenerateCoverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/autoplayer/generate-album-track': {
@@ -792,30 +640,17 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerAceModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/audio/$songId': {
-      id: '/api/autoplayer/audio/$songId'
-      path: '/api/autoplayer/audio/$songId'
-      fullPath: '/api/autoplayer/audio/$songId'
-      preLoaderRoute: typeof ApiAutoplayerAudioSongIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 interface AutoplayerTestlabRouteChildren {
-  AutoplayerTestlabAceRoute: typeof AutoplayerTestlabAceRoute
   AutoplayerTestlabConnectionsRoute: typeof AutoplayerTestlabConnectionsRoute
-  AutoplayerTestlabCoverRoute: typeof AutoplayerTestlabCoverRoute
-  AutoplayerTestlabE2eRoute: typeof AutoplayerTestlabE2eRoute
   AutoplayerTestlabLlmRoute: typeof AutoplayerTestlabLlmRoute
   AutoplayerTestlabIndexRoute: typeof AutoplayerTestlabIndexRoute
 }
 
 const AutoplayerTestlabRouteChildren: AutoplayerTestlabRouteChildren = {
-  AutoplayerTestlabAceRoute: AutoplayerTestlabAceRoute,
   AutoplayerTestlabConnectionsRoute: AutoplayerTestlabConnectionsRoute,
-  AutoplayerTestlabCoverRoute: AutoplayerTestlabCoverRoute,
-  AutoplayerTestlabE2eRoute: AutoplayerTestlabE2eRoute,
   AutoplayerTestlabLlmRoute: AutoplayerTestlabLlmRoute,
   AutoplayerTestlabIndexRoute: AutoplayerTestlabIndexRoute,
 }
@@ -844,18 +679,13 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAutoplayerEnhanceSessionRoute: ApiAutoplayerEnhanceSessionRoute,
   ApiAutoplayerExtractPersonaRoute: ApiAutoplayerExtractPersonaRoute,
   ApiAutoplayerGenerateAlbumTrackRoute: ApiAutoplayerGenerateAlbumTrackRoute,
-  ApiAutoplayerGenerateCoverRoute: ApiAutoplayerGenerateCoverRoute,
   ApiAutoplayerGenerateSongRoute: ApiAutoplayerGenerateSongRoute,
   ApiAutoplayerOllamaModelsRoute: ApiAutoplayerOllamaModelsRoute,
   ApiAutoplayerOpenrouterAuthRoute: ApiAutoplayerOpenrouterAuthRoute,
   ApiAutoplayerOpenrouterModelsRoute: ApiAutoplayerOpenrouterModelsRoute,
-  ApiAutoplayerPollAceRoute: ApiAutoplayerPollAceRoute,
   ApiAutoplayerPromptContractRoute: ApiAutoplayerPromptContractRoute,
   ApiAutoplayerRefinePromptRoute: ApiAutoplayerRefinePromptRoute,
-  ApiAutoplayerSaveSongRoute: ApiAutoplayerSaveSongRoute,
-  ApiAutoplayerSubmitAceRoute: ApiAutoplayerSubmitAceRoute,
   ApiAutoplayerTestConnectionRoute: ApiAutoplayerTestConnectionRoute,
-  ApiAutoplayerAudioSongIdRoute: ApiAutoplayerAudioSongIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

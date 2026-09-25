@@ -788,44 +788,6 @@ export class CodexAppServerClient {
 			}));
 	}
 
-	async generateText(options: {
-		model: string;
-		system: string;
-		prompt: string;
-		signal?: AbortSignal;
-	}): Promise<string> {
-		await this.ensureChatgptAuth();
-
-		const text = await this.runTurn({
-			model: options.model,
-			text: this.buildPrompt(options.system, options.prompt, false),
-			signal: options.signal,
-		});
-		if (!text) {
-			throw new Error("Codex returned an empty response");
-		}
-		return text;
-	}
-
-	async generateJson(options: {
-		model: string;
-		system: string;
-		prompt: string;
-		outputSchema: Record<string, unknown>;
-		signal?: AbortSignal;
-	}): Promise<unknown> {
-		await this.ensureChatgptAuth();
-		const outputSchema = this.normalizeCodexOutputSchema(options.outputSchema);
-
-		const rawText = await this.runTurn({
-			model: options.model,
-			text: this.buildPrompt(options.system, options.prompt, true),
-			outputSchema,
-			signal: options.signal,
-		});
-		return this.parseJsonFromText(rawText);
-	}
-
 	async generateObject<T>(options: {
 		model: string;
 		system: string;
