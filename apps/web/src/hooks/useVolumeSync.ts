@@ -1,12 +1,11 @@
-import { useStore } from "@tanstack/react-store";
 import { useEffect, useRef } from "react";
 import { useSetSetting, useSetting } from "@/integrations/api/hooks";
-import { playerStore, setVolume } from "@/lib/player-store";
+import { setVolume, usePlayerState } from "@/lib/player-store";
 
 export function useVolumeSync() {
 	const savedVolume = useSetting("volume");
 	const setSetting = useSetSetting();
-	const { volume } = useStore(playerStore);
+	const { volume } = usePlayerState();
 	const initializedRef = useRef(false);
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

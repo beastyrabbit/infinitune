@@ -1,7 +1,6 @@
 import type { Song } from "@infinitune/shared/types";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useStore } from "@tanstack/react-store";
 import {
 	AlertTriangle,
 	ArrowLeft,
@@ -36,6 +35,7 @@ import {
 	setCurrentSong,
 	setDuration,
 	setPlaying,
+	usePlayerState,
 } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -393,7 +393,7 @@ function ReimaginePage() {
 		duration: audioDuration,
 		volume,
 		isMuted,
-	} = useStore(playerStore);
+	} = usePlayerState();
 	useVolumeSync();
 	usePlaylistHeartbeat(playlistId);
 
