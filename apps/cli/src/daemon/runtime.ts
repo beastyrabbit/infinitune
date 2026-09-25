@@ -13,6 +13,7 @@ import {
 	type DeviceMode,
 	type PlaybackState,
 	ROOM_PROTOCOL_VERSION,
+	type ServerMessage,
 	ServerMessageSchema,
 	type SongData,
 } from "@infinitune/shared/protocol";
@@ -96,29 +97,33 @@ function formatHttpOrigin(host: string, port: number): string {
 	return `http://${normalizedHost}:${String(port)}`;
 }
 
+function nullToUndefined<T>(value: T | null | undefined): T | undefined {
+	return value ?? undefined;
+}
+
 function toSongData(song: Song): SongData {
 	return {
 		id: song.id,
-		title: song.title ?? undefined,
-		artistName: song.artistName ?? undefined,
-		genre: song.genre ?? undefined,
-		subGenre: song.subGenre ?? undefined,
-		cover: song.cover ?? undefined,
-		audioUrl: song.audioUrl ?? undefined,
+		title: nullToUndefined(song.title),
+		artistName: nullToUndefined(song.artistName),
+		genre: nullToUndefined(song.genre),
+		subGenre: nullToUndefined(song.subGenre),
+		cover: nullToUndefined(song.cover),
+		audioUrl: nullToUndefined(song.audioUrl),
 		status: song.status,
 		orderIndex: song.orderIndex,
-		isInterrupt: song.isInterrupt ?? undefined,
-		promptEpoch: song.promptEpoch ?? undefined,
+		isInterrupt: nullToUndefined(song.isInterrupt),
+		promptEpoch: nullToUndefined(song.promptEpoch),
 		createdAt: song.createdAt,
-		audioDuration: song.audioDuration ?? undefined,
-		mood: song.mood ?? undefined,
-		energy: song.energy ?? undefined,
-		era: song.era ?? undefined,
-		vocalStyle: song.vocalStyle ?? undefined,
-		userRating: song.userRating ?? undefined,
-		bpm: song.bpm ?? undefined,
-		keyScale: song.keyScale ?? undefined,
-		lyrics: song.lyrics ?? undefined,
+		audioDuration: nullToUndefined(song.audioDuration),
+		mood: nullToUndefined(song.mood),
+		energy: nullToUndefined(song.energy),
+		era: nullToUndefined(song.era),
+		vocalStyle: nullToUndefined(song.vocalStyle),
+		userRating: nullToUndefined(song.userRating),
+		bpm: nullToUndefined(song.bpm),
+		keyScale: nullToUndefined(song.keyScale),
+		lyrics: nullToUndefined(song.lyrics),
 	};
 }
 
@@ -137,6 +142,121 @@ type StartLocalPayload = {
 	playlistName?: string;
 	deviceName?: string;
 };
+
+type IpcPayload = Record<string, unknown> | undefined;
+
+type ConfigureUpdate = {
+	nextServerUrl?: string;
+	nextDeviceName?: string;
+	hasDeviceTokenUpdate: boolean;
+	nextDeviceToken?: string | null;
+	nextMode?: PlaybackMode;
+	nextDaemonHttpHost?: string;
+	nextDaemonHttpPort?: number;
+};
+
+type ConfigureEffects = {
+	shouldReconnect: boolean;
+	shouldRefreshRegistration: boolean;
+	shouldRestartHttp: boolean;
+};
+
+function parseConfigureDaemonHttpPort(
+	daemonHttpPortRaw: unknown,
+): number | undefined {
+	const nextDaemonHttpPort =
+		daemonHttpPortRaw === undefined ? undefined : asInteger(daemonHttpPortRaw);
+	if (daemonHttpPortRaw !== undefined && nextDaemonHttpPort === undefined) {
+		throw new Error("daemonHttpPort must be an integer between 1 and 65535");
+	}
+	if (
+		typeof nextDaemonHttpPort === "number" &&
+		!isValidTcpPort(nextDaemonHttpPort)
+	) {
+		throw new Error("daemonHttpPort must be an integer between 1 and 65535");
+	}
+	return nextDaemonHttpPort;
+}
+
+function parseConfigureDeviceToken(
+	payload: IpcPayload,
+): Pick<ConfigureUpdate, "hasDeviceTokenUpdate" | "nextDeviceToken"> {
+	const rawDeviceToken = payload?.deviceToken;
+	const hasDeviceTokenUpdate = Object.hasOwn(payload ?? {}, "deviceToken");
+	const nextDeviceToken =
+		rawDeviceToken === null
+			? null
+			: typeof rawDeviceToken === "string"
+				? rawDeviceToken.trim()
+				: undefined;
+	if (
+		hasDeviceTokenUpdate &&
+		rawDeviceToken !== null &&
+		(typeof rawDeviceToken !== "string" ||
+			nextDeviceToken === undefined ||
+			nextDeviceToken === null ||
+			nextDeviceToken.length === 0)
+	) {
+		throw new Error(
+			"deviceToken must be a non-empty string or null to clear it",
+		);
+	}
+	return { hasDeviceTokenUpdate, nextDeviceToken };
+}
+
+function parseConfigurePayload(payload: IpcPayload): ConfigureUpdate {
+	const nextModeRaw = asString(payload?.playbackMode);
+	// Port errors are reported before device token errors.
+	const nextDaemonHttpPort = parseConfigureDaemonHttpPort(
+		payload?.daemonHttpPort,
+	);
+	const { hasDeviceTokenUpdate, nextDeviceToken } =
+		parseConfigureDeviceToken(payload);
+	return {
+		nextServerUrl: asString(payload?.serverUrl),
+		nextDeviceName: asString(payload?.deviceName),
+		hasDeviceTokenUpdate,
+		nextDeviceToken,
+		nextMode:
+			nextModeRaw === "local" || nextModeRaw === "room"
+				? nextModeRaw
+				: undefined,
+		nextDaemonHttpHost: asString(payload?.daemonHttpHost),
+		nextDaemonHttpPort,
+	};
+}
+
+function trimmedNonEmpty(value: unknown): string | null {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim()
+		: null;
+}
+
+function resolveWaybarDuration(
+	playback: PlaybackState,
+	currentSong: SongData | null,
+): number {
+	if (typeof playback.duration === "number" && playback.duration > 0) {
+		return playback.duration;
+	}
+	if (
+		typeof currentSong?.audioDuration === "number" &&
+		currentSong.audioDuration > 0
+	) {
+		return currentSong.audioDuration;
+	}
+	return 0;
+}
+
+function resolveWaybarState(
+	connected: boolean,
+	isPlaying: boolean,
+	songId: string | null,
+): string {
+	if (!connected) return "disconnected";
+	if (isPlaying) return "playing";
+	return songId ? "paused" : "idle";
+}
 
 export type DaemonRuntimeOptions = {
 	serverUrl?: string;
@@ -264,44 +384,10 @@ export class DaemonRuntime {
 					void this.shutdown(0);
 				}, 25);
 				return { stopping: true };
-			case "joinRoom": {
-				const joinPayload: JoinRoomPayload = {
-					serverUrl: asString(payload?.serverUrl) ?? "",
-					roomId: asString(payload?.roomId) ?? "",
-					playlistKey: asString(payload?.playlistKey),
-					roomName: asString(payload?.roomName),
-					deviceName: asString(payload?.deviceName),
-				};
-				if (!joinPayload.serverUrl || !joinPayload.roomId) {
-					throw new Error("joinRoom requires serverUrl and roomId");
-				}
-				this.stopLocalMode();
-				this.mode = "room";
-				this.queue = [];
-				this.serverUrl = joinPayload.serverUrl;
-				this.roomId = joinPayload.roomId;
-				this.playlistKey = joinPayload.playlistKey ?? null;
-				this.roomName = joinPayload.roomName ?? null;
-				if (joinPayload.deviceName) this.deviceName = joinPayload.deviceName;
-				this.connect();
-				await this.waitUntilConnected();
-				return this.getStatus();
-			}
-			case "startLocal": {
-				const localPayload: StartLocalPayload = {
-					serverUrl: asString(payload?.serverUrl) ?? "",
-					playlistId: asString(payload?.playlistId) ?? "",
-					playlistKey: asString(payload?.playlistKey),
-					playlistName: asString(payload?.playlistName),
-					deviceName: asString(payload?.deviceName),
-				};
-				if (!localPayload.serverUrl || !localPayload.playlistId) {
-					throw new Error("startLocal requires serverUrl and playlistId");
-				}
-				if (localPayload.deviceName) this.deviceName = localPayload.deviceName;
-				await this.startLocalMode(localPayload);
-				return this.getStatus();
-			}
+			case "joinRoom":
+				return this.handleJoinRoom(payload);
+			case "startLocal":
+				return this.handleStartLocal(payload);
 			case "leaveRoom":
 				this.leaveRoomSession();
 				return this.getStatus();
@@ -311,298 +397,345 @@ export class DaemonRuntime {
 			case "clearSession":
 				this.clearSession();
 				return this.getStatus();
-			case "configure": {
-				const nextServerUrl = asString(payload?.serverUrl);
-				const nextDeviceName = asString(payload?.deviceName);
-				const rawDeviceToken = payload?.deviceToken;
-				const hasDeviceTokenUpdate = Object.hasOwn(
-					payload ?? {},
-					"deviceToken",
-				);
-				const nextDeviceToken =
-					rawDeviceToken === null
-						? null
-						: typeof rawDeviceToken === "string"
-							? rawDeviceToken.trim()
-							: undefined;
-				const nextModeRaw = asString(payload?.playbackMode);
-				const nextDaemonHttpHost = asString(payload?.daemonHttpHost);
-				const daemonHttpPortRaw = payload?.daemonHttpPort;
-				const nextDaemonHttpPort =
-					daemonHttpPortRaw === undefined
-						? undefined
-						: asInteger(daemonHttpPortRaw);
-				const nextMode =
-					nextModeRaw === "local" || nextModeRaw === "room"
-						? nextModeRaw
-						: undefined;
-				if (
-					daemonHttpPortRaw !== undefined &&
-					nextDaemonHttpPort === undefined
-				) {
-					throw new Error(
-						"daemonHttpPort must be an integer between 1 and 65535",
-					);
-				}
-				if (
-					typeof nextDaemonHttpPort === "number" &&
-					!isValidTcpPort(nextDaemonHttpPort)
-				) {
-					throw new Error(
-						"daemonHttpPort must be an integer between 1 and 65535",
-					);
-				}
-				if (
-					hasDeviceTokenUpdate &&
-					rawDeviceToken !== null &&
-					(typeof rawDeviceToken !== "string" ||
-						nextDeviceToken === undefined ||
-						nextDeviceToken === null ||
-						nextDeviceToken.length === 0)
-				) {
-					throw new Error(
-						"deviceToken must be a non-empty string or null to clear it",
-					);
-				}
-				const shouldReconnect =
-					(typeof nextServerUrl === "string" &&
-						nextServerUrl !== this.serverUrl) ||
-					(typeof nextDeviceName === "string" &&
-						nextDeviceName !== this.deviceName);
-				const shouldRefreshRegistration =
-					shouldReconnect ||
-					(hasDeviceTokenUpdate &&
-						(nextDeviceToken ?? null) !== this.deviceToken);
-				const shouldRestartHttp =
-					(typeof nextDaemonHttpHost === "string" &&
-						nextDaemonHttpHost !== this.daemonHttpHost) ||
-					(typeof nextDaemonHttpPort === "number" &&
-						nextDaemonHttpPort !== this.daemonHttpPort);
-
-				if (typeof nextServerUrl === "string") {
-					this.serverUrl = nextServerUrl;
-				}
-				if (typeof nextDeviceName === "string") {
-					this.deviceName = nextDeviceName;
-				}
-				if (hasDeviceTokenUpdate) {
-					this.deviceToken =
-						nextDeviceToken && nextDeviceToken.length > 0
-							? nextDeviceToken
-							: null;
-					if (!this.deviceToken) {
-						this.assignedPlaylistId = null;
-					}
-				}
-				if (typeof nextDaemonHttpHost === "string") {
-					this.daemonHttpHost = nextDaemonHttpHost;
-				}
-				if (typeof nextDaemonHttpPort === "number") {
-					this.daemonHttpPort = nextDaemonHttpPort;
-				}
-
-				if (nextMode === "room" && this.mode !== "room") {
-					this.stopLocalMode();
-					this.mode = "room";
-					this.disconnect(false);
-					this.playlistKey = null;
-				}
-
-				if (nextMode === "local" && this.mode !== "local") {
-					this.mode = "local";
-					this.disconnect(false);
-					this.roomId = null;
-					this.roomName = null;
-					this.connected = false;
-				}
-
-				let roomChangedByRegistration = false;
-				if (shouldRefreshRegistration) {
-					const previousRoomId = this.roomId;
-					await this.refreshDeviceRegistration(false);
-					roomChangedByRegistration = previousRoomId !== this.roomId;
-					this.restartDeviceRegistrationTimer();
-				}
-
-				const shouldConnectAfterRegistration =
-					this.mode === "room" &&
-					Boolean(this.serverUrl && this.roomId) &&
-					shouldRefreshRegistration &&
-					(roomChangedByRegistration || !this.connected);
-
-				if (shouldReconnect || shouldConnectAfterRegistration) {
-					if (this.mode === "room" && this.roomId && this.serverUrl) {
-						this.connect();
-					}
-					if (this.mode === "local" && this.localPlaylistId && this.serverUrl) {
-						await this.refreshLocalQueue();
-					}
-				}
-				if (shouldRestartHttp) {
-					await this.restartHttpServer();
-				}
-
-				return this.getStatus();
-			}
+			case "configure":
+				return this.handleConfigure(payload);
 			case "play":
-				if (this.mode === "local") {
-					this.playLocal();
-				} else {
-					this.sendCommand("play");
-					// Keep individual device isolation: only apply room fast-path when
-					// this player is in default sync mode.
-					if (this.roomDeviceMode !== "individual") {
-						this.ffplay.play();
-						this.playback.isPlaying = true;
-					}
-				}
+				this.handlePlayCommand();
 				return { ok: true };
 			case "pause":
-				if (this.mode === "local") {
-					this.ffplay.pause();
-					this.playback.isPlaying = false;
-				} else {
-					this.sendCommand("pause");
-					// Keep individual device isolation: only apply room fast-path when
-					// this player is in default sync mode.
-					if (this.roomDeviceMode !== "individual") {
-						this.ffplay.pause();
-						this.playback.isPlaying = false;
-					}
-				}
+				this.handlePauseCommand();
 				return { ok: true };
 			case "toggle":
-				if (this.mode === "local") {
-					this.ffplay.toggle();
-					this.playback.isPlaying = this.ffplay.isPlaying();
-				} else {
-					this.sendCommand("toggle");
-				}
+				this.handleToggleCommand();
 				return { ok: true };
 			case "skip":
-				if (this.mode === "local") {
-					void this.handleLocalSongEnded();
-				} else {
-					this.sendCommand("skip");
-				}
+				this.handleSkipCommand();
 				return { ok: true };
-			case "setVolume": {
-				const value = asNumber(payload?.volume);
-				if (value === undefined) {
-					throw new Error("setVolume requires numeric payload.volume");
-				}
-				const next = Math.max(0, Math.min(1, value));
-				if (this.mode === "local") {
-					this.ffplay.setVolume(next);
-					this.playback.volume = this.ffplay.getVolume();
-				} else if (this.roomDeviceMode === "individual") {
-					this.ffplay.setVolume(next);
-					this.playback.volume = this.ffplay.getVolume();
-				} else {
-					this.sendCommand("setVolume", { volume: next });
-				}
-				return {
-					volume:
-						this.mode === "local" || this.roomDeviceMode === "individual"
-							? this.ffplay.getVolume()
-							: next,
-					scope:
-						this.mode === "local" || this.roomDeviceMode === "individual"
-							? "device"
-							: "room",
-				};
-			}
-			case "volumeDelta": {
-				const delta = asNumber(payload?.delta);
-				if (delta === undefined) {
-					throw new Error("volumeDelta requires numeric payload.delta");
-				}
-				const base =
-					this.mode === "local" || this.roomDeviceMode === "individual"
-						? this.ffplay.getVolume()
-						: typeof this.playback.volume === "number"
-							? this.playback.volume
-							: this.ffplay.getVolume();
-				const next = Math.max(0, Math.min(1, base + delta));
-				if (this.mode === "local") {
-					this.ffplay.setVolume(next);
-					this.playback.volume = this.ffplay.getVolume();
-				} else if (this.roomDeviceMode === "individual") {
-					this.ffplay.setVolume(next);
-					this.playback.volume = this.ffplay.getVolume();
-				} else {
-					this.sendCommand("setVolume", { volume: next });
-				}
-				return {
-					volume:
-						this.mode === "local" || this.roomDeviceMode === "individual"
-							? this.ffplay.getVolume()
-							: next,
-					scope:
-						this.mode === "local" || this.roomDeviceMode === "individual"
-							? "device"
-							: "room",
-				};
-			}
+			case "setVolume":
+				return this.handleSetVolumeCommand(payload);
+			case "volumeDelta":
+				return this.handleVolumeDeltaCommand(payload);
 			case "toggleMute":
-				if (this.mode === "local") {
-					this.ffplay.toggleMute();
-					this.playback.isMuted = this.ffplay.isMuted();
-				} else {
-					this.sendCommand("toggleMute");
-				}
+				this.handleToggleMuteCommand();
 				return { ok: true };
-			case "rate": {
-				const rating = asString(payload?.rating);
-				if (rating !== "up" && rating !== "down") {
-					throw new Error('rate requires payload.rating "up" or "down"');
-				}
-				if (!this.serverUrl) {
-					throw new Error("Daemon server URL is not configured.");
-				}
-				const songId =
-					this.currentSong?.id ?? this.playback.currentSongId ?? null;
-				if (!songId) {
-					throw new Error("No current song to rate.");
-				}
-				await rateSong(this.serverUrl, songId, rating, {
-					deviceToken: this.deviceToken ?? undefined,
-				});
-				return {
-					ok: true,
-					songId,
-					rating,
-					title: this.currentSong?.title ?? null,
-				};
-			}
-			case "selectSong": {
-				const songId = asString(payload?.songId);
-				if (!songId) {
-					throw new Error("selectSong requires payload.songId");
-				}
-				if (this.mode === "local") {
-					this.selectLocalSong(songId);
-				} else {
-					this.sendCommand("selectSong", { songId });
-				}
+			case "rate":
+				return this.handleRateCommand(payload);
+			case "selectSong":
+				this.handleSelectSongCommand(payload);
 				return { ok: true };
-			}
-			case "seek": {
-				const time = asNumber(payload?.time);
-				if (time === undefined) {
-					throw new Error("seek requires numeric payload.time");
-				}
-				const nextTime = Math.max(0, time);
-				if (this.mode === "local") {
-					this.ffplay.seek(nextTime);
-					this.playback.currentTime = nextTime;
-				} else {
-					this.sendCommand("seek", { time: nextTime });
-				}
+			case "seek":
+				this.handleSeekCommand(payload);
 				return { ok: true };
-			}
 		}
 	};
+
+	private async handleJoinRoom(
+		payload: IpcPayload,
+	): Promise<Record<string, unknown>> {
+		const joinPayload: JoinRoomPayload = {
+			serverUrl: asString(payload?.serverUrl) ?? "",
+			roomId: asString(payload?.roomId) ?? "",
+			playlistKey: asString(payload?.playlistKey),
+			roomName: asString(payload?.roomName),
+			deviceName: asString(payload?.deviceName),
+		};
+		if (!joinPayload.serverUrl || !joinPayload.roomId) {
+			throw new Error("joinRoom requires serverUrl and roomId");
+		}
+		this.stopLocalMode();
+		this.mode = "room";
+		this.queue = [];
+		this.serverUrl = joinPayload.serverUrl;
+		this.roomId = joinPayload.roomId;
+		this.playlistKey = joinPayload.playlistKey ?? null;
+		this.roomName = joinPayload.roomName ?? null;
+		if (joinPayload.deviceName) this.deviceName = joinPayload.deviceName;
+		this.connect();
+		await this.waitUntilConnected();
+		return this.getStatus();
+	}
+
+	private async handleStartLocal(
+		payload: IpcPayload,
+	): Promise<Record<string, unknown>> {
+		const localPayload: StartLocalPayload = {
+			serverUrl: asString(payload?.serverUrl) ?? "",
+			playlistId: asString(payload?.playlistId) ?? "",
+			playlistKey: asString(payload?.playlistKey),
+			playlistName: asString(payload?.playlistName),
+			deviceName: asString(payload?.deviceName),
+		};
+		if (!localPayload.serverUrl || !localPayload.playlistId) {
+			throw new Error("startLocal requires serverUrl and playlistId");
+		}
+		if (localPayload.deviceName) this.deviceName = localPayload.deviceName;
+		await this.startLocalMode(localPayload);
+		return this.getStatus();
+	}
+
+	private async handleConfigure(
+		payload: IpcPayload,
+	): Promise<Record<string, unknown>> {
+		const update = parseConfigurePayload(payload);
+		const { shouldReconnect, shouldRefreshRegistration, shouldRestartHttp } =
+			this.getConfigureEffects(update);
+
+		this.applyConfigureSettings(update);
+		this.applyConfigureMode(update.nextMode);
+
+		let roomChangedByRegistration = false;
+		if (shouldRefreshRegistration) {
+			const previousRoomId = this.roomId;
+			await this.refreshDeviceRegistration(false);
+			roomChangedByRegistration = previousRoomId !== this.roomId;
+			this.restartDeviceRegistrationTimer();
+		}
+
+		const shouldConnectAfterRegistration =
+			this.mode === "room" &&
+			Boolean(this.serverUrl && this.roomId) &&
+			shouldRefreshRegistration &&
+			(roomChangedByRegistration || !this.connected);
+
+		if (shouldReconnect || shouldConnectAfterRegistration) {
+			await this.reconnectAfterConfigure();
+		}
+		if (shouldRestartHttp) {
+			await this.restartHttpServer();
+		}
+
+		return this.getStatus();
+	}
+
+	private getConfigureEffects(update: ConfigureUpdate): ConfigureEffects {
+		const {
+			nextServerUrl,
+			nextDeviceName,
+			hasDeviceTokenUpdate,
+			nextDeviceToken,
+			nextDaemonHttpHost,
+			nextDaemonHttpPort,
+		} = update;
+		const shouldReconnect =
+			(typeof nextServerUrl === "string" && nextServerUrl !== this.serverUrl) ||
+			(typeof nextDeviceName === "string" &&
+				nextDeviceName !== this.deviceName);
+		const shouldRefreshRegistration =
+			shouldReconnect ||
+			(hasDeviceTokenUpdate && (nextDeviceToken ?? null) !== this.deviceToken);
+		const shouldRestartHttp =
+			(typeof nextDaemonHttpHost === "string" &&
+				nextDaemonHttpHost !== this.daemonHttpHost) ||
+			(typeof nextDaemonHttpPort === "number" &&
+				nextDaemonHttpPort !== this.daemonHttpPort);
+		return { shouldReconnect, shouldRefreshRegistration, shouldRestartHttp };
+	}
+
+	private applyConfigureSettings(update: ConfigureUpdate): void {
+		const {
+			nextServerUrl,
+			nextDeviceName,
+			hasDeviceTokenUpdate,
+			nextDeviceToken,
+			nextDaemonHttpHost,
+			nextDaemonHttpPort,
+		} = update;
+		if (typeof nextServerUrl === "string") {
+			this.serverUrl = nextServerUrl;
+		}
+		if (typeof nextDeviceName === "string") {
+			this.deviceName = nextDeviceName;
+		}
+		if (hasDeviceTokenUpdate) {
+			this.deviceToken =
+				nextDeviceToken && nextDeviceToken.length > 0 ? nextDeviceToken : null;
+			if (!this.deviceToken) {
+				this.assignedPlaylistId = null;
+			}
+		}
+		if (typeof nextDaemonHttpHost === "string") {
+			this.daemonHttpHost = nextDaemonHttpHost;
+		}
+		if (typeof nextDaemonHttpPort === "number") {
+			this.daemonHttpPort = nextDaemonHttpPort;
+		}
+	}
+
+	private applyConfigureMode(nextMode: PlaybackMode | undefined): void {
+		if (nextMode === "room" && this.mode !== "room") {
+			this.stopLocalMode();
+			this.mode = "room";
+			this.disconnect(false);
+			this.playlistKey = null;
+		}
+
+		if (nextMode === "local" && this.mode !== "local") {
+			this.mode = "local";
+			this.disconnect(false);
+			this.roomId = null;
+			this.roomName = null;
+			this.connected = false;
+		}
+	}
+
+	private async reconnectAfterConfigure(): Promise<void> {
+		if (this.mode === "room" && this.roomId && this.serverUrl) {
+			this.connect();
+		}
+		if (this.mode === "local" && this.localPlaylistId && this.serverUrl) {
+			await this.refreshLocalQueue();
+		}
+	}
+
+	private handlePlayCommand(): void {
+		if (this.mode === "local") {
+			this.playLocal();
+		} else {
+			this.sendCommand("play");
+			// Keep individual device isolation: only apply room fast-path when
+			// this player is in default sync mode.
+			if (this.roomDeviceMode !== "individual") {
+				this.ffplay.play();
+				this.playback.isPlaying = true;
+			}
+		}
+	}
+
+	private handlePauseCommand(): void {
+		if (this.mode === "local") {
+			this.ffplay.pause();
+			this.playback.isPlaying = false;
+		} else {
+			this.sendCommand("pause");
+			// Keep individual device isolation: only apply room fast-path when
+			// this player is in default sync mode.
+			if (this.roomDeviceMode !== "individual") {
+				this.ffplay.pause();
+				this.playback.isPlaying = false;
+			}
+		}
+	}
+
+	private handleToggleCommand(): void {
+		if (this.mode === "local") {
+			this.ffplay.toggle();
+			this.playback.isPlaying = this.ffplay.isPlaying();
+		} else {
+			this.sendCommand("toggle");
+		}
+	}
+
+	private handleSkipCommand(): void {
+		if (this.mode === "local") {
+			void this.handleLocalSongEnded();
+		} else {
+			this.sendCommand("skip");
+		}
+	}
+
+	private handleSetVolumeCommand(payload: IpcPayload) {
+		const value = asNumber(payload?.volume);
+		if (value === undefined) {
+			throw new Error("setVolume requires numeric payload.volume");
+		}
+		const next = Math.max(0, Math.min(1, value));
+		return this.applyVolumeCommand(next);
+	}
+
+	private handleVolumeDeltaCommand(payload: IpcPayload) {
+		const delta = asNumber(payload?.delta);
+		if (delta === undefined) {
+			throw new Error("volumeDelta requires numeric payload.delta");
+		}
+		const base =
+			this.mode === "local" || this.roomDeviceMode === "individual"
+				? this.ffplay.getVolume()
+				: typeof this.playback.volume === "number"
+					? this.playback.volume
+					: this.ffplay.getVolume();
+		const next = Math.max(0, Math.min(1, base + delta));
+		return this.applyVolumeCommand(next);
+	}
+
+	private applyVolumeCommand(next: number) {
+		if (this.mode === "local") {
+			this.ffplay.setVolume(next);
+			this.playback.volume = this.ffplay.getVolume();
+		} else if (this.roomDeviceMode === "individual") {
+			this.ffplay.setVolume(next);
+			this.playback.volume = this.ffplay.getVolume();
+		} else {
+			this.sendCommand("setVolume", { volume: next });
+		}
+		return {
+			volume:
+				this.mode === "local" || this.roomDeviceMode === "individual"
+					? this.ffplay.getVolume()
+					: next,
+			scope:
+				this.mode === "local" || this.roomDeviceMode === "individual"
+					? "device"
+					: "room",
+		};
+	}
+
+	private handleToggleMuteCommand(): void {
+		if (this.mode === "local") {
+			this.ffplay.toggleMute();
+			this.playback.isMuted = this.ffplay.isMuted();
+		} else {
+			this.sendCommand("toggleMute");
+		}
+	}
+
+	private async handleRateCommand(payload: IpcPayload) {
+		const rating = asString(payload?.rating);
+		if (rating !== "up" && rating !== "down") {
+			throw new Error('rate requires payload.rating "up" or "down"');
+		}
+		if (!this.serverUrl) {
+			throw new Error("Daemon server URL is not configured.");
+		}
+		const songId = this.currentSong?.id ?? this.playback.currentSongId ?? null;
+		if (!songId) {
+			throw new Error("No current song to rate.");
+		}
+		await rateSong(this.serverUrl, songId, rating, {
+			deviceToken: this.deviceToken ?? undefined,
+		});
+		return {
+			ok: true,
+			songId,
+			rating,
+			title: this.currentSong?.title ?? null,
+		};
+	}
+
+	private handleSelectSongCommand(payload: IpcPayload): void {
+		const songId = asString(payload?.songId);
+		if (!songId) {
+			throw new Error("selectSong requires payload.songId");
+		}
+		if (this.mode === "local") {
+			this.selectLocalSong(songId);
+		} else {
+			this.sendCommand("selectSong", { songId });
+		}
+	}
+
+	private handleSeekCommand(payload: IpcPayload): void {
+		const time = asNumber(payload?.time);
+		if (time === undefined) {
+			throw new Error("seek requires numeric payload.time");
+		}
+		const nextTime = Math.max(0, time);
+		if (this.mode === "local") {
+			this.ffplay.seek(nextTime);
+			this.playback.currentTime = nextTime;
+		} else {
+			this.sendCommand("seek", { time: nextTime });
+		}
+	}
 
 	private restartDeviceRegistrationTimer(): void {
 		if (this.deviceRegistrationTimer) {
@@ -825,19 +958,7 @@ export class DaemonRuntime {
 				this.markRoomConnected();
 				break;
 			case "state":
-				this.roomStateReceived = true;
-				this.playback = message.playback;
-				this.currentSong = message.currentSong;
-				this.roomDeviceMode =
-					message.devices.find((device) => device.id === this.deviceId)?.mode ??
-					"default";
-				if (typeof message.protocolVersion === "number") {
-					this.roomProtocolVersion = message.protocolVersion;
-				} else if (!this.joinAcknowledged) {
-					// Legacy room servers don't send joinAck/protocolVersion.
-					this.joinAcknowledged = true;
-				}
-				this.markRoomConnected();
+				this.handleStateMessage(message);
 				break;
 			case "queue":
 				this.queue = message.songs;
@@ -852,26 +973,9 @@ export class DaemonRuntime {
 			case "execute":
 				this.applyExecute(message.action, message.payload);
 				break;
-			case "nextSong": {
-				if (!this.serverUrl) return;
-				const snapshot = this.ffplay.getSnapshot();
-				if (
-					snapshot.songId === message.songId &&
-					typeof message.startAt !== "number"
-				) {
-					// Ignore duplicate "nextSong" for the currently loaded song when no
-					// synchronized start time was requested.
-					break;
-				}
-				const songUrl = resolveMediaUrl(this.serverUrl, message.audioUrl);
-				this.ffplay.loadSong(
-					message.songId,
-					songUrl,
-					message.startAt,
-					this.serverTimeOffset,
-				);
+			case "nextSong":
+				this.handleNextSongMessage(message);
 				break;
-			}
 			case "preload": {
 				if (!this.serverUrl) return;
 				const songUrl = resolveMediaUrl(this.serverUrl, message.audioUrl);
@@ -885,6 +989,46 @@ export class DaemonRuntime {
 				}
 				break;
 		}
+	}
+
+	private handleStateMessage(
+		message: Extract<ServerMessage, { type: "state" }>,
+	): void {
+		this.roomStateReceived = true;
+		this.playback = message.playback;
+		this.currentSong = message.currentSong;
+		this.roomDeviceMode =
+			message.devices.find((device) => device.id === this.deviceId)?.mode ??
+			"default";
+		if (typeof message.protocolVersion === "number") {
+			this.roomProtocolVersion = message.protocolVersion;
+		} else if (!this.joinAcknowledged) {
+			// Legacy room servers don't send joinAck/protocolVersion.
+			this.joinAcknowledged = true;
+		}
+		this.markRoomConnected();
+	}
+
+	private handleNextSongMessage(
+		message: Extract<ServerMessage, { type: "nextSong" }>,
+	): void {
+		if (!this.serverUrl) return;
+		const snapshot = this.ffplay.getSnapshot();
+		if (
+			snapshot.songId === message.songId &&
+			typeof message.startAt !== "number"
+		) {
+			// Ignore duplicate "nextSong" for the currently loaded song when no
+			// synchronized start time was requested.
+			return;
+		}
+		const songUrl = resolveMediaUrl(this.serverUrl, message.audioUrl);
+		this.ffplay.loadSong(
+			message.songId,
+			songUrl,
+			message.startAt,
+			this.serverTimeOffset,
+		);
 	}
 
 	private markRoomConnected(): void {
@@ -1194,46 +1338,23 @@ export class DaemonRuntime {
 	private getWaybarPayload(): Record<string, unknown> {
 		const playback = this.playback;
 		const currentSong = this.currentSong;
-		const title =
-			typeof currentSong?.title === "string" &&
-			currentSong.title.trim().length > 0
-				? currentSong.title.trim()
-				: null;
-		const artist =
-			typeof currentSong?.artistName === "string" &&
-			currentSong.artistName.trim().length > 0
-				? currentSong.artistName.trim()
-				: null;
+		const title = trimmedNonEmpty(currentSong?.title);
+		const artist = trimmedNonEmpty(currentSong?.artistName);
 		const songId = currentSong?.id ?? playback.currentSongId ?? null;
 		const runtime = Math.max(0, playback.currentTime || 0);
-		const duration =
-			typeof playback.duration === "number" && playback.duration > 0
-				? playback.duration
-				: typeof currentSong?.audioDuration === "number" &&
-						currentSong.audioDuration > 0
-					? currentSong.audioDuration
-					: 0;
+		const duration = resolveWaybarDuration(playback, currentSong);
 
-		const state = this.connected
-			? playback.isPlaying
-				? "playing"
-				: songId
-					? "paused"
-					: "idle"
-			: "disconnected";
-		const scope =
-			this.mode === "local"
-				? (this.localPlaylistName ?? this.localPlaylistId ?? "local")
-				: (this.roomId ?? "room");
+		const state = resolveWaybarState(
+			this.connected,
+			playback.isPlaying,
+			songId,
+		);
+		const scope = this.getWaybarScope();
 		const runtimeLabel =
 			duration > 0
 				? `${formatRuntimeClock(runtime)} / ${formatRuntimeClock(duration)}`
 				: formatRuntimeClock(runtime);
-		const text = title
-			? `${state}: ${title}`
-			: this.connected
-				? `${this.mode}: idle`
-				: `${this.mode}: offline`;
+		const text = this.getWaybarText(state, title);
 		const tooltip = [
 			`State: ${state}`,
 			`Mode: ${this.mode}`,
@@ -1273,6 +1394,17 @@ export class DaemonRuntime {
 			duration,
 			daemonHttpUrl: formatHttpOrigin(this.daemonHttpHost, this.daemonHttpPort),
 		};
+	}
+
+	private getWaybarScope(): string {
+		return this.mode === "local"
+			? (this.localPlaylistName ?? this.localPlaylistId ?? "local")
+			: (this.roomId ?? "room");
+	}
+
+	private getWaybarText(state: string, title: string | null): string {
+		if (title) return `${state}: ${title}`;
+		return this.connected ? `${this.mode}: idle` : `${this.mode}: offline`;
 	}
 
 	private async startLocalMode(payload: StartLocalPayload): Promise<void> {

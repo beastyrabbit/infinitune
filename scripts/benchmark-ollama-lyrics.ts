@@ -93,6 +93,96 @@ function stripThinkingTags(text: string): { clean: string; thinking?: string } {
 
 // ─── Generation ──────────────────────────────────────────────────────────────
 
+interface StreamStats {
+  ttftMs: number;
+  fullResponse: string;
+  modelLoadTimeMs: number;
+  tokenCount: number;
+  tokensPerSec: number;
+  firstTokenReceived: boolean;
+}
+
+function applyStreamChunk(stats: StreamStats, chunk: any, startTime: number) {
+  if (!stats.firstTokenReceived && chunk.response) {
+    stats.ttftMs = performance.now() - startTime;
+    stats.firstTokenReceived = true;
+  }
+
+  if (chunk.response) {
+    stats.fullResponse += chunk.response;
+  }
+
+  if (chunk.done) {
+    stats.modelLoadTimeMs = chunk.load_duration
+      ? chunk.load_duration / 1e6
+      : 0;
+    stats.tokenCount = chunk.eval_count || 0;
+    const evalDurationMs = chunk.eval_duration
+      ? chunk.eval_duration / 1e6
+      : 0;
+    stats.tokensPerSec =
+      evalDurationMs > 0 ? (stats.tokenCount / evalDurationMs) * 1000 : 0;
+  }
+}
+
+async function readGenerateStream(
+  res: Response,
+  startTime: number
+): Promise<StreamStats> {
+  const stats: StreamStats = {
+    ttftMs: 0,
+    fullResponse: "",
+    modelLoadTimeMs: 0,
+    tokenCount: 0,
+    tokensPerSec: 0,
+    firstTokenReceived: false,
+  };
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        applyStreamChunk(stats, JSON.parse(line), startTime);
+      } catch {
+        // skip malformed JSON lines
+      }
+    }
+  }
+
+  return stats;
+}
+
+function failedResult(
+  model: ModelConfig,
+  displayLabel: string,
+  startTime: number,
+  error: string
+): GenerationResult {
+  return {
+    model: model.name,
+    label: displayLabel,
+    params: model.params,
+    tier: model.tier,
+    lyrics: "",
+    ttftMs: 0,
+    totalTimeMs: performance.now() - startTime,
+    modelLoadTimeMs: 0,
+    tokenCount: 0,
+    tokensPerSec: 0,
+    error,
+  };
+}
+
 async function generateLyrics(
   model: ModelConfig
 ): Promise<GenerationResult> {
@@ -103,12 +193,7 @@ async function generateLyrics(
   const prompt = (model.promptPrefix || "") + GENERATION_PROMPT;
 
   const startTime = performance.now();
-  let ttftMs = 0;
-  let fullResponse = "";
-  let modelLoadTimeMs = 0;
-  let tokenCount = 0;
-  let tokensPerSec = 0;
-  let firstTokenReceived = false;
+  let stats: StreamStats;
 
   try {
     const res = await fetch(`${OLLAMA_URL}/api/generate`, {
@@ -131,85 +216,25 @@ async function generateLyrics(
       throw new Error(`Ollama HTTP ${res.status}: ${errText}`);
     }
 
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const chunk = JSON.parse(line);
-
-          if (!firstTokenReceived && chunk.response) {
-            ttftMs = performance.now() - startTime;
-            firstTokenReceived = true;
-          }
-
-          if (chunk.response) {
-            fullResponse += chunk.response;
-          }
-
-          if (chunk.done) {
-            modelLoadTimeMs = chunk.load_duration
-              ? chunk.load_duration / 1e6
-              : 0;
-            tokenCount = chunk.eval_count || 0;
-            const evalDurationMs = chunk.eval_duration
-              ? chunk.eval_duration / 1e6
-              : 0;
-            tokensPerSec =
-              evalDurationMs > 0 ? (tokenCount / evalDurationMs) * 1000 : 0;
-          }
-        } catch {
-          // skip malformed JSON lines
-        }
-      }
-    }
+    stats = await readGenerateStream(res, startTime);
   } catch (err: any) {
     clearTimeout(timeout);
     if (err.name === "AbortError") {
-      return {
-        model: model.name,
-        label: displayLabel,
-        params: model.params,
-        tier: model.tier,
-        lyrics: "",
-        ttftMs: 0,
-        totalTimeMs: performance.now() - startTime,
-        modelLoadTimeMs: 0,
-        tokenCount: 0,
-        tokensPerSec: 0,
-        error: `Timeout after ${formatDuration(timeoutMs)}`,
-      };
+      return failedResult(
+        model,
+        displayLabel,
+        startTime,
+        `Timeout after ${formatDuration(timeoutMs)}`
+      );
     }
-    return {
-      model: model.name,
-      label: displayLabel,
-      params: model.params,
-      tier: model.tier,
-      lyrics: "",
-      ttftMs: 0,
-      totalTimeMs: performance.now() - startTime,
-      modelLoadTimeMs: 0,
-      tokenCount: 0,
-      tokensPerSec: 0,
-      error: err.message,
-    };
+    return failedResult(model, displayLabel, startTime, err.message);
   }
 
   clearTimeout(timeout);
   const totalTimeMs = performance.now() - startTime;
 
   // Handle deepseek-r1 thinking tags
-  const { clean, thinking } = stripThinkingTags(fullResponse);
+  const { clean, thinking } = stripThinkingTags(stats.fullResponse);
 
   return {
     model: model.name,
@@ -218,11 +243,11 @@ async function generateLyrics(
     tier: model.tier,
     lyrics: clean,
     ...(thinking && { thinkingContent: thinking }),
-    ttftMs,
+    ttftMs: stats.ttftMs,
     totalTimeMs,
-    modelLoadTimeMs,
-    tokenCount,
-    tokensPerSec,
+    modelLoadTimeMs: stats.modelLoadTimeMs,
+    tokenCount: stats.tokenCount,
+    tokensPerSec: stats.tokensPerSec,
   };
 }
 
