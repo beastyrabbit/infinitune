@@ -92,7 +92,11 @@ describe("SongWorker cancelled during the NFS save", () => {
 		// biome-ignore lint/complexity/useLiteralKeys: bracket access reaches the private save step under test
 		const saving = worker["saveAndFinalize"]("/ace/audio.mp3", 10, "task-old");
 		await vi.waitFor(() => expect(saveSongToNfsMock).toHaveBeenCalled());
+		const { isCancelled } = saveSongToNfsMock.mock.calls[0][0];
+		expect(isCancelled()).toBe(false);
 		worker.cancel();
+		// The save checks this before it replaces any file in the song folder.
+		expect(isCancelled()).toBe(true);
 		finishSave({ storagePath: "/music/stale-generation" });
 		await saving;
 

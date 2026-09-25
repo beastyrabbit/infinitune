@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -141,11 +142,13 @@ export async function saveSongToNfs(options: {
 	aceAudioPath: string;
 	cover?: SongCover | null;
 	coverPngBase64?: string | null;
+	/** Checked before any file in the song folder changes. */
+	isCancelled?: () => boolean;
 }): Promise<{
 	storagePath: string;
 	audioFile: string;
 	effectiveDuration?: number;
-}> {
+} | null> {
 	const {
 		songId,
 		title,
@@ -170,6 +173,7 @@ export async function saveSongToNfs(options: {
 		aceAudioPath,
 		cover,
 		coverPngBase64,
+		isCancelled,
 	} = options;
 
 	const storagePath =
@@ -189,23 +193,38 @@ export async function saveSongToNfs(options: {
 	const songDir = path.join(storagePath, genreDir, subGenreDir, songFolder);
 	fs.mkdirSync(songDir, { recursive: true });
 
-	linkSongDirById(storagePath, songId, songDir);
-
-	// Try to copy from local NAS mount first (ACE writes to same NAS share)
-	const localAudioPath = resolveLocalAudioPath(aceAudioPath);
+	// Prepare the audio under a private name: a replacement worker for the
+	// same song may save into this folder while this download is running.
 	const audioFile = path.join(songDir, "audio.mp3");
+	const pendingAudioFile = path.join(songDir, `.audio-${randomUUID()}.mp3`);
+	let trimResult: Awaited<ReturnType<typeof trimTrailingSilence>>;
+	try {
+		// Try to copy from local NAS mount first (ACE writes to same NAS share)
+		const localAudioPath = resolveLocalAudioPath(aceAudioPath);
+		if (localAudioPath) {
+			fs.copyFileSync(localAudioPath, pendingAudioFile);
+		} else {
+			// Fall back to HTTP download from ACE if local file isn't found
+			const urls = await getServiceUrls();
+			const aceUrl = urls.aceStepUrl;
+			await downloadAceAudio(`${aceUrl}${aceAudioPath}`, pendingAudioFile);
+		}
 
-	if (localAudioPath) {
-		fs.copyFileSync(localAudioPath, audioFile);
-	} else {
-		// Fall back to HTTP download from ACE if local file isn't found
-		const urls = await getServiceUrls();
-		const aceUrl = urls.aceStepUrl;
-		await downloadAceAudio(`${aceUrl}${aceAudioPath}`, audioFile);
+		// Trim trailing silence from audio
+		trimResult = await trimTrailingSilence(pendingAudioFile);
+	} catch (error) {
+		fs.rmSync(pendingAudioFile, { force: true });
+		throw error;
 	}
 
-	// Trim trailing silence from audio
-	const trimResult = await trimTrailingSilence(audioFile);
+	// From here on everything is synchronous, so a cancellation cannot slip in
+	// between this check and the writes that replace the folder's files.
+	if (isCancelled?.()) {
+		fs.rmSync(pendingAudioFile, { force: true });
+		return null;
+	}
+	fs.renameSync(pendingAudioFile, audioFile);
+	linkSongDirById(storagePath, songId, songDir);
 
 	saveSongCover(songDir, cover, coverPngBase64);
 
