@@ -87,7 +87,7 @@ function OneshotResult({
 	onPlayPause,
 	onSeek,
 	onGenerateAnother,
-}: OneshotResultProps) {
+}: Readonly<OneshotResultProps>) {
 	return (
 		<div>
 			<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">

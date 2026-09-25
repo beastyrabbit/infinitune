@@ -77,6 +77,14 @@ function getAuthUploadStatusClass(state: AuthUploadState): string {
 	return "text-yellow-300 bg-yellow-950/40";
 }
 
+function getApiKeyFieldLabel(
+	mode: OpenRouterCredentialUiMode,
+	configured: boolean,
+): string {
+	if (mode === "claim") return "Current API Key";
+	return configured ? "Replace API Key" : "Add API Key";
+}
+
 function OpenRouterCredentialControls({
 	mode,
 	configured,
@@ -86,7 +94,7 @@ function OpenRouterCredentialControls({
 	saving,
 	onSave,
 	onClear,
-}: {
+}: Readonly<{
 	mode: OpenRouterCredentialUiMode;
 	configured: boolean;
 	source: NetworkTabProps["openrouterAuth"]["source"];
@@ -95,7 +103,7 @@ function OpenRouterCredentialControls({
 	saving: boolean;
 	onSave: () => Promise<void>;
 	onClear: () => Promise<void>;
-}) {
+}>) {
 	if (mode !== "owner" && mode !== "setup" && mode !== "claim") {
 		return (
 			<div className="px-3 py-2 border-4 border-white/20 bg-gray-900 font-mono text-xs font-bold uppercase text-white/55">
@@ -107,15 +115,7 @@ function OpenRouterCredentialControls({
 	}
 	return (
 		<>
-			<SettingsField
-				label={
-					mode === "claim"
-						? "Current API Key"
-						: configured
-							? "Replace API Key"
-							: "Add API Key"
-				}
-			>
+			<SettingsField label={getApiKeyFieldLabel(mode, configured)}>
 				<Input
 					type="password"
 					autoComplete="new-password"

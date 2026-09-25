@@ -176,12 +176,12 @@ function InventoryTab({
 	forcing,
 	forceMessage,
 	onForceGenerate,
-}: {
+}: Readonly<{
 	queue: RadioQueueResponse | undefined;
 	forcing: boolean;
 	forceMessage: string | null;
 	onForceGenerate: () => Promise<void>;
-}) {
+}>) {
 	return (
 		<div className="space-y-6">
 			<section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
@@ -246,22 +246,28 @@ function InventoryTab({
 	);
 }
 
+function getSaveStatusLabel(dirtyCount: number): string {
+	if (dirtyCount > 0) {
+		const suffix = dirtyCount === 1 ? "" : "s";
+		return `${dirtyCount} setting${suffix} modified`;
+	}
+	return "All changes saved";
+}
+
 function SaveBar({
 	dirtyCount,
 	saving,
 	onSave,
-}: {
+}: Readonly<{
 	dirtyCount: number;
 	saving: boolean;
 	onSave: () => Promise<void>;
-}) {
+}>) {
 	return (
 		<div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-black/90 backdrop-blur">
 			<div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
 				<span className="hidden font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35 sm:block">
-					{dirtyCount > 0
-						? `${dirtyCount} setting${dirtyCount === 1 ? "" : "s"} modified`
-						: "All changes saved"}
+					{getSaveStatusLabel(dirtyCount)}
 				</span>
 				<Button
 					className={`h-12 flex-1 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${

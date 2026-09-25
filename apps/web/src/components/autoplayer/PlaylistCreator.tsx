@@ -154,7 +154,7 @@ function ModelSelection({
 	codexTextModels,
 	openrouterModels,
 	openrouterModelListId,
-}: {
+}: Readonly<{
 	provider: LlmProvider;
 	model: string;
 	onSelectProvider: (provider: LlmProvider) => void;
@@ -162,7 +162,35 @@ function ModelSelection({
 	codexTextModels: AutoplayerModelOption[];
 	openrouterModels: AutoplayerModelOption[];
 	openrouterModelListId: string;
-}) {
+}>) {
+	const codexModelField =
+		codexTextModels.length > 0 ? (
+			<Select value={model} onValueChange={onModelChange}>
+				<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+					<SelectValue placeholder="SELECT CODEX MODEL" />
+				</SelectTrigger>
+				<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+					{codexTextModels.map((m) => (
+						<SelectItem
+							key={m.name}
+							value={m.name}
+							className="font-mono text-sm font-bold uppercase text-white"
+						>
+							{(m.displayName || m.name).toUpperCase()}
+							{m.is_default ? " (DEFAULT)" : ""}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		) : (
+			<Input
+				className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+				placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
+				value={model}
+				onChange={(e) => onModelChange(e.target.value)}
+			/>
+		);
+
 	return (
 		<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 			<div>
@@ -200,32 +228,7 @@ function ModelSelection({
 					TEXT MODEL
 				</p>
 				{provider === "openai-codex" ? (
-					codexTextModels.length > 0 ? (
-						<Select value={model} onValueChange={onModelChange}>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="SELECT CODEX MODEL" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								{codexTextModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white"
-									>
-										{(m.displayName || m.name).toUpperCase()}
-										{m.is_default ? " (DEFAULT)" : ""}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : (
-						<Input
-							className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-							placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
-							value={model}
-							onChange={(e) => onModelChange(e.target.value)}
-						/>
-					)
+					codexModelField
 				) : (
 					<>
 						<Input
@@ -254,12 +257,12 @@ function PlaybackModeSection({
 	onPlaybackModeChange,
 	roomName,
 	onRoomNameChange,
-}: {
+}: Readonly<{
 	isRoom: boolean;
 	onPlaybackModeChange: (mode: PlaybackMode) => void;
 	roomName: string;
 	onRoomNameChange: (roomName: string) => void;
-}) {
+}>) {
 	return (
 		<div>
 			<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">

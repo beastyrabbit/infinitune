@@ -356,7 +356,9 @@ function DeviceCard({
 	);
 }
 
-function CurrentSongInfo({ currentSong }: { currentSong: SongData | null }) {
+function CurrentSongInfo({
+	currentSong,
+}: Readonly<{ currentSong: SongData | null }>) {
 	if (!currentSong) {
 		return (
 			<div className="mb-4">

@@ -150,6 +150,23 @@ function nonEmptyString(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Formats a value from untyped daemon JSON: scalars via String(), null and
+ * undefined as the fallback. Any other value keeps String()'s default output.
+ */
+function formatDaemonValue(value: unknown, fallback: string): string {
+	if (
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean"
+	) {
+		return String(value);
+	}
+	if (value === null || value === undefined) return fallback;
+	const nonScalar: unknown = value;
+	return String(nonScalar);
+}
+
 function nonEmptyTrimmed(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim().length > 0
 		? value.trim()
@@ -274,7 +291,9 @@ function formatRoomLabel(
 	roomId: string | undefined,
 	roomName: string | undefined,
 ): string {
-	return roomId ? `${roomId}${roomName ? ` (${roomName})` : ""}` : "-";
+	if (!roomId) return "-";
+	const roomNameSuffix = roomName ? ` (${roomName})` : "";
+	return `${roomId}${roomNameSuffix}`;
 }
 
 function printDaemonHttpInfo(
@@ -291,7 +310,7 @@ function printDaemonHttpInfo(
 	console.log(
 		`Config Daemon HTTP: ${formatDaemonHttpUrl(config.daemonHttpHost, config.daemonHttpPort)}`,
 	);
-	console.log(`Queue Length: ${String(data.queueLength ?? "0")}`);
+	console.log(`Queue Length: ${formatDaemonValue(data.queueLength, "0")}`);
 }
 
 function printRoomConnectionDiagnostics(data: Record<string, unknown>): void {
@@ -617,7 +636,9 @@ function printDaemonStatusOverview(
 	console.log(
 		`Room: ${formatRoomLabel(nonEmptyString(data.roomId), roomName)}`,
 	);
-	console.log(`Assigned Playlist: ${String(data.assignedPlaylistId ?? "-")}`);
+	console.log(
+		`Assigned Playlist: ${formatDaemonValue(data.assignedPlaylistId, "-")}`,
+	);
 	console.log(
 		`Device Token: ${data.deviceTokenConfigured ? "configured" : "not set"}`,
 	);
@@ -1124,13 +1145,11 @@ async function leaveLocalPlaylist(): Promise<void> {
 async function cmdPlaylist(args: string[]): Promise<void> {
 	const parsed = parseArgs(args);
 	const sub = parsed.positionals[0] ?? "leave";
-	switch (sub) {
-		case "leave":
-			await leaveLocalPlaylist();
-			return;
-		default:
-			throw new Error(`Unknown playlist subcommand: ${sub}`);
+	if (sub === "leave") {
+		await leaveLocalPlaylist();
+		return;
 	}
+	throw new Error(`Unknown playlist subcommand: ${sub}`);
 }
 
 async function cmdSong(args: string[]): Promise<void> {
@@ -1301,18 +1320,6 @@ function checkDoctorRoom(
 	}
 }
 
-function checkDoctorConnection(
-	connected: boolean,
-	connectionState: string,
-	report: DoctorReport,
-): void {
-	if (connected && connectionState === "connected") {
-		report.ok("room websocket is connected");
-	} else {
-		report.warn(`room websocket is ${connectionState}`);
-	}
-}
-
 function checkDoctorRoomProtocol(
 	daemonData: Record<string, unknown>,
 	report: DoctorReport,
@@ -1409,7 +1416,11 @@ async function cmdDoctor(args: string[]): Promise<void> {
 	checkDoctorMode(mode, report);
 	checkDoctorServer(daemonServer, serverUrl, report);
 	checkDoctorRoom(roomId, report);
-	checkDoctorConnection(connected, connectionState, report);
+	if (connected && connectionState === "connected") {
+		report.ok("room websocket is connected");
+	} else {
+		report.warn(`room websocket is ${connectionState}`);
+	}
 
 	if (mode === "room") {
 		checkDoctorRoomProtocol(daemonData, report);

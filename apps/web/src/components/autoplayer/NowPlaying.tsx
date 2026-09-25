@@ -77,7 +77,7 @@ function parseLyrics(raw: string) {
 	return sections;
 }
 
-function NowPlayingInfo({ song }: { song: Song }) {
+function NowPlayingInfo({ song }: Readonly<{ song: Song }>) {
 	return (
 		<div className="absolute top-0 left-0 right-0 p-4 md:p-6">
 			<div className="text-xs font-bold uppercase tracking-widest text-red-500 mb-1">
@@ -106,10 +106,10 @@ function NowPlayingInfo({ song }: { song: Song }) {
 function RatingButtons({
 	userRating,
 	onRate,
-}: {
+}: Readonly<{
 	userRating: Song["userRating"];
 	onRate: (rating: "up" | "down") => void;
-}) {
+}>) {
 	return (
 		<>
 			<Button
@@ -143,12 +143,12 @@ function VolumeControl({
 	isMuted,
 	onSetVolume,
 	onToggleMute,
-}: {
+}: Readonly<{
 	volume: number;
 	isMuted: boolean;
 	onSetVolume: (volume: number) => void;
 	onToggleMute: () => void;
-}) {
+}>) {
 	return (
 		<div className="ml-auto flex items-center gap-2 bg-black/40 backdrop-blur-sm border-2 border-white/30 px-3 py-1">
 			<button

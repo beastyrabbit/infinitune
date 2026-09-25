@@ -67,7 +67,9 @@ function RadioCover({ song }: { song: RadioSnapshot["currentSong"] }) {
 	);
 }
 
-function RadioHeader({ station }: { station?: RadioSnapshot["station"] }) {
+function RadioHeader({
+	station,
+}: Readonly<{ station?: RadioSnapshot["station"] }>) {
 	return (
 		<header className="border-b border-white/10 bg-black/70">
 			<div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
@@ -133,7 +135,9 @@ function RadioHeader({ station }: { station?: RadioSnapshot["station"] }) {
 	);
 }
 
-function RadioSchedule({ schedule }: { schedule?: RadioSnapshot["schedule"] }) {
+function RadioSchedule({
+	schedule,
+}: Readonly<{ schedule?: RadioSnapshot["schedule"] }>) {
 	return (
 		<section className="mt-6 border border-white/10 bg-black/30">
 			<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">

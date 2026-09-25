@@ -131,11 +131,11 @@ function QueueStats({
 	queue,
 	workerStatus,
 	analytics,
-}: {
+}: Readonly<{
 	queue: RadioQueueResponse | undefined;
 	workerStatus: WorkerStatus | null;
 	analytics: RadioAnalytics | undefined;
-}) {
+}>) {
 	return (
 		<div className="mb-6 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
 			<Stat
@@ -181,9 +181,9 @@ function QueueStats({
 
 function AnalyticsSummary({
 	analytics,
-}: {
+}: Readonly<{
 	analytics: RadioAnalytics | undefined;
-}) {
+}>) {
 	return (
 		<>
 			<section className="grid grid-cols-2 gap-3">

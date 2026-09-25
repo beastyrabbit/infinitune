@@ -39,7 +39,7 @@ function getStatusTextClass(status: Song["status"], generating: boolean) {
 	return "text-white/60";
 }
 
-function TrackHeading({ song }: { song: Song }) {
+function TrackHeading({ song }: Readonly<{ song: Song }>) {
 	return (
 		<>
 			<div>
@@ -76,10 +76,10 @@ function TrackHeading({ song }: { song: Song }) {
 function TrackStatus({
 	song,
 	generating,
-}: {
+}: Readonly<{
 	song: Song;
 	generating: boolean;
-}) {
+}>) {
 	return (
 		<>
 			{/* Status */}
@@ -117,12 +117,12 @@ function TrackActions({
 	confirmDelete,
 	onReset,
 	onDeleteClick,
-}: {
+}: Readonly<{
 	isStuck: boolean | number | null;
 	confirmDelete: boolean;
 	onReset: () => void;
 	onDeleteClick: () => void;
-}) {
+}>) {
 	return (
 		<div className="flex items-center gap-2">
 			{isStuck && (
@@ -155,11 +155,11 @@ function TrackGenerationTime({
 	song,
 	generating,
 	totalGenTime,
-}: {
+}: Readonly<{
 	song: Song;
 	generating: boolean;
 	totalGenTime: number | null;
-}) {
+}>) {
 	return (
 		<div className="flex items-center gap-2 text-xs font-bold uppercase text-white/40">
 			<ClockIcon size={12} />
@@ -176,7 +176,7 @@ function TrackGenerationTime({
 	);
 }
 
-function TrackListenStats({ song }: { song: Song }) {
+function TrackListenStats({ song }: Readonly<{ song: Song }>) {
 	return (
 		<div className="flex items-center gap-4">
 			{song.userRating && (
@@ -208,7 +208,7 @@ function TrackListenStats({ song }: { song: Song }) {
 	);
 }
 
-function TrackMusicProperties({ song }: { song: Song }) {
+function TrackMusicProperties({ song }: Readonly<{ song: Song }>) {
 	return (
 		<div className="border-4 border-white/10 bg-black">
 			<div className="border-b-2 border-white/10 px-4 py-2">
@@ -247,7 +247,7 @@ function TrackMusicProperties({ song }: { song: Song }) {
 	);
 }
 
-function TrackMetadata({ song }: { song: Song }) {
+function TrackMetadata({ song }: Readonly<{ song: Song }>) {
 	const instrumentEntries = toUniqueStringEntries(song.instruments ?? []);
 	const themeEntries = toUniqueStringEntries(song.themes ?? []);
 	const tagEntries = toUniqueStringEntries(song.tags ?? []);
@@ -338,7 +338,7 @@ function TrackMetadata({ song }: { song: Song }) {
 	);
 }
 
-function TrackTechnical({ song }: { song: Song }) {
+function TrackTechnical({ song }: Readonly<{ song: Song }>) {
 	return (
 		<div className="border-4 border-white/10 bg-black">
 			<div className="border-b-2 border-white/10 px-4 py-2">
@@ -362,7 +362,11 @@ function TrackTechnical({ song }: { song: Song }) {
 	);
 }
 
-export function TrackDetail({ song, onClose, onDeleted }: TrackDetailProps) {
+export function TrackDetail({
+	song,
+	onClose,
+	onDeleted,
+}: Readonly<TrackDetailProps>) {
 	const deleteSong = useDeleteSong();
 	const revertStatuses = useRevertSong();
 	const [confirmDelete, setConfirmDelete] = useState(false);

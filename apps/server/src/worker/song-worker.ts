@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
@@ -167,7 +168,7 @@ function pickPromptDistance(
 	isOneshot: boolean,
 ): PromptDistance {
 	if (isInterrupt || isOneshot) return "faithful";
-	return Math.random() < 0.6 ? "close" : "general";
+	return randomInt(10) < 6 ? "close" : "general";
 }
 
 /** Descriptive song fields for the NFS copy, with placeholders for missing text. */

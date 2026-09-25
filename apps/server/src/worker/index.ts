@@ -1038,7 +1038,7 @@ function pendingSongsToCreate(
 	workQueue: { totalSongs: number; bufferDeficit: number },
 ): number {
 	if (isOneshot) return workQueue.totalSongs === 0 ? 1 : 0;
-	return workQueue.bufferDeficit > 0 ? workQueue.bufferDeficit : 0;
+	return Math.max(workQueue.bufferDeficit, 0);
 }
 
 async function checkBufferDeficit(playlistId: string): Promise<void> {

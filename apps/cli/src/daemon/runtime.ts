@@ -178,17 +178,20 @@ function parseConfigureDaemonHttpPort(
 	return nextDaemonHttpPort;
 }
 
+/** null clears the token, a string is trimmed, anything else is left unset. */
+function normalizeRawDeviceToken(
+	rawDeviceToken: unknown,
+): string | null | undefined {
+	if (rawDeviceToken === null) return null;
+	return typeof rawDeviceToken === "string" ? rawDeviceToken.trim() : undefined;
+}
+
 function parseConfigureDeviceToken(
 	payload: IpcPayload,
 ): Pick<ConfigureUpdate, "hasDeviceTokenUpdate" | "nextDeviceToken"> {
 	const rawDeviceToken = payload?.deviceToken;
 	const hasDeviceTokenUpdate = Object.hasOwn(payload ?? {}, "deviceToken");
-	const nextDeviceToken =
-		rawDeviceToken === null
-			? null
-			: typeof rawDeviceToken === "string"
-				? rawDeviceToken.trim()
-				: undefined;
+	const nextDeviceToken = normalizeRawDeviceToken(rawDeviceToken);
 	if (
 		hasDeviceTokenUpdate &&
 		rawDeviceToken !== null &&

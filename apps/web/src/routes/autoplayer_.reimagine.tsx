@@ -101,11 +101,11 @@ function SourceModeToggle({
 	sourceMode,
 	setSourceMode,
 	generating,
-}: {
+}: Readonly<{
 	sourceMode: "library" | "url";
 	setSourceMode: (mode: "library" | "url") => void;
 	generating: boolean;
-}) {
+}>) {
 	return (
 		<div>
 			<p className="text-xs font-bold uppercase text-white/50 mb-1">SOURCE</p>
@@ -148,7 +148,7 @@ function LibrarySourcePicker({
 	setSourceId,
 	sourceSong,
 	generating,
-}: {
+}: Readonly<{
 	sourceSongs: Song[];
 	filteredSongs: Song[];
 	filter: string;
@@ -157,7 +157,7 @@ function LibrarySourcePicker({
 	setSourceId: (id: string) => void;
 	sourceSong: Song | null;
 	generating: boolean;
-}) {
+}>) {
 	return (
 		<div>
 			<p className="text-xs font-bold uppercase text-white/50 mb-1">
@@ -231,7 +231,7 @@ function ReimagineResult({
 	onPlayPause,
 	onSeek,
 	onGenerateAnother,
-}: ReimagineResultProps) {
+}: Readonly<ReimagineResultProps>) {
 	return (
 		<div>
 			<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">

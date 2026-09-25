@@ -65,11 +65,11 @@ function CoverStatusBanners({
 	status,
 	isCurrent,
 	isGenerating,
-}: {
+}: Readonly<{
 	status: SongStatus;
 	isCurrent: boolean;
 	isGenerating: boolean;
-}) {
+}>) {
 	return (
 		<>
 			{isCurrent && (
@@ -100,10 +100,10 @@ function CoverStatusBanners({
 function SongRatingButtons({
 	song,
 	onRate,
-}: {
+}: Readonly<{
 	song: Song;
 	onRate: (songId: string, rating: "up" | "down") => void;
-}) {
+}>) {
 	return (
 		<>
 			<button
@@ -146,7 +146,7 @@ function SongCardInfo({
 	status,
 	totalGenTime,
 	onRate,
-}: {
+}: Readonly<{
 	song: Song;
 	isOldEpoch: boolean;
 	isReady: boolean;
@@ -154,7 +154,9 @@ function SongCardInfo({
 	status: { text: string; className: string };
 	totalGenTime: number | null;
 	onRate: (songId: string, rating: "up" | "down") => void;
-}) {
+}>) {
+	const totalGenTimeLabel = totalGenTime ? formatElapsed(totalGenTime) : null;
+
 	return (
 		<>
 			<p
@@ -190,9 +192,9 @@ function SongCardInfo({
 				<p className="text-[10px] uppercase text-white/20">
 					{isGenerating && song.generationStartedAt ? (
 						<LiveTimer startedAt={song.generationStartedAt} />
-					) : totalGenTime ? (
-						formatElapsed(totalGenTime)
-					) : null}
+					) : (
+						totalGenTimeLabel
+					)}
 				</p>
 			</div>
 		</>

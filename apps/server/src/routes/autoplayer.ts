@@ -400,8 +400,7 @@ function getAlbumPositionHint(
 
 function buildAlbumPrompt(req: AlbumTrackRequest): string {
 	const lines: string[] = [];
-	lines.push(`PLAYLIST CONTEXT: ${req.playlistPrompt}`);
-	lines.push("");
+	lines.push(`PLAYLIST CONTEXT: ${req.playlistPrompt}`, "");
 
 	appendSourceSongLines(lines, req.sourceSong);
 	appendPersonaLines(lines, req);

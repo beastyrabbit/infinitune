@@ -20,7 +20,7 @@ export function OneshotTransport({
 	onSeek,
 	playButtonClassName,
 	progressBarClassName,
-}: {
+}: Readonly<{
 	isCurrentSong: boolean | null;
 	isPlaying: boolean;
 	currentTime: number;
@@ -29,7 +29,7 @@ export function OneshotTransport({
 	onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
 	playButtonClassName: string;
 	progressBarClassName: string;
-}) {
+}>) {
 	const progress =
 		audioDuration > 0 && isCurrentSong
 			? (currentTime / audioDuration) * 100
@@ -84,10 +84,10 @@ export function OneshotTransport({
 export function OneshotVolume({
 	volume,
 	isMuted,
-}: {
+}: Readonly<{
 	volume: number;
 	isMuted: boolean;
-}) {
+}>) {
 	return (
 		<div className="flex items-center gap-2">
 			<button
