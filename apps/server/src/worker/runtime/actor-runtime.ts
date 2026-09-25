@@ -105,6 +105,94 @@ export function createWorkerRuntime(
 		lastEventAt: undefined as number | undefined,
 	};
 
+	const handleEvent = async (event: InternalRuntimeEvent): Promise<void> => {
+		switch (event.type) {
+			case "supervisor.startup":
+				await handlers.reconcileAceState();
+				await handlers.startupSweep();
+				if (enableDiagnostics) {
+					await handlers.logWorkerDiagnostics("startup");
+				}
+				break;
+			case "supervisor.tick_audio":
+				await handlers.tickAudioPolls();
+				break;
+			case "supervisor.tick_stale":
+				await handlers.staleSongCleanup();
+				break;
+			case "supervisor.tick_diagnostics":
+				await handlers.logWorkerDiagnostics("interval");
+				break;
+			case "supervisor.stop":
+				break;
+			case "song.created":
+				await handlers.handleSongCreated(event);
+				break;
+			case "song.status_changed":
+				await handlers.handleSongStatusChanged(event);
+				break;
+			case "song.deleted":
+				await handlers.handleSongDeleted(event);
+				break;
+			case "playlist.created":
+				snapshot.playlistActors.add(event.playlistId);
+				await handlers.handlePlaylistCreated(event);
+				break;
+			case "playlist.steered":
+				await handlers.handlePlaylistSteered(event);
+				break;
+			case "playlist.heartbeat":
+				snapshot.playlistActors.add(event.playlistId);
+				await handlers.handlePlaylistHeartbeat(event);
+				break;
+			case "playlist.updated":
+				snapshot.playlistActors.add(event.playlistId);
+				await handlers.handlePlaylistUpdated(event);
+				break;
+			case "playlist.deleted":
+				snapshot.playlistActors.delete(event.playlistId);
+				await handlers.handlePlaylistDeleted(event);
+				break;
+			case "playlist.status_changed":
+				snapshot.playlistActors.add(event.playlistId);
+				await handlers.handlePlaylistStatusChanged(event);
+				break;
+			case "settings.changed":
+				await handlers.handleSettingsChanged(event);
+				break;
+			case "playlist.actor.started":
+				snapshot.playlistActors.add(event.playlistId);
+				break;
+			case "playlist.actor.stopped":
+				snapshot.playlistActors.delete(event.playlistId);
+				break;
+			case "playlist.actor.cancel_all":
+				break;
+			case "playlist.actor.start_song":
+				if (event.playlistId) {
+					snapshot.playlistActors.add(event.playlistId);
+				}
+				snapshot.songActors.add(event.songId);
+				break;
+			case "playlist.actor.song-started":
+				if (event.songId) snapshot.songActors.add(event.songId);
+				break;
+			case "playlist.actor.song-completed":
+			case "playlist.actor.song-failed":
+				snapshot.songActors.delete(event.songId);
+				break;
+			case "song.started":
+				snapshot.songActors.add(event.songId);
+				break;
+			case "song.completed":
+			case "song.failed":
+				snapshot.songActors.delete(event.songId);
+				break;
+			default:
+				logger.debug({ event }, "Unhandled worker runtime event");
+		}
+	};
+
 	const actorRef = createActor(
 		fromCallback<InternalRuntimeEvent>(({ receive }) => {
 			let inFlight = Promise.resolve();
@@ -130,93 +218,7 @@ export function createWorkerRuntime(
 			receive((event) => {
 				const completeEventTracking = trackEvent(event.type);
 				inFlight = inFlight.then(() =>
-					runSafe(event.type, async () => {
-						switch (event.type) {
-							case "supervisor.startup":
-								await handlers.reconcileAceState();
-								await handlers.startupSweep();
-								if (enableDiagnostics) {
-									await handlers.logWorkerDiagnostics("startup");
-								}
-								break;
-							case "supervisor.tick_audio":
-								await handlers.tickAudioPolls();
-								break;
-							case "supervisor.tick_stale":
-								await handlers.staleSongCleanup();
-								break;
-							case "supervisor.tick_diagnostics":
-								await handlers.logWorkerDiagnostics("interval");
-								break;
-							case "supervisor.stop":
-								break;
-							case "song.created":
-								await handlers.handleSongCreated(event);
-								break;
-							case "song.status_changed":
-								await handlers.handleSongStatusChanged(event);
-								break;
-							case "song.deleted":
-								await handlers.handleSongDeleted(event);
-								break;
-							case "playlist.created":
-								snapshot.playlistActors.add(event.playlistId);
-								await handlers.handlePlaylistCreated(event);
-								break;
-							case "playlist.steered":
-								await handlers.handlePlaylistSteered(event);
-								break;
-							case "playlist.heartbeat":
-								snapshot.playlistActors.add(event.playlistId);
-								await handlers.handlePlaylistHeartbeat(event);
-								break;
-							case "playlist.updated":
-								snapshot.playlistActors.add(event.playlistId);
-								await handlers.handlePlaylistUpdated(event);
-								break;
-							case "playlist.deleted":
-								snapshot.playlistActors.delete(event.playlistId);
-								await handlers.handlePlaylistDeleted(event);
-								break;
-							case "playlist.status_changed":
-								snapshot.playlistActors.add(event.playlistId);
-								await handlers.handlePlaylistStatusChanged(event);
-								break;
-							case "settings.changed":
-								await handlers.handleSettingsChanged(event);
-								break;
-							case "playlist.actor.started":
-								snapshot.playlistActors.add(event.playlistId);
-								break;
-							case "playlist.actor.stopped":
-								snapshot.playlistActors.delete(event.playlistId);
-								break;
-							case "playlist.actor.cancel_all":
-								break;
-							case "playlist.actor.start_song":
-								if (event.playlistId) {
-									snapshot.playlistActors.add(event.playlistId);
-								}
-								snapshot.songActors.add(event.songId);
-								break;
-							case "playlist.actor.song-started":
-								if (event.songId) snapshot.songActors.add(event.songId);
-								break;
-							case "playlist.actor.song-completed":
-							case "playlist.actor.song-failed":
-								snapshot.songActors.delete(event.songId);
-								break;
-							case "song.started":
-								snapshot.songActors.add(event.songId);
-								break;
-							case "song.completed":
-							case "song.failed":
-								snapshot.songActors.delete(event.songId);
-								break;
-							default:
-								logger.debug({ event }, "Unhandled worker runtime event");
-						}
-					}),
+					runSafe(event.type, () => handleEvent(event)),
 				);
 				inFlight = inFlight.finally(() => completeEventTracking());
 			});

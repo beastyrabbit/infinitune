@@ -21,6 +21,21 @@ function createDeferred<T>(): Deferred<T> & { resolve(value: T): void } {
 	};
 }
 
+interface ScriptedPollResult {
+	status: "running" | "succeeded";
+	audioPath?: string;
+}
+
+/** Poll mock that replays each task's scripted results in call order, then reports running. */
+function createScriptedPoll(scripts: Record<string, ScriptedPollResult[]>) {
+	const pollCount = new Map<string, number>();
+	return vi.fn(async (taskId: string): Promise<ScriptedPollResult> => {
+		const count = (pollCount.get(taskId) ?? 0) + 1;
+		pollCount.set(taskId, count);
+		return scripts[taskId]?.[count - 1] ?? { status: "running" };
+	});
+}
+
 describe("queue actors", () => {
 	describe("RequestResponseQueue", () => {
 		it("executes pending items by priority, then FIFO for ties", async () => {
@@ -259,33 +274,12 @@ describe("queue actors", () => {
 		});
 
 		it("honors a configured single active slot", async () => {
-			const pollCount = new Map<string, number>();
-
-			const pollAudio = vi.fn(async (taskId: string) => {
-				const count = (pollCount.get(taskId) ?? 0) + 1;
-				pollCount.set(taskId, count);
-
-				if (taskId === "task-a" && count === 1) {
-					return {
-						status: "running" as const,
-					};
-				}
-				if (taskId === "task-a" && count === 2) {
-					return {
-						status: "succeeded" as const,
-						audioPath: "/tmp/task-a.mp3",
-					};
-				}
-				if (taskId === "task-b" && count === 1) {
-					return {
-						status: "succeeded" as const,
-						audioPath: "/tmp/task-b.mp3",
-					};
-				}
-
-				return {
-					status: "running" as const,
-				};
+			const pollAudio = createScriptedPoll({
+				"task-a": [
+					{ status: "running" },
+					{ status: "succeeded", audioPath: "/tmp/task-a.mp3" },
+				],
+				"task-b": [{ status: "succeeded", audioPath: "/tmp/task-b.mp3" }],
 			});
 
 			const executeA = vi.fn(async () => {
