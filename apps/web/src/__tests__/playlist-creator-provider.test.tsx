@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { DEFAULT_OPENAI_CODEX_TEXT_MODEL } from "@infinitune/shared/text-llm-profile";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,7 +33,7 @@ describe("PlaylistCreator provider models", () => {
 		);
 
 		const codexInput = await waitFor(() =>
-			view.getByPlaceholderText("GPT-5.2"),
+			view.getByPlaceholderText(DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()),
 		);
 		expect(codexInput.getAttribute("list")).toBeNull();
 

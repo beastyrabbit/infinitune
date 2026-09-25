@@ -24,6 +24,7 @@ vi.mock("../external/pi-runtime", () => ({
 
 import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
 import {
+	DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 	normalizeLlmProvider,
 	resolveTextLlmProfile,
 } from "@infinitune/shared/text-llm-profile";
@@ -97,7 +98,7 @@ describe("agent ensemble", () => {
 		for (const spec of listAgentSpecs()) {
 			expect(spec.modelPolicy.primary).toEqual({
 				provider: "openai-codex",
-				model: "gpt-5.2",
+				model: "gpt-6-sol",
 			});
 			expect(spec.outputSchema).toHaveProperty("type", "json-object");
 		}
@@ -326,12 +327,12 @@ describe("agent ensemble", () => {
 		});
 		expect(resolveTextLlmProfile({ provider: "ollama", model: "" })).toEqual({
 			provider: "openai-codex",
-			model: "gpt-5.2",
+			model: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 		});
 		expect(resolveTextLlmProfile({ provider: "anthropic", model: "" })).toEqual(
 			{
 				provider: "openai-codex",
-				model: "gpt-5.2",
+				model: DEFAULT_OPENAI_CODEX_TEXT_MODEL,
 			},
 		);
 	});
