@@ -797,6 +797,7 @@ export class SongWorker {
 					await this.saveAndFinalize(
 						this.song.aceAudioPath,
 						this.song.audioProcessingMs ?? 0,
+						this.song.aceTaskId ?? null,
 					);
 					break;
 				}
@@ -1348,7 +1349,7 @@ export class SongWorker {
 		processingMs: number,
 	): Promise<void> {
 		if (status === "succeeded" && audioResult.audioPath) {
-			await this.saveAndFinalize(audioResult.audioPath, processingMs);
+			await this.saveAndFinalize(audioResult.audioPath, processingMs, taskId);
 		} else if (status === "failed") {
 			songLogger(this.songId).error(
 				{ error: audioResult.error },
@@ -1392,6 +1393,7 @@ export class SongWorker {
 	private async saveAndFinalize(
 		audioPath: string,
 		audioProcessingMs: number,
+		aceTaskId: string | null,
 	): Promise<void> {
 		songLogger(this.songId).info(
 			{ title: this.song.title },
@@ -1488,7 +1490,12 @@ export class SongWorker {
 
 		const audioUrl = `/api/songs/${this.songId}/audio`;
 		if (
-			!(await songService.markReady(this.songId, audioUrl, audioProcessingMs))
+			!(await songService.markReady(
+				this.songId,
+				audioUrl,
+				audioProcessingMs,
+				aceTaskId,
+			))
 		)
 			return;
 		await playlistService.incrementGenerated(this.ctx.playlist.id);

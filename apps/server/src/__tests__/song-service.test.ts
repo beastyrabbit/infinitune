@@ -295,6 +295,48 @@ describe("song-service", () => {
 		);
 	});
 
+	describe("markReady generation guard", () => {
+		it("rejects a stale worker whose ACE task was replaced", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "saving",
+				aceTaskId: "task-new",
+			});
+
+			expect(
+				await songService.markReady(
+					song.id,
+					"http://stale.mp3",
+					undefined,
+					"task-old",
+				),
+			).toBe(false);
+
+			const db = getTestDb();
+			const [row] = await db.select().from(songs).where(eq(songs.id, song.id));
+			expect(row.status).toBe("saving");
+			expect(emittedEvents).toHaveLength(0);
+		});
+
+		it("finalizes the worker that owns the current ACE task", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "saving",
+				aceTaskId: "task-new",
+			});
+
+			expect(
+				await songService.markReady(
+					song.id,
+					"http://audio.mp3",
+					undefined,
+					"task-new",
+				),
+			).toBe(true);
+			expect(emittedEvents).toHaveLength(1);
+		});
+	});
+
 	// ─── markError ─────────────────────────────────────────────────
 
 	describe("markError", () => {

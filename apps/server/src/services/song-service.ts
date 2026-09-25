@@ -397,13 +397,15 @@ export async function updateAceTask(id: string, aceTaskId: string) {
 
 /**
  * Mark a saved song as ready. Returns false when the song left the saving
- * step in the meantime (cancelled, recovered or deleted), so a late worker
- * cannot resurrect it.
+ * step in the meantime (cancelled, recovered or deleted) or, when
+ * `expectedAceTaskId` is given, belongs to a newer ACE generation, so a late
+ * worker cannot resurrect or overwrite it.
  */
 export async function markReady(
 	id: string,
 	audioUrl: string,
 	audioProcessingMs?: number,
+	expectedAceTaskId?: string | null,
 ): Promise<boolean> {
 	const [current] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!current) return false;
@@ -430,7 +432,13 @@ export async function markReady(
 	const updated = await db
 		.update(songs)
 		.set(patch)
-		.where(and(eq(songs.id, id), eq(songs.status, from)))
+		.where(
+			and(
+				eq(songs.id, id),
+				eq(songs.status, from),
+				expectedAceTaskId ? eq(songs.aceTaskId, expectedAceTaskId) : undefined,
+			),
+		)
 		.returning({ id: songs.id });
 	if (updated.length === 0) return false;
 
