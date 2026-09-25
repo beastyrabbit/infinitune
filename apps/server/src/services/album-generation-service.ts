@@ -851,6 +851,41 @@ async function resolveTrackSourceOpts(
 	}
 }
 
+/** Overlay a planned track onto its deterministic fallback metadata. */
+function mergePlannedTrackMetadata({
+	fallbackMetadata,
+	spec,
+	plan,
+	sourceOpts,
+	kind,
+	trackNumber,
+}: {
+	fallbackMetadata: ReturnType<typeof buildTrackMetadata>;
+	spec: TrackPlan;
+	plan: AlbumPlan;
+	sourceOpts: TrackCreateOpts;
+	kind: AlbumGenerationKind;
+	trackNumber: number;
+}): Record<string, unknown> {
+	const effectiveType = sourceOpts.aceTaskType ? spec.type : "new";
+	return {
+		...fallbackMetadata,
+		title: spec.title,
+		genre: plan.album.targetGenre,
+		subGenre: plan.album.vibe,
+		lyrics: spec.lyrics,
+		caption: spec.caption,
+		vocalStyle: spec.vocalStyle,
+		bpm: spec.bpm ?? fallbackMetadata.bpm,
+		keyScale: spec.keyScale ?? fallbackMetadata.keyScale,
+		mood: spec.mood ?? fallbackMetadata.mood,
+		energy: spec.energy ?? fallbackMetadata.energy,
+		era: plan.album.era,
+		tags: ["global-radio", kind, `track-${trackNumber}`, effectiveType],
+		description: `${RADIO_TRACK_DURATION_SECONDS}-second ${effectiveType} track in ${plan.album.targetGenre}: ${spec.caption}`,
+	};
+}
+
 export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 	const playlist = await ensureRadioPlaylist();
 	const kind = input.kind ?? "default";
@@ -964,23 +999,14 @@ export async function createRadioAlbum(input: CreateRadioAlbumInput = {}) {
 				plan.album.targetGenre,
 				sourceSettings,
 			);
-			const effectiveType = sourceOpts.aceTaskType ? spec.type : "new";
-			metadata = {
-				...fallbackMetadata,
-				title: spec.title,
-				genre: plan.album.targetGenre,
-				subGenre: plan.album.vibe,
-				lyrics: spec.lyrics,
-				caption: spec.caption,
-				vocalStyle: spec.vocalStyle,
-				bpm: spec.bpm ?? fallbackMetadata.bpm,
-				keyScale: spec.keyScale ?? fallbackMetadata.keyScale,
-				mood: spec.mood ?? fallbackMetadata.mood,
-				energy: spec.energy ?? fallbackMetadata.energy,
-				era: plan.album.era,
-				tags: ["global-radio", kind, `track-${trackNumber}`, effectiveType],
-				description: `${RADIO_TRACK_DURATION_SECONDS}-second ${effectiveType} track in ${plan.album.targetGenre}: ${spec.caption}`,
-			};
+			metadata = mergePlannedTrackMetadata({
+				fallbackMetadata,
+				spec,
+				plan,
+				sourceOpts,
+				kind,
+				trackNumber,
+			});
 		}
 
 		await songService.createWithMetadata(
@@ -1089,6 +1115,147 @@ async function createRadioAlbumFallback(
 	return album;
 }
 
+interface IncompleteAlbumRow {
+	id: string;
+	title: string;
+	theme: string;
+	generationKind: string | null;
+	bandName: string | null;
+	coverPrompt: string | null;
+	requestId: string | null;
+	trackCount: number;
+}
+
+interface ExistingAlbumTrackRow {
+	id: string;
+	title: string | null;
+	trackNumber: number | null;
+}
+
+interface RepairedAlbumIdentity {
+	theme: string;
+	kind: AlbumGenerationKind;
+	albumTitle: string;
+	replacingBandName: boolean;
+	bandName: string;
+	coverPrompt: string;
+}
+
+function resolveRepairedAlbumIdentity(
+	album: IncompleteAlbumRow,
+): RepairedAlbumIdentity {
+	const theme = compactTheme(album.theme);
+	const kind = normalizeAlbumKind(album.generationKind);
+	const albumTitle = isGenericAlbumTitle(album.title)
+		? buildAlbumTitle(theme)
+		: album.title;
+	const replacingBandName = shouldReplaceBandName(album.bandName);
+	const bandName = replacingBandName
+		? buildBandName(theme)
+		: album.bandName?.trim() || buildBandName(theme);
+	const coverPrompt =
+		replacingBandName || !album.coverPrompt?.trim()
+			? buildAlbumCoverPrompt({ title: albumTitle, bandName, theme })
+			: album.coverPrompt.trim();
+	return { theme, kind, albumTitle, replacingBandName, bandName, coverPrompt };
+}
+
+function buildRepairedTrackMetadata(
+	{ albumTitle, bandName, theme, kind, coverPrompt }: RepairedAlbumIdentity,
+	trackNumber: number,
+) {
+	return buildTrackMetadata({
+		albumTitle,
+		bandName,
+		theme,
+		trackNumber,
+		kind,
+		coverPrompt: trackNumber === 1 ? coverPrompt : undefined,
+	});
+}
+
+function updateAlbumIdentityIfChanged(
+	album: IncompleteAlbumRow,
+	{
+		theme,
+		kind,
+		albumTitle,
+		replacingBandName,
+		bandName,
+		coverPrompt,
+	}: RepairedAlbumIdentity,
+): void {
+	if (
+		album.title !== albumTitle ||
+		album.bandName !== bandName ||
+		album.coverPrompt !== coverPrompt ||
+		!album.coverPrompt?.trim()
+	) {
+		const bandPersonaJson = JSON.stringify(
+			buildBandPersona({ bandName, theme, kind }),
+		);
+		sqlite
+			.prepare(
+				`
+					UPDATE albums
+					SET title = ?,
+						band_name = ?,
+						cover_prompt = ?,
+						band_persona_json = CASE
+							WHEN ? = 1 THEN ?
+							ELSE COALESCE(band_persona_json, ?)
+						END
+					WHERE id = ?
+				`,
+			)
+			.run(
+				albumTitle,
+				bandName,
+				coverPrompt,
+				replacingBandName ? 1 : 0,
+				bandPersonaJson,
+				bandPersonaJson,
+				album.id,
+			);
+	}
+}
+
+function retitleGenericAlbumTracks(
+	album: IncompleteAlbumRow,
+	identity: RepairedAlbumIdentity,
+	existingTracks: ExistingAlbumTrackRow[],
+): void {
+	for (const track of existingTracks) {
+		const trackNumber = Number(track.trackNumber);
+		if (!Number.isInteger(trackNumber)) continue;
+		if (!isGenericTrackTitle(track.title, album.title)) continue;
+		const metadata = buildRepairedTrackMetadata(identity, trackNumber);
+		sqlite
+			.prepare(
+				`
+					UPDATE songs
+					SET title = ?,
+						artist_name = ?,
+						caption = ?,
+						description = ?,
+						cover_prompt = CASE
+							WHEN album_track_number = 1 THEN ?
+							ELSE cover_prompt
+						END
+					WHERE id = ?
+				`,
+			)
+			.run(
+				metadata.title,
+				identity.bandName,
+				metadata.caption,
+				metadata.description,
+				identity.coverPrompt,
+				track.id,
+			);
+	}
+}
+
 export async function repairIncompleteRadioAlbums(): Promise<InventoryRepairResult> {
 	const playlist = await ensureRadioPlaylist();
 	const albumRows = sqlite
@@ -1110,16 +1277,7 @@ export async function repairIncompleteRadioAlbums(): Promise<InventoryRepairResu
 				ORDER BY a.created_at ASC
 			`,
 		)
-		.all() as Array<{
-		id: string;
-		title: string;
-		theme: string;
-		generationKind: string | null;
-		bandName: string | null;
-		coverPrompt: string | null;
-		requestId: string | null;
-		trackCount: number;
-	}>;
+		.all() as IncompleteAlbumRow[];
 
 	let nextOrderIndex = await songService.getNextOrderIndex(playlist.id);
 	let repairedAlbums = 0;
@@ -1134,64 +1292,17 @@ export async function repairIncompleteRadioAlbums(): Promise<InventoryRepairResu
 					WHERE album_id = ? AND radio_eligible = 1
 				`,
 			)
-			.all(album.id) as Array<{
-			id: string;
-			title: string | null;
-			trackNumber: number | null;
-		}>;
+			.all(album.id) as ExistingAlbumTrackRow[];
 		const existingTrackNumbers = new Set(
 			existingTracks
 				.map((track) => Number(track.trackNumber))
 				.filter((trackNumber) => Number.isInteger(trackNumber)),
 		);
 
-		const theme = compactTheme(album.theme);
-		const kind = normalizeAlbumKind(album.generationKind);
-		const albumTitle = isGenericAlbumTitle(album.title)
-			? buildAlbumTitle(theme)
-			: album.title;
-		const replacingBandName = shouldReplaceBandName(album.bandName);
-		const bandName = replacingBandName
-			? buildBandName(theme)
-			: album.bandName?.trim() || buildBandName(theme);
-		const coverPrompt =
-			replacingBandName || !album.coverPrompt?.trim()
-				? buildAlbumCoverPrompt({ title: albumTitle, bandName, theme })
-				: album.coverPrompt.trim();
+		const identity = resolveRepairedAlbumIdentity(album);
+		const { bandName, coverPrompt, replacingBandName } = identity;
 
-		if (
-			album.title !== albumTitle ||
-			album.bandName !== bandName ||
-			album.coverPrompt !== coverPrompt ||
-			!album.coverPrompt?.trim()
-		) {
-			const bandPersonaJson = JSON.stringify(
-				buildBandPersona({ bandName, theme, kind }),
-			);
-			sqlite
-				.prepare(
-					`
-						UPDATE albums
-						SET title = ?,
-							band_name = ?,
-							cover_prompt = ?,
-							band_persona_json = CASE
-								WHEN ? = 1 THEN ?
-								ELSE COALESCE(band_persona_json, ?)
-							END
-						WHERE id = ?
-					`,
-				)
-				.run(
-					albumTitle,
-					bandName,
-					coverPrompt,
-					replacingBandName ? 1 : 0,
-					bandPersonaJson,
-					bandPersonaJson,
-					album.id,
-				);
-		}
+		updateAlbumIdentityIfChanged(album, identity);
 
 		sqlite
 			.prepare(
@@ -1204,42 +1315,7 @@ export async function repairIncompleteRadioAlbums(): Promise<InventoryRepairResu
 				`,
 			)
 			.run(bandName, album.id);
-		for (const track of existingTracks) {
-			const trackNumber = Number(track.trackNumber);
-			if (!Number.isInteger(trackNumber)) continue;
-			if (!isGenericTrackTitle(track.title, album.title)) continue;
-			const metadata = buildTrackMetadata({
-				albumTitle,
-				bandName,
-				theme,
-				trackNumber,
-				kind,
-				coverPrompt: trackNumber === 1 ? coverPrompt : undefined,
-			});
-			sqlite
-				.prepare(
-					`
-						UPDATE songs
-						SET title = ?,
-							artist_name = ?,
-							caption = ?,
-							description = ?,
-							cover_prompt = CASE
-								WHEN album_track_number = 1 THEN ?
-								ELSE cover_prompt
-							END
-						WHERE id = ?
-					`,
-				)
-				.run(
-					metadata.title,
-					bandName,
-					metadata.caption,
-					metadata.description,
-					coverPrompt,
-					track.id,
-				);
-		}
+		retitleGenericAlbumTracks(album, identity, existingTracks);
 		sqlite
 			.prepare(
 				`
@@ -1260,14 +1336,7 @@ export async function repairIncompleteRadioAlbums(): Promise<InventoryRepairResu
 			trackNumber++
 		) {
 			if (existingTrackNumbers.has(trackNumber)) continue;
-			const metadata = buildTrackMetadata({
-				albumTitle,
-				bandName,
-				theme,
-				trackNumber,
-				kind,
-				coverPrompt: trackNumber === 1 ? coverPrompt : undefined,
-			});
+			const metadata = buildRepairedTrackMetadata(identity, trackNumber);
 			await songService.createWithMetadata(
 				playlist.id,
 				nextOrderIndex,

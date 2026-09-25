@@ -302,14 +302,15 @@ export async function refreshPlaylistPlanWithDirector(input: {
 	if (!playlistRow) throw new Error(`Playlist not found: ${input.playlistId}`);
 	const playlist = playlistToWire(playlistRow);
 	const planWindow = Math.max(1, Math.min(input.planWindow ?? 5, 12));
-	const correlationId = `plan:${playlist.id}:${playlist.promptEpoch ?? 0}:${input.startOrderIndex}`;
+	const epoch = playlist.promptEpoch ?? 0;
+	const correlationId = `plan:${playlist.id}:${epoch}:${input.startOrderIndex}`;
 	const run = await createAgentRun({
 		playlistId: playlist.id,
 		agentId: "playlist-director",
 		sessionKey: getAgentSessionKey("playlist-director", playlist.id),
 		trigger: "manager-plan",
 		input: {
-			epoch: playlist.promptEpoch ?? 0,
+			epoch,
 			startOrderIndex: input.startOrderIndex,
 			planWindow,
 		},
@@ -323,7 +324,7 @@ export async function refreshPlaylistPlanWithDirector(input: {
 		visibility: "collapsed",
 		content: "Manager plan is stale; waking playlist director and specialists.",
 		data: {
-			epoch: playlist.promptEpoch ?? 0,
+			epoch,
 			startOrderIndex: input.startOrderIndex,
 			planWindow,
 		},
@@ -393,7 +394,7 @@ export async function refreshPlaylistPlanWithDirector(input: {
 			),
 			steerHistory: playlist.steerHistory,
 			previousBrief: playlist.managerBrief,
-			currentEpoch: playlist.promptEpoch ?? 0,
+			currentEpoch: epoch,
 			planWindow,
 			signal: input.signal,
 		});
@@ -404,7 +405,7 @@ export async function refreshPlaylistPlanWithDirector(input: {
 		await playlistService.updateManagerBrief(playlist.id, {
 			managerBrief: result.managerBrief,
 			managerPlan: JSON.stringify(managerPlan),
-			managerEpoch: playlist.promptEpoch ?? 0,
+			managerEpoch: epoch,
 		});
 		await postChannelMessage({
 			playlistId: playlist.id,
@@ -420,7 +421,7 @@ export async function refreshPlaylistPlanWithDirector(input: {
 	} catch (err) {
 		const managerPlan = fallbackPlan({
 			prompt: playlist.prompt,
-			epoch: playlist.promptEpoch ?? 0,
+			epoch,
 			startOrderIndex: input.startOrderIndex,
 			windowSize: planWindow,
 			reason: err instanceof Error ? err.message : String(err),
@@ -430,7 +431,7 @@ export async function refreshPlaylistPlanWithDirector(input: {
 		await playlistService.updateManagerBrief(playlist.id, {
 			managerBrief,
 			managerPlan: JSON.stringify(managerPlan),
-			managerEpoch: playlist.promptEpoch ?? 0,
+			managerEpoch: epoch,
 		});
 		await postChannelMessage({
 			playlistId: playlist.id,
@@ -705,71 +706,84 @@ export async function scheduleMemoryCurator(input: {
 }): Promise<void> {
 	try {
 		if (input.trigger === "rating" && input.songId) {
-			const song = (await songService.getByIds([input.songId]))[0];
-			if (!song?.userRating) return;
-			await writeMemory({
-				scope: "playlist",
-				playlistId: song.playlistId,
-				kind: song.userRating === "up" ? "taste" : "avoid",
-				title: `${song.userRating === "up" ? "Liked" : "Disliked"}: ${song.title || "Untitled"}`,
-				content: {
-					songId: song.id,
-					title: song.title,
-					artistName: song.artistName,
-					genre: song.genre,
-					subGenre: song.subGenre,
-					mood: song.mood,
-					energy: song.energy,
-					vocalStyle: song.vocalStyle,
-					personaExtract: song.personaExtract,
-					signal: song.userRating,
-				},
-				confidence: 0.75,
-				importance: song.userRating === "up" ? 0.7 : 0.65,
-			});
+			await rememberSongRating(input.songId);
 			return;
 		}
 		if (input.trigger === "completed-song" && input.songId) {
-			const song = (await songService.getByIds([input.songId]))[0];
-			if (!song?.title) return;
-			await writeMemory({
-				scope: "playlist",
-				playlistId: song.playlistId,
-				kind: "summary",
-				title: `Completed song: ${song.title}`,
-				content: {
-					songId: song.id,
-					title: song.title,
-					genre: song.genre,
-					subGenre: song.subGenre,
-					mood: song.mood,
-					energy: song.energy,
-					themes: song.themes,
-					description: song.description,
-				},
-				confidence: 0.6,
-				importance: 0.35,
-			});
+			await rememberCompletedSong(input.songId);
 			return;
 		}
 		if (input.playlistId && input.content?.trim()) {
-			await writeMemory({
-				scope: "playlist",
-				playlistId: input.playlistId,
-				kind: input.trigger === "steering" ? "constraint" : "feedback",
-				title:
-					input.trigger === "steering"
-						? "Chat steering note"
-						: "Playlist chat note",
-				content: {
-					trigger: input.trigger,
-					text: input.content.trim(),
-				},
-				confidence: input.trigger === "steering" ? 0.75 : 0.45,
-				importance: input.trigger === "steering" ? 0.75 : 0.4,
-			});
+			await rememberChatNote(input.playlistId, input.trigger, input.content);
 		}
 	} catch (err) {
 		logger.warn({ err, input }, "Memory curator fallback failed");
 	}
+}
+
+async function rememberSongRating(songId: string): Promise<void> {
+	const song = (await songService.getByIds([songId]))[0];
+	if (!song?.userRating) return;
+	await writeMemory({
+		scope: "playlist",
+		playlistId: song.playlistId,
+		kind: song.userRating === "up" ? "taste" : "avoid",
+		title: `${song.userRating === "up" ? "Liked" : "Disliked"}: ${song.title || "Untitled"}`,
+		content: {
+			songId: song.id,
+			title: song.title,
+			artistName: song.artistName,
+			genre: song.genre,
+			subGenre: song.subGenre,
+			mood: song.mood,
+			energy: song.energy,
+			vocalStyle: song.vocalStyle,
+			personaExtract: song.personaExtract,
+			signal: song.userRating,
+		},
+		confidence: 0.75,
+		importance: song.userRating === "up" ? 0.7 : 0.65,
+	});
+}
+
+async function rememberCompletedSong(songId: string): Promise<void> {
+	const song = (await songService.getByIds([songId]))[0];
+	if (!song?.title) return;
+	await writeMemory({
+		scope: "playlist",
+		playlistId: song.playlistId,
+		kind: "summary",
+		title: `Completed song: ${song.title}`,
+		content: {
+			songId: song.id,
+			title: song.title,
+			genre: song.genre,
+			subGenre: song.subGenre,
+			mood: song.mood,
+			energy: song.energy,
+			themes: song.themes,
+			description: song.description,
+		},
+		confidence: 0.6,
+		importance: 0.35,
+	});
+}
+
+async function rememberChatNote(
+	playlistId: string,
+	trigger: MemoryTrigger,
+	content: string,
+): Promise<void> {
+	await writeMemory({
+		scope: "playlist",
+		playlistId,
+		kind: trigger === "steering" ? "constraint" : "feedback",
+		title: trigger === "steering" ? "Chat steering note" : "Playlist chat note",
+		content: {
+			trigger,
+			text: content.trim(),
+		},
+		confidence: trigger === "steering" ? 0.75 : 0.45,
+		importance: trigger === "steering" ? 0.75 : 0.4,
+	});
 }

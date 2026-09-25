@@ -73,6 +73,50 @@ function resolveLocalAudioPath(aceAudioPath: string): string | null {
 	}
 }
 
+function linkSongDirById(
+	storagePath: string,
+	songId: string,
+	songDir: string,
+): void {
+	const byIdDir = path.join(storagePath, ".by-id");
+	fs.mkdirSync(byIdDir, { recursive: true });
+	const idLink = path.join(byIdDir, songId);
+	try {
+		if (fs.existsSync(idLink)) fs.unlinkSync(idLink);
+		fs.symlinkSync(songDir, idLink);
+	} catch {
+		fs.writeFileSync(idLink, songDir);
+	}
+}
+
+function saveSongCover(
+	songDir: string,
+	cover: SongCover | null | undefined,
+	coverPngBase64: string | null | undefined,
+): void {
+	if (cover?.pngUrl && !cover.pngUrl.startsWith("data:")) {
+		const coverFilenames = [
+			{ url: cover.pngUrl, output: "cover.png" },
+			{ url: cover.webpUrl, output: "cover.webp" },
+			{ url: cover.jxlUrl, output: "cover.jxl" },
+		];
+		for (const entry of coverFilenames) {
+			if (!entry.url || entry.url.startsWith("data:")) continue;
+			const sourcePath = path.resolve(
+				import.meta.dirname,
+				"../../../../data/covers",
+				path.basename(entry.url),
+			);
+			if (fs.existsSync(sourcePath)) {
+				fs.copyFileSync(sourcePath, path.join(songDir, entry.output));
+			}
+		}
+	} else if (coverPngBase64) {
+		const coverBuffer = Buffer.from(coverPngBase64, "base64");
+		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
+	}
+}
+
 export async function saveSongToNfs(options: {
 	songId: string;
 	title: string;
@@ -145,15 +189,7 @@ export async function saveSongToNfs(options: {
 	const songDir = path.join(storagePath, genreDir, subGenreDir, songFolder);
 	fs.mkdirSync(songDir, { recursive: true });
 
-	const byIdDir = path.join(storagePath, ".by-id");
-	fs.mkdirSync(byIdDir, { recursive: true });
-	const idLink = path.join(byIdDir, songId);
-	try {
-		if (fs.existsSync(idLink)) fs.unlinkSync(idLink);
-		fs.symlinkSync(songDir, idLink);
-	} catch {
-		fs.writeFileSync(idLink, songDir);
-	}
+	linkSongDirById(storagePath, songId, songDir);
 
 	// Try to copy from local NAS mount first (ACE writes to same NAS share)
 	const localAudioPath = resolveLocalAudioPath(aceAudioPath);
@@ -171,27 +207,7 @@ export async function saveSongToNfs(options: {
 	// Trim trailing silence from audio
 	const trimResult = await trimTrailingSilence(audioFile);
 
-	if (cover?.pngUrl && !cover.pngUrl.startsWith("data:")) {
-		const coverFilenames = [
-			{ url: cover.pngUrl, output: "cover.png" },
-			{ url: cover.webpUrl, output: "cover.webp" },
-			{ url: cover.jxlUrl, output: "cover.jxl" },
-		];
-		for (const entry of coverFilenames) {
-			if (!entry.url || entry.url.startsWith("data:")) continue;
-			const sourcePath = path.resolve(
-				import.meta.dirname,
-				"../../../../data/covers",
-				path.basename(entry.url),
-			);
-			if (fs.existsSync(sourcePath)) {
-				fs.copyFileSync(sourcePath, path.join(songDir, entry.output));
-			}
-		}
-	} else if (coverPngBase64) {
-		const coverBuffer = Buffer.from(coverPngBase64, "base64");
-		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
-	}
+	saveSongCover(songDir, cover, coverPngBase64);
 
 	fs.writeFileSync(path.join(songDir, "lyrics.txt"), lyrics);
 

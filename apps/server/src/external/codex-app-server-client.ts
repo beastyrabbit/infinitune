@@ -87,6 +87,65 @@ function isNoisyRolloutWarning(message: string): boolean {
 	);
 }
 
+function isSchemaObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeSchemaEntries(
+	entries: Record<string, unknown>,
+): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(entries).map(([key, value]) => [
+			key,
+			normalizeCodexSchemaNode(value),
+		]),
+	);
+}
+
+function normalizeSchemaProperties(current: Record<string, unknown>): void {
+	if (!isSchemaObject(current.properties)) return;
+
+	const normalizedProperties = normalizeSchemaEntries(current.properties);
+
+	current.properties = normalizedProperties;
+	const propertyKeys = Object.keys(normalizedProperties);
+	if (propertyKeys.length > 0) {
+		// Codex structured output requires `required` to include every key in
+		// `properties`, even when the originating schema had optional fields.
+		current.required = propertyKeys;
+		if (current.additionalProperties === undefined) {
+			current.additionalProperties = false;
+		}
+	}
+}
+
+function normalizeCodexSchemaNode(node: unknown): unknown {
+	if (!isSchemaObject(node)) {
+		return node;
+	}
+
+	const current: Record<string, unknown> = {
+		...node,
+	};
+
+	normalizeSchemaProperties(current);
+
+	if (current.items !== undefined) {
+		current.items = normalizeCodexSchemaNode(current.items);
+	}
+	for (const key of ["anyOf", "oneOf", "allOf"] as const) {
+		const variants = current[key];
+		if (Array.isArray(variants)) {
+			current[key] = variants.map(normalizeCodexSchemaNode);
+		}
+	}
+	if (isSchemaObject(current.$defs)) {
+		current.$defs = normalizeSchemaEntries(current.$defs);
+	}
+
+	return current;
+}
+
 export class CodexAppServerClient {
 	private proc: ChildProcessWithoutNullStreams | null = null;
 	private stdoutBuffer = "";
@@ -656,66 +715,7 @@ export class CodexAppServerClient {
 	private normalizeCodexOutputSchema(
 		schema: Record<string, unknown>,
 	): Record<string, unknown> {
-		const normalizeNode = (node: unknown): unknown => {
-			if (!node || typeof node !== "object" || Array.isArray(node)) {
-				return node;
-			}
-
-			const current: Record<string, unknown> = {
-				...(node as Record<string, unknown>),
-			};
-
-			if (
-				current.properties &&
-				typeof current.properties === "object" &&
-				!Array.isArray(current.properties)
-			) {
-				const normalizedProperties = Object.fromEntries(
-					Object.entries(current.properties as Record<string, unknown>).map(
-						([key, value]) => [key, normalizeNode(value)],
-					),
-				);
-
-				current.properties = normalizedProperties;
-				const propertyKeys = Object.keys(normalizedProperties);
-				if (propertyKeys.length > 0) {
-					// Codex structured output requires `required` to include every key in
-					// `properties`, even when the originating schema had optional fields.
-					current.required = propertyKeys;
-					if (current.additionalProperties === undefined) {
-						current.additionalProperties = false;
-					}
-				}
-			}
-
-			if (current.items !== undefined) {
-				current.items = normalizeNode(current.items);
-			}
-			if (Array.isArray(current.anyOf)) {
-				current.anyOf = current.anyOf.map(normalizeNode);
-			}
-			if (Array.isArray(current.oneOf)) {
-				current.oneOf = current.oneOf.map(normalizeNode);
-			}
-			if (Array.isArray(current.allOf)) {
-				current.allOf = current.allOf.map(normalizeNode);
-			}
-			if (
-				current.$defs &&
-				typeof current.$defs === "object" &&
-				!Array.isArray(current.$defs)
-			) {
-				current.$defs = Object.fromEntries(
-					Object.entries(current.$defs as Record<string, unknown>).map(
-						([key, value]) => [key, normalizeNode(value)],
-					),
-				);
-			}
-
-			return current;
-		};
-
-		return normalizeNode(schema) as Record<string, unknown>;
+		return normalizeCodexSchemaNode(schema) as Record<string, unknown>;
 	}
 
 	private async ensureChatgptAuth(): Promise<void> {

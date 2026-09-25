@@ -110,6 +110,120 @@ type ShareCreationPolicy =
 	| { kind: "trusted" }
 	| { kind: "request"; actorUserId: string | null };
 
+type ShareTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+function selectShareResource(tx: ShareTransaction, input: ShareResourceInput) {
+	return input.resourceType === "playlist"
+		? tx
+				.select({
+					playlistId: playlists.id,
+					ownerUserId: playlists.ownerUserId,
+					isTemporary: playlists.isTemporary,
+					expiresAt: playlists.expiresAt,
+				})
+				.from(playlists)
+				.where(eq(playlists.id, input.resourceId))
+				.get()
+		: tx
+				.select({
+					playlistId: playlists.id,
+					ownerUserId: playlists.ownerUserId,
+					isTemporary: playlists.isTemporary,
+					expiresAt: playlists.expiresAt,
+				})
+				.from(songs)
+				.innerJoin(playlists, eq(songs.playlistId, playlists.id))
+				.where(eq(songs.id, input.resourceId))
+				.get();
+}
+
+type ShareTargetResource = NonNullable<ReturnType<typeof selectShareResource>>;
+
+interface ShareLinkPlan {
+	expiresAt: number | null;
+	preserveResourceRetention: boolean;
+	reuseAnonymousTimedLink: boolean;
+}
+
+/**
+ * Apply the creation policy to a resolved resource. Returns null when the
+ * request actor may not share it or an anonymous link would already be expired.
+ */
+function resolveShareLinkPlan(
+	policy: ShareCreationPolicy,
+	resource: ShareTargetResource,
+	now: number,
+	requestedExpiresAt: number | null,
+): ShareLinkPlan | null {
+	const plan: ShareLinkPlan = {
+		expiresAt: requestedExpiresAt,
+		preserveResourceRetention: true,
+		reuseAnonymousTimedLink: false,
+	};
+	if (policy.kind !== "request") return plan;
+	if (resource.ownerUserId) {
+		if (resource.ownerUserId !== policy.actorUserId) return null;
+		return plan;
+	}
+	const anonymousExpiry = now + ANONYMOUS_SHARE_TTL_MS;
+	const expiresAt =
+		resource.expiresAt !== null
+			? Math.min(anonymousExpiry, resource.expiresAt)
+			: anonymousExpiry;
+	if (expiresAt <= now) return null;
+	return {
+		expiresAt,
+		preserveResourceRetention: false,
+		reuseAnonymousTimedLink: true,
+	};
+}
+
+function findReusableAnonymousLink(
+	liveLinks: ShareLink[],
+	plan: ShareLinkPlan,
+	now: number,
+): ShareLink | undefined {
+	if (!plan.reuseAnonymousTimedLink || plan.expiresAt === null) {
+		return undefined;
+	}
+	const anonymousExpiresAt = plan.expiresAt;
+	const minimumReusableExpiry = Math.min(
+		anonymousExpiresAt,
+		now + ANONYMOUS_SHARE_TTL_MS / 2,
+	);
+	return liveLinks.find(
+		(link) =>
+			link.expiresAt !== null &&
+			link.expiresAt >= minimumReusableExpiry &&
+			link.expiresAt <= anonymousExpiresAt,
+	);
+}
+
+function extendTemporaryResourceRetention(
+	tx: ShareTransaction,
+	playlistId: string,
+	linkExpiry: number | null,
+): void {
+	if (linkExpiry === null) {
+		tx.update(playlists)
+			.set({ isTemporary: false, expiresAt: null })
+			.where(eq(playlists.id, playlistId))
+			.run();
+	} else {
+		tx.update(playlists)
+			.set({ expiresAt: linkExpiry })
+			.where(
+				and(
+					eq(playlists.id, playlistId),
+					eq(playlists.isTemporary, true),
+					isNotNull(playlists.expiresAt),
+					lt(playlists.expiresAt, linkExpiry),
+				),
+			)
+			.run();
+	}
+}
+
 async function createShareLinkWithPolicy(
 	input: CreateShareLinkInput,
 	policy: ShareCreationPolicy,
@@ -133,51 +247,21 @@ async function createShareLinkWithPolicy(
 	) {
 		throw new RangeError("expiresInDays must be an integer from 1 through 365");
 	}
-	let expiresAt = hasTimedLifetime
+	const requestedExpiresAt = hasTimedLifetime
 		? now + (input.expiresInDays as number) * 24 * 60 * 60 * 1000
 		: null;
 	return db.transaction((tx) => {
-		const resource =
-			input.resourceType === "playlist"
-				? tx
-						.select({
-							playlistId: playlists.id,
-							ownerUserId: playlists.ownerUserId,
-							isTemporary: playlists.isTemporary,
-							expiresAt: playlists.expiresAt,
-						})
-						.from(playlists)
-						.where(eq(playlists.id, input.resourceId))
-						.get()
-				: tx
-						.select({
-							playlistId: playlists.id,
-							ownerUserId: playlists.ownerUserId,
-							isTemporary: playlists.isTemporary,
-							expiresAt: playlists.expiresAt,
-						})
-						.from(songs)
-						.innerJoin(playlists, eq(songs.playlistId, playlists.id))
-						.where(eq(songs.id, input.resourceId))
-						.get();
+		const resource = selectShareResource(tx, input);
 		if (!resource) return null;
 
-		let preserveResourceRetention = true;
-		let reuseAnonymousTimedLink = false;
-		if (policy.kind === "request") {
-			if (resource.ownerUserId) {
-				if (resource.ownerUserId !== policy.actorUserId) return null;
-			} else {
-				const anonymousExpiry = now + ANONYMOUS_SHARE_TTL_MS;
-				expiresAt =
-					resource.expiresAt !== null
-						? Math.min(anonymousExpiry, resource.expiresAt)
-						: anonymousExpiry;
-				if (expiresAt <= now) return null;
-				preserveResourceRetention = false;
-				reuseAnonymousTimedLink = true;
-			}
-		}
+		const plan = resolveShareLinkPlan(
+			policy,
+			resource,
+			now,
+			requestedExpiresAt,
+		);
+		if (!plan) return null;
+		const { expiresAt, preserveResourceRetention } = plan;
 
 		tx.delete(shareLinks)
 			.where(
@@ -202,41 +286,12 @@ async function createShareLinkWithPolicy(
 			.all()
 			.map(toShareLink);
 
-		if (reuseAnonymousTimedLink && expiresAt !== null) {
-			const anonymousExpiresAt = expiresAt;
-			const minimumReusableExpiry = Math.min(
-				anonymousExpiresAt,
-				now + ANONYMOUS_SHARE_TTL_MS / 2,
-			);
-			const reusable = liveLinks.find(
-				(link) =>
-					link.expiresAt !== null &&
-					link.expiresAt >= minimumReusableExpiry &&
-					link.expiresAt <= anonymousExpiresAt,
-			);
-			if (reusable) return reusable;
-		}
+		const reusableAnonymous = findReusableAnonymousLink(liveLinks, plan, now);
+		if (reusableAnonymous) return reusableAnonymous;
 
 		const preserveTemporaryResource = (linkExpiry: number | null) => {
 			if (!preserveResourceRetention || !resource.isTemporary) return;
-			if (linkExpiry === null) {
-				tx.update(playlists)
-					.set({ isTemporary: false, expiresAt: null })
-					.where(eq(playlists.id, resource.playlistId))
-					.run();
-			} else {
-				tx.update(playlists)
-					.set({ expiresAt: linkExpiry })
-					.where(
-						and(
-							eq(playlists.id, resource.playlistId),
-							eq(playlists.isTemporary, true),
-							isNotNull(playlists.expiresAt),
-							lt(playlists.expiresAt, linkExpiry),
-						),
-					)
-					.run();
-			}
+			extendTemporaryResourceRetention(tx, resource.playlistId, linkExpiry);
 		};
 
 		if (expiresAt === null) {
