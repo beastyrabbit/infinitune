@@ -91,8 +91,9 @@ COPY apps/server/package.json ./apps/server/package.json
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-# Data directory for SQLite + covers (server resolves to /app/data via relative path)
-RUN mkdir -p /app/data
+# Data directory for SQLite + covers (server resolves to /app/data via relative path).
+# The app runs as the unprivileged node user (uid 1000), which owns only this directory.
+RUN mkdir -p /app/data && chown node:node /app/data
 
 # Verify tsx binary exists (fail build early rather than at runtime)
 RUN test -x node_modules/.bin/tsx
@@ -103,6 +104,8 @@ RUN test -x /usr/bin/ffprobe
 RUN test -x /usr/bin/prlimit
 
 EXPOSE 3000 5175
+
+USER node
 
 ENTRYPOINT ["tini", "--"]
 CMD ["./docker-entrypoint.sh"]
