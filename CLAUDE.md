@@ -199,7 +199,6 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - Player state: `lib/player-store.ts`
 - Room hooks: `hooks/useRoomConnection.ts`, `hooks/useRoomPlayer.ts`, `hooks/useRoomController.ts`
 - Mini player: `components/mini-player/MiniPlayer.tsx`
-- LLM prompts: `services/llm.ts`
 
 ### CLI (apps/cli/src/)
 - Entry point: `cli.ts`
@@ -209,8 +208,8 @@ Commit regularly after editing files. Don't batch up large sets of changes — m
 - IPC socket protocol: `lib/ipc.ts`
 
 ### Tests (apps/server/src/__tests__/)
-- `song-service.test.ts` — 28 tests: CRUD, status transitions, claims, work queue
-- `playlist-service.test.ts` — 14 tests: lifecycle, heartbeat, steering, params
-- `event-handlers.test.ts` — 23 tests: worker event handlers, buffer deficit
-- `room.test.ts` — 28 tests: room protocol, commands, sync, device management
+- `song-service.test.ts` — CRUD, status transitions, claims, work queue
+- `playlist-service.test.ts` — lifecycle, heartbeat, steering, params
+- `event-handlers.test.ts` — worker event handlers, buffer deficit
+- `room.test.ts` — room protocol, commands, sync, device management
 - `test-db.ts` — in-memory SQLite test helper (schema + cleanup)
