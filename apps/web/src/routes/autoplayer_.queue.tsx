@@ -11,11 +11,13 @@ import {
 import { useMemo } from "react";
 import { OpsPageHeader } from "@/components/autoplayer/OpsPageHeader";
 import { Stat } from "@/components/autoplayer/Stat";
-import { useWorkerStatus } from "@/hooks/useWorkerStatus";
+import { useWorkerStatus, type WorkerStatus } from "@/hooks/useWorkerStatus";
 import {
 	type RadioAlbum,
 	type RadioAlbumTrack,
+	type RadioAnalytics,
 	type RadioChartBucket,
+	type RadioQueueResponse,
 	useRadioLibrary,
 	useRadioQueue,
 } from "@/integrations/api/hooks";
@@ -125,6 +127,105 @@ function trackSort(a: RadioAlbumTrack, b: RadioAlbumTrack) {
 	return a.albumTrackNumber - b.albumTrackNumber;
 }
 
+function QueueStats({
+	queue,
+	workerStatus,
+	analytics,
+}: Readonly<{
+	queue: RadioQueueResponse | undefined;
+	workerStatus: WorkerStatus | null;
+	analytics: RadioAnalytics | undefined;
+}>) {
+	return (
+		<div className="mb-6 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+			<Stat
+				label="Ready albums"
+				value={queue?.stats.untouchedReadyAlbums ?? 0}
+				tone="ready"
+			/>
+			<Stat
+				label="Generating albums"
+				value={queue?.stats.untouchedGeneratingAlbums ?? 0}
+				tone="active"
+			/>
+			<Stat
+				label="Incomplete"
+				value={queue?.stats.incompleteAlbums ?? 0}
+				tone={(queue?.stats.incompleteAlbums ?? 0) > 0 ? "warn" : "default"}
+			/>
+			<Stat
+				label="Missing tracks"
+				value={queue?.stats.missingAlbumTracks ?? 0}
+				tone={(queue?.stats.missingAlbumTracks ?? 0) > 0 ? "warn" : "default"}
+			/>
+			<Stat
+				label="ACE pending"
+				value={workerStatus?.queues.audio.pending ?? 0}
+			/>
+			<Stat
+				label="ACE active"
+				value={workerStatus?.queues.audio.active ?? 0}
+				tone="active"
+			/>
+			<Stat
+				label="Last album"
+				value={formatDuration(analytics?.albumTiming.lastCompletedMs)}
+			/>
+			<Stat
+				label="Avg album"
+				value={formatDuration(analytics?.albumTiming.avgCompletedMs)}
+			/>
+		</div>
+	);
+}
+
+function AnalyticsSummary({
+	analytics,
+}: Readonly<{
+	analytics: RadioAnalytics | undefined;
+}>) {
+	return (
+		<>
+			<section className="grid grid-cols-2 gap-3">
+				<Stat
+					label="Album done"
+					value={analytics?.albumTiming.completedAlbums ?? 0}
+					tone="ready"
+				/>
+				<Stat
+					label="Oldest active"
+					value={formatDuration(analytics?.albumTiming.oldestActiveMs)}
+					tone="active"
+				/>
+				<Stat
+					label="Likes"
+					value={analytics?.feedbackTotals.likes ?? 0}
+					tone="ready"
+				/>
+				<Stat
+					label="Skips"
+					value={analytics?.feedbackTotals.skips ?? 0}
+					tone="warn"
+				/>
+			</section>
+
+			<Chart
+				title="Generated genre spread"
+				buckets={analytics?.generatedGenreSpread ?? []}
+			/>
+			<Chart
+				title="Ready genre spread"
+				buckets={analytics?.readyGenreSpread ?? []}
+			/>
+			<Chart title="Vocal spread" buckets={analytics?.vocalSpread ?? []} />
+			<Chart
+				title="Song status spread"
+				buckets={analytics?.statusSpread ?? []}
+			/>
+		</>
+	);
+}
+
 function QueuePage() {
 	const queue = useRadioQueue();
 	const library = useRadioLibrary();
@@ -212,47 +313,11 @@ function QueuePage() {
 			/>
 
 			<main className="mx-auto max-w-7xl px-4 py-6">
-				<div className="mb-6 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-					<Stat
-						label="Ready albums"
-						value={queue?.stats.untouchedReadyAlbums ?? 0}
-						tone="ready"
-					/>
-					<Stat
-						label="Generating albums"
-						value={queue?.stats.untouchedGeneratingAlbums ?? 0}
-						tone="active"
-					/>
-					<Stat
-						label="Incomplete"
-						value={queue?.stats.incompleteAlbums ?? 0}
-						tone={(queue?.stats.incompleteAlbums ?? 0) > 0 ? "warn" : "default"}
-					/>
-					<Stat
-						label="Missing tracks"
-						value={queue?.stats.missingAlbumTracks ?? 0}
-						tone={
-							(queue?.stats.missingAlbumTracks ?? 0) > 0 ? "warn" : "default"
-						}
-					/>
-					<Stat
-						label="ACE pending"
-						value={workerStatus?.queues.audio.pending ?? 0}
-					/>
-					<Stat
-						label="ACE active"
-						value={workerStatus?.queues.audio.active ?? 0}
-						tone="active"
-					/>
-					<Stat
-						label="Last album"
-						value={formatDuration(analytics?.albumTiming.lastCompletedMs)}
-					/>
-					<Stat
-						label="Avg album"
-						value={formatDuration(analytics?.albumTiming.avgCompletedMs)}
-					/>
-				</div>
+				<QueueStats
+					queue={queue}
+					workerStatus={workerStatus}
+					analytics={analytics}
+				/>
 
 				<div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_420px]">
 					<div className="space-y-6">
@@ -514,45 +579,7 @@ function QueuePage() {
 							</div>
 						</section>
 
-						<section className="grid grid-cols-2 gap-3">
-							<Stat
-								label="Album done"
-								value={analytics?.albumTiming.completedAlbums ?? 0}
-								tone="ready"
-							/>
-							<Stat
-								label="Oldest active"
-								value={formatDuration(analytics?.albumTiming.oldestActiveMs)}
-								tone="active"
-							/>
-							<Stat
-								label="Likes"
-								value={analytics?.feedbackTotals.likes ?? 0}
-								tone="ready"
-							/>
-							<Stat
-								label="Skips"
-								value={analytics?.feedbackTotals.skips ?? 0}
-								tone="warn"
-							/>
-						</section>
-
-						<Chart
-							title="Generated genre spread"
-							buckets={analytics?.generatedGenreSpread ?? []}
-						/>
-						<Chart
-							title="Ready genre spread"
-							buckets={analytics?.readyGenreSpread ?? []}
-						/>
-						<Chart
-							title="Vocal spread"
-							buckets={analytics?.vocalSpread ?? []}
-						/>
-						<Chart
-							title="Song status spread"
-							buckets={analytics?.statusSpread ?? []}
-						/>
+						<AnalyticsSummary analytics={analytics} />
 
 						<section className="border border-white/10 bg-black/30">
 							<div className="flex items-center gap-2 border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">

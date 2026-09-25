@@ -6,20 +6,21 @@ import {
 	AlertTriangle,
 	ArrowLeft,
 	Download,
-	Pause,
-	Play,
 	RefreshCw,
 	Sparkles,
-	Volume2,
-	VolumeX,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
+import {
+	OneshotTransport,
+	OneshotVolume,
+	oneshotPhaseLabel,
+} from "@/components/autoplayer/OneshotPlayback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { useOneshot } from "@/hooks/useOneshot";
+import { type OneshotPhase, useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import { api } from "@/integrations/api/client";
@@ -35,8 +36,6 @@ import {
 	setCurrentSong,
 	setDuration,
 	setPlaying,
-	setVolume,
-	toggleMute,
 } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -74,6 +73,278 @@ function useReimaginableSongs(): Song[] {
 					s.lyrics,
 			),
 		[data],
+	);
+}
+
+function canSubmitSource({
+	sourceMode,
+	sourceId,
+	sourceUrl,
+	sourceTrackTitle,
+	sourceArtistName,
+}: {
+	sourceMode: "library" | "url";
+	sourceId: string | null;
+	sourceUrl: string;
+	sourceTrackTitle: string;
+	sourceArtistName: string;
+}): boolean {
+	const hasCompleteLrclibIdentity =
+		(!sourceTrackTitle.trim() && !sourceArtistName.trim()) ||
+		Boolean(sourceTrackTitle.trim() && sourceArtistName.trim());
+	return sourceMode === "library"
+		? !!sourceId
+		: sourceUrl.trim().length > 0 && hasCompleteLrclibIdentity;
+}
+
+function SourceModeToggle({
+	sourceMode,
+	setSourceMode,
+	generating,
+}: Readonly<{
+	sourceMode: "library" | "url";
+	setSourceMode: (mode: "library" | "url") => void;
+	generating: boolean;
+}>) {
+	return (
+		<div>
+			<p className="text-xs font-bold uppercase text-white/50 mb-1">SOURCE</p>
+			<div className="flex gap-0">
+				<button
+					type="button"
+					className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+						sourceMode === "library"
+							? "bg-fuchsia-400 text-black"
+							: "bg-transparent text-white hover:bg-white/10"
+					}`}
+					onClick={() => setSourceMode("library")}
+					disabled={generating}
+				>
+					MY LIBRARY
+				</button>
+				<button
+					type="button"
+					className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+						sourceMode === "url"
+							? "bg-fuchsia-400 text-black"
+							: "bg-transparent text-white hover:bg-white/10"
+					}`}
+					onClick={() => setSourceMode("url")}
+					disabled={generating}
+				>
+					YOUTUBE / URL
+				</button>
+			</div>
+		</div>
+	);
+}
+
+function LibrarySourcePicker({
+	sourceSongs,
+	filteredSongs,
+	filter,
+	setFilter,
+	sourceId,
+	setSourceId,
+	sourceSong,
+	generating,
+}: Readonly<{
+	sourceSongs: Song[];
+	filteredSongs: Song[];
+	filter: string;
+	setFilter: (value: string) => void;
+	sourceId: string | null;
+	setSourceId: (id: string) => void;
+	sourceSong: Song | null;
+	generating: boolean;
+}>) {
+	return (
+		<div>
+			<p className="text-xs font-bold uppercase text-white/50 mb-1">
+				SOURCE SONG — {sourceSongs.length} AVAILABLE
+			</p>
+			<Input
+				className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0"
+				placeholder={`FILTER ${sourceSongs.length} SONGS...`}
+				value={filter}
+				onChange={(e) => setFilter(e.target.value)}
+				disabled={generating}
+			/>
+			<div className="mt-1 max-h-44 overflow-y-auto border-4 border-white/20 bg-gray-900">
+				{filteredSongs.slice(0, 50).map((s) => (
+					<button
+						key={s.id}
+						type="button"
+						className={`w-full text-left px-3 py-1.5 font-mono text-xs uppercase transition-colors ${
+							sourceId === s.id
+								? "bg-fuchsia-400 text-black font-black"
+								: "text-white/70 hover:bg-white/10 hover:text-white"
+						}`}
+						onClick={() => setSourceId(s.id)}
+						disabled={generating}
+					>
+						<span className="block font-black truncate">
+							{s.title || "Untitled"}
+						</span>
+						<span className="block text-[10px] opacity-70 truncate">
+							{s.artistName || "Unknown"} · {s.genre || "?"} ·{" "}
+							{s.audioDuration ? formatTime(s.audioDuration) : "?:??"}
+						</span>
+					</button>
+				))}
+				{filteredSongs.length === 0 && (
+					<p className="px-3 py-2 text-[10px] font-bold uppercase text-white/30">
+						NO SONGS WITH AUDIO + LYRICS FOUND
+					</p>
+				)}
+			</div>
+			{sourceSong && (
+				<p className="mt-1 text-[10px] font-black uppercase text-fuchsia-400">
+					✓ {sourceSong.title} — LYRICS &amp; AUDIO GO IN AS THE REFERENCE
+				</p>
+			)}
+		</div>
+	);
+}
+
+interface ReimagineResultProps {
+	song: Song;
+	isCurrentSong: boolean | null;
+	isPlaying: boolean;
+	currentTime: number;
+	audioDuration: number;
+	volume: number;
+	isMuted: boolean;
+	onPlayPause: () => void;
+	onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+	onGenerateAnother: () => void;
+}
+
+function ReimagineResult({
+	song,
+	isCurrentSong,
+	isPlaying,
+	currentTime,
+	audioDuration,
+	volume,
+	isMuted,
+	onPlayPause,
+	onSeek,
+	onGenerateAnother,
+}: Readonly<ReimagineResultProps>) {
+	return (
+		<div>
+			<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">
+				<div className="border-b-4 sm:border-b-0 sm:border-r-4 border-white/10">
+					<CoverArt
+						title={song.title || "UNTITLED"}
+						artistName={song.artistName || "REIMAGINED"}
+						cover={song.cover}
+						size="md"
+						spinning={!!isCurrentSong && isPlaying}
+					/>
+				</div>
+
+				<div className="flex flex-col">
+					<div className="p-4 border-b-2 border-white/10 flex-1">
+						<h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight">
+							{song.title || "UNTITLED"}
+						</h2>
+						<p className="text-sm font-bold uppercase text-white/50 mt-1">
+							{song.caption || "REIMAGINED"}
+						</p>
+					</div>
+
+					<div className="p-4 space-y-3">
+						<OneshotTransport
+							isCurrentSong={isCurrentSong}
+							isPlaying={isPlaying}
+							currentTime={currentTime}
+							audioDuration={audioDuration}
+							onPlayPause={onPlayPause}
+							onSeek={onSeek}
+							playButtonClassName="shrink-0 h-10 w-10 border-2 border-fuchsia-400 flex items-center justify-center text-fuchsia-400 hover:bg-fuchsia-400 hover:text-black transition-colors"
+							progressBarClassName="h-full bg-fuchsia-400 transition-all"
+						/>
+
+						<div className="flex items-center justify-between">
+							<OneshotVolume volume={volume} isMuted={isMuted} />
+
+							{song.audioUrl && (
+								<a
+									href={song.audioUrl}
+									download={`${song.title || "reimagined"}.mp3`}
+									className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-fuchsia-400 transition-colors"
+								>
+									<Download className="h-3.5 w-3.5" />
+									DOWNLOAD
+								</a>
+							)}
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div className="p-4">
+				<Button
+					className="w-full h-12 rounded-none border-4 border-fuchsia-500/30 bg-transparent font-mono text-base font-black uppercase text-fuchsia-400 hover:bg-fuchsia-400 hover:text-black hover:border-fuchsia-400"
+					onClick={onGenerateAnother}
+				>
+					<RefreshCw className="h-4 w-4 mr-2" />
+					{GENERATE_ANOTHER_LABEL}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function ReimagineOutput({
+	phase,
+	song,
+	...resultProps
+}: Omit<ReimagineResultProps, "song"> & {
+	phase: OneshotPhase;
+	song: Song | null;
+}) {
+	return (
+		<div className="border-4 border-t-0 border-fuchsia-500/20 bg-black">
+			{(phase === "creating" || phase === "generating") && (
+				<div className="p-6 flex items-center gap-3">
+					<Sparkles className="h-5 w-5 text-fuchsia-400 animate-pulse" />
+					<span className="text-sm font-black uppercase tracking-widest text-fuchsia-400/80">
+						{(song?.status && STATUS_PROGRESS_TEXT[song.status]) ||
+							"SUBMITTING..."}
+					</span>
+				</div>
+			)}
+
+			{phase === "error" && (
+				<div className="p-6">
+					<div className="flex items-center gap-3 text-red-500 mb-3">
+						<AlertTriangle className="h-5 w-5" />
+						<span className="text-sm font-black uppercase tracking-widest">
+							REIMAGINE FAILED
+						</span>
+					</div>
+					{song?.errorMessage && (
+						<p className="text-xs font-bold uppercase text-white/40 mb-4">
+							{song.errorMessage}
+						</p>
+					)}
+					<Button
+						className="w-full h-12 rounded-none border-4 border-fuchsia-500/30 bg-fuchsia-400 font-mono text-base font-black uppercase text-black hover:bg-white"
+						onClick={resultProps.onGenerateAnother}
+					>
+						<RefreshCw className="h-4 w-4 mr-2" />
+						{">>> TRY AGAIN <<<"}
+					</Button>
+				</div>
+			)}
+
+			{phase === "ready" && song && (
+				<ReimagineResult song={song} {...resultProps} />
+			)}
+		</div>
 	);
 }
 
@@ -139,13 +410,13 @@ function ReimaginePage() {
 	const generating =
 		submitting || phase === "creating" || phase === "generating";
 
-	const hasCompleteLrclibIdentity =
-		(!sourceTrackTitle.trim() && !sourceArtistName.trim()) ||
-		Boolean(sourceTrackTitle.trim() && sourceArtistName.trim());
-	const canSubmit =
-		sourceMode === "library"
-			? !!sourceId
-			: sourceUrl.trim().length > 0 && hasCompleteLrclibIdentity;
+	const canSubmit = canSubmitSource({
+		sourceMode,
+		sourceId,
+		sourceUrl,
+		sourceTrackTitle,
+		sourceArtistName,
+	});
 
 	const handleGenerate = useCallback(async () => {
 		if (!canSubmit || !style.trim() || generating) return;
@@ -237,10 +508,6 @@ function ReimaginePage() {
 
 	const isCurrentSong = song && playerStore.state.currentSongId === song.id;
 	const showOutput = phase !== "idle" || submitting;
-	const progress =
-		audioDuration > 0 && isCurrentSong
-			? (currentTime / audioDuration) * 100
-			: 0;
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white flex flex-col">
@@ -288,37 +555,11 @@ function ReimaginePage() {
 						</div>
 
 						<div className="p-6 space-y-5">
-							<div>
-								<p className="text-xs font-bold uppercase text-white/50 mb-1">
-									SOURCE
-								</p>
-								<div className="flex gap-0">
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											sourceMode === "library"
-												? "bg-fuchsia-400 text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setSourceMode("library")}
-										disabled={generating}
-									>
-										MY LIBRARY
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											sourceMode === "url"
-												? "bg-fuchsia-400 text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => setSourceMode("url")}
-										disabled={generating}
-									>
-										YOUTUBE / URL
-									</button>
-								</div>
-							</div>
+							<SourceModeToggle
+								sourceMode={sourceMode}
+								setSourceMode={setSourceMode}
+								generating={generating}
+							/>
 
 							{sourceMode === "url" && (
 								<>
@@ -386,54 +627,16 @@ function ReimaginePage() {
 							)}
 
 							{sourceMode === "library" && (
-								<div>
-									<p className="text-xs font-bold uppercase text-white/50 mb-1">
-										SOURCE SONG — {sourceSongs.length} AVAILABLE
-									</p>
-									<Input
-										className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm text-white placeholder:text-white/20 focus-visible:ring-0"
-										placeholder={`FILTER ${sourceSongs.length} SONGS...`}
-										value={filter}
-										onChange={(e) => setFilter(e.target.value)}
-										disabled={generating}
-									/>
-									<div className="mt-1 max-h-44 overflow-y-auto border-4 border-white/20 bg-gray-900">
-										{filteredSongs.slice(0, 50).map((s) => (
-											<button
-												key={s.id}
-												type="button"
-												className={`w-full text-left px-3 py-1.5 font-mono text-xs uppercase transition-colors ${
-													sourceId === s.id
-														? "bg-fuchsia-400 text-black font-black"
-														: "text-white/70 hover:bg-white/10 hover:text-white"
-												}`}
-												onClick={() => setSourceId(s.id)}
-												disabled={generating}
-											>
-												<span className="block font-black truncate">
-													{s.title || "Untitled"}
-												</span>
-												<span className="block text-[10px] opacity-70 truncate">
-													{s.artistName || "Unknown"} · {s.genre || "?"} ·{" "}
-													{s.audioDuration
-														? formatTime(s.audioDuration)
-														: "?:??"}
-												</span>
-											</button>
-										))}
-										{filteredSongs.length === 0 && (
-											<p className="px-3 py-2 text-[10px] font-bold uppercase text-white/30">
-												NO SONGS WITH AUDIO + LYRICS FOUND
-											</p>
-										)}
-									</div>
-									{sourceSong && (
-										<p className="mt-1 text-[10px] font-black uppercase text-fuchsia-400">
-											✓ {sourceSong.title} — LYRICS &amp; AUDIO GO IN AS THE
-											REFERENCE
-										</p>
-									)}
-								</div>
+								<LibrarySourcePicker
+									sourceSongs={sourceSongs}
+									filteredSongs={filteredSongs}
+									filter={filter}
+									setFilter={setFilter}
+									sourceId={sourceId}
+									setSourceId={setSourceId}
+									sourceSong={sourceSong}
+									generating={generating}
+								/>
 							)}
 
 							<div>
@@ -502,177 +705,19 @@ function ReimaginePage() {
 
 					{/* ─── OUTPUT ─── */}
 					{showOutput && (
-						<div className="border-4 border-t-0 border-fuchsia-500/20 bg-black">
-							{(phase === "creating" || phase === "generating") && (
-								<div className="p-6 flex items-center gap-3">
-									<Sparkles className="h-5 w-5 text-fuchsia-400 animate-pulse" />
-									<span className="text-sm font-black uppercase tracking-widest text-fuchsia-400/80">
-										{(song?.status && STATUS_PROGRESS_TEXT[song.status]) ||
-											"SUBMITTING..."}
-									</span>
-								</div>
-							)}
-
-							{phase === "error" && (
-								<div className="p-6">
-									<div className="flex items-center gap-3 text-red-500 mb-3">
-										<AlertTriangle className="h-5 w-5" />
-										<span className="text-sm font-black uppercase tracking-widest">
-											REIMAGINE FAILED
-										</span>
-									</div>
-									{song?.errorMessage && (
-										<p className="text-xs font-bold uppercase text-white/40 mb-4">
-											{song.errorMessage}
-										</p>
-									)}
-									<Button
-										className="w-full h-12 rounded-none border-4 border-fuchsia-500/30 bg-fuchsia-400 font-mono text-base font-black uppercase text-black hover:bg-white"
-										onClick={handleGenerateAnother}
-									>
-										<RefreshCw className="h-4 w-4 mr-2" />
-										{">>> TRY AGAIN <<<"}
-									</Button>
-								</div>
-							)}
-
-							{phase === "ready" && song && (
-								<div>
-									<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">
-										<div className="border-b-4 sm:border-b-0 sm:border-r-4 border-white/10">
-											<CoverArt
-												title={song.title || "UNTITLED"}
-												artistName={song.artistName || "REIMAGINED"}
-												cover={song.cover}
-												size="md"
-												spinning={!!isCurrentSong && isPlaying}
-											/>
-										</div>
-
-										<div className="flex flex-col">
-											<div className="p-4 border-b-2 border-white/10 flex-1">
-												<h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight">
-													{song.title || "UNTITLED"}
-												</h2>
-												<p className="text-sm font-bold uppercase text-white/50 mt-1">
-													{song.caption || "REIMAGINED"}
-												</p>
-											</div>
-
-											<div className="p-4 space-y-3">
-												<div className="flex items-center gap-3">
-													<button
-														type="button"
-														className="shrink-0 h-10 w-10 border-2 border-fuchsia-400 flex items-center justify-center text-fuchsia-400 hover:bg-fuchsia-400 hover:text-black transition-colors"
-														onClick={handlePlayPause}
-													>
-														{isCurrentSong && isPlaying ? (
-															<Pause className="h-4 w-4" />
-														) : (
-															<Play className="h-4 w-4" />
-														)}
-													</button>
-
-													<div className="flex-1 flex items-center gap-2">
-														<span className="text-[10px] font-bold text-white/40 shrink-0 w-8 text-right">
-															{isCurrentSong ? formatTime(currentTime) : "0:00"}
-														</span>
-														{/* biome-ignore lint/a11y/useSemanticElements: div used for custom seek bar */}
-														<div
-															role="button"
-															tabIndex={0}
-															className="flex-1 h-2 border-2 border-white/20 bg-black cursor-pointer"
-															onClick={handleSeek}
-															onKeyDown={(e) => {
-																if (e.key === "Enter" || e.key === " ") {
-																	e.preventDefault();
-																}
-															}}
-														>
-															<div
-																className="h-full bg-fuchsia-400 transition-all"
-																style={{ width: `${progress}%` }}
-															/>
-														</div>
-														<span className="text-[10px] font-bold text-white/40 shrink-0 w-8">
-															{isCurrentSong && audioDuration > 0
-																? formatTime(audioDuration)
-																: "--:--"}
-														</span>
-													</div>
-												</div>
-
-												<div className="flex items-center justify-between">
-													<div className="flex items-center gap-2">
-														<button
-															type="button"
-															onClick={toggleMute}
-															className="text-white/50 hover:text-white transition-colors"
-														>
-															{isMuted ? (
-																<VolumeX className="h-3.5 w-3.5" />
-															) : (
-																<Volume2 className="h-3.5 w-3.5" />
-															)}
-														</button>
-														{/* biome-ignore lint/a11y/useSemanticElements: div used for custom volume bar */}
-														<div
-															role="button"
-															tabIndex={0}
-															className="h-1.5 w-16 border border-white/20 bg-black cursor-pointer"
-															onClick={(e) => {
-																const rect =
-																	e.currentTarget.getBoundingClientRect();
-																const pct = Math.max(
-																	0,
-																	Math.min(
-																		1,
-																		(e.clientX - rect.left) / rect.width,
-																	),
-																);
-																setVolume(pct);
-															}}
-															onKeyDown={(e) => {
-																if (e.key === "Enter" || e.key === " ")
-																	e.preventDefault();
-															}}
-														>
-															<div
-																className="h-full bg-white"
-																style={{
-																	width: `${(isMuted ? 0 : volume) * 100}%`,
-																}}
-															/>
-														</div>
-													</div>
-
-													{song.audioUrl && (
-														<a
-															href={song.audioUrl}
-															download={`${song.title || "reimagined"}.mp3`}
-															className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-fuchsia-400 transition-colors"
-														>
-															<Download className="h-3.5 w-3.5" />
-															DOWNLOAD
-														</a>
-													)}
-												</div>
-											</div>
-										</div>
-									</div>
-
-									<div className="p-4">
-										<Button
-											className="w-full h-12 rounded-none border-4 border-fuchsia-500/30 bg-transparent font-mono text-base font-black uppercase text-fuchsia-400 hover:bg-fuchsia-400 hover:text-black hover:border-fuchsia-400"
-											onClick={handleGenerateAnother}
-										>
-											<RefreshCw className="h-4 w-4 mr-2" />
-											{GENERATE_ANOTHER_LABEL}
-										</Button>
-									</div>
-								</div>
-							)}
-						</div>
+						<ReimagineOutput
+							phase={phase}
+							song={song}
+							isCurrentSong={isCurrentSong}
+							isPlaying={isPlaying}
+							currentTime={currentTime}
+							audioDuration={audioDuration}
+							volume={volume}
+							isMuted={isMuted}
+							onPlayPause={handlePlayPause}
+							onSeek={handleSeek}
+							onGenerateAnother={handleGenerateAnother}
+						/>
 					)}
 				</div>
 			</main>
@@ -685,11 +730,7 @@ function ReimaginePage() {
 						REIMAGINE {"//"} ACE COVER TASK — SOURCE AUDIO AS REFERENCE
 					</span>
 					<span className="text-fuchsia-400/40">
-						{phase === "idle"
-							? "READY"
-							: phase === "ready"
-								? "COMPLETE"
-								: phase.toUpperCase()}
+						{oneshotPhaseLabel(phase)}
 					</span>
 				</div>
 			</footer>

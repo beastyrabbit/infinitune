@@ -26,7 +26,11 @@ import {
 	PlaylistSessionInfoSchema,
 } from "@infinitune/shared/protocol";
 import type { Playlist, Song } from "@infinitune/shared/types";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	type QueryClient,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { useCallback } from "react";
 import { toast } from "sonner";
 import z from "zod";
@@ -37,6 +41,20 @@ import { api } from "./client";
 export type { Playlist, Song };
 
 // ─── Mutation Factory ────────────────────────────────────────────────
+
+function invalidateQueryKeys(qc: QueryClient, invalidateKeys?: string[][]) {
+	if (invalidateKeys) {
+		for (const key of invalidateKeys) {
+			qc.invalidateQueries({ queryKey: key });
+		}
+	}
+}
+
+function toastMutationError(err: unknown) {
+	toast.error(
+		err instanceof Error ? err.message : "An unexpected error occurred",
+	);
+}
 
 /**
  * Creates a mutation hook that returns an async callback function.
@@ -55,20 +73,10 @@ function createMutation<TInput, TOutput = void>(
 			async (args: TInput): Promise<TOutput> => {
 				try {
 					const result = await mutationFn(args);
-					if (invalidateKeys) {
-						for (const key of invalidateKeys) {
-							qc.invalidateQueries({ queryKey: key });
-						}
-					}
+					invalidateQueryKeys(qc, invalidateKeys);
 					return result;
 				} catch (err) {
-					if (!silent) {
-						toast.error(
-							err instanceof Error
-								? err.message
-								: "An unexpected error occurred",
-						);
-					}
+					if (!silent) toastMutationError(err);
 					throw err;
 				}
 			},
@@ -422,6 +430,20 @@ function normalizePromptContract(payload: unknown): PromptContract | null {
 	};
 }
 
+function optionalString(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+	return typeof value === "boolean" ? value : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+	return Array.isArray(value)
+		? value.flatMap((item) => (typeof item === "string" ? [item] : []))
+		: undefined;
+}
+
 function extractAutoplayerModelOptions(
 	payload: unknown,
 ): AutoplayerModelOption[] {
@@ -444,33 +466,13 @@ function extractAutoplayerModelOptions(
 		return [
 			{
 				name: typedModel.name,
-				displayName:
-					typeof typedModel.displayName === "string"
-						? typedModel.displayName
-						: undefined,
-				is_default:
-					typeof typedModel.is_default === "boolean"
-						? typedModel.is_default
-						: undefined,
-				is_loaded:
-					typeof typedModel.is_loaded === "boolean"
-						? typedModel.is_loaded
-						: undefined,
-				supportedTaskTypes: Array.isArray(typedModel.supportedTaskTypes)
-					? typedModel.supportedTaskTypes.flatMap((item) =>
-							typeof item === "string" ? [item] : [],
-						)
-					: undefined,
-				inputModalities: Array.isArray(typedModel.inputModalities)
-					? typedModel.inputModalities.flatMap((item) =>
-							typeof item === "string" ? [item] : [],
-						)
-					: undefined,
-				type: typeof typedModel.type === "string" ? typedModel.type : undefined,
-				vision:
-					typeof typedModel.vision === "boolean"
-						? typedModel.vision
-						: undefined,
+				displayName: optionalString(typedModel.displayName),
+				is_default: optionalBoolean(typedModel.is_default),
+				is_loaded: optionalBoolean(typedModel.is_loaded),
+				supportedTaskTypes: optionalStringArray(typedModel.supportedTaskTypes),
+				inputModalities: optionalStringArray(typedModel.inputModalities),
+				type: optionalString(typedModel.type),
+				vision: optionalBoolean(typedModel.vision),
 			},
 		];
 	});

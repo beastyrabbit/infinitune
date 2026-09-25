@@ -77,6 +77,125 @@ function parseLyrics(raw: string) {
 	return sections;
 }
 
+function NowPlayingInfo({ song }: Readonly<{ song: Song }>) {
+	return (
+		<div className="absolute top-0 left-0 right-0 p-4 md:p-6">
+			<div className="text-xs font-bold uppercase tracking-widest text-red-500 mb-1">
+				&gt;&gt;&gt; NOW PLAYING &lt;&lt;&lt;
+			</div>
+			<h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase leading-none tracking-tighter drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+				{song.title}
+			</h2>
+			<div className="mt-2 flex items-center gap-3 flex-wrap">
+				<span className="text-lg sm:text-xl font-bold uppercase drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
+					{song.artistName}
+				</span>
+				<span className="text-white/40">|</span>
+				<span className="text-xs sm:text-sm uppercase text-white/70 bg-white/10 px-2 py-0.5 border border-white/20">
+					{song.subGenre || song.genre}
+				</span>
+			</div>
+			<div className="mt-2 flex gap-4 text-xs uppercase text-white/50">
+				<span>{song.bpm} BPM</span>
+				<span>{(song.keyScale || "C major").toUpperCase()}</span>
+			</div>
+		</div>
+	);
+}
+
+function RatingButtons({
+	userRating,
+	onRate,
+}: Readonly<{
+	userRating: Song["userRating"];
+	onRate: (rating: "up" | "down") => void;
+}>) {
+	return (
+		<>
+			<Button
+				variant="outline"
+				onClick={() => onRate("up")}
+				className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
+					userRating === "up"
+						? "border-green-500 bg-green-500/20 text-green-400 hover:bg-green-500/30 hover:text-green-300"
+						: "border-white/30 bg-white/10 text-white hover:bg-green-500/20 hover:text-green-400 hover:border-green-500"
+				}`}
+			>
+				<LikeIcon size={16} />
+			</Button>
+			<Button
+				variant="outline"
+				onClick={() => onRate("down")}
+				className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
+					userRating === "down"
+						? "border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300"
+						: "border-white/30 bg-white/10 text-white hover:bg-red-500/20 hover:text-red-400 hover:border-red-500"
+				}`}
+			>
+				<ThumbsDown className="h-4 w-4" />
+			</Button>
+		</>
+	);
+}
+
+function VolumeControl({
+	volume,
+	isMuted,
+	onSetVolume,
+	onToggleMute,
+}: Readonly<{
+	volume: number;
+	isMuted: boolean;
+	onSetVolume: (volume: number) => void;
+	onToggleMute: () => void;
+}>) {
+	return (
+		<div className="ml-auto flex items-center gap-2 bg-black/40 backdrop-blur-sm border-2 border-white/30 px-3 py-1">
+			<button
+				type="button"
+				onClick={onToggleMute}
+				className="text-white/70 hover:text-white"
+			>
+				{isMuted ? <VolumeXIcon size={16} /> : <Volume2Icon size={16} />}
+			</button>
+			<div
+				role="slider"
+				tabIndex={0}
+				aria-label="Volume"
+				aria-valuenow={Math.round((isMuted ? 0 : volume) * 100)}
+				aria-valuemin={0}
+				aria-valuemax={100}
+				className="h-3 w-20 border border-white/30 bg-black/40 cursor-pointer"
+				onClick={(e) => {
+					const rect = e.currentTarget.getBoundingClientRect();
+					const pct = Math.max(
+						0,
+						Math.min(1, (e.clientX - rect.left) / rect.width),
+					);
+					onSetVolume(pct);
+				}}
+				onKeyDown={(e) => {
+					if (e.key === "ArrowRight") {
+						e.preventDefault();
+						onSetVolume(Math.min(1, volume + 0.05));
+					} else if (e.key === "ArrowLeft") {
+						e.preventDefault();
+						onSetVolume(Math.max(0, volume - 0.05));
+					}
+				}}
+			>
+				<div
+					className="h-full bg-white"
+					style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
+				/>
+			</div>
+			<span className="text-xs font-bold text-white/70">
+				{Math.round((isMuted ? 0 : volume) * 100)}%
+			</span>
+		</div>
+	);
+}
+
 export function NowPlaying({
 	song,
 	onToggle,
@@ -190,27 +309,7 @@ export function NowPlaying({
 				)}
 
 				{/* Top info overlay */}
-				<div className="absolute top-0 left-0 right-0 p-4 md:p-6">
-					<div className="text-xs font-bold uppercase tracking-widest text-red-500 mb-1">
-						&gt;&gt;&gt; NOW PLAYING &lt;&lt;&lt;
-					</div>
-					<h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase leading-none tracking-tighter drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-						{song.title}
-					</h2>
-					<div className="mt-2 flex items-center gap-3 flex-wrap">
-						<span className="text-lg sm:text-xl font-bold uppercase drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
-							{song.artistName}
-						</span>
-						<span className="text-white/40">|</span>
-						<span className="text-xs sm:text-sm uppercase text-white/70 bg-white/10 px-2 py-0.5 border border-white/20">
-							{song.subGenre || song.genre}
-						</span>
-					</div>
-					<div className="mt-2 flex gap-4 text-xs uppercase text-white/50">
-						<span>{song.bpm} BPM</span>
-						<span>{(song.keyScale || "C major").toUpperCase()}</span>
-					</div>
-				</div>
+				<NowPlayingInfo song={song} />
 
 				{/* Bottom controls overlay */}
 				<div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 z-20">
@@ -304,77 +403,15 @@ export function NowPlaying({
 						)}
 
 						{/* Rating buttons */}
-						<Button
-							variant="outline"
-							onClick={() => onRate("up")}
-							className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
-								song.userRating === "up"
-									? "border-green-500 bg-green-500/20 text-green-400 hover:bg-green-500/30 hover:text-green-300"
-									: "border-white/30 bg-white/10 text-white hover:bg-green-500/20 hover:text-green-400 hover:border-green-500"
-							}`}
-						>
-							<LikeIcon size={16} />
-						</Button>
-						<Button
-							variant="outline"
-							onClick={() => onRate("down")}
-							className={`h-10 rounded-none border-2 backdrop-blur-sm font-mono text-sm font-black uppercase ${
-								song.userRating === "down"
-									? "border-red-500 bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300"
-									: "border-white/30 bg-white/10 text-white hover:bg-red-500/20 hover:text-red-400 hover:border-red-500"
-							}`}
-						>
-							<ThumbsDown className="h-4 w-4" />
-						</Button>
+						<RatingButtons userRating={song.userRating} onRate={onRate} />
 
 						{/* Volume — pushed to the right */}
-						<div className="ml-auto flex items-center gap-2 bg-black/40 backdrop-blur-sm border-2 border-white/30 px-3 py-1">
-							<button
-								type="button"
-								onClick={handleToggleMute}
-								className="text-white/70 hover:text-white"
-							>
-								{isMuted ? (
-									<VolumeXIcon size={16} />
-								) : (
-									<Volume2Icon size={16} />
-								)}
-							</button>
-							<div
-								role="slider"
-								tabIndex={0}
-								aria-label="Volume"
-								aria-valuenow={Math.round((isMuted ? 0 : volume) * 100)}
-								aria-valuemin={0}
-								aria-valuemax={100}
-								className="h-3 w-20 border border-white/30 bg-black/40 cursor-pointer"
-								onClick={(e) => {
-									const rect = e.currentTarget.getBoundingClientRect();
-									const pct = Math.max(
-										0,
-										Math.min(1, (e.clientX - rect.left) / rect.width),
-									);
-									handleSetVolume(pct);
-								}}
-								onKeyDown={(e) => {
-									if (e.key === "ArrowRight") {
-										e.preventDefault();
-										handleSetVolume(Math.min(1, volume + 0.05));
-									} else if (e.key === "ArrowLeft") {
-										e.preventDefault();
-										handleSetVolume(Math.max(0, volume - 0.05));
-									}
-								}}
-							>
-								<div
-									className="h-full bg-white"
-									style={{ width: `${(isMuted ? 0 : volume) * 100}%` }}
-								/>
-							</div>
-							<span className="text-xs font-bold text-white/70">
-								{Math.round((isMuted ? 0 : volume) * 100)}%
-							</span>
-						</div>
+						<VolumeControl
+							volume={volume}
+							isMuted={isMuted}
+							onSetVolume={handleSetVolume}
+							onToggleMute={handleToggleMute}
+						/>
 					</div>
 				</div>
 			</div>

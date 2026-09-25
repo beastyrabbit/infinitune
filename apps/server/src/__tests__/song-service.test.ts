@@ -272,6 +272,69 @@ describe("song-service", () => {
 			expect(updated.audioProcessingMs).toBe(5000);
 			expect(updated.generationCompletedAt).toBeGreaterThan(0);
 		});
+
+		it.each(["metadata_ready", "played"] as const)(
+			"does not touch a song that is %s instead of saving",
+			async (status) => {
+				const pl = await createTestPlaylist();
+				const song = await createTestSong(pl.id, 1, { status });
+
+				expect(await songService.markReady(song.id, "http://late.mp3")).toBe(
+					false,
+				);
+
+				const db = getTestDb();
+				const [updated] = await db
+					.select()
+					.from(songs)
+					.where(eq(songs.id, song.id));
+				expect(updated.status).toBe(status);
+				expect(updated.audioUrl).not.toBe("http://late.mp3");
+				expect(emittedEvents).toHaveLength(0);
+			},
+		);
+	});
+
+	describe("markReady generation guard", () => {
+		it("rejects a stale worker whose ACE task was replaced", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "saving",
+				aceTaskId: "task-new",
+			});
+
+			expect(
+				await songService.markReady(
+					song.id,
+					"http://stale.mp3",
+					undefined,
+					"task-old",
+				),
+			).toBe(false);
+
+			const db = getTestDb();
+			const [row] = await db.select().from(songs).where(eq(songs.id, song.id));
+			expect(row.status).toBe("saving");
+			expect(emittedEvents).toHaveLength(0);
+		});
+
+		it("finalizes the worker that owns the current ACE task", async () => {
+			const pl = await createTestPlaylist();
+			const song = await createTestSong(pl.id, 1, {
+				status: "saving",
+				aceTaskId: "task-new",
+			});
+
+			expect(
+				await songService.markReady(
+					song.id,
+					"http://audio.mp3",
+					undefined,
+					"task-new",
+				),
+			).toBe(true);
+			expect(emittedEvents).toHaveLength(1);
+		});
 	});
 
 	// ─── markError ─────────────────────────────────────────────────

@@ -134,6 +134,32 @@ function getCandidates(): Candidate[] {
 		.all() as Candidate[];
 }
 
+function applySpacingPenalties(
+	score: number,
+	candidate: Candidate,
+	selected: Candidate[],
+	recent: RecentPlay[],
+	reason: string[],
+): number {
+	let spacedScore = score;
+	const lastFive = recent.slice(0, 5);
+	if (lastFive.some((play) => play.albumId === candidate.albumId)) {
+		spacedScore -= 45;
+		reason.push("album spacing");
+	}
+	if (lastFive.some((play) => play.genre === candidate.genre))
+		spacedScore -= 18;
+	if (lastFive.some((play) => play.vocalStyle === candidate.vocalStyle))
+		spacedScore -= 16;
+
+	for (const chosen of selected.slice(-3)) {
+		if (chosen.albumId === candidate.albumId) spacedScore -= 55;
+		if (chosen.genre === candidate.genre) spacedScore -= 20;
+		if (chosen.vocalStyle === candidate.vocalStyle) spacedScore -= 16;
+	}
+	return spacedScore;
+}
+
 function scoreCandidate(
 	candidate: Candidate,
 	selected: Candidate[],
@@ -167,20 +193,7 @@ function scoreCandidate(
 		reason.push("ready request");
 	}
 
-	const lastFive = recent.slice(0, 5);
-	if (lastFive.some((play) => play.albumId === candidate.albumId)) {
-		score -= 45;
-		reason.push("album spacing");
-	}
-	if (lastFive.some((play) => play.genre === candidate.genre)) score -= 18;
-	if (lastFive.some((play) => play.vocalStyle === candidate.vocalStyle))
-		score -= 16;
-
-	for (const chosen of selected.slice(-3)) {
-		if (chosen.albumId === candidate.albumId) score -= 55;
-		if (chosen.genre === candidate.genre) score -= 20;
-		if (chosen.vocalStyle === candidate.vocalStyle) score -= 16;
-	}
+	score = applySpacingPenalties(score, candidate, selected, recent, reason);
 
 	if (candidate.lastRadioPlayedAt) {
 		const ageHours = (Date.now() - candidate.lastRadioPlayedAt) / 3_600_000;

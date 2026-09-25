@@ -124,6 +124,139 @@ function buildAcePrompt(options: {
 	return `${caption}, ${vocalStyle}`;
 }
 
+type SubmitToAceOptions = Parameters<typeof submitToAce>[0];
+
+function buildAceBasePayload(
+	options: SubmitToAceOptions,
+	fullPrompt: string,
+): Record<string, unknown> {
+	const {
+		lyrics,
+		bpm,
+		keyScale,
+		timeSignature,
+		audioDuration,
+		inferenceSteps,
+		vocalLanguage,
+		lmTemperature,
+		lmCfgScale,
+		inferMethod,
+		guidanceScale,
+		samplerMode,
+		shift,
+		velocityNormThreshold,
+		velocityEmaFactor,
+		useAdg,
+		aceDcwEnabled,
+		aceThinking,
+		aceAutoDuration,
+	} = options;
+
+	const thinking = aceThinking ?? ACE_GENERATION_DEFAULTS.thinking;
+	// -1 signals ACE-Step to auto-detect duration from lyrics
+	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
+
+	return {
+		prompt: fullPrompt,
+		lyrics,
+		bpm,
+		key_scale: keyScale,
+		time_signature: timeSignature,
+		audio_duration: effectiveDuration,
+		thinking,
+		batch_size: 1,
+		inference_steps: inferenceSteps ?? ACE_GENERATION_DEFAULTS.inferenceSteps,
+		vocal_language: vocalLanguage || "en",
+		use_format: thinking,
+		use_cot_caption: thinking,
+		use_cot_metas: thinking,
+		use_cot_language: thinking,
+		constrained_decoding: true,
+		lm_temperature: lmTemperature ?? ACE_GENERATION_DEFAULTS.lmTemperature,
+		lm_cfg_scale: lmCfgScale ?? ACE_GENERATION_DEFAULTS.lmCfgScale,
+		infer_method: inferMethod || ACE_GENERATION_DEFAULTS.inferMethod,
+		guidance_scale: normalizeAceGuidanceScale(guidanceScale),
+		sampler_mode: normalizeAceSamplerMode(samplerMode),
+		shift: normalizeAceShift(shift),
+		velocity_norm_threshold: normalizeAceVelocityNormThreshold(
+			velocityNormThreshold,
+		),
+		velocity_ema_factor: normalizeAceVelocityEmaFactor(velocityEmaFactor),
+		use_adg: useAdg ?? ACE_GENERATION_DEFAULTS.useAdg,
+		dcw_enabled: aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled,
+		audio_format: "mp3",
+	};
+}
+
+function applyAceOptionalPayloadFields(
+	payload: Record<string, unknown>,
+	options: SubmitToAceOptions,
+): void {
+	const {
+		aceModel,
+		aceDcwMode,
+		aceDcwScaler,
+		aceDcwHighScaler,
+		aceDcwWavelet,
+		aceTaskType,
+		coverNoiseStrength,
+	} = options;
+
+	const normalizedAceModel = normalizeAceModel(aceModel);
+	if (normalizedAceModel) {
+		payload.model = normalizedAceModel;
+	} else if (aceModel === undefined) {
+		payload.model = ACE_QUALITY_DEFAULT_MODEL;
+	}
+
+	if (aceDcwMode !== undefined) payload.dcw_mode = aceDcwMode;
+	if (aceDcwScaler !== undefined) payload.dcw_scaler = aceDcwScaler;
+	if (aceDcwHighScaler !== undefined) {
+		payload.dcw_high_scaler = aceDcwHighScaler;
+	}
+	if (aceDcwWavelet !== undefined) payload.dcw_wavelet = aceDcwWavelet;
+
+	if (aceTaskType && aceTaskType !== "text2music") {
+		payload.task_type = aceTaskType;
+		if (coverNoiseStrength !== undefined) {
+			payload.cover_noise_strength = coverNoiseStrength;
+		}
+	}
+}
+
+async function releaseAceTask(
+	aceUrl: string,
+	payload: Record<string, unknown>,
+	srcAudioFile: string | undefined,
+	signal: AbortSignal | undefined,
+): Promise<Response> {
+	if (srcAudioFile) {
+		// Cover/repaint tasks upload the source audio as multipart form data;
+		// ACE coerces stringified form values back to their typed params.
+		const form = new FormData();
+		for (const [key, value] of Object.entries(payload)) {
+			form.append(key, String(value));
+		}
+		const audioBuffer = await fs.promises.readFile(srcAudioFile);
+		form.append(
+			"src_audio",
+			new Blob([new Uint8Array(audioBuffer)], { type: "audio/mpeg" }),
+			path.basename(srcAudioFile),
+		);
+		return await fetch(`${aceUrl}/release_task`, {
+			method: "POST",
+			body: form,
+			signal,
+		});
+	}
+	return await fetch(`${aceUrl}/release_task`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(payload),
+		signal,
+	});
+}
+
 export async function submitToAce(options: {
 	lyrics: string;
 	caption: string;
@@ -159,127 +292,17 @@ export async function submitToAce(options: {
 	coverNoiseStrength?: number;
 	signal?: AbortSignal;
 }): Promise<AceSubmitResult> {
-	const {
-		lyrics,
-		caption,
-		vocalStyle,
-		bpm,
-		keyScale,
-		timeSignature,
-		audioDuration,
-		aceModel,
-		inferenceSteps,
-		vocalLanguage,
-		lmTemperature,
-		lmCfgScale,
-		inferMethod,
-		guidanceScale,
-		samplerMode,
-		shift,
-		velocityNormThreshold,
-		velocityEmaFactor,
-		useAdg,
-		aceDcwEnabled,
-		aceDcwMode,
-		aceDcwScaler,
-		aceDcwHighScaler,
-		aceDcwWavelet,
-		aceThinking,
-		aceAutoDuration,
-		aceTaskType,
-		srcAudioFile,
-		coverNoiseStrength,
-		signal,
-	} = options;
+	const { lyrics, caption, vocalStyle, srcAudioFile, signal } = options;
 
 	const urls = await getServiceUrls();
 	const aceUrl = urls.aceStepUrl;
 
 	const fullPrompt = buildAcePrompt({ caption, lyrics, vocalStyle });
 
-	const thinking = aceThinking ?? ACE_GENERATION_DEFAULTS.thinking;
-	// -1 signals ACE-Step to auto-detect duration from lyrics
-	const effectiveDuration = (aceAutoDuration ?? true) ? -1 : audioDuration;
+	const payload = buildAceBasePayload(options, fullPrompt);
+	applyAceOptionalPayloadFields(payload, options);
 
-	const payload: Record<string, unknown> = {
-		prompt: fullPrompt,
-		lyrics,
-		bpm,
-		key_scale: keyScale,
-		time_signature: timeSignature,
-		audio_duration: effectiveDuration,
-		thinking,
-		batch_size: 1,
-		inference_steps: inferenceSteps ?? ACE_GENERATION_DEFAULTS.inferenceSteps,
-		vocal_language: vocalLanguage || "en",
-		use_format: thinking,
-		use_cot_caption: thinking,
-		use_cot_metas: thinking,
-		use_cot_language: thinking,
-		constrained_decoding: true,
-		lm_temperature: lmTemperature ?? ACE_GENERATION_DEFAULTS.lmTemperature,
-		lm_cfg_scale: lmCfgScale ?? ACE_GENERATION_DEFAULTS.lmCfgScale,
-		infer_method: inferMethod || ACE_GENERATION_DEFAULTS.inferMethod,
-		guidance_scale: normalizeAceGuidanceScale(guidanceScale),
-		sampler_mode: normalizeAceSamplerMode(samplerMode),
-		shift: normalizeAceShift(shift),
-		velocity_norm_threshold: normalizeAceVelocityNormThreshold(
-			velocityNormThreshold,
-		),
-		velocity_ema_factor: normalizeAceVelocityEmaFactor(velocityEmaFactor),
-		use_adg: useAdg ?? ACE_GENERATION_DEFAULTS.useAdg,
-		dcw_enabled: aceDcwEnabled ?? ACE_DCW_DEFAULTS.enabled,
-		audio_format: "mp3",
-	};
-
-	const normalizedAceModel = normalizeAceModel(aceModel);
-	if (normalizedAceModel) {
-		payload.model = normalizedAceModel;
-	} else if (aceModel === undefined) {
-		payload.model = ACE_QUALITY_DEFAULT_MODEL;
-	}
-
-	if (aceDcwMode !== undefined) payload.dcw_mode = aceDcwMode;
-	if (aceDcwScaler !== undefined) payload.dcw_scaler = aceDcwScaler;
-	if (aceDcwHighScaler !== undefined) {
-		payload.dcw_high_scaler = aceDcwHighScaler;
-	}
-	if (aceDcwWavelet !== undefined) payload.dcw_wavelet = aceDcwWavelet;
-
-	if (aceTaskType && aceTaskType !== "text2music") {
-		payload.task_type = aceTaskType;
-		if (coverNoiseStrength !== undefined) {
-			payload.cover_noise_strength = coverNoiseStrength;
-		}
-	}
-
-	let response: Response;
-	if (srcAudioFile) {
-		// Cover/repaint tasks upload the source audio as multipart form data;
-		// ACE coerces stringified form values back to their typed params.
-		const form = new FormData();
-		for (const [key, value] of Object.entries(payload)) {
-			form.append(key, String(value));
-		}
-		const audioBuffer = await fs.promises.readFile(srcAudioFile);
-		form.append(
-			"src_audio",
-			new Blob([new Uint8Array(audioBuffer)], { type: "audio/mpeg" }),
-			path.basename(srcAudioFile),
-		);
-		response = await fetch(`${aceUrl}/release_task`, {
-			method: "POST",
-			body: form,
-			signal,
-		});
-	} else {
-		response = await fetch(`${aceUrl}/release_task`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(payload),
-			signal,
-		});
-	}
+	const response = await releaseAceTask(aceUrl, payload, srcAudioFile, signal);
 
 	await assertOk(response, "ACE-Step submit");
 
@@ -331,44 +354,48 @@ export async function batchPollAce(
 			continue;
 		}
 
-		if (task.status === 0) {
-			resultMap.set(id, { status: "running" });
-		} else if (task.status === 2) {
-			resultMap.set(id, { status: "failed", error: "Audio generation failed" });
-		} else if (task.status === 1) {
-			let resultItems: { file: string }[];
-			try {
-				resultItems = JSON.parse(task.result ?? "[]");
-			} catch {
-				resultMap.set(id, {
-					status: "failed",
-					error: "Failed to parse result JSON",
-				});
-				continue;
-			}
-			if (resultItems.length > 0) {
-				const timeCosts = extractTimeCosts(task);
-				if (timeCosts) {
-					logger.info({ taskId: id, timeCosts }, "ACE time_costs breakdown");
-				}
-				resultMap.set(id, {
-					status: "succeeded",
-					audioPath: resultItems[0].file,
-					result: resultItems[0],
-					timeCosts,
-				});
-			} else {
-				resultMap.set(id, {
-					status: "failed",
-					error: "No audio files in result",
-				});
-			}
-		} else {
-			resultMap.set(id, { status: "running" });
-		}
+		resultMap.set(id, toBatchPollResult(id, task));
 	}
 
 	return resultMap;
+}
+
+function toBatchPollResult(id: string, task: AceRawTask): AcePollResult {
+	if (task.status === 0) {
+		return { status: "running" };
+	}
+	if (task.status === 2) {
+		return { status: "failed", error: "Audio generation failed" };
+	}
+	if (task.status !== 1) {
+		return { status: "running" };
+	}
+
+	let resultItems: { file: string }[];
+	try {
+		resultItems = JSON.parse(task.result ?? "[]");
+	} catch {
+		return {
+			status: "failed",
+			error: "Failed to parse result JSON",
+		};
+	}
+	if (resultItems.length > 0) {
+		const timeCosts = extractTimeCosts(task);
+		if (timeCosts) {
+			logger.info({ taskId: id, timeCosts }, "ACE time_costs breakdown");
+		}
+		return {
+			status: "succeeded",
+			audioPath: resultItems[0].file,
+			result: resultItems[0],
+			timeCosts,
+		};
+	}
+	return {
+		status: "failed",
+		error: "No audio files in result",
+	};
 }
 
 export async function pollAce(

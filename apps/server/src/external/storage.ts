@@ -1,8 +1,56 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { SongCover } from "@infinitune/shared/types";
 import { trimTrailingSilence } from "./audio-processing";
 import { getServiceUrls } from "./service-urls";
+
+const ACE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
+
+/** Stream ACE audio to disk with a deadline and a hard size cap. */
+export async function downloadAceAudio(
+	url: string,
+	targetFile: string,
+	maxBytes = MAX_ACE_AUDIO_BYTES,
+): Promise<void> {
+	const response = await fetch(url, {
+		signal: AbortSignal.timeout(ACE_DOWNLOAD_TIMEOUT_MS),
+	});
+	if (!response.ok || !response.body) {
+		void response.body?.cancel().catch(() => undefined);
+		throw new Error(`Failed to download audio: ${response.status}`);
+	}
+	if (Number(response.headers.get("content-length")) > maxBytes) {
+		void response.body.cancel().catch(() => undefined);
+		throw new Error("ACE audio download is too large");
+	}
+
+	let receivedBytes = 0;
+	const sizeGuard = new Transform({
+		transform(chunk: Buffer, _encoding, callback) {
+			receivedBytes += chunk.length;
+			callback(
+				receivedBytes > maxBytes
+					? new Error("ACE audio download is too large")
+					: null,
+				chunk,
+			);
+		},
+	});
+	try {
+		await pipeline(
+			Readable.fromWeb(response.body as NodeReadableStream),
+			sizeGuard,
+			fs.createWriteStream(targetFile),
+		);
+	} catch (error) {
+		fs.rmSync(targetFile, { force: true });
+		throw error;
+	}
+}
 
 function resolveLocalAudioPath(aceAudioPath: string): string | null {
 	const storagePath = process.env.MUSIC_STORAGE_PATH;
@@ -22,6 +70,50 @@ function resolveLocalAudioPath(aceAudioPath: string): string | null {
 		return fs.existsSync(localPath) ? localPath : null;
 	} catch {
 		return null;
+	}
+}
+
+function linkSongDirById(
+	storagePath: string,
+	songId: string,
+	songDir: string,
+): void {
+	const byIdDir = path.join(storagePath, ".by-id");
+	fs.mkdirSync(byIdDir, { recursive: true });
+	const idLink = path.join(byIdDir, songId);
+	try {
+		if (fs.existsSync(idLink)) fs.unlinkSync(idLink);
+		fs.symlinkSync(songDir, idLink);
+	} catch {
+		fs.writeFileSync(idLink, songDir);
+	}
+}
+
+function saveSongCover(
+	songDir: string,
+	cover: SongCover | null | undefined,
+	coverPngBase64: string | null | undefined,
+): void {
+	if (cover?.pngUrl && !cover.pngUrl.startsWith("data:")) {
+		const coverFilenames = [
+			{ url: cover.pngUrl, output: "cover.png" },
+			{ url: cover.webpUrl, output: "cover.webp" },
+			{ url: cover.jxlUrl, output: "cover.jxl" },
+		];
+		for (const entry of coverFilenames) {
+			if (!entry.url || entry.url.startsWith("data:")) continue;
+			const sourcePath = path.resolve(
+				import.meta.dirname,
+				"../../../../data/covers",
+				path.basename(entry.url),
+			);
+			if (fs.existsSync(sourcePath)) {
+				fs.copyFileSync(sourcePath, path.join(songDir, entry.output));
+			}
+		}
+	} else if (coverPngBase64) {
+		const coverBuffer = Buffer.from(coverPngBase64, "base64");
+		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
 	}
 }
 
@@ -97,15 +189,7 @@ export async function saveSongToNfs(options: {
 	const songDir = path.join(storagePath, genreDir, subGenreDir, songFolder);
 	fs.mkdirSync(songDir, { recursive: true });
 
-	const byIdDir = path.join(storagePath, ".by-id");
-	fs.mkdirSync(byIdDir, { recursive: true });
-	const idLink = path.join(byIdDir, songId);
-	try {
-		if (fs.existsSync(idLink)) fs.unlinkSync(idLink);
-		fs.symlinkSync(songDir, idLink);
-	} catch {
-		fs.writeFileSync(idLink, songDir);
-	}
+	linkSongDirById(storagePath, songId, songDir);
 
 	// Try to copy from local NAS mount first (ACE writes to same NAS share)
 	const localAudioPath = resolveLocalAudioPath(aceAudioPath);
@@ -117,39 +201,13 @@ export async function saveSongToNfs(options: {
 		// Fall back to HTTP download from ACE if local file isn't found
 		const urls = await getServiceUrls();
 		const aceUrl = urls.aceStepUrl;
-		const audioUrl = `${aceUrl}${aceAudioPath}`;
-		const audioResponse = await fetch(audioUrl);
-		if (!audioResponse.ok) {
-			throw new Error(`Failed to download audio: ${audioResponse.status}`);
-		}
-		const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
-		fs.writeFileSync(audioFile, audioBuffer);
+		await downloadAceAudio(`${aceUrl}${aceAudioPath}`, audioFile);
 	}
 
 	// Trim trailing silence from audio
 	const trimResult = await trimTrailingSilence(audioFile);
 
-	if (cover?.pngUrl && !cover.pngUrl.startsWith("data:")) {
-		const coverFilenames = [
-			{ url: cover.pngUrl, output: "cover.png" },
-			{ url: cover.webpUrl, output: "cover.webp" },
-			{ url: cover.jxlUrl, output: "cover.jxl" },
-		];
-		for (const entry of coverFilenames) {
-			if (!entry.url || entry.url.startsWith("data:")) continue;
-			const sourcePath = path.resolve(
-				import.meta.dirname,
-				"../../../../data/covers",
-				path.basename(entry.url),
-			);
-			if (fs.existsSync(sourcePath)) {
-				fs.copyFileSync(sourcePath, path.join(songDir, entry.output));
-			}
-		}
-	} else if (coverPngBase64) {
-		const coverBuffer = Buffer.from(coverPngBase64, "base64");
-		fs.writeFileSync(path.join(songDir, "cover.png"), coverBuffer);
-	}
+	saveSongCover(songDir, cover, coverPngBase64);
 
 	fs.writeFileSync(path.join(songDir, "lyrics.txt"), lyrics);
 

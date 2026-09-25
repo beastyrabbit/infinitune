@@ -249,14 +249,14 @@ function requestBufferPinned(
 	});
 }
 
-export async function publicHttpRequestBuffer(
-	url: URL,
-	options: PublicHttpRequestOptions,
-): Promise<PublicHttpBufferResult> {
-	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error("Only public http/https URLs are allowed.");
-	}
+interface RequestAbortScope {
+	signal: AbortSignal | undefined;
+	dispose(): void;
+}
 
+function createRequestAbortScope(
+	options: PublicHttpRequestOptions,
+): RequestAbortScope {
 	const controller =
 		options.timeoutMs && options.timeoutMs > 0 ? new AbortController() : null;
 	const timeout = controller
@@ -277,7 +277,28 @@ export async function publicHttpRequestBuffer(
 		else
 			options.signal.addEventListener("abort", externalAbort, { once: true });
 	}
-	const signal = controller?.signal ?? options.signal;
+
+	return {
+		signal: controller?.signal ?? options.signal,
+		dispose() {
+			if (timeout) clearTimeout(timeout);
+			if (controller && options.signal) {
+				options.signal.removeEventListener("abort", externalAbort);
+			}
+		},
+	};
+}
+
+export async function publicHttpRequestBuffer(
+	url: URL,
+	options: PublicHttpRequestOptions,
+): Promise<PublicHttpBufferResult> {
+	if (url.protocol !== "http:" && url.protocol !== "https:") {
+		throw new Error("Only public http/https URLs are allowed.");
+	}
+
+	const abortScope = createRequestAbortScope(options);
+	const signal = abortScope.signal;
 
 	try {
 		const resolvedAddress = await resolvePublicHost(
@@ -292,9 +313,6 @@ export async function publicHttpRequestBuffer(
 			: await requestBufferPinned(url, requestOptions);
 		return { ...result, resolvedAddress };
 	} finally {
-		if (timeout) clearTimeout(timeout);
-		if (controller && options.signal) {
-			options.signal.removeEventListener("abort", externalAbort);
-		}
+		abortScope.dispose();
 	}
 }

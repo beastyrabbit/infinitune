@@ -39,6 +39,7 @@ import {
 } from "../services/radio-station-service";
 import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
+import { pathParam } from "./path-param";
 import { songReadAccess } from "./songs/access";
 
 const app = new Hono();
@@ -203,7 +204,7 @@ app.patch("/presets/:id", stationPresetLimiter, async (c) => {
 	const result = PresetUpdateSchema.safeParse(await c.req.json());
 	if (!result.success) return c.json({ error: result.error.message }, 400);
 	const preset = await presetService.updatePreset(
-		c.req.param("id"),
+		pathParam(c, "id"),
 		result.data,
 	);
 	if (!preset) return c.json({ error: "Preset not found" }, 404);
@@ -214,7 +215,7 @@ app.post("/presets/:id/activate", stationPresetLimiter, async (c) => {
 	if (!(await requireUserActor(c))) {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
-	const preset = await presetService.activatePreset(c.req.param("id"));
+	const preset = await presetService.activatePreset(pathParam(c, "id"));
 	if (!preset) return c.json({ error: "Preset not found" }, 404);
 	return c.json(preset);
 });
@@ -223,7 +224,7 @@ app.delete("/presets/:id", stationPresetLimiter, async (c) => {
 	if (!(await requireUserActor(c))) {
 		return c.json({ error: "Unauthorized" }, 401);
 	}
-	const deleted = await presetService.deletePreset(c.req.param("id"));
+	const deleted = await presetService.deletePreset(pathParam(c, "id"));
 	if (!deleted) return c.json({ error: "Preset not found" }, 404);
 	return c.json({ ok: true });
 });

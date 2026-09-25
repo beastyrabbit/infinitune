@@ -34,6 +34,24 @@ export async function rejoinActiveListener<T>(
 	return snapshot;
 }
 
+function resolveCurrentSongMedia(
+	currentSong: RadioSnapshot["currentSong"] | undefined,
+): RadioSnapshot["currentSong"] {
+	return currentSong
+		? {
+				...currentSong,
+				audioUrl: resolveApiMediaUrl(currentSong.audioUrl),
+				cover: currentSong.cover
+					? {
+							pngUrl: resolveApiMediaUrl(currentSong.cover.pngUrl),
+							webpUrl: resolveApiMediaUrl(currentSong.cover.webpUrl),
+							jxlUrl: resolveApiMediaUrl(currentSong.cover.jxlUrl),
+						}
+					: null,
+			}
+		: null;
+}
+
 export function useRadioSocket(
 	listenerId: string,
 	onSnapshot: (snapshot: RadioSnapshot) => void,
@@ -117,25 +135,7 @@ export function useRadioSocket(
 						type?: string;
 					};
 					if (payload.station && payload.schedule) {
-						const currentSong = payload.currentSong
-							? {
-									...payload.currentSong,
-									audioUrl: resolveApiMediaUrl(payload.currentSong.audioUrl),
-									cover: payload.currentSong.cover
-										? {
-												pngUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.pngUrl,
-												),
-												webpUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.webpUrl,
-												),
-												jxlUrl: resolveApiMediaUrl(
-													payload.currentSong.cover.jxlUrl,
-												),
-											}
-										: null,
-								}
-							: null;
+						const currentSong = resolveCurrentSongMedia(payload.currentSong);
 						onSnapshot({
 							station: payload.station,
 							currentSong,

@@ -28,6 +28,92 @@ function getRoomContext(
 	return { room, deviceId: mapping.deviceId };
 }
 
+type JoinMessage = Extract<ClientMessage, { type: "join" }>;
+
+function handleJoinMessage(
+	ws: WebSocket,
+	msg: JoinMessage,
+	roomManager: RoomManager,
+): void {
+	const sessionId = msg.playlistId ?? msg.roomId;
+	if (!sessionId) {
+		ws.send(
+			JSON.stringify({
+				type: "error",
+				message: "join requires playlistId or roomId",
+			}),
+		);
+		return;
+	}
+
+	if (
+		msg.protocolVersion != null &&
+		msg.protocolVersion !== ROOM_PROTOCOL_VERSION
+	) {
+		ws.send(
+			JSON.stringify({
+				type: "error",
+				code: "PROTOCOL_MISMATCH",
+				message: buildProtocolMismatchMessage(msg.protocolVersion),
+			}),
+			() => {
+				ws.close(1008, "Protocol version mismatch");
+			},
+		);
+		return;
+	}
+
+	// Leave previous room if any
+	const prev = wsRoomMap.get(ws);
+	if (prev) {
+		roomManager.leaveRoom(prev.roomId, prev.deviceId);
+	}
+
+	// Auto-create room if it doesn't exist and playlistKey is provided
+	if (!roomManager.getRoom(sessionId) && msg.playlistKey) {
+		const roomName = msg.roomName || sessionId;
+		roomManager.createRoom(sessionId, roomName, msg.playlistKey);
+		const newRoom = roomManager.getRoom(sessionId);
+		if (newRoom) {
+			newRoom.playlistId = msg.playlistId ?? sessionId;
+			syncRoom(newRoom);
+		}
+	}
+
+	const room = roomManager.joinRoom(
+		sessionId,
+		msg.deviceId,
+		msg.deviceName,
+		msg.role,
+		ws,
+	);
+	if (room) {
+		wsRoomMap.set(ws, {
+			roomId: sessionId,
+			deviceId: msg.deviceId,
+		});
+		ws.send(
+			JSON.stringify({
+				type: "joinAck",
+				roomId: sessionId,
+				playlistId: sessionId,
+				deviceId: msg.deviceId,
+				protocolVersion: ROOM_PROTOCOL_VERSION,
+			}),
+		);
+		// Ensure queue/state is hydrated for both newly created and pre-existing rooms.
+		// Without this, rooms created via REST can stay unsynced until another playlist/song event happens.
+		void syncRoom(room);
+	} else {
+		ws.send(
+			JSON.stringify({
+				type: "error",
+				message: `Session "${sessionId}" not found. Provide playlistKey to auto-create.`,
+			}),
+		);
+	}
+}
+
 function handleClientMessage(
 	ws: WebSocket,
 	msg: ClientMessage,
@@ -35,83 +121,7 @@ function handleClientMessage(
 ): void {
 	switch (msg.type) {
 		case "join": {
-			const sessionId = msg.playlistId ?? msg.roomId;
-			if (!sessionId) {
-				ws.send(
-					JSON.stringify({
-						type: "error",
-						message: "join requires playlistId or roomId",
-					}),
-				);
-				break;
-			}
-
-			if (
-				msg.protocolVersion != null &&
-				msg.protocolVersion !== ROOM_PROTOCOL_VERSION
-			) {
-				ws.send(
-					JSON.stringify({
-						type: "error",
-						code: "PROTOCOL_MISMATCH",
-						message: buildProtocolMismatchMessage(msg.protocolVersion),
-					}),
-					() => {
-						ws.close(1008, "Protocol version mismatch");
-					},
-				);
-				break;
-			}
-
-			// Leave previous room if any
-			const prev = wsRoomMap.get(ws);
-			if (prev) {
-				roomManager.leaveRoom(prev.roomId, prev.deviceId);
-			}
-
-			// Auto-create room if it doesn't exist and playlistKey is provided
-			if (!roomManager.getRoom(sessionId) && msg.playlistKey) {
-				const roomName = msg.roomName || sessionId;
-				roomManager.createRoom(sessionId, roomName, msg.playlistKey);
-				const newRoom = roomManager.getRoom(sessionId);
-				if (newRoom) {
-					newRoom.playlistId = msg.playlistId ?? sessionId;
-					syncRoom(newRoom);
-				}
-			}
-
-			const room = roomManager.joinRoom(
-				sessionId,
-				msg.deviceId,
-				msg.deviceName,
-				msg.role,
-				ws,
-			);
-			if (room) {
-				wsRoomMap.set(ws, {
-					roomId: sessionId,
-					deviceId: msg.deviceId,
-				});
-				ws.send(
-					JSON.stringify({
-						type: "joinAck",
-						roomId: sessionId,
-						playlistId: sessionId,
-						deviceId: msg.deviceId,
-						protocolVersion: ROOM_PROTOCOL_VERSION,
-					}),
-				);
-				// Ensure queue/state is hydrated for both newly created and pre-existing rooms.
-				// Without this, rooms created via REST can stay unsynced until another playlist/song event happens.
-				void syncRoom(room);
-			} else {
-				ws.send(
-					JSON.stringify({
-						type: "error",
-						message: `Session "${sessionId}" not found. Provide playlistKey to auto-create.`,
-					}),
-				);
-			}
+			handleJoinMessage(ws, msg, roomManager);
 			break;
 		}
 		case "command": {

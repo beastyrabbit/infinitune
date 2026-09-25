@@ -42,6 +42,52 @@ export type IpcHandler = (
 	payload: Record<string, unknown> | undefined,
 ) => Promise<unknown> | unknown;
 
+/**
+ * Parses one request line. Returns `undefined` (which JSON.parse never
+ * yields) when the line is not valid JSON, after answering the client.
+ */
+function parseIpcRequestLine(
+	socket: net.Socket,
+	line: string,
+): IpcRequest | undefined {
+	try {
+		return JSON.parse(line) as IpcRequest;
+	} catch {
+		const response: IpcResponse = {
+			id: "unknown",
+			ok: false,
+			error: "Invalid JSON request",
+		};
+		socket.write(
+			`${JSON.stringify({
+				id: response.id,
+				ok: response.ok,
+				error: response.error,
+			})}\n`,
+		);
+		return undefined;
+	}
+}
+
+async function respondToIpcRequest(
+	socket: net.Socket,
+	handler: IpcHandler,
+	request: IpcRequest,
+): Promise<void> {
+	try {
+		const data = await handler(request.action, request.payload);
+		const response: IpcResponse = { id: request.id, ok: true, data };
+		socket.write(`${JSON.stringify(response)}\n`);
+	} catch (error) {
+		const response: IpcResponse = {
+			id: request.id,
+			ok: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
+		socket.write(`${JSON.stringify(response)}\n`);
+	}
+}
+
 export function createIpcServer(handler: IpcHandler): net.Server {
 	const server = net.createServer((socket) => {
 		let buffer = "";
@@ -53,42 +99,9 @@ export function createIpcServer(handler: IpcHandler): net.Server {
 			while (newlineIndex !== -1) {
 				const line = buffer.slice(0, newlineIndex).trim();
 				buffer = buffer.slice(newlineIndex + 1);
-				if (!line) {
-					newlineIndex = buffer.indexOf("\n");
-					continue;
-				}
-
-				let request: IpcRequest;
-				try {
-					request = JSON.parse(line) as IpcRequest;
-				} catch {
-					const response: IpcResponse = {
-						id: "unknown",
-						ok: false,
-						error: "Invalid JSON request",
-					};
-					socket.write(
-						`${JSON.stringify({
-							id: response.id,
-							ok: response.ok,
-							error: response.error,
-						})}\n`,
-					);
-					newlineIndex = buffer.indexOf("\n");
-					continue;
-				}
-
-				try {
-					const data = await handler(request.action, request.payload);
-					const response: IpcResponse = { id: request.id, ok: true, data };
-					socket.write(`${JSON.stringify(response)}\n`);
-				} catch (error) {
-					const response: IpcResponse = {
-						id: request.id,
-						ok: false,
-						error: error instanceof Error ? error.message : String(error),
-					};
-					socket.write(`${JSON.stringify(response)}\n`);
+				const request = line ? parseIpcRequestLine(socket, line) : undefined;
+				if (request !== undefined) {
+					await respondToIpcRequest(socket, handler, request);
 				}
 				newlineIndex = buffer.indexOf("\n");
 			}
@@ -130,28 +143,27 @@ export async function sendDaemonRequest(
 			socket.write(`${JSON.stringify(request)}\n`);
 		});
 
+		const settleWithLine = (line: string) => {
+			resolved = true;
+			clearTimeout(timer);
+			try {
+				const response = JSON.parse(line) as IpcResponse;
+				resolve(response);
+			} catch (error) {
+				reject(error);
+			} finally {
+				socket.end();
+			}
+		};
+
 		socket.on("data", (chunk) => {
 			buffer += chunk;
 			let newlineIndex = buffer.indexOf("\n");
 			while (newlineIndex !== -1) {
 				const line = buffer.slice(0, newlineIndex).trim();
 				buffer = buffer.slice(newlineIndex + 1);
-				if (!line) {
-					newlineIndex = buffer.indexOf("\n");
-					continue;
-				}
-
-				if (!resolved) {
-					resolved = true;
-					clearTimeout(timer);
-					try {
-						const response = JSON.parse(line) as IpcResponse;
-						resolve(response);
-					} catch (error) {
-						reject(error);
-					} finally {
-						socket.end();
-					}
+				if (line && !resolved) {
+					settleWithLine(line);
 				}
 				newlineIndex = buffer.indexOf("\n");
 			}

@@ -4,6 +4,31 @@ import { playerStore, setCurrentSong } from "@/lib/player-store";
 import type { Id, Playlist, Song } from "@/types";
 
 /**
+ * Next song to auto-play when nothing is loaded or the current song has been played.
+ * Returns null while the current song is still unplayed.
+ */
+function pickAutoplaySong(
+	songs: Song[],
+	currentSongId: string | null,
+	playlist: Playlist | null | undefined,
+	transitionDismissedRef: MutableRefObject<boolean>,
+) {
+	const currentSong = currentSongId
+		? songs.find((s) => s.id === currentSongId)
+		: null;
+
+	const shouldPick = !currentSong || currentSong.status === "played";
+	if (!shouldPick) return null;
+	return pickNextSong(
+		songs,
+		currentSongId,
+		playlist?.promptEpoch ?? 0,
+		currentSong?.orderIndex,
+		transitionDismissedRef.current,
+	);
+}
+
+/**
  * Auto-plays songs when they become ready, gated on prior user interaction.
  * - Uses pickNextSong for priority-based selection (interrupts > current-epoch > filler).
  * - Loads audio when the current song changes.
@@ -30,23 +55,15 @@ export function useAutoplay(
 		if (playerStore.state.isPlaying) return;
 		if (userPausedRef.current) return;
 
-		const currentSong = currentSongId
-			? songs.find((s) => s.id === currentSongId)
-			: null;
-
-		const shouldPick = !currentSong || currentSong.status === "played";
-		if (shouldPick) {
-			const next = pickNextSong(
-				songs,
-				currentSongId,
-				playlist?.promptEpoch ?? 0,
-				currentSong?.orderIndex,
-				transitionDismissedRef.current,
-			);
-			if (next?.audioUrl) {
-				setCurrentSong(next.id);
-				loadAndPlay(next.audioUrl);
-			}
+		const next = pickAutoplaySong(
+			songs,
+			currentSongId,
+			playlist,
+			transitionDismissedRef,
+		);
+		if (next?.audioUrl) {
+			setCurrentSong(next.id);
+			loadAndPlay(next.audioUrl);
 		}
 	}, [
 		songs,

@@ -39,6 +39,53 @@ const SERVICE_META: Record<ServiceName, { label: string; urlKey: string }> = {
 	"codex-imagegen": { label: "CODEX IMAGEGEN", urlKey: "" },
 };
 
+interface ModelsEndpoint {
+	path: string;
+	warning: string;
+	formatModel: (m: unknown) => string;
+}
+
+// Services that support listing models after a successful connection test
+const MODELS_ENDPOINTS: Partial<Record<ServiceName, ModelsEndpoint>> = {
+	ollama: {
+		path: "/api/autoplayer/ollama-models",
+		warning: "Failed to fetch Ollama models:",
+		formatModel: (m) => (m as { name: string }).name,
+	},
+	"ace-step": {
+		path: "/api/autoplayer/ace-models",
+		warning: "Failed to fetch ACE models:",
+		formatModel: (m) => (m as { name: string }).name,
+	},
+	"inference-sh": {
+		path: "/api/autoplayer/inference-sh-image-models",
+		warning: "Failed to fetch Inference.sh models:",
+		formatModel: (m) =>
+			`${(m as { name: string }).name} (${(m as { priceLabel: string }).priceLabel})`,
+	},
+};
+
+async function fetchModels(endpoint: ModelsEndpoint): Promise<string[] | null> {
+	try {
+		const modelsRes = await fetch(`${API_URL}${endpoint.path}`);
+		if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
+		const modelsData = await modelsRes.json();
+		return (modelsData.models || []).map((m: unknown) =>
+			endpoint.formatModel(m),
+		);
+	} catch (e) {
+		console.warn(endpoint.warning, e);
+		return null;
+	}
+}
+
+const CARD_BORDER_CLASS: Record<ServiceStatus, string> = {
+	error: "border-red-500/40",
+	ok: "border-green-600/30",
+	testing: "border-yellow-500/40",
+	idle: "border-white/10",
+};
+
 function ConnectionsTestPage() {
 	const settings = useSettings();
 
@@ -76,48 +123,10 @@ function ConnectionsTestPage() {
 
 			if (data.ok) {
 				// Fetch models for services that support it
-				let models: string[] | null = null;
-				if (service === "ollama") {
-					try {
-						const modelsRes = await fetch(
-							`${API_URL}/api/autoplayer/ollama-models`,
-						);
-						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
-						const modelsData = await modelsRes.json();
-						models = (modelsData.models || []).map(
-							(m: unknown) => (m as { name: string }).name,
-						);
-					} catch (e) {
-						console.warn("Failed to fetch Ollama models:", e);
-					}
-				} else if (service === "ace-step") {
-					try {
-						const modelsRes = await fetch(
-							`${API_URL}/api/autoplayer/ace-models`,
-						);
-						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
-						const modelsData = await modelsRes.json();
-						models = (modelsData.models || []).map(
-							(m: unknown) => (m as { name: string }).name,
-						);
-					} catch (e) {
-						console.warn("Failed to fetch ACE models:", e);
-					}
-				} else if (service === "inference-sh") {
-					try {
-						const modelsRes = await fetch(
-							`${API_URL}/api/autoplayer/inference-sh-image-models`,
-						);
-						if (!modelsRes.ok) throw new Error(`HTTP ${modelsRes.status}`);
-						const modelsData = await modelsRes.json();
-						models = (modelsData.models || []).map(
-							(m: unknown) =>
-								`${(m as { name: string }).name} (${(m as { priceLabel: string }).priceLabel})`,
-						);
-					} catch (e) {
-						console.warn("Failed to fetch Inference.sh models:", e);
-					}
-				}
+				const modelsEndpoint = MODELS_ENDPOINTS[service];
+				const models = modelsEndpoint
+					? await fetchModels(modelsEndpoint)
+					: null;
 
 				setStates((prev) => ({
 					...prev,
@@ -186,15 +195,7 @@ function ConnectionsTestPage() {
 					return (
 						<div
 							key={service}
-							className={`border-4 bg-black ${
-								state.status === "error"
-									? "border-red-500/40"
-									: state.status === "ok"
-										? "border-green-600/30"
-										: state.status === "testing"
-											? "border-yellow-500/40"
-											: "border-white/10"
-							}`}
+							className={`border-4 bg-black ${CARD_BORDER_CLASS[state.status]}`}
 						>
 							<div className="px-4 py-2 flex items-center justify-between border-b-2 border-white/10">
 								<span className="text-xs font-black uppercase tracking-widest">

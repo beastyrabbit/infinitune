@@ -6,12 +6,14 @@ import { stream } from "hono/streaming";
 import { logger } from "../../logger";
 import * as songService from "../../services/song-service";
 import { songToWire } from "../../wire";
+import { pathParam } from "../path-param";
 import {
 	requirePlaybackPlaylistAccess,
 	requirePlaylistAccess,
 	requireSongAccess,
 	songReadAccess,
 } from "./access";
+import { parseByteRange } from "./byte-range";
 
 const app = new Hono();
 
@@ -101,23 +103,24 @@ app.get("/:id/audio", async (c) => {
 	const stat = fs.statSync(audioFile);
 	const range = c.req.header("Range");
 
-	if (range) {
-		const match = range.match(/bytes=(\d+)-(\d*)/);
-		if (match) {
-			const start = Number.parseInt(match[1], 10);
-			const end = match[2] ? Number.parseInt(match[2], 10) : stat.size - 1;
-			c.header("Content-Type", "audio/mpeg");
-			c.header("Accept-Ranges", "bytes");
-			c.header("Content-Range", `bytes ${start}-${end}/${stat.size}`);
-			c.header("Content-Length", String(end - start + 1));
-			c.status(206);
-			return stream(c, async (s) => {
-				const rs = fs.createReadStream(audioFile, { start, end });
-				for await (const chunk of rs) {
-					await s.write(chunk as Uint8Array);
-				}
-			});
-		}
+	const byteRange = range ? parseByteRange(range, stat.size) : null;
+	if (byteRange === "unsatisfiable") {
+		c.header("Content-Range", `bytes */${stat.size}`);
+		return c.body(null, 416);
+	}
+	if (byteRange) {
+		const { start, end } = byteRange;
+		c.header("Content-Type", "audio/mpeg");
+		c.header("Accept-Ranges", "bytes");
+		c.header("Content-Range", `bytes ${start}-${end}/${stat.size}`);
+		c.header("Content-Length", String(end - start + 1));
+		c.status(206);
+		return stream(c, async (s) => {
+			const rs = fs.createReadStream(audioFile, { start, end });
+			for await (const chunk of rs) {
+				await s.write(chunk as Uint8Array);
+			}
+		});
 	}
 
 	c.header("Content-Type", "audio/mpeg");
@@ -133,7 +136,7 @@ app.get("/:id/audio", async (c) => {
 
 // GET /api/songs/:id
 app.get("/:id", requireSongAccess, async (c) => {
-	const song = await songService.getById(c.req.param("id"));
+	const song = await songService.getById(pathParam(c, "id"));
 	if (!song) return c.json(null, 404);
 	return c.json(songToWire(song));
 });

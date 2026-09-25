@@ -287,6 +287,156 @@ function InferenceShModelSelect({
 	);
 }
 
+function TextModelField({
+	textProvider,
+	textModel,
+	setTextModel,
+	codexLoading,
+	codexTextModels,
+	openrouterModels,
+	openrouterLoading,
+}: Readonly<{
+	textProvider: LlmProvider;
+	textModel: string;
+	setTextModel: (v: string) => void;
+	codexLoading: boolean;
+	codexTextModels: ModelOption[];
+	openrouterModels: ModelOption[];
+	openrouterLoading: boolean;
+}>) {
+	if (textProvider === "openrouter") {
+		return (
+			<OpenRouterModelInput
+				models={openrouterModels}
+				value={textModel}
+				onChange={setTextModel}
+				loading={openrouterLoading}
+			/>
+		);
+	}
+	if (codexLoading) {
+		return (
+			<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+				<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+					LOADING CODEX MODELS...
+				</span>
+			</div>
+		);
+	}
+	if (codexTextModels.length > 0) {
+		return (
+			<Select value={textModel} onValueChange={setTextModel}>
+				<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+					<SelectValue placeholder="SELECT CODEX MODEL" />
+				</SelectTrigger>
+				<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+					{codexTextModels.map((m) => (
+						<SelectItem
+							key={m.name}
+							value={m.name}
+							className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+						>
+							{(m.displayName || m.name).toUpperCase()}
+							{m.is_default ? " (DEFAULT)" : ""}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		);
+	}
+	return (
+		<div>
+			<Input
+				className={inputClass}
+				placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
+				value={textModel}
+				onChange={(e) => setTextModel(e.target.value)}
+			/>
+			<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
+				SIGN IN ON NETWORK TAB TO LOAD CODEX MODEL LIST
+			</p>
+		</div>
+	);
+}
+
+function PersonaModelField({
+	personaProvider,
+	personaModel,
+	setPersonaModel,
+	codexLoading,
+	codexTextModels,
+	openrouterModels,
+	openrouterLoading,
+}: Readonly<{
+	personaProvider: LlmProvider;
+	personaModel: string;
+	setPersonaModel: (v: string) => void;
+	codexLoading: boolean;
+	codexTextModels: ModelOption[];
+	openrouterModels: ModelOption[];
+	openrouterLoading: boolean;
+}>) {
+	if (personaProvider === "openrouter") {
+		return (
+			<OpenRouterModelInput
+				models={openrouterModels}
+				value={personaModel}
+				onChange={setPersonaModel}
+				loading={openrouterLoading}
+				allowFallback
+			/>
+		);
+	}
+	if (codexLoading) {
+		return (
+			<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
+				<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
+					LOADING CODEX MODELS...
+				</span>
+			</div>
+		);
+	}
+	if (codexTextModels.length > 0) {
+		return (
+			<Select
+				value={personaModel || "__fallback__"}
+				onValueChange={(value) =>
+					setPersonaModel(value === "__fallback__" ? "" : value)
+				}
+			>
+				<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+					<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
+				</SelectTrigger>
+				<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+					<SelectItem
+						value="__fallback__"
+						className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+					>
+						USE TEXT MODEL
+					</SelectItem>
+					{codexTextModels.map((m) => (
+						<SelectItem
+							key={m.name}
+							value={m.name}
+							className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
+						>
+							{(m.displayName || m.name).toUpperCase()}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		);
+	}
+	return (
+		<Input
+			className={inputClass}
+			placeholder="USES TEXT MODEL IF EMPTY"
+			value={personaModel}
+			onChange={(e) => setPersonaModel(e.target.value)}
+		/>
+	);
+}
+
 export function SettingsTabModels({
 	textProvider,
 	setTextProvider,
@@ -363,50 +513,15 @@ export function SettingsTabModels({
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{textProvider === "openrouter" ? (
-						<OpenRouterModelInput
-							models={openrouterModels}
-							value={textModel}
-							onChange={setTextModel}
-							loading={openrouterLoading}
-						/>
-					) : codexLoading ? (
-						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
-							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
-								LOADING CODEX MODELS...
-							</span>
-						</div>
-					) : codexTextModels.length > 0 ? (
-						<Select value={textModel} onValueChange={setTextModel}>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="SELECT CODEX MODEL" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								{codexTextModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										{(m.displayName || m.name).toUpperCase()}
-										{m.is_default ? " (DEFAULT)" : ""}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : (
-						<div>
-							<Input
-								className={inputClass}
-								placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
-								value={textModel}
-								onChange={(e) => setTextModel(e.target.value)}
-							/>
-							<p className="mt-1 text-[10px] font-bold uppercase text-white/30">
-								SIGN IN ON NETWORK TAB TO LOAD CODEX MODEL LIST
-							</p>
-						</div>
-					)}
+					<TextModelField
+						textProvider={textProvider}
+						textModel={textModel}
+						setTextModel={setTextModel}
+						codexLoading={codexLoading}
+						codexTextModels={codexTextModels}
+						openrouterModels={openrouterModels}
+						openrouterLoading={openrouterLoading}
+					/>
 				</SettingsField>
 			</SettingsPanel>
 
@@ -626,56 +741,15 @@ export function SettingsTabModels({
 				</SettingsField>
 
 				<SettingsField label="Model">
-					{personaProvider === "openrouter" ? (
-						<OpenRouterModelInput
-							models={openrouterModels}
-							value={personaModel}
-							onChange={setPersonaModel}
-							loading={openrouterLoading}
-							allowFallback
-						/>
-					) : codexLoading ? (
-						<div className="h-10 rounded-none border-4 border-white/20 bg-gray-900 flex items-center px-3">
-							<span className="font-mono text-xs font-bold uppercase text-white/40 animate-pulse">
-								LOADING CODEX MODELS...
-							</span>
-						</div>
-					) : codexTextModels.length > 0 ? (
-						<Select
-							value={personaModel || "__fallback__"}
-							onValueChange={(value) =>
-								setPersonaModel(value === "__fallback__" ? "" : value)
-							}
-						>
-							<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-								<SelectValue placeholder="USES TEXT MODEL IF EMPTY" />
-							</SelectTrigger>
-							<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-								<SelectItem
-									value="__fallback__"
-									className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-								>
-									USE TEXT MODEL
-								</SelectItem>
-								{codexTextModels.map((m) => (
-									<SelectItem
-										key={m.name}
-										value={m.name}
-										className="font-mono text-sm font-bold uppercase text-white cursor-pointer"
-									>
-										{(m.displayName || m.name).toUpperCase()}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					) : (
-						<Input
-							className={inputClass}
-							placeholder="USES TEXT MODEL IF EMPTY"
-							value={personaModel}
-							onChange={(e) => setPersonaModel(e.target.value)}
-						/>
-					)}
+					<PersonaModelField
+						personaProvider={personaProvider}
+						personaModel={personaModel}
+						setPersonaModel={setPersonaModel}
+						codexLoading={codexLoading}
+						codexTextModels={codexTextModels}
+						openrouterModels={openrouterModels}
+						openrouterLoading={openrouterLoading}
+					/>
 				</SettingsField>
 
 				<p className="text-[10px] font-bold uppercase text-white/30">

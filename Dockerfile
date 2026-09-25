@@ -14,7 +14,6 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/shared/package.json packages/shared/package.json
-COPY packages/room-client/package.json packages/room-client/package.json
 
 # ── Stage 2: build ─────────────────────────────────────────────
 FROM base AS build
@@ -71,13 +70,11 @@ WORKDIR /app
 # Production node_modules (includes tsx)
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=prod-deps /app/packages/room-client/node_modules ./packages/room-client/node_modules
 COPY --from=prod-deps /app/apps/server/node_modules ./apps/server/node_modules
 
 # Server source (runs via tsx at runtime)
 COPY apps/server ./apps/server
 COPY packages/shared ./packages/shared
-COPY packages/room-client ./packages/room-client
 
 # Web build output (Nitro SSR bundle)
 COPY --from=build /app/apps/web/.output ./apps/web/.output
@@ -89,20 +86,23 @@ COPY apps/server/package.json ./apps/server/package.json
 
 # Entrypoint
 COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
 
-# Data directory for SQLite + covers (server resolves to /app/data via relative path)
-RUN mkdir -p /app/data
-
-# Verify tsx binary exists (fail build early rather than at runtime)
-RUN test -x node_modules/.bin/tsx
-RUN test -x /usr/local/bin/codex
-RUN test -x /usr/local/bin/infsh
-RUN test -x /usr/local/bin/yt-dlp
-RUN test -x /usr/bin/ffprobe
-RUN test -x /usr/bin/prlimit
+# Make the entrypoint executable and create the data directory for SQLite +
+# covers (server resolves to /app/data via relative path). The app runs as the
+# unprivileged node user (uid 1000), which owns only this directory. Then verify
+# the runtime binaries exist (fail the build early rather than at runtime).
+RUN chmod +x docker-entrypoint.sh && \
+	mkdir -p /app/data && chown node:node /app/data && \
+	test -x node_modules/.bin/tsx && \
+	test -x /usr/local/bin/codex && \
+	test -x /usr/local/bin/infsh && \
+	test -x /usr/local/bin/yt-dlp && \
+	test -x /usr/bin/ffprobe && \
+	test -x /usr/bin/prlimit
 
 EXPOSE 3000 5175
+
+USER node
 
 ENTRYPOINT ["tini", "--"]
 CMD ["./docker-entrypoint.sh"]

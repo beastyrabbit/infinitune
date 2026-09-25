@@ -52,6 +52,53 @@ function generateDeviceId(): string {
 	return id;
 }
 
+/** Parse and validate a raw room WebSocket frame; logs and returns null when invalid. */
+function parseServerMessage(data: string): ServerMessage | null {
+	let parsedRaw: unknown;
+	try {
+		parsedRaw = JSON.parse(data);
+	} catch (err) {
+		console.error("[room-ws] Failed to parse server message:", err);
+		return null;
+	}
+	const parsed = ServerMessageSchema.safeParse(parsedRaw);
+	if (!parsed.success) {
+		console.error("[room-ws] Invalid server message:", parsed.error.message);
+		return null;
+	}
+	return parsed.data;
+}
+
+/** Server protocol version from a joinAck/state message when it differs from ours, else null. */
+function getMismatchedProtocolVersion(msg: ServerMessage): number | null {
+	if (
+		(msg.type === "joinAck" || msg.type === "state") &&
+		msg.protocolVersion != null &&
+		msg.protocolVersion !== ROOM_PROTOCOL_VERSION
+	) {
+		return msg.protocolVersion;
+	}
+	return null;
+}
+
+/**
+ * Record one ping/pong clock offset sample. Returns the median offset once
+ * at least 3 samples exist, otherwise null.
+ */
+function recordPingOffset(
+	offsets: number[],
+	clientTime: number,
+	serverTime: number,
+): number | null {
+	const now = Date.now();
+	const roundTrip = now - clientTime;
+	const offset = serverTime - clientTime - roundTrip / 2;
+	offsets.push(offset);
+	if (offsets.length < 3) return null;
+	const sorted = [...offsets].sort((a, b) => a - b);
+	return sorted[Math.floor(sorted.length / 2)];
+}
+
 export function useRoomConnection(
 	roomId: string | null,
 	deviceName: string,
@@ -124,30 +171,11 @@ export function useRoomConnection(
 
 	const handleMessage = useCallback(
 		(event: MessageEvent) => {
-			let parsedRaw: unknown;
-			try {
-				parsedRaw = JSON.parse(event.data);
-			} catch (err) {
-				console.error("[room-ws] Failed to parse server message:", err);
-				return;
-			}
-			const parsed = ServerMessageSchema.safeParse(parsedRaw);
-			if (!parsed.success) {
-				console.error(
-					"[room-ws] Invalid server message:",
-					parsed.error.message,
-				);
-				return;
-			}
-			const msg: ServerMessage = parsed.data;
-			if (
-				(msg.type === "joinAck" || msg.type === "state") &&
-				msg.protocolVersion != null &&
-				msg.protocolVersion !== ROOM_PROTOCOL_VERSION
-			) {
-				handleProtocolMismatch(
-					buildProtocolMismatchMessage(msg.protocolVersion),
-				);
+			const msg = parseServerMessage(event.data);
+			if (!msg) return;
+			const mismatchedVersion = getMismatchedProtocolVersion(msg);
+			if (mismatchedVersion !== null) {
+				handleProtocolMismatch(buildProtocolMismatchMessage(mismatchedVersion));
 				return;
 			}
 
@@ -164,15 +192,12 @@ export function useRoomConnection(
 					setQueue(msg.songs);
 					break;
 				case "pong": {
-					const now = Date.now();
-					const roundTrip = now - msg.clientTime;
-					const offset = msg.serverTime - msg.clientTime - roundTrip / 2;
-					pingOffsetsRef.current.push(offset);
-					if (pingOffsetsRef.current.length >= 3) {
-						const sorted = [...pingOffsetsRef.current].sort((a, b) => a - b);
-						const median = sorted[Math.floor(sorted.length / 2)];
-						setServerTimeOffset(median);
-					}
+					const median = recordPingOffset(
+						pingOffsetsRef.current,
+						msg.clientTime,
+						msg.serverTime,
+					);
+					if (median !== null) setServerTimeOffset(median);
 					break;
 				}
 				case "error":

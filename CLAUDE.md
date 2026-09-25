@@ -35,7 +35,6 @@ pnpm monorepo with workspace packages.
 infinitune/
   packages/
     shared/            # @infinitune/shared — types, protocol, pick-next-song
-    room-client/       # @infinitune/room-client — room hooks (future)
   apps/
     web/               # @infinitune/web — React frontend (Vite + TanStack)
     server/            # @infinitune/server — Unified backend (Hono)
@@ -45,7 +44,8 @@ infinitune/
 ```
 Browser (React 19 + TanStack Router + React Query)
   ↕ HTTP fetch + WebSocket event invalidation (/ws)
-  ↕ WebSocket room protocol (/ws/room)
+  ↕ WebSocket room protocol (/ws/playlist)
+  ↕ WebSocket radio protocol (/ws/radio)
 Unified Server (Hono on :5175)
   ├── SQLite (better-sqlite3, WAL mode)
   ├── In-memory typed event bus (replaces RabbitMQ)

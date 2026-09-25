@@ -26,6 +26,7 @@ import {
 	isTimeoutError,
 } from "@/integrations/api/client";
 import {
+	type AutoplayerModelOption,
 	useAutoplayerCodexModels,
 	useAutoplayerOpenRouterModels,
 	useSettings,
@@ -110,6 +111,217 @@ function slugify(text: string): string {
 		.slice(0, 30);
 }
 
+/** Model to switch to when the current one does not fit the provider, or null to keep it. */
+function getCorrectedModel(
+	provider: LlmProvider,
+	model: string,
+	codexTextModels: AutoplayerModelOption[],
+): string | null {
+	if (provider === "openrouter") {
+		if (!model.trim() || codexTextModels.some((item) => item.name === model)) {
+			return DEFAULT_OPENROUTER_TEXT_MODEL;
+		}
+		return null;
+	}
+	if (provider === "openai-codex" && codexTextModels.length > 0) {
+		if (!codexTextModels.some((m) => m.name === model)) {
+			const preferred =
+				codexTextModels.find((m) => m.is_default) || codexTextModels[0];
+			return preferred.name;
+		}
+		return null;
+	}
+	if (provider === "openai-codex" && !model.trim()) {
+		return DEFAULT_OPENAI_CODEX_TEXT_MODEL;
+	}
+	return null;
+}
+
+function getStartButtonLabel(
+	loading: boolean,
+	loadingState: string,
+	isRoom: boolean,
+): string {
+	if (loading) return loadingState || ">>> DIRECTOR PLANNING <<<";
+	return isRoom ? ">>> PLAN ROOM <<<" : ">>> PLAN PLAYLIST <<<";
+}
+
+function ModelSelection({
+	provider,
+	model,
+	onSelectProvider,
+	onModelChange,
+	codexTextModels,
+	openrouterModels,
+	openrouterModelListId,
+}: Readonly<{
+	provider: LlmProvider;
+	model: string;
+	onSelectProvider: (provider: LlmProvider) => void;
+	onModelChange: (model: string) => void;
+	codexTextModels: AutoplayerModelOption[];
+	openrouterModels: AutoplayerModelOption[];
+	openrouterModelListId: string;
+}>) {
+	const codexModelField =
+		codexTextModels.length > 0 ? (
+			<Select value={model} onValueChange={onModelChange}>
+				<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
+					<SelectValue placeholder="SELECT CODEX MODEL" />
+				</SelectTrigger>
+				<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
+					{codexTextModels.map((m) => (
+						<SelectItem
+							key={m.name}
+							value={m.name}
+							className="font-mono text-sm font-bold uppercase text-white"
+						>
+							{(m.displayName || m.name).toUpperCase()}
+							{m.is_default ? " (DEFAULT)" : ""}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		) : (
+			<Input
+				className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+				placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
+				value={model}
+				onChange={(e) => onModelChange(e.target.value)}
+			/>
+		);
+
+	return (
+		<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+			<div>
+				<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+					PROVIDER
+				</p>
+				<div className="flex h-10">
+					<button
+						type="button"
+						className={`flex-1 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+							provider === "openai-codex"
+								? "bg-white text-black"
+								: "bg-transparent text-white hover:bg-white/10"
+						}`}
+						onClick={() => onSelectProvider("openai-codex")}
+					>
+						CODEX
+					</button>
+					<button
+						type="button"
+						className={`flex-1 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
+							provider === "openrouter"
+								? "bg-white text-black"
+								: "bg-transparent text-white hover:bg-white/10"
+						}`}
+						onClick={() => onSelectProvider("openrouter")}
+					>
+						OPENROUTER
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+					TEXT MODEL
+				</p>
+				{provider === "openai-codex" ? (
+					codexModelField
+				) : (
+					<>
+						<Input
+							list={openrouterModelListId}
+							className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
+							placeholder={DEFAULT_OPENROUTER_TEXT_MODEL.toUpperCase()}
+							value={model}
+							onChange={(e) => onModelChange(e.target.value)}
+						/>
+						<datalist id={openrouterModelListId}>
+							{openrouterModels.map((item) => (
+								<option key={item.name} value={item.name}>
+									{item.displayName || item.name}
+								</option>
+							))}
+						</datalist>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function PlaybackModeSection({
+	isRoom,
+	onPlaybackModeChange,
+	roomName,
+	onRoomNameChange,
+}: Readonly<{
+	isRoom: boolean;
+	onPlaybackModeChange: (mode: PlaybackMode) => void;
+	roomName: string;
+	onRoomNameChange: (roomName: string) => void;
+}>) {
+	return (
+		<div>
+			<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
+				PLAYBACK
+			</p>
+			<div className="flex gap-0">
+				<button
+					type="button"
+					className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
+						!isRoom
+							? "bg-red-500 text-white border-red-500"
+							: "bg-transparent text-white/50 hover:bg-white/5"
+					}`}
+					onClick={() => onPlaybackModeChange("local")}
+				>
+					<Headphones className="h-3.5 w-3.5" />
+					LOCAL
+				</button>
+				<button
+					type="button"
+					className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
+						isRoom
+							? "bg-green-600 text-white border-green-600"
+							: "bg-transparent text-white/50 hover:bg-white/5"
+					}`}
+					onClick={() => onPlaybackModeChange("room")}
+				>
+					<Radio className="h-3.5 w-3.5" />
+					ROOM
+				</button>
+			</div>
+
+			{/* Room name input — slides in when room mode */}
+			<div
+				className={`grid transition-all duration-200 ${
+					isRoom
+						? "grid-rows-[1fr] opacity-100 mt-3"
+						: "grid-rows-[0fr] opacity-0"
+				}`}
+			>
+				<div className="overflow-hidden">
+					<div className="flex items-center gap-2">
+						<Monitor className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+						<Input
+							className="h-9 rounded-none border-2 border-green-600/30 bg-green-600/5 font-mono text-sm font-bold uppercase text-green-400 placeholder:text-green-600/30 focus-visible:ring-0 focus-visible:border-green-500"
+							placeholder="ROOM NAME"
+							value={roomName}
+							onChange={(e) => onRoomNameChange(e.target.value)}
+						/>
+						<span className="text-[10px] text-white/20 font-mono whitespace-nowrap">
+							/{slugify(roomName || "room")}
+						</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 export function PlaylistCreator({
 	onCreatePlaylist,
 	onOpenSettings,
@@ -162,26 +374,8 @@ export function PlaylistCreator({
 	);
 
 	useEffect(() => {
-		if (provider === "openrouter") {
-			if (
-				!model.trim() ||
-				codexTextModels.some((item) => item.name === model)
-			) {
-				setModel(DEFAULT_OPENROUTER_TEXT_MODEL);
-			}
-			return;
-		}
-		if (provider === "openai-codex" && codexTextModels.length > 0) {
-			if (!codexTextModels.some((m) => m.name === model)) {
-				const preferred =
-					codexTextModels.find((m) => m.is_default) || codexTextModels[0];
-				setModel(preferred.name);
-			}
-			return;
-		}
-		if (provider === "openai-codex" && !model.trim()) {
-			setModel(DEFAULT_OPENAI_CODEX_TEXT_MODEL);
-		}
+		const correctedModel = getCorrectedModel(provider, model, codexTextModels);
+		if (correctedModel !== null) setModel(correctedModel);
 	}, [provider, model, codexTextModels]);
 
 	const selectProvider = (nextProvider: LlmProvider) => {
@@ -399,149 +593,27 @@ export function PlaylistCreator({
 						</div>
 
 						{/* Model selection */}
-						<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-							<div>
-								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
-									PROVIDER
-								</p>
-								<div className="flex h-10">
-									<button
-										type="button"
-										className={`flex-1 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "openai-codex"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => selectProvider("openai-codex")}
-									>
-										CODEX
-									</button>
-									<button
-										type="button"
-										className={`flex-1 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors ${
-											provider === "openrouter"
-												? "bg-white text-black"
-												: "bg-transparent text-white hover:bg-white/10"
-										}`}
-										onClick={() => selectProvider("openrouter")}
-									>
-										OPENROUTER
-									</button>
-								</div>
-							</div>
-
-							<div>
-								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
-									TEXT MODEL
-								</p>
-								{provider === "openai-codex" ? (
-									codexTextModels.length > 0 ? (
-										<Select value={model} onValueChange={setModel}>
-											<SelectTrigger className="w-full h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white">
-												<SelectValue placeholder="SELECT CODEX MODEL" />
-											</SelectTrigger>
-											<SelectContent className="rounded-none border-4 border-white/20 bg-gray-900 font-mono">
-												{codexTextModels.map((m) => (
-													<SelectItem
-														key={m.name}
-														value={m.name}
-														className="font-mono text-sm font-bold uppercase text-white"
-													>
-														{(m.displayName || m.name).toUpperCase()}
-														{m.is_default ? " (DEFAULT)" : ""}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									) : (
-										<Input
-											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-											placeholder={DEFAULT_OPENAI_CODEX_TEXT_MODEL.toUpperCase()}
-											value={model}
-											onChange={(e) => setModel(e.target.value)}
-										/>
-									)
-								) : (
-									<>
-										<Input
-											list={openrouterModelListId}
-											className="h-10 rounded-none border-4 border-white/20 bg-gray-900 font-mono text-sm font-bold uppercase text-white focus-visible:ring-0"
-											placeholder={DEFAULT_OPENROUTER_TEXT_MODEL.toUpperCase()}
-											value={model}
-											onChange={(e) => setModel(e.target.value)}
-										/>
-										<datalist id={openrouterModelListId}>
-											{openrouterModels.map((item) => (
-												<option key={item.name} value={item.name}>
-													{item.displayName || item.name}
-												</option>
-											))}
-										</datalist>
-									</>
-								)}
-							</div>
-						</div>
+						<ModelSelection
+							provider={provider}
+							model={model}
+							onSelectProvider={selectProvider}
+							onModelChange={setModel}
+							codexTextModels={codexTextModels}
+							openrouterModels={openrouterModels}
+							openrouterModelListId={openrouterModelListId}
+						/>
 
 						{/* Playback mode toggle */}
 						{onCreatePlaylistInRoom && (
-							<div>
-								<p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2 block">
-									PLAYBACK
-								</p>
-								<div className="flex gap-0">
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
-											!isRoom
-												? "bg-red-500 text-white border-red-500"
-												: "bg-transparent text-white/50 hover:bg-white/5"
-										}`}
-										onClick={() => setPlaybackMode("local")}
-									>
-										<Headphones className="h-3.5 w-3.5" />
-										LOCAL
-									</button>
-									<button
-										type="button"
-										className={`flex-1 h-10 border-4 border-l-0 border-white/20 font-mono text-xs font-black uppercase transition-colors flex items-center justify-center gap-2 ${
-											isRoom
-												? "bg-green-600 text-white border-green-600"
-												: "bg-transparent text-white/50 hover:bg-white/5"
-										}`}
-										onClick={() => setPlaybackMode("room")}
-									>
-										<Radio className="h-3.5 w-3.5" />
-										ROOM
-									</button>
-								</div>
-
-								{/* Room name input — slides in when room mode */}
-								<div
-									className={`grid transition-all duration-200 ${
-										isRoom
-											? "grid-rows-[1fr] opacity-100 mt-3"
-											: "grid-rows-[0fr] opacity-0"
-									}`}
-								>
-									<div className="overflow-hidden">
-										<div className="flex items-center gap-2">
-											<Monitor className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
-											<Input
-												className="h-9 rounded-none border-2 border-green-600/30 bg-green-600/5 font-mono text-sm font-bold uppercase text-green-400 placeholder:text-green-600/30 focus-visible:ring-0 focus-visible:border-green-500"
-												placeholder="ROOM NAME"
-												value={roomName}
-												onChange={(e) => {
-													setRoomName(e.target.value);
-													setRoomNameEdited(true);
-												}}
-											/>
-											<span className="text-[10px] text-white/20 font-mono whitespace-nowrap">
-												/{slugify(roomName || "room")}
-											</span>
-										</div>
-									</div>
-								</div>
-							</div>
+							<PlaybackModeSection
+								isRoom={isRoom}
+								onPlaybackModeChange={setPlaybackMode}
+								roomName={roomName}
+								onRoomNameChange={(value) => {
+									setRoomName(value);
+									setRoomNameEdited(true);
+								}}
+							/>
 						)}
 
 						{/* Start button */}
@@ -554,11 +626,7 @@ export function PlaylistCreator({
 							onClick={handleStart}
 							disabled={!canStart}
 						>
-							{loading
-								? loadingState || ">>> DIRECTOR PLANNING <<<"
-								: isRoom
-									? ">>> PLAN ROOM <<<"
-									: ">>> PLAN PLAYLIST <<<"}
+							{getStartButtonLabel(loading, loadingState, isRoom)}
 						</Button>
 						{statusMessage && (
 							<p className="text-center text-[10px] uppercase tracking-widest text-yellow-300 mt-2">

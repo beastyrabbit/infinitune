@@ -28,10 +28,31 @@ function jsonResult(details: unknown) {
 	};
 }
 
+/**
+ * Replace every `<tag ...>...</tag>` element with a space. Linear-time
+ * equivalent of `/<tag[\s\S]*?<\/tag>/gi`, which backtracks quadratically on
+ * pages with many unclosed openers.
+ */
+function removeElements(value: string, tag: string): string {
+	const opener = new RegExp(`<${tag}`, "gi");
+	const closer = new RegExp(`</${tag}>`, "gi");
+	let result = "";
+	let cursor = 0;
+	while (cursor < value.length) {
+		opener.lastIndex = cursor;
+		const open = opener.exec(value);
+		if (!open) break;
+		closer.lastIndex = open.index + open[0].length;
+		const close = closer.exec(value);
+		if (!close) break;
+		result += `${value.slice(cursor, open.index)} `;
+		cursor = close.index + close[0].length;
+	}
+	return result + value.slice(cursor);
+}
+
 function stripHtml(value: string): string {
-	return value
-		.replace(/<script[\s\S]*?<\/script>/gi, " ")
-		.replace(/<style[\s\S]*?<\/style>/gi, " ")
+	return removeElements(removeElements(value, "script"), "style")
 		.replace(/<[^>]+>/g, " ")
 		.replace(/&quot;/g, '"')
 		.replace(/&#039;/g, "'")

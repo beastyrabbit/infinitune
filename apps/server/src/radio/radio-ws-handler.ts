@@ -77,6 +77,157 @@ function parseMessage(raw: Buffer | ArrayBuffer | Buffer[] | string) {
 	}
 }
 
+type RadioMessage = Record<string, unknown>;
+
+interface RadioConnection {
+	ws: WebSocket;
+	// The id this connection currently holds active (null while paused). The
+	// client usually supplies its own persisted listenerId, which differs
+	// from the connection-local UUID and may be shared across tabs.
+	heldListenerId: string | null;
+}
+
+function resolveListenerId(msg: RadioMessage, fallback: string): string {
+	return typeof msg.listenerId === "string" && msg.listenerId.trim()
+		? msg.listenerId.trim()
+		: fallback;
+}
+
+async function handlePlayMessage(
+	conn: RadioConnection,
+	effectiveListenerId: string,
+): Promise<void> {
+	if (process.env.NODE_ENV === "production") {
+		send(conn.ws, {
+			type: "error",
+			message: "Radio playback must use POST /api/radio/play",
+		});
+		return;
+	}
+	const snapshot = await activateListener(effectiveListenerId);
+	// Count this socket against the listener id, releasing any
+	// previously held id (e.g. the client changed listenerId).
+	if (conn.heldListenerId !== effectiveListenerId) {
+		if (conn.heldListenerId && releaseListener(conn.heldListenerId)) {
+			deactivateListener(conn.heldListenerId);
+		}
+		retainListener(effectiveListenerId);
+		conn.heldListenerId = effectiveListenerId;
+	}
+	send(conn.ws, { type: "state", ...snapshot });
+}
+
+function handlePauseMessage(conn: RadioConnection): void {
+	// This socket holds no listener (never played, or already
+	// paused) — do nothing rather than blindly deactivating a
+	// shared id another socket may still hold.
+	if (!conn.heldListenerId) {
+		send(conn.ws, { type: "state", ...getStationSnapshot() });
+		return;
+	}
+	// Only deactivate when this was the last socket holding the id.
+	const targetId = conn.heldListenerId;
+	const isLast = releaseListener(conn.heldListenerId);
+	conn.heldListenerId = null;
+	send(conn.ws, {
+		type: "state",
+		...(isLast ? deactivateListener(targetId) : getStationSnapshot()),
+	});
+}
+
+async function handleSkipMessage(
+	conn: RadioConnection,
+	effectiveListenerId: string,
+): Promise<void> {
+	if (process.env.NODE_ENV === "production") {
+		send(conn.ws, {
+			type: "error",
+			message: "Radio skipping must use POST /api/radio/skip",
+		});
+		return;
+	}
+	heartbeatListener(effectiveListenerId);
+	send(conn.ws, { type: "state", ...(await skipStation()) });
+}
+
+function handleSeekMessage(
+	conn: RadioConnection,
+	msg: RadioMessage,
+	effectiveListenerId: string,
+): void {
+	if (process.env.NODE_ENV === "production") {
+		send(conn.ws, {
+			type: "error",
+			message: "Radio seeking must use POST /api/radio/seek",
+		});
+		return;
+	}
+	heartbeatListener(effectiveListenerId);
+	send(conn.ws, {
+		type: "state",
+		...seekStation(Number(msg.offsetSeconds ?? 0)),
+	});
+}
+
+async function handleFeedbackMessage(
+	conn: RadioConnection,
+	msg: RadioMessage,
+): Promise<void> {
+	if (process.env.NODE_ENV === "production") {
+		send(conn.ws, {
+			type: "error",
+			message: "Radio feedback must use POST /api/radio/feedback",
+		});
+		return;
+	}
+	if (
+		typeof msg.songId === "string" &&
+		(msg.kind === "like" || msg.kind === "dislike")
+	) {
+		const snapshot = await addFeedback(msg.songId, msg.kind);
+		if (snapshot) send(conn.ws, { type: "state", ...snapshot });
+	}
+}
+
+async function dispatchRadioMessage(
+	conn: RadioConnection,
+	msg: RadioMessage,
+	effectiveListenerId: string,
+): Promise<void> {
+	switch (msg.type) {
+		case "play":
+			await handlePlayMessage(conn, effectiveListenerId);
+			break;
+		case "pause":
+			handlePauseMessage(conn);
+			break;
+		case "heartbeat":
+			heartbeatListener(effectiveListenerId);
+			send(conn.ws, { type: "pong", serverTime: Date.now() });
+			break;
+		case "skip":
+			await handleSkipMessage(conn, effectiveListenerId);
+			break;
+		case "seek":
+			handleSeekMessage(conn, msg, effectiveListenerId);
+			break;
+		case "feedback":
+			await handleFeedbackMessage(conn, msg);
+			break;
+		case "request":
+			send(conn.ws, {
+				type: "error",
+				message: "Radio requests must use POST /api/radio/requests",
+			});
+			break;
+		default:
+			send(conn.ws, {
+				type: "error",
+				message: `Unknown radio message ${msg.type}`,
+			});
+	}
+}
+
 export function handleRadioConnection(ws: WebSocket): void {
 	startEventBridge();
 	clients.add(ws);
@@ -96,10 +247,7 @@ export function handleRadioConnection(ws: WebSocket): void {
 		inboundMessageTokens -= 1;
 		return true;
 	};
-	// The id this connection currently holds active (null while paused). The
-	// client usually supplies its own persisted listenerId, which differs
-	// from the connection-local UUID and may be shared across tabs.
-	let heldListenerId: string | null = null;
+	const conn: RadioConnection = { ws, heldListenerId: null };
 	const pingTimer = setInterval(() => {
 		send(ws, { type: "ping", serverTime: Date.now() });
 	}, 5000);
@@ -117,111 +265,10 @@ export function handleRadioConnection(ws: WebSocket): void {
 			return;
 		}
 
-		const effectiveListenerId =
-			typeof msg.listenerId === "string" && msg.listenerId.trim()
-				? msg.listenerId.trim()
-				: listenerId;
+		const effectiveListenerId = resolveListenerId(msg, listenerId);
 
 		Promise.resolve()
-			.then(async () => {
-				switch (msg.type) {
-					case "play": {
-						if (process.env.NODE_ENV === "production") {
-							send(ws, {
-								type: "error",
-								message: "Radio playback must use POST /api/radio/play",
-							});
-							break;
-						}
-						const snapshot = await activateListener(effectiveListenerId);
-						// Count this socket against the listener id, releasing any
-						// previously held id (e.g. the client changed listenerId).
-						if (heldListenerId !== effectiveListenerId) {
-							if (heldListenerId && releaseListener(heldListenerId)) {
-								deactivateListener(heldListenerId);
-							}
-							retainListener(effectiveListenerId);
-							heldListenerId = effectiveListenerId;
-						}
-						send(ws, { type: "state", ...snapshot });
-						break;
-					}
-					case "pause": {
-						// This socket holds no listener (never played, or already
-						// paused) — do nothing rather than blindly deactivating a
-						// shared id another socket may still hold.
-						if (!heldListenerId) {
-							send(ws, { type: "state", ...getStationSnapshot() });
-							break;
-						}
-						// Only deactivate when this was the last socket holding the id.
-						const targetId = heldListenerId;
-						const isLast = releaseListener(heldListenerId);
-						heldListenerId = null;
-						send(ws, {
-							type: "state",
-							...(isLast ? deactivateListener(targetId) : getStationSnapshot()),
-						});
-						break;
-					}
-					case "heartbeat":
-						heartbeatListener(effectiveListenerId);
-						send(ws, { type: "pong", serverTime: Date.now() });
-						break;
-					case "skip":
-						if (process.env.NODE_ENV === "production") {
-							send(ws, {
-								type: "error",
-								message: "Radio skipping must use POST /api/radio/skip",
-							});
-							break;
-						}
-						heartbeatListener(effectiveListenerId);
-						send(ws, { type: "state", ...(await skipStation()) });
-						break;
-					case "seek":
-						if (process.env.NODE_ENV === "production") {
-							send(ws, {
-								type: "error",
-								message: "Radio seeking must use POST /api/radio/seek",
-							});
-							break;
-						}
-						heartbeatListener(effectiveListenerId);
-						send(ws, {
-							type: "state",
-							...seekStation(Number(msg.offsetSeconds ?? 0)),
-						});
-						break;
-					case "feedback":
-						if (process.env.NODE_ENV === "production") {
-							send(ws, {
-								type: "error",
-								message: "Radio feedback must use POST /api/radio/feedback",
-							});
-							break;
-						}
-						if (
-							typeof msg.songId === "string" &&
-							(msg.kind === "like" || msg.kind === "dislike")
-						) {
-							const snapshot = await addFeedback(msg.songId, msg.kind);
-							if (snapshot) send(ws, { type: "state", ...snapshot });
-						}
-						break;
-					case "request":
-						send(ws, {
-							type: "error",
-							message: "Radio requests must use POST /api/radio/requests",
-						});
-						break;
-					default:
-						send(ws, {
-							type: "error",
-							message: `Unknown radio message ${msg.type}`,
-						});
-				}
-			})
+			.then(() => dispatchRadioMessage(conn, msg, effectiveListenerId))
 			.catch((err) => {
 				logger.error({ err }, "Radio WS command failed");
 				send(ws, {
@@ -236,10 +283,10 @@ export function handleRadioConnection(ws: WebSocket): void {
 		clients.delete(ws);
 		// Release this socket's hold; only deactivate when no other socket
 		// (tab) is still holding the same listener id.
-		if (heldListenerId && releaseListener(heldListenerId)) {
-			deactivateListener(heldListenerId);
+		if (conn.heldListenerId && releaseListener(conn.heldListenerId)) {
+			deactivateListener(conn.heldListenerId);
 		}
-		heldListenerId = null;
+		conn.heldListenerId = null;
 	});
 
 	ws.on("error", (err) => {

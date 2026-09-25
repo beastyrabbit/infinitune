@@ -3,6 +3,7 @@ import { getRequestActor, type RequestActor } from "../../auth/actor";
 import { getDeviceActor } from "../../auth/device";
 import * as playlistService from "../../services/playlist-service";
 import * as songService from "../../services/song-service";
+import { pathParam } from "../path-param";
 
 export async function songReadAccess(c: Context) {
 	const actor = await getRequestActor(c);
@@ -45,21 +46,21 @@ export async function canPlaybackAccessPlaylist(
 }
 
 export async function requirePlaylistAccess(c: Context, next: Next) {
-	if (!(await canAccessPlaylist(c, c.req.param("playlistId")))) {
+	if (!(await canAccessPlaylist(c, pathParam(c, "playlistId")))) {
 		return c.json({ error: "Playlist not found" }, 404);
 	}
 	await next();
 }
 
 export async function requirePlaybackPlaylistAccess(c: Context, next: Next) {
-	if (!(await canPlaybackAccessPlaylist(c, c.req.param("playlistId")))) {
+	if (!(await canPlaybackAccessPlaylist(c, pathParam(c, "playlistId")))) {
 		return c.json({ error: "Playlist not found" }, 404);
 	}
 	await next();
 }
 
 export async function requireSongAccess(c: Context, next: Next) {
-	const song = await songService.getById(c.req.param("id"));
+	const song = await songService.getById(pathParam(c, "id"));
 	if (!song || !(await canAccessPlaylist(c, song.playlistId))) {
 		return c.json({ error: "Song not found" }, 404);
 	}
@@ -67,7 +68,7 @@ export async function requireSongAccess(c: Context, next: Next) {
 }
 
 export async function requirePlaybackSongAccess(c: Context, next: Next) {
-	const song = await songService.getById(c.req.param("id"));
+	const song = await songService.getById(pathParam(c, "id"));
 	if (!song || !(await canPlaybackAccessPlaylist(c, song.playlistId))) {
 		return c.json({ error: "Song not found" }, 404);
 	}

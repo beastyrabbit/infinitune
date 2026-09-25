@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveApiMediaUrl } from "@/lib/endpoints";
 import type { RoomConnection } from "./useRoomConnection";
 
+type ExecuteMessage = Extract<ServerMessage, { type: "execute" }>;
+type NextSongMessage = Extract<ServerMessage, { type: "nextSong" }>;
+type PreloadMessage = Extract<ServerMessage, { type: "preload" }>;
+
 /**
  * Call audio.play(), returning true if playback started.
  * Silently ignores AbortError (caused by rapid load/play racing).
@@ -20,6 +24,17 @@ function tryPlay(audio: HTMLAudioElement): Promise<boolean> {
 			return false;
 		},
 	);
+}
+
+/** Volume for a newly started song: the per-device override if set, otherwise room-wide. */
+function getNextSongVolume(
+	volumeOverride: number | null,
+	liveConn: RoomConnection | null,
+): number {
+	if (volumeOverride !== null) {
+		return volumeOverride;
+	}
+	return liveConn?.playback.isMuted ? 0 : (liveConn?.playback.volume ?? 0.8);
 }
 
 /**
@@ -204,117 +219,125 @@ export function useRoomPlayer(connection: RoomConnection | null) {
 		const conn = connectionRef.current;
 		if (!conn) return;
 
+		const handleExecute = (msg: ExecuteMessage, audio: HTMLAudioElement) => {
+			const scope = msg.scope ?? "room";
+			switch (msg.action) {
+				case "play":
+					attemptPlay(audio);
+					// Sync after a short delay to let play() start
+					setTimeout(sendImmediateSync, 100);
+					break;
+				case "pause":
+					audio.pause();
+					sendImmediateSync();
+					break;
+				case "toggle":
+					if (audio.paused) {
+						attemptPlay(audio);
+						setTimeout(sendImmediateSync, 100);
+					} else {
+						audio.pause();
+						sendImmediateSync();
+					}
+					break;
+				case "seek": {
+					const time = (msg.payload?.time as number) ?? 0;
+					audio.currentTime = time;
+					// currentTime updates synchronously, sync right away
+					sendImmediateSync();
+					break;
+				}
+				case "setVolume": {
+					const vol = (msg.payload?.volume as number) ?? 0.8;
+					audio.volume = vol;
+					// Room-wide setVolume clears per-device override;
+					// device-scoped setVolume sets the override.
+					if (scope === "room") {
+						volumeOverrideRef.current = null;
+					} else {
+						volumeOverrideRef.current = vol;
+					}
+					break;
+				}
+				case "toggleMute":
+					audio.muted = !audio.muted;
+					break;
+			}
+		};
+
+		const handleNextSong = (
+			msg: NextSongMessage,
+			audio: HTMLAudioElement,
+			liveConn: RoomConnection | null,
+		) => {
+			const preload = preloadAudioRef.current;
+			// Check if we already preloaded this song (readyState >= 2 = buffered enough to play)
+			if (
+				preload &&
+				preloadSongIdRef.current === msg.songId &&
+				preload.src &&
+				preload.readyState >= 2
+			) {
+				// Swap preloaded audio to current
+				const oldAudio = currentAudioRef.current;
+				if (oldAudio) {
+					oldAudio.pause();
+					oldAudio.src = "";
+				}
+
+				currentAudioRef.current = preload;
+				preloadAudioRef.current = oldAudio ?? new Audio();
+				preloadSongIdRef.current = null;
+			} else {
+				// Load fresh
+				audio.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
+				audio.load();
+			}
+
+			const targetAudio = currentAudioRef.current;
+			if (!targetAudio) return;
+
+			// Apply volume: use per-device override if set, otherwise room-wide
+			targetAudio.volume = getNextSongVolume(
+				volumeOverrideRef.current,
+				liveConn,
+			);
+
+			// Re-register ended listener on swapped audio
+			const handleEnded = () => {
+				connectionRef.current?.sendSongEnded();
+			};
+			targetAudio.addEventListener("ended", handleEnded, {
+				once: true,
+			});
+
+			// Attempt synchronized start
+			attemptPlay(targetAudio, msg.startAt);
+		};
+
+		const handlePreload = (msg: PreloadMessage) => {
+			const preload = preloadAudioRef.current;
+			if (!preload) return;
+			preloadSongIdRef.current = msg.songId;
+			preload.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
+			preload.load(); // Buffer but don't play
+		};
+
 		const removeHandler = conn.addMessageHandler((msg: ServerMessage) => {
 			const audio = currentAudioRef.current;
 			if (!audio) return;
 			const liveConn = connectionRef.current;
 
 			switch (msg.type) {
-				case "execute": {
-					const scope = msg.scope ?? "room";
-					switch (msg.action) {
-						case "play":
-							attemptPlay(audio);
-							// Sync after a short delay to let play() start
-							setTimeout(sendImmediateSync, 100);
-							break;
-						case "pause":
-							audio.pause();
-							sendImmediateSync();
-							break;
-						case "toggle":
-							if (audio.paused) {
-								attemptPlay(audio);
-								setTimeout(sendImmediateSync, 100);
-							} else {
-								audio.pause();
-								sendImmediateSync();
-							}
-							break;
-						case "seek": {
-							const time = (msg.payload?.time as number) ?? 0;
-							audio.currentTime = time;
-							// currentTime updates synchronously, sync right away
-							sendImmediateSync();
-							break;
-						}
-						case "setVolume": {
-							const vol = (msg.payload?.volume as number) ?? 0.8;
-							audio.volume = vol;
-							// Room-wide setVolume clears per-device override;
-							// device-scoped setVolume sets the override.
-							if (scope === "room") {
-								volumeOverrideRef.current = null;
-							} else {
-								volumeOverrideRef.current = vol;
-							}
-							break;
-						}
-						case "toggleMute":
-							audio.muted = !audio.muted;
-							break;
-					}
+				case "execute":
+					handleExecute(msg, audio);
 					break;
-				}
-
-				case "nextSong": {
-					const preload = preloadAudioRef.current;
-					// Check if we already preloaded this song (readyState >= 2 = buffered enough to play)
-					if (
-						preload &&
-						preloadSongIdRef.current === msg.songId &&
-						preload.src &&
-						preload.readyState >= 2
-					) {
-						// Swap preloaded audio to current
-						const oldAudio = currentAudioRef.current;
-						if (oldAudio) {
-							oldAudio.pause();
-							oldAudio.src = "";
-						}
-
-						currentAudioRef.current = preload;
-						preloadAudioRef.current = oldAudio ?? new Audio();
-						preloadSongIdRef.current = null;
-					} else {
-						// Load fresh
-						audio.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
-						audio.load();
-					}
-
-					const targetAudio = currentAudioRef.current;
-					if (!targetAudio) break;
-
-					// Apply volume: use per-device override if set, otherwise room-wide
-					if (volumeOverrideRef.current !== null) {
-						targetAudio.volume = volumeOverrideRef.current;
-					} else {
-						targetAudio.volume = liveConn?.playback.isMuted
-							? 0
-							: (liveConn?.playback.volume ?? 0.8);
-					}
-
-					// Re-register ended listener on swapped audio
-					const handleEnded = () => {
-						connectionRef.current?.sendSongEnded();
-					};
-					targetAudio.addEventListener("ended", handleEnded, {
-						once: true,
-					});
-
-					// Attempt synchronized start
-					attemptPlay(targetAudio, msg.startAt);
+				case "nextSong":
+					handleNextSong(msg, audio, liveConn);
 					break;
-				}
-
-				case "preload": {
-					const preload = preloadAudioRef.current;
-					if (!preload) break;
-					preloadSongIdRef.current = msg.songId;
-					preload.src = resolveApiMediaUrl(msg.audioUrl) ?? msg.audioUrl;
-					preload.load(); // Buffer but don't play
+				case "preload":
+					handlePreload(msg);
 					break;
-				}
 			}
 		});
 

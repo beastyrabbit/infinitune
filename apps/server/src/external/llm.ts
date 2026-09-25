@@ -803,6 +803,14 @@ const SessionParamsSchema = z.object({
 
 export type SessionParams = z.infer<typeof SessionParamsSchema>;
 
+function trimmedOr(value: string, fallback: string): string {
+	return value?.trim() || fallback;
+}
+
+function nonEmptyListOr(values: string[], fallback: string[]): string[] {
+	return values?.length > 0 ? values : fallback;
+}
+
 /** Sanitize LLM-generated metadata: clamp numeric fields to safe ranges and normalize strings */
 function validateSongMetadata(raw: SongMetadata): SongMetadata {
 	const normalizedOutputLanguage = normalizeLyricsLanguage(raw.language);
@@ -811,35 +819,37 @@ function validateSongMetadata(raw: SongMetadata): SongMetadata {
 
 	return {
 		...raw,
-		title: raw.title?.trim() || "Untitled",
-		artistName: raw.artistName?.trim() || "Unknown Artist",
-		genre: raw.genre?.trim() || "Electronic",
-		subGenre: raw.subGenre?.trim() || "Ambient",
-		vocalStyle: raw.vocalStyle?.trim() || "female smooth vocal",
-		lyrics: (raw.lyrics?.trim() || "[Instrumental]").replace(/\\n/g, "\n"),
-		caption:
-			raw.caption?.trim() ||
+		title: trimmedOr(raw.title, "Untitled"),
+		artistName: trimmedOr(raw.artistName, "Unknown Artist"),
+		genre: trimmedOr(raw.genre, "Electronic"),
+		subGenre: trimmedOr(raw.subGenre, "Ambient"),
+		vocalStyle: trimmedOr(raw.vocalStyle, "female smooth vocal"),
+		lyrics: trimmedOr(raw.lyrics, "[Instrumental]").replace(/\\n/g, "\n"),
+		caption: trimmedOr(
+			raw.caption,
 			"ambient electronic with cinematic dream-pop softness, slow pulsing synth bass and brushed electronic drums under warm pad chords, verses stay intimate and spacious before the chorus widens into layered harmonies, close-mic lead vocal with soft doubles and airy ad-libs, tape haze, shimmer reverb, gentle filter swells, wide mellow mix, ambient, electronic, dream pop, cinematic",
+		),
 		coverPrompt: raw.coverPrompt?.trim() || undefined,
 		bpm: clampInt(raw.bpm, 60, 200, 120),
 		audioDuration: clampInt(raw.audioDuration, 30, 600, 240),
-		keyScale: raw.keyScale?.trim() || "C major",
+		keyScale: trimmedOr(raw.keyScale, "C major"),
 		timeSignature:
 			typeof raw.timeSignature === "string" &&
 			/^\d+\/\d+$/.test(raw.timeSignature)
 				? raw.timeSignature
 				: "4/4",
-		mood: raw.mood?.trim() || "dreamy",
-		energy: raw.energy?.trim() || "medium",
-		era: raw.era?.trim() || "2020s",
-		instruments:
-			raw.instruments?.length > 0
-				? raw.instruments
-				: ["synthesizer", "drum machine", "bass"],
-		tags: raw.tags?.length > 0 ? raw.tags : ["electronic", "ambient"],
-		themes: raw.themes?.length > 0 ? raw.themes : ["atmosphere"],
+		mood: trimmedOr(raw.mood, "dreamy"),
+		energy: trimmedOr(raw.energy, "medium"),
+		era: trimmedOr(raw.era, "2020s"),
+		instruments: nonEmptyListOr(raw.instruments, [
+			"synthesizer",
+			"drum machine",
+			"bass",
+		]),
+		tags: nonEmptyListOr(raw.tags, ["electronic", "ambient"]),
+		themes: nonEmptyListOr(raw.themes, ["atmosphere"]),
 		language: languageLabel,
-		description: raw.description?.trim() || "An AI-generated track.",
+		description: trimmedOr(raw.description, "An AI-generated track."),
 	};
 }
 
@@ -1139,6 +1149,101 @@ export async function enhanceSessionParams(options: {
 	};
 }
 
+function formatManagerSteeringLines(
+	steerHistory?: Array<{ epoch: number; direction: string; at: number }>,
+): string[] {
+	return (
+		steerHistory?.slice(-10).map((entry) => {
+			const at = new Date(entry.at).toISOString();
+			const direction = sanitizePromptOptional(entry.direction) || "(empty)";
+			return `- epoch ${entry.epoch} @ ${at}: ${direction}`;
+		}) ?? []
+	);
+}
+
+function formatManagerRecentSongLines(recentSongs?: RecentSong[]): string[] {
+	return (
+		recentSongs?.slice(0, 12).map((song, index) => {
+			const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
+			const safeArtist =
+				sanitizePromptOptional(song.artistName) || "Unknown Artist";
+			const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
+			const safeSubGenre = sanitizePromptOptional(song.subGenre) || "Unknown";
+			const safeVocal = sanitizePromptOptional(song.vocalStyle);
+			const safeMood = sanitizePromptOptional(song.mood);
+			const safeEnergy = sanitizePromptOptional(song.energy);
+			return `${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre}/${safeSubGenre}${safeVocal ? `, ${safeVocal}` : ""}${safeMood ? `, mood=${safeMood}` : ""}${safeEnergy ? `, energy=${safeEnergy}` : ""}`;
+		}) ?? []
+	);
+}
+
+function formatManagerRecentDescriptionLines(
+	recentDescriptions?: string[],
+): string[] {
+	return (
+		recentDescriptions?.slice(0, 20).map((description, index) => {
+			const safeDescription = sanitizePromptOptional(description) || "(empty)";
+			return `${index + 1}. ${safeDescription}`;
+		}) ?? []
+	);
+}
+
+function formatManagerFeedbackLines(
+	ratingSignals?: ManagerRatingSignal[],
+): string[] {
+	return (
+		ratingSignals?.slice(0, 20).map((entry, index) => {
+			const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
+			const parts = [
+				`${index + 1}. ${sentiment}: "${sanitizePromptOptional(entry.title) || "Untitled"}"`,
+			];
+			const safeGenre = sanitizePromptOptional(entry.genre);
+			const safeMood = sanitizePromptOptional(entry.mood);
+			const safePersona = sanitizePromptOptional(entry.personaExtract)?.slice(
+				0,
+				220,
+			);
+			if (safeGenre) parts.push(`genre=${safeGenre}`);
+			if (safeMood) parts.push(`mood=${safeMood}`);
+			if (safePersona) parts.push(`persona=${safePersona}`);
+			return parts.join(" | ");
+		}) ?? []
+	);
+}
+
+function normalizeManagerSlots(
+	rawSlots: z.infer<typeof PlaylistManagerSlotSchema>[],
+	planWindow: number,
+) {
+	const legacySlots: Array<{
+		slot: number;
+		transitionIntent: string;
+		topicHint: string;
+		captionFocus: string;
+		lyricTheme: string;
+		energyTarget: "low" | "medium" | "high" | "extreme";
+	}> = rawSlots.slice(0, planWindow).map((slot, idx) => ({
+		slot: idx + 1,
+		transitionIntent: slot.transitionIntent.trim(),
+		topicHint: slot.topicHint.trim(),
+		captionFocus: slot.captionFocus.trim(),
+		lyricTheme: slot.lyricTheme.trim(),
+		energyTarget: slot.energyTarget,
+	}));
+	return legacySlots.length > 0
+		? legacySlots
+		: [
+				{
+					slot: 1,
+					transitionIntent: "stay coherent with gentle variation",
+					topicHint: "extend current playlist theme",
+					captionFocus: "keep instrumentation family consistent",
+					lyricTheme: "advance narrative without repeating lines",
+					energyTarget: "medium" as const,
+				},
+			];
+}
+
 export async function generatePlaylistManagerPlan(options: {
 	prompt: string;
 	provider: LlmProvider;
@@ -1178,46 +1283,11 @@ export async function generatePlaylistManagerPlan(options: {
 
 	const safePrompt = sanitizePromptOptional(prompt) || "Untitled session";
 	const safePreviousBrief = sanitizePromptOptional(previousBrief);
-	const steeringLines =
-		steerHistory?.slice(-10).map((entry) => {
-			const at = new Date(entry.at).toISOString();
-			const direction = sanitizePromptOptional(entry.direction) || "(empty)";
-			return `- epoch ${entry.epoch} @ ${at}: ${direction}`;
-		}) ?? [];
-	const recentSongLines =
-		recentSongs?.slice(0, 12).map((song, index) => {
-			const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
-			const safeArtist =
-				sanitizePromptOptional(song.artistName) || "Unknown Artist";
-			const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
-			const safeSubGenre = sanitizePromptOptional(song.subGenre) || "Unknown";
-			const safeVocal = sanitizePromptOptional(song.vocalStyle);
-			const safeMood = sanitizePromptOptional(song.mood);
-			const safeEnergy = sanitizePromptOptional(song.energy);
-			return `${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre}/${safeSubGenre}${safeVocal ? `, ${safeVocal}` : ""}${safeMood ? `, mood=${safeMood}` : ""}${safeEnergy ? `, energy=${safeEnergy}` : ""}`;
-		}) ?? [];
+	const steeringLines = formatManagerSteeringLines(steerHistory);
+	const recentSongLines = formatManagerRecentSongLines(recentSongs);
 	const recentDescriptionLines =
-		recentDescriptions?.slice(0, 20).map((description, index) => {
-			const safeDescription = sanitizePromptOptional(description) || "(empty)";
-			return `${index + 1}. ${safeDescription}`;
-		}) ?? [];
-	const feedbackLines =
-		ratingSignals?.slice(0, 20).map((entry, index) => {
-			const sentiment = entry.rating === "up" ? "LIKED" : "DISLIKED";
-			const parts = [
-				`${index + 1}. ${sentiment}: "${sanitizePromptOptional(entry.title) || "Untitled"}"`,
-			];
-			const safeGenre = sanitizePromptOptional(entry.genre);
-			const safeMood = sanitizePromptOptional(entry.mood);
-			const safePersona = sanitizePromptOptional(entry.personaExtract)?.slice(
-				0,
-				220,
-			);
-			if (safeGenre) parts.push(`genre=${safeGenre}`);
-			if (safeMood) parts.push(`mood=${safeMood}`);
-			if (safePersona) parts.push(`persona=${safePersona}`);
-			return parts.join(" | ");
-		}) ?? [];
+		formatManagerRecentDescriptionLines(recentDescriptions);
+	const feedbackLines = formatManagerFeedbackLines(ratingSignals);
 	const webResearchLines = sanitizePromptList(webResearch).slice(0, 16);
 
 	const systemBuild = buildPromptSections([
@@ -1298,34 +1368,7 @@ export async function generatePlaylistManagerPlan(options: {
 		typeof result.managerBrief === "string" ? result.managerBrief.trim() : "";
 	if (!brief) throw new Error("Empty playlist manager brief");
 
-	const legacySlots: Array<{
-		slot: number;
-		transitionIntent: string;
-		topicHint: string;
-		captionFocus: string;
-		lyricTheme: string;
-		energyTarget: "low" | "medium" | "high" | "extreme";
-	}> = result.slots.slice(0, planWindow).map((slot, idx) => ({
-		slot: idx + 1,
-		transitionIntent: slot.transitionIntent.trim(),
-		topicHint: slot.topicHint.trim(),
-		captionFocus: slot.captionFocus.trim(),
-		lyricTheme: slot.lyricTheme.trim(),
-		energyTarget: slot.energyTarget,
-	}));
-	const slots =
-		legacySlots.length > 0
-			? legacySlots
-			: [
-					{
-						slot: 1,
-						transitionIntent: "stay coherent with gentle variation",
-						topicHint: "extend current playlist theme",
-						captionFocus: "keep instrumentation family consistent",
-						lyricTheme: "advance narrative without repeating lines",
-						energyTarget: "medium" as const,
-					},
-				];
+	const slots = normalizeManagerSlots(result.slots, planWindow);
 	const avoidPatterns = Array.isArray(result.avoidPatterns)
 		? result.avoidPatterns
 				.map((pattern) => pattern.trim())
@@ -1402,6 +1445,79 @@ export async function generatePlaylistManagerPlan(options: {
 	};
 }
 
+function songPromptContextLimits(profile: PromptProfile): {
+	songs: number;
+	descriptions: number;
+} {
+	return profile === "compact"
+		? { songs: 4, descriptions: 6 }
+		: profile === "creative"
+			? { songs: 12, descriptions: 16 }
+			: { songs: 8, descriptions: 10 };
+}
+
+function formatSongPromptRecentSongLines(
+	recentSongs: RecentSong[] | undefined,
+	limit: number,
+): string[] {
+	return (recentSongs ?? []).slice(0, limit).map((song, index) => {
+		const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
+		const safeArtist =
+			sanitizePromptOptional(song.artistName) || "Unknown Artist";
+		const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
+		const safeSubGenre = sanitizePromptOptional(song.subGenre) || "Unknown";
+		const safeVocal = sanitizePromptOptional(song.vocalStyle);
+		const safeMood = sanitizePromptOptional(song.mood);
+		return `  ${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre} / ${safeSubGenre}${safeVocal ? ` (${safeVocal})` : ""}${safeMood ? ` [${safeMood}]` : ""}`;
+	});
+}
+
+function formatSongPromptRecentDescriptionLines(
+	recentDescriptions: string[] | undefined,
+	limit: number,
+): string[] {
+	return (recentDescriptions ?? [])
+		.slice(0, limit)
+		.map((description, index) => {
+			const safeDescription = sanitizePromptOptional(description) || "(empty)";
+			return `  ${index + 1}. ${safeDescription}`;
+		});
+}
+
+function formatManagerSlotGuidance(slot: PlaylistManagerPlanSlot): string {
+	const v2Slot = "preservedAnchors" in slot ? slot : undefined;
+	const formatList = (values?: string[]) =>
+		sanitizePromptList(values).slice(0, 8).join("; ");
+	return [
+		"--- Current manager slot guidance ---",
+		"Director selection rule: this slot is the primary creative decision for this song. If it names a source title/artist, use that exact source and do not choose another.",
+		`Slot: ${slot.slot}`,
+		v2Slot?.laneId ? `Lane ID: ${v2Slot.laneId}` : "",
+		`Transition intent: ${sanitizePromptOptional(slot.transitionIntent) || ""}`,
+		`Topic hint: ${sanitizePromptOptional(slot.topicHint) || ""}`,
+		v2Slot?.preservedAnchors?.length
+			? `Preserved anchors: ${formatList(v2Slot.preservedAnchors)}`
+			: "",
+		v2Slot?.variationMoves?.length
+			? `Variation moves: ${formatList(v2Slot.variationMoves)}`
+			: "",
+		v2Slot?.avoidPatterns?.length
+			? `Avoid patterns: ${formatList(v2Slot.avoidPatterns)}`
+			: "",
+		v2Slot?.lyricFocus
+			? `Lyric focus: ${sanitizePromptOptional(v2Slot.lyricFocus) || ""}`
+			: "",
+		v2Slot?.sonicFocus
+			? `Sonic focus: ${sanitizePromptOptional(v2Slot.sonicFocus) || ""}`
+			: "",
+		`Caption focus: ${sanitizePromptOptional(slot.captionFocus) || ""}`,
+		`Lyric theme: ${sanitizePromptOptional(slot.lyricTheme) || ""}`,
+		`Energy target: ${slot.energyTarget}`,
+	]
+		.filter(Boolean)
+		.join("\n");
+}
+
 function buildSongUserPrompt(options: {
 	prompt: string;
 	managerBrief?: string;
@@ -1418,12 +1534,7 @@ function buildSongUserPrompt(options: {
 	const safeTransitionPolicy = sanitizePromptOptional(
 		options.managerTransitionPolicy,
 	);
-	const contextLimits =
-		options.profile === "compact"
-			? { songs: 4, descriptions: 6 }
-			: options.profile === "creative"
-				? { songs: 12, descriptions: 16 }
-				: { songs: 8, descriptions: 10 };
+	const contextLimits = songPromptContextLimits(options.profile);
 	const profileDirective: Record<PromptProfile, string> = {
 		strict:
 			"Execution policy: strict adherence. Keep anchors exact and avoid unrelated additions.",
@@ -1436,34 +1547,19 @@ function buildSongUserPrompt(options: {
 	};
 	const recentSongLines =
 		options.distance !== "faithful"
-			? (options.recentSongs ?? [])
-					.slice(0, contextLimits.songs)
-					.map((song, index) => {
-						const safeTitle = sanitizePromptOptional(song.title) || "Untitled";
-						const safeArtist =
-							sanitizePromptOptional(song.artistName) || "Unknown Artist";
-						const safeGenre = sanitizePromptOptional(song.genre) || "Unknown";
-						const safeSubGenre =
-							sanitizePromptOptional(song.subGenre) || "Unknown";
-						const safeVocal = sanitizePromptOptional(song.vocalStyle);
-						const safeMood = sanitizePromptOptional(song.mood);
-						return `  ${index + 1}. "${safeTitle}" by ${safeArtist} — ${safeGenre} / ${safeSubGenre}${safeVocal ? ` (${safeVocal})` : ""}${safeMood ? ` [${safeMood}]` : ""}`;
-					})
+			? formatSongPromptRecentSongLines(
+					options.recentSongs,
+					contextLimits.songs,
+				)
 			: [];
 	const recentDescriptionLines =
 		options.distance !== "faithful"
-			? (options.recentDescriptions ?? [])
-					.slice(0, contextLimits.descriptions)
-					.map((description, index) => {
-						const safeDescription =
-							sanitizePromptOptional(description) || "(empty)";
-						return `  ${index + 1}. ${safeDescription}`;
-					})
+			? formatSongPromptRecentDescriptionLines(
+					options.recentDescriptions,
+					contextLimits.descriptions,
+				)
 			: [];
 	const slot = options.managerSlot;
-	const v2Slot = slot && "preservedAnchors" in slot ? slot : undefined;
-	const formatList = (values?: string[]) =>
-		sanitizePromptList(values).slice(0, 8).join("; ");
 	return buildPromptSections([
 		{ name: "user_prompt", content: safePrompt },
 		{ name: "profile_directive", content: profileDirective[options.profile] },
@@ -1481,36 +1577,7 @@ function buildSongUserPrompt(options: {
 		},
 		{
 			name: "manager_slot",
-			content: slot
-				? [
-						"--- Current manager slot guidance ---",
-						"Director selection rule: this slot is the primary creative decision for this song. If it names a source title/artist, use that exact source and do not choose another.",
-						`Slot: ${slot.slot}`,
-						v2Slot?.laneId ? `Lane ID: ${v2Slot.laneId}` : "",
-						`Transition intent: ${sanitizePromptOptional(slot.transitionIntent) || ""}`,
-						`Topic hint: ${sanitizePromptOptional(slot.topicHint) || ""}`,
-						v2Slot?.preservedAnchors?.length
-							? `Preserved anchors: ${formatList(v2Slot.preservedAnchors)}`
-							: "",
-						v2Slot?.variationMoves?.length
-							? `Variation moves: ${formatList(v2Slot.variationMoves)}`
-							: "",
-						v2Slot?.avoidPatterns?.length
-							? `Avoid patterns: ${formatList(v2Slot.avoidPatterns)}`
-							: "",
-						v2Slot?.lyricFocus
-							? `Lyric focus: ${sanitizePromptOptional(v2Slot.lyricFocus) || ""}`
-							: "",
-						v2Slot?.sonicFocus
-							? `Sonic focus: ${sanitizePromptOptional(v2Slot.sonicFocus) || ""}`
-							: "",
-						`Caption focus: ${sanitizePromptOptional(slot.captionFocus) || ""}`,
-						`Lyric theme: ${sanitizePromptOptional(slot.lyricTheme) || ""}`,
-						`Energy target: ${slot.energyTarget}`,
-					]
-						.filter(Boolean)
-						.join("\n")
-				: undefined,
+			content: slot ? formatManagerSlotGuidance(slot) : undefined,
 		},
 		{
 			name: "recent_songs",

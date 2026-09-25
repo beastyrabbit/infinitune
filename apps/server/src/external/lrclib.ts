@@ -187,6 +187,71 @@ function compareRankedMatches(left: RankedMatch, right: RankedMatch): number {
 	);
 }
 
+interface MatchCriteria {
+	normalizedTrackName: string;
+	normalizedArtistName: string;
+	expectedDuration: number | undefined;
+}
+
+function toRankedMatch(
+	value: unknown,
+	criteria: MatchCriteria,
+): RankedMatch | null {
+	const parsedCandidate = LrclibSearchResultSchema.safeParse(value);
+	if (!parsedCandidate.success) return null;
+	const candidate = parsedCandidate.data;
+	if (
+		candidate.instrumental ||
+		candidate.plainLyrics === null ||
+		candidate.plainLyrics.length > LRCLIB_MAX_LYRICS_LENGTH ||
+		normalizeExactMatch(candidate.trackName) !== criteria.normalizedTrackName ||
+		normalizeExactMatch(candidate.artistName) !== criteria.normalizedArtistName
+	) {
+		return null;
+	}
+
+	const plainLyrics = candidate.plainLyrics.trim();
+	if (!plainLyrics) return null;
+
+	const durationDelta =
+		criteria.expectedDuration === undefined
+			? 0
+			: Math.abs(candidate.duration - criteria.expectedDuration);
+	if (durationDelta > LRCLIB_DURATION_TOLERANCE_SECONDS) return null;
+
+	return {
+		durationDelta,
+		match: {
+			id: candidate.id,
+			trackName: candidate.trackName,
+			artistName: candidate.artistName,
+			albumName: candidate.albumName ?? null,
+			durationSeconds: candidate.duration,
+			plainLyrics,
+		},
+	};
+}
+
+function pickBestMatch(
+	candidates: unknown[],
+	query: LrclibLyricsQuery,
+): LrclibLyricsMatch | null {
+	const criteria: MatchCriteria = {
+		normalizedTrackName: normalizeExactMatch(query.trackName),
+		normalizedArtistName: normalizeExactMatch(query.artistName),
+		expectedDuration: query.durationSeconds,
+	};
+	const matches: RankedMatch[] = [];
+
+	for (const value of candidates) {
+		const ranked = toRankedMatch(value, criteria);
+		if (ranked) matches.push(ranked);
+	}
+
+	matches.sort(compareRankedMatches);
+	return matches[0]?.match ?? null;
+}
+
 /**
  * Finds a canonical plain-lyrics match. LRCLIB and malformed-response failures
  * are intentionally reduced to `null`; response bodies and provider errors are
@@ -232,51 +297,7 @@ export async function findLrclibLyrics(
 		);
 		if (!parsedResponse.success) return null;
 
-		const normalizedTrackName = normalizeExactMatch(parsedQuery.data.trackName);
-		const normalizedArtistName = normalizeExactMatch(
-			parsedQuery.data.artistName,
-		);
-		const expectedDuration = parsedQuery.data.durationSeconds;
-		const matches: RankedMatch[] = [];
-
-		for (const value of parsedResponse.data) {
-			const parsedCandidate = LrclibSearchResultSchema.safeParse(value);
-			if (!parsedCandidate.success) continue;
-			const candidate = parsedCandidate.data;
-			if (
-				candidate.instrumental ||
-				candidate.plainLyrics === null ||
-				candidate.plainLyrics.length > LRCLIB_MAX_LYRICS_LENGTH ||
-				normalizeExactMatch(candidate.trackName) !== normalizedTrackName ||
-				normalizeExactMatch(candidate.artistName) !== normalizedArtistName
-			) {
-				continue;
-			}
-
-			const plainLyrics = candidate.plainLyrics.trim();
-			if (!plainLyrics) continue;
-
-			const durationDelta =
-				expectedDuration === undefined
-					? 0
-					: Math.abs(candidate.duration - expectedDuration);
-			if (durationDelta > LRCLIB_DURATION_TOLERANCE_SECONDS) continue;
-
-			matches.push({
-				durationDelta,
-				match: {
-					id: candidate.id,
-					trackName: candidate.trackName,
-					artistName: candidate.artistName,
-					albumName: candidate.albumName ?? null,
-					durationSeconds: candidate.duration,
-					plainLyrics,
-				},
-			});
-		}
-
-		matches.sort(compareRankedMatches);
-		return matches[0]?.match ?? null;
+		return pickBestMatch(parsedResponse.data, parsedQuery.data);
 	} catch {
 		return null;
 	} finally {

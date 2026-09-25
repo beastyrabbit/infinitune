@@ -255,30 +255,23 @@ export interface DownloadCachePruneOptions {
 	reservedCacheKeys?: ReadonlySet<string>;
 }
 
-/** Remove expired entries, then least-recently-used entries until under quota. */
-export function pruneDownloadCache({
-	directory,
-	maxBytes,
-	ttlMs,
-	now = Date.now(),
-	excludeCacheKey,
-	excludeCacheKeys,
-	reservedCacheKeys,
-}: DownloadCachePruneOptions): {
-	removedEntries: number;
-	sizeBytes: number;
-	quotaSizeBytes: number;
-} {
-	let dirEntries: fs.Dirent[];
+/** List the cache directory, or null when it does not exist yet. */
+function readCacheDirectory(directory: string): fs.Dirent[] | null {
 	try {
-		dirEntries = fs.readdirSync(directory, { withFileTypes: true });
+		return fs.readdirSync(directory, { withFileTypes: true });
 	} catch (err) {
 		if ((err as { code?: string }).code === "ENOENT") {
-			return { removedEntries: 0, sizeBytes: 0, quotaSizeBytes: 0 };
+			return null;
 		}
 		throw err;
 	}
+}
 
+/** Group cache files by cache key, skipping files that vanish mid-scan. */
+function groupCacheEntries(
+	directory: string,
+	dirEntries: fs.Dirent[],
+): CacheEntry[] {
 	const grouped = new Map<string, CacheEntry>();
 	for (const entry of dirEntries) {
 		if (!entry.isFile()) continue;
@@ -303,8 +296,29 @@ export function pruneDownloadCache({
 		current.sizeBytes += stat.size;
 		grouped.set(cacheKey, current);
 	}
+	return [...grouped.values()];
+}
 
-	const entries = [...grouped.values()];
+/** Remove expired entries, then least-recently-used entries until under quota. */
+export function pruneDownloadCache({
+	directory,
+	maxBytes,
+	ttlMs,
+	now = Date.now(),
+	excludeCacheKey,
+	excludeCacheKeys,
+	reservedCacheKeys,
+}: DownloadCachePruneOptions): {
+	removedEntries: number;
+	sizeBytes: number;
+	quotaSizeBytes: number;
+} {
+	const dirEntries = readCacheDirectory(directory);
+	if (!dirEntries) {
+		return { removedEntries: 0, sizeBytes: 0, quotaSizeBytes: 0 };
+	}
+
+	const entries = groupCacheEntries(directory, dirEntries);
 	let sizeBytes = entries.reduce((total, entry) => total + entry.sizeBytes, 0);
 	// A reservation already charges the full worst-case size for an in-flight
 	// download. Its partial file must not be charged a second time here.

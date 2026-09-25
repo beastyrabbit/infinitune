@@ -193,100 +193,125 @@ export class Room {
 	): void {
 		// ── resetToDefault (targeted): reset one player back to default mode ──
 		if (action === "resetToDefault" && targetDeviceId) {
-			this.setDeviceMode(targetDeviceId, "default");
-			// Re-send current room state to the device so it syncs back
-			this.sendTo(targetDeviceId, {
-				type: "execute",
-				action: "setVolume",
-				payload: { volume: this.playback.volume },
-				scope: "room",
-			});
-			this.sendTo(targetDeviceId, {
-				type: "execute",
-				action: this.playback.isPlaying ? "play" : "pause",
-				scope: "room",
-			});
-			this.broadcastState();
+			this.resetDeviceToDefault(targetDeviceId);
 			return;
 		}
 
 		// ── syncAll (room-wide): reset ALL players to default mode ──
 		if (action === "syncAll") {
-			for (const device of this.devices.values()) {
-				if (device.role === "player") {
-					device.mode = "default";
-				}
-			}
-			// Broadcast room state to all players (bypassing mode filter)
-			this.broadcastExecute(
-				"setVolume",
-				{ volume: this.playback.volume },
-				false,
-			);
-			this.broadcastExecute(
-				this.playback.isPlaying ? "play" : "pause",
-				undefined,
-				false,
-			);
-			this.broadcastState();
+			this.syncAllPlayers();
 			return;
 		}
 
 		// ── Per-device targeted commands ──
 		if (targetDeviceId) {
-			switch (action) {
-				case "play":
-				case "pause":
-				case "stop":
-				case "toggle":
-				case "setVolume":
-				case "toggleMute":
-					this.setDeviceMode(targetDeviceId, "individual");
-					if (action === "stop") {
-						this.sendTo(targetDeviceId, {
-							type: "execute",
-							action: "pause",
-							scope: "device",
-						});
-						this.sendTo(targetDeviceId, {
-							type: "execute",
-							action: "seek",
-							payload: { time: 0 },
-							scope: "device",
-						});
-					} else {
-						this.sendTo(targetDeviceId, {
-							type: "execute",
-							action,
-							payload,
-							scope: "device",
-						});
-					}
-					this.broadcastState(); // update controllers about mode change
-					break;
-			}
+			this.handleDeviceCommand(targetDeviceId, action, payload);
 			return;
 		}
 
 		// ── Room-wide commands ──
+		this.handleRoomCommand(action, payload);
+	}
+
+	private resetDeviceToDefault(targetDeviceId: string): void {
+		this.setDeviceMode(targetDeviceId, "default");
+		// Re-send current room state to the device so it syncs back
+		this.sendTo(targetDeviceId, {
+			type: "execute",
+			action: "setVolume",
+			payload: { volume: this.playback.volume },
+			scope: "room",
+		});
+		this.sendTo(targetDeviceId, {
+			type: "execute",
+			action: this.playback.isPlaying ? "play" : "pause",
+			scope: "room",
+		});
+		this.broadcastState();
+	}
+
+	private syncAllPlayers(): void {
+		for (const device of this.devices.values()) {
+			if (device.role === "player") {
+				device.mode = "default";
+			}
+		}
+		// Broadcast room state to all players (bypassing mode filter)
+		this.broadcastExecute("setVolume", { volume: this.playback.volume }, false);
+		this.broadcastExecute(
+			this.playback.isPlaying ? "play" : "pause",
+			undefined,
+			false,
+		);
+		this.broadcastState();
+	}
+
+	private handleDeviceCommand(
+		targetDeviceId: string,
+		action: CommandAction,
+		payload?: Record<string, unknown>,
+	): void {
+		switch (action) {
+			case "play":
+			case "pause":
+			case "stop":
+			case "toggle":
+			case "setVolume":
+			case "toggleMute":
+				this.setDeviceMode(targetDeviceId, "individual");
+				if (action === "stop") {
+					this.sendTo(targetDeviceId, {
+						type: "execute",
+						action: "pause",
+						scope: "device",
+					});
+					this.sendTo(targetDeviceId, {
+						type: "execute",
+						action: "seek",
+						payload: { time: 0 },
+						scope: "device",
+					});
+				} else {
+					this.sendTo(targetDeviceId, {
+						type: "execute",
+						action,
+						payload,
+						scope: "device",
+					});
+				}
+				this.broadcastState(); // update controllers about mode change
+				break;
+		}
+	}
+
+	private applyTransportCommand(
+		action: Extract<CommandAction, "play" | "pause" | "stop" | "toggle">,
+	): void {
+		if (action === "play") this.playback.isPlaying = true;
+		else if (action === "pause") this.playback.isPlaying = false;
+		else if (action === "stop") {
+			this.playback.isPlaying = false;
+			this.playback.currentTime = 0;
+		} else this.playback.isPlaying = !this.playback.isPlaying;
+		this.syncPriorityUntil = Date.now() + 500;
+		if (action === "stop") {
+			this.broadcastExecute("pause");
+			this.broadcastExecute("seek", { time: 0 }, false);
+		} else {
+			this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
+		}
+	}
+
+	private handleRoomCommand(
+		action: CommandAction,
+		payload?: Record<string, unknown>,
+	): void {
 		switch (action) {
 			case "play":
 			case "pause":
 			case "stop":
 			case "toggle": {
-				if (action === "play") this.playback.isPlaying = true;
-				else if (action === "pause") this.playback.isPlaying = false;
-				else if (action === "stop") {
-					this.playback.isPlaying = false;
-					this.playback.currentTime = 0;
-				} else this.playback.isPlaying = !this.playback.isPlaying;
-				this.syncPriorityUntil = Date.now() + 500;
-				if (action === "stop") {
-					this.broadcastExecute("pause");
-					this.broadcastExecute("seek", { time: 0 }, false);
-				} else {
-					this.broadcastExecute(this.playback.isPlaying ? "play" : "pause");
-				}
+				this.applyTransportCommand(action);
 				break;
 			}
 			case "skip":

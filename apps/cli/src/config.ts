@@ -44,44 +44,54 @@ function defaultConfig(): InfiConfig {
 	};
 }
 
+function isNonBlankString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidVolumeStep(value: unknown): value is number {
+	return (
+		typeof value === "number" &&
+		Number.isFinite(value) &&
+		value > 0 &&
+		value <= 1
+	);
+}
+
+function isValidDaemonHttpPort(value: unknown): value is number {
+	return (
+		typeof value === "number" &&
+		Number.isInteger(value) &&
+		value >= 1 &&
+		value <= 65535
+	);
+}
+
 function sanitize(raw: Partial<InfiConfig> | null | undefined): InfiConfig {
 	const defaults = defaultConfig();
 	if (!raw) return defaults;
 
-	const serverUrl =
-		typeof raw.serverUrl === "string" && raw.serverUrl.trim().length > 0
-			? raw.serverUrl
-			: defaults.serverUrl;
+	const serverUrl = isNonBlankString(raw.serverUrl)
+		? raw.serverUrl
+		: defaults.serverUrl;
 
-	const deviceName =
-		typeof raw.deviceName === "string" && raw.deviceName.trim().length > 0
-			? raw.deviceName
-			: defaults.deviceName;
+	const deviceName = isNonBlankString(raw.deviceName)
+		? raw.deviceName
+		: defaults.deviceName;
 
 	const playbackMode: PlaybackMode =
 		raw.playbackMode === "local" ? "local" : "room";
 
-	const volumeStep =
-		typeof raw.volumeStep === "number" &&
-		Number.isFinite(raw.volumeStep) &&
-		raw.volumeStep > 0 &&
-		raw.volumeStep <= 1
-			? raw.volumeStep
-			: defaults.volumeStep;
+	const volumeStep = isValidVolumeStep(raw.volumeStep)
+		? raw.volumeStep
+		: defaults.volumeStep;
 
-	const daemonHttpHost =
-		typeof raw.daemonHttpHost === "string" &&
-		raw.daemonHttpHost.trim().length > 0
-			? raw.daemonHttpHost.trim()
-			: defaults.daemonHttpHost;
+	const daemonHttpHost = isNonBlankString(raw.daemonHttpHost)
+		? raw.daemonHttpHost.trim()
+		: defaults.daemonHttpHost;
 
-	const daemonHttpPort =
-		typeof raw.daemonHttpPort === "number" &&
-		Number.isInteger(raw.daemonHttpPort) &&
-		raw.daemonHttpPort >= 1 &&
-		raw.daemonHttpPort <= 65535
-			? raw.daemonHttpPort
-			: defaults.daemonHttpPort;
+	const daemonHttpPort = isValidDaemonHttpPort(raw.daemonHttpPort)
+		? raw.daemonHttpPort
+		: defaults.daemonHttpPort;
 
 	return {
 		version: CONFIG_VERSION,

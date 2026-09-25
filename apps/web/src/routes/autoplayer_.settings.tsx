@@ -39,7 +39,13 @@ import {
 	Save,
 	SlidersHorizontal,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import {
+	type Dispatch,
+	type SetStateAction,
+	useCallback,
+	useEffect,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { OpsPageHeader } from "@/components/autoplayer/OpsPageHeader";
 import { Stat } from "@/components/autoplayer/Stat";
@@ -54,6 +60,7 @@ import type { TestStatus } from "@/components/autoplayer/settings/TestButton";
 import { Button } from "@/components/ui/button";
 import { api, getRequestErrorMessage } from "@/integrations/api/client";
 import {
+	type RadioQueueResponse,
 	useAutoplayerAceModels,
 	useAutoplayerCodexModelsQuery,
 	useAutoplayerInferenceShImageModelsQuery,
@@ -144,6 +151,145 @@ function normalizeDcwScalerInput(value: string, fallback: number): string {
 	return String(normalizeAceDcwScaler(value, fallback));
 }
 
+type ForceGenerateResult = Awaited<
+	ReturnType<ReturnType<typeof useForceGenerateRadioAlbum>>
+>;
+
+function describeForceGenerateResult(result: ForceGenerateResult): string {
+	if (result.repairedTracks > 0 && result.created > 0) {
+		return `Repaired ${result.repairedTracks} missing track rows and created ${result.created} album job.`;
+	}
+	if (result.repairedTracks > 0) {
+		return `Repaired ${result.repairedTracks} missing track rows across ${result.repairedAlbums} album job(s).`;
+	}
+	if (result.created > 0) {
+		return `Created ${result.created} album job. ${result.stats.untouchedActiveAlbums} untouched albums now tracked.`;
+	}
+	if (result.skipped === "manual-extra-already-queued") {
+		return "Manual extra album is already queued.";
+	}
+	return "No album job was created.";
+}
+
+function InventoryTab({
+	queue,
+	forcing,
+	forceMessage,
+	onForceGenerate,
+}: Readonly<{
+	queue: RadioQueueResponse | undefined;
+	forcing: boolean;
+	forceMessage: string | null;
+	onForceGenerate: () => Promise<void>;
+}>) {
+	return (
+		<div className="space-y-6">
+			<section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+				<Stat label="Target" value={queue?.stats.inventoryTarget ?? 10} />
+				<Stat
+					label="Ready albums"
+					value={queue?.stats.untouchedReadyAlbums ?? 0}
+					tone="ready"
+				/>
+				<Stat
+					label="Generating"
+					value={queue?.stats.untouchedGeneratingAlbums ?? 0}
+					tone="active"
+				/>
+				<Stat
+					label="Incomplete"
+					value={queue?.stats.incompleteAlbums ?? 0}
+					tone={(queue?.stats.incompleteAlbums ?? 0) > 0 ? "warn" : "default"}
+				/>
+				<Stat
+					label="Missing tracks"
+					value={queue?.stats.missingAlbumTracks ?? 0}
+					tone={(queue?.stats.missingAlbumTracks ?? 0) > 0 ? "warn" : "default"}
+				/>
+				<Stat
+					label="Audio active"
+					value={queue?.stats.activeAudioTracks ?? 0}
+					tone="active"
+				/>
+				<Stat label="Duration" value="3:00" />
+			</section>
+
+			<section className="border border-white/10 bg-[#171a1b] p-5">
+				<div className="mb-4 flex items-center gap-3">
+					<Disc3 className="h-5 w-5 text-amber-300" />
+					<h2 className="text-sm font-black uppercase tracking-[0.18em]">
+						Album Inventory
+					</h2>
+				</div>
+				<Button
+					onClick={onForceGenerate}
+					disabled={forcing}
+					className="h-10 rounded-none bg-amber-300 font-black text-black hover:bg-amber-200"
+				>
+					{forcing ? (
+						<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+					) : (
+						<Disc3 className="mr-2 h-4 w-4" />
+					)}
+					{forcing ? "Creating album..." : "Force-generate album"}
+				</Button>
+				{forceMessage ? (
+					<p className="mt-3 text-sm text-white/65">{forceMessage}</p>
+				) : null}
+				<div className="mt-4 grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest text-white/50">
+					<div className="border border-white/10 p-2">12 tracks</div>
+					<div className="border border-white/10 p-2">one cover</div>
+					<div className="border border-white/10 p-2">180 sec</div>
+				</div>
+			</section>
+		</div>
+	);
+}
+
+function getSaveStatusLabel(dirtyCount: number): string {
+	if (dirtyCount > 0) {
+		const suffix = dirtyCount === 1 ? "" : "s";
+		return `${dirtyCount} setting${suffix} modified`;
+	}
+	return "All changes saved";
+}
+
+function SaveBar({
+	dirtyCount,
+	saving,
+	onSave,
+}: Readonly<{
+	dirtyCount: number;
+	saving: boolean;
+	onSave: () => Promise<void>;
+}>) {
+	return (
+		<div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-black/90 backdrop-blur">
+			<div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
+				<span className="hidden font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35 sm:block">
+					{getSaveStatusLabel(dirtyCount)}
+				</span>
+				<Button
+					className={`h-12 flex-1 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${
+						dirtyCount > 0
+							? "border-amber-300/50 bg-amber-300 text-black hover:bg-white hover:text-black"
+							: "border-white/20 bg-red-500 text-white hover:bg-white hover:text-black"
+					}`}
+					onClick={onSave}
+					disabled={saving}
+				>
+					{saving ? (
+						<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+					) : (
+						<Save className="mr-2 h-4 w-4" />
+					)}
+					{saving ? "Saving..." : "Save radio settings"}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
 function SettingsPage() {
 	const settings = useSettings();
 	const queue = useRadioQueue();
@@ -172,14 +318,14 @@ function SettingsPage() {
 		readSetting("personaProvider"),
 		textProvider,
 	);
-	const needsCodex =
-		textProvider === "openai-codex" || personaProvider === "openai-codex";
+	const needsCodex = [textProvider, personaProvider].includes("openai-codex");
 	const codexModelsQuery = useAutoplayerCodexModelsQuery(needsCodex);
 	const { refetch: refetchCodexModels } = codexModelsQuery;
 	const codexModels: ModelOption[] = codexModelsQuery.data ?? [];
 	const codexLoading = needsCodex && codexModelsQuery.isFetching;
-	const needsOpenRouter =
-		textProvider === "openrouter" || personaProvider === "openrouter";
+	const needsOpenRouter = [textProvider, personaProvider].includes(
+		"openrouter",
+	);
 	const openrouterModelsQuery =
 		useAutoplayerOpenRouterModelsQuery(needsOpenRouter);
 	const openrouterModels: ModelOption[] = openrouterModelsQuery.data ?? [];
@@ -334,17 +480,13 @@ function SettingsPage() {
 
 	const testConnection = useCallback(async (provider: string) => {
 		const setStatus =
-			provider === "ollama"
-				? setOllamaTest
-				: provider === "inference-sh"
-					? setInferenceShTest
-					: provider === "codex-imagegen"
-						? setCodexImagegenTest
-						: provider === "openai-codex"
-							? setCodexTest
-							: provider === "openrouter"
-								? setOpenrouterTest
-								: setAceTest;
+			new Map<string, Dispatch<SetStateAction<TestStatus>>>([
+				["ollama", setOllamaTest],
+				["inference-sh", setInferenceShTest],
+				["codex-imagegen", setCodexImagegenTest],
+				["openai-codex", setCodexTest],
+				["openrouter", setOpenrouterTest],
+			]).get(provider) ?? setAceTest;
 
 		setStatus({ state: "testing" });
 		try {
@@ -363,16 +505,7 @@ function SettingsPage() {
 		setForceMessage(null);
 		try {
 			const result = await forceGenerate(undefined);
-			const message =
-				result.repairedTracks > 0 && result.created > 0
-					? `Repaired ${result.repairedTracks} missing track rows and created ${result.created} album job.`
-					: result.repairedTracks > 0
-						? `Repaired ${result.repairedTracks} missing track rows across ${result.repairedAlbums} album job(s).`
-						: result.created > 0
-							? `Created ${result.created} album job. ${result.stats.untouchedActiveAlbums} untouched albums now tracked.`
-							: result.skipped === "manual-extra-already-queued"
-								? "Manual extra album is already queued."
-								: "No album job was created.";
+			const message = describeForceGenerateResult(result);
 			setForceMessage(message);
 			if (result.created > 0) toast.success(message);
 			else toast.info(message);
@@ -528,72 +661,12 @@ function SettingsPage() {
 				</nav>
 
 				{activeTab === "inventory" ? (
-					<div className="space-y-6">
-						<section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-							<Stat label="Target" value={queue?.stats.inventoryTarget ?? 10} />
-							<Stat
-								label="Ready albums"
-								value={queue?.stats.untouchedReadyAlbums ?? 0}
-								tone="ready"
-							/>
-							<Stat
-								label="Generating"
-								value={queue?.stats.untouchedGeneratingAlbums ?? 0}
-								tone="active"
-							/>
-							<Stat
-								label="Incomplete"
-								value={queue?.stats.incompleteAlbums ?? 0}
-								tone={
-									(queue?.stats.incompleteAlbums ?? 0) > 0 ? "warn" : "default"
-								}
-							/>
-							<Stat
-								label="Missing tracks"
-								value={queue?.stats.missingAlbumTracks ?? 0}
-								tone={
-									(queue?.stats.missingAlbumTracks ?? 0) > 0
-										? "warn"
-										: "default"
-								}
-							/>
-							<Stat
-								label="Audio active"
-								value={queue?.stats.activeAudioTracks ?? 0}
-								tone="active"
-							/>
-							<Stat label="Duration" value="3:00" />
-						</section>
-
-						<section className="border border-white/10 bg-[#171a1b] p-5">
-							<div className="mb-4 flex items-center gap-3">
-								<Disc3 className="h-5 w-5 text-amber-300" />
-								<h2 className="text-sm font-black uppercase tracking-[0.18em]">
-									Album Inventory
-								</h2>
-							</div>
-							<Button
-								onClick={handleForceGenerate}
-								disabled={forcing}
-								className="h-10 rounded-none bg-amber-300 font-black text-black hover:bg-amber-200"
-							>
-								{forcing ? (
-									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-								) : (
-									<Disc3 className="mr-2 h-4 w-4" />
-								)}
-								{forcing ? "Creating album..." : "Force-generate album"}
-							</Button>
-							{forceMessage ? (
-								<p className="mt-3 text-sm text-white/65">{forceMessage}</p>
-							) : null}
-							<div className="mt-4 grid grid-cols-3 gap-2 text-xs font-bold uppercase tracking-widest text-white/50">
-								<div className="border border-white/10 p-2">12 tracks</div>
-								<div className="border border-white/10 p-2">one cover</div>
-								<div className="border border-white/10 p-2">180 sec</div>
-							</div>
-						</section>
-					</div>
+					<InventoryTab
+						queue={queue}
+						forcing={forcing}
+						forceMessage={forceMessage}
+						onForceGenerate={handleForceGenerate}
+					/>
 				) : null}
 
 				{activeTab === "models" ? (
@@ -754,31 +827,7 @@ function SettingsPage() {
 			</main>
 
 			{/* Sticky save bar — always reachable, reflects unsaved draft state */}
-			<div className="fixed inset-x-0 bottom-0 border-t border-white/10 bg-black/90 backdrop-blur">
-				<div className="mx-auto flex max-w-6xl items-center gap-4 px-4 py-3">
-					<span className="hidden font-mono text-[10px] font-black uppercase tracking-[0.2em] text-white/35 sm:block">
-						{dirtyCount > 0
-							? `${dirtyCount} setting${dirtyCount === 1 ? "" : "s"} modified`
-							: "All changes saved"}
-					</span>
-					<Button
-						className={`h-12 flex-1 rounded-none border-4 font-mono text-sm font-black uppercase transition-colors ${
-							dirtyCount > 0
-								? "border-amber-300/50 bg-amber-300 text-black hover:bg-white hover:text-black"
-								: "border-white/20 bg-red-500 text-white hover:bg-white hover:text-black"
-						}`}
-						onClick={save}
-						disabled={saving}
-					>
-						{saving ? (
-							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-						) : (
-							<Save className="mr-2 h-4 w-4" />
-						)}
-						{saving ? "Saving..." : "Save radio settings"}
-					</Button>
-				</div>
-			</div>
+			<SaveBar dirtyCount={dirtyCount} saving={saving} onSave={save} />
 		</div>
 	);
 }

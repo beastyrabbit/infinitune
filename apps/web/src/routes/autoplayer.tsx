@@ -67,6 +67,117 @@ function RadioCover({ song }: { song: RadioSnapshot["currentSong"] }) {
 	);
 }
 
+function RadioHeader({
+	station,
+}: Readonly<{ station?: RadioSnapshot["station"] }>) {
+	return (
+		<header className="border-b border-white/10 bg-black/70">
+			<div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+				<div className="flex items-center gap-3">
+					<div className="flex h-10 w-10 items-center justify-center border border-emerald-400/40 bg-emerald-400/10">
+						<Radio className="h-5 w-5 text-emerald-300" />
+					</div>
+					<div>
+						<h1 className="font-mono text-xl font-black uppercase tracking-[0.18em]">
+							{station?.name ?? "Infinitune Radio"}
+						</h1>
+						<p className="font-mono text-xs uppercase tracking-[0.22em] text-white/40">
+							{station?.activeListenerCount ?? 0} active listeners
+						</p>
+					</div>
+				</div>
+				<nav className="flex flex-wrap gap-2 font-mono text-xs font-black uppercase tracking-widest">
+					<Link
+						to="/autoplayer/library"
+						className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+					>
+						Library
+					</Link>
+					<Link
+						to="/autoplayer/queue"
+						className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+					>
+						Queue
+					</Link>
+					<Link
+						to="/autoplayer/orchestrator"
+						className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+					>
+						Phone Line
+					</Link>
+					<Link
+						to="/autoplayer/oneshot"
+						className="border border-yellow-500/30 px-3 py-2 text-yellow-500/70 hover:border-yellow-500/70 hover:text-yellow-400"
+					>
+						Oneshot
+					</Link>
+					<Link
+						to="/autoplayer/reimagine"
+						className="border border-fuchsia-500/30 px-3 py-2 text-fuchsia-400/70 hover:border-fuchsia-500/70 hover:text-fuchsia-400"
+					>
+						Reimagine
+					</Link>
+					<Link
+						to="/autoplayer/sources"
+						className="border border-sky-500/30 px-3 py-2 text-sky-400/70 hover:border-sky-500/70 hover:text-sky-400"
+					>
+						Sources
+					</Link>
+					<Link
+						to="/autoplayer/settings"
+						className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
+					>
+						Settings
+					</Link>
+				</nav>
+			</div>
+		</header>
+	);
+}
+
+function RadioSchedule({
+	schedule,
+}: Readonly<{ schedule?: RadioSnapshot["schedule"] }>) {
+	return (
+		<section className="mt-6 border border-white/10 bg-black/30">
+			<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
+				Radio airing plan
+			</div>
+			<div className="divide-y divide-white/10">
+				{schedule?.slice(0, 10).map((item) => (
+					<div
+						key={`${item.slotIndex}-${item.songId}`}
+						className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-4 py-3"
+					>
+						<div className="font-mono text-xs text-white/35">
+							{String(item.slotIndex + 1).padStart(2, "0")}
+						</div>
+						<div className="min-w-0">
+							<div className="truncate text-sm font-bold uppercase text-white">
+								{item.title ?? "Untitled"}
+							</div>
+							<div className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
+								{item.albumTitle ?? "Radio album"} / {item.genre ?? "genre"} /{" "}
+								{item.vocalStyle ?? "vocal"}
+							</div>
+						</div>
+						{item.isRequest && (
+							<span className="border border-emerald-300/40 px-2 py-1 font-mono text-[10px] font-black uppercase text-emerald-200">
+								Request
+							</span>
+						)}
+					</div>
+				))}
+				{!schedule?.length && (
+					<div className="px-4 py-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
+						No ready radio tracks
+					</div>
+				)}
+			</div>
+		</section>
+	);
+}
+
 function AutoplayerPage() {
 	const listenerId = useMemo(getTabListenerId, []);
 	const initialState = useRadioState();
@@ -162,67 +273,7 @@ function AutoplayerPage() {
 		<div className="min-h-screen bg-[#101213] text-stone-100">
 			{/* biome-ignore lint/a11y/useMediaCaption: generated music has no caption track */}
 			<audio ref={audioRef} preload="auto" src={audioSrc ?? undefined} />
-			<header className="border-b border-white/10 bg-black/70">
-				<div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
-					<div className="flex items-center gap-3">
-						<div className="flex h-10 w-10 items-center justify-center border border-emerald-400/40 bg-emerald-400/10">
-							<Radio className="h-5 w-5 text-emerald-300" />
-						</div>
-						<div>
-							<h1 className="font-mono text-xl font-black uppercase tracking-[0.18em]">
-								{state?.station.name ?? "Infinitune Radio"}
-							</h1>
-							<p className="font-mono text-xs uppercase tracking-[0.22em] text-white/40">
-								{state?.station.activeListenerCount ?? 0} active listeners
-							</p>
-						</div>
-					</div>
-					<nav className="flex flex-wrap gap-2 font-mono text-xs font-black uppercase tracking-widest">
-						<Link
-							to="/autoplayer/library"
-							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
-						>
-							Library
-						</Link>
-						<Link
-							to="/autoplayer/queue"
-							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
-						>
-							Queue
-						</Link>
-						<Link
-							to="/autoplayer/orchestrator"
-							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
-						>
-							Phone Line
-						</Link>
-						<Link
-							to="/autoplayer/oneshot"
-							className="border border-yellow-500/30 px-3 py-2 text-yellow-500/70 hover:border-yellow-500/70 hover:text-yellow-400"
-						>
-							Oneshot
-						</Link>
-						<Link
-							to="/autoplayer/reimagine"
-							className="border border-fuchsia-500/30 px-3 py-2 text-fuchsia-400/70 hover:border-fuchsia-500/70 hover:text-fuchsia-400"
-						>
-							Reimagine
-						</Link>
-						<Link
-							to="/autoplayer/sources"
-							className="border border-sky-500/30 px-3 py-2 text-sky-400/70 hover:border-sky-500/70 hover:text-sky-400"
-						>
-							Sources
-						</Link>
-						<Link
-							to="/autoplayer/settings"
-							className="border border-white/15 px-3 py-2 text-white/60 hover:border-white/40 hover:text-white"
-						>
-							Settings
-						</Link>
-					</nav>
-				</div>
-			</header>
+			<RadioHeader station={state?.station} />
 
 			<main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(280px,440px)_1fr]">
 				<RadioCover song={currentSong} />
@@ -368,42 +419,7 @@ function AutoplayerPage() {
 						</Link>
 					</div>
 
-					<section className="mt-6 border border-white/10 bg-black/30">
-						<div className="border-b border-white/10 px-4 py-3 font-mono text-xs font-black uppercase tracking-[0.22em] text-white/45">
-							Radio airing plan
-						</div>
-						<div className="divide-y divide-white/10">
-							{state?.schedule.slice(0, 10).map((item) => (
-								<div
-									key={`${item.slotIndex}-${item.songId}`}
-									className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 px-4 py-3"
-								>
-									<div className="font-mono text-xs text-white/35">
-										{String(item.slotIndex + 1).padStart(2, "0")}
-									</div>
-									<div className="min-w-0">
-										<div className="truncate text-sm font-bold uppercase text-white">
-											{item.title ?? "Untitled"}
-										</div>
-										<div className="truncate font-mono text-[10px] uppercase tracking-widest text-white/35">
-											{item.albumTitle ?? "Radio album"} /{" "}
-											{item.genre ?? "genre"} / {item.vocalStyle ?? "vocal"}
-										</div>
-									</div>
-									{item.isRequest && (
-										<span className="border border-emerald-300/40 px-2 py-1 font-mono text-[10px] font-black uppercase text-emerald-200">
-											Request
-										</span>
-									)}
-								</div>
-							))}
-							{!state?.schedule.length && (
-								<div className="px-4 py-8 text-center font-mono text-xs font-black uppercase tracking-widest text-white/30">
-									No ready radio tracks
-								</div>
-							)}
-						</div>
-					</section>
+					<RadioSchedule schedule={state?.schedule} />
 
 					<div className="mt-6">
 						<StationPresets />

@@ -75,6 +75,24 @@ async function ensurePlaylistPermission(
 	return { session };
 }
 
+/** Requested playlist IDs, or every room's playlist when none are given; deduplicated. */
+function resolveHouseCommandPlaylistIds(
+	roomManager: RoomManager,
+	playlistIds: string[] | undefined,
+): string[] {
+	return (
+		playlistIds && playlistIds.length > 0
+			? playlistIds
+			: roomManager
+					.getAllRooms()
+					.map((room) => room.playlistId)
+					.filter(
+						(playlistId): playlistId is string =>
+							typeof playlistId === "string" && playlistId.length > 0,
+					)
+	).filter((playlistId, index, all) => all.indexOf(playlistId) === index);
+}
+
 export function createControlRoutes(roomManager: RoomManager): Hono {
 	const app = new Hono();
 
@@ -204,17 +222,10 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 		}
 
 		const actorId = userActor?.userId ?? deviceActor?.id ?? "api";
-		const candidatePlaylistIds = (
-			parsed.data.playlistIds && parsed.data.playlistIds.length > 0
-				? parsed.data.playlistIds
-				: roomManager
-						.getAllRooms()
-						.map((room) => room.playlistId)
-						.filter(
-							(playlistId): playlistId is string =>
-								typeof playlistId === "string" && playlistId.length > 0,
-						)
-		).filter((playlistId, index, all) => all.indexOf(playlistId) === index);
+		const candidatePlaylistIds = resolveHouseCommandPlaylistIds(
+			roomManager,
+			parsed.data.playlistIds,
+		);
 
 		const affectedPlaylistIds: string[] = [];
 		const affectedRoomIds: string[] = [];
@@ -222,11 +233,8 @@ export function createControlRoutes(roomManager: RoomManager): Hono {
 
 		for (const playlistId of candidatePlaylistIds) {
 			const session = await ensurePlaylistSession(roomManager, playlistId);
-			if (!session) {
-				skippedPlaylistIds.push(playlistId);
-				continue;
-			}
 			if (
+				!session ||
 				!canAccessOwnedResource(
 					session.playlist.ownerUserId,
 					userActor?.userId,

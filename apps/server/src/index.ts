@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { WebSocketServer } from "ws";
 import { sqlite } from "./db/index";
@@ -251,6 +252,57 @@ app.use(
 	}),
 );
 
+// Reject oversized request bodies before any route parses them. The largest
+// legitimate body is a base64 cover upload (a 1.2 MiB PNG is ~1.6 MiB).
+const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+app.use(
+	"/api/*",
+	bodyLimit({
+		maxSize: MAX_REQUEST_BODY_BYTES,
+		onError: (c) => c.json({ error: "Request body too large" }, 413),
+	}),
+);
+
+function getRequestLogLevel(
+	status: number,
+	isSlow: boolean,
+	requestPath: string,
+): "error" | "warn" | "debug" | "info" {
+	if (status >= 500) return "error";
+	if (status >= 400) return "warn";
+	if (isSlow) return "warn";
+	return requestPath === "/health" ? "debug" : "info";
+}
+
+function logRequestCompletion(
+	c: Context,
+	requestLogger: typeof logger,
+	noisyRoute: string | undefined,
+	startedAt: number,
+): void {
+	const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+	const status = c.res.status || 200;
+	const contentLength = c.res.headers.get("content-length");
+	const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
+	const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
+
+	if (shouldAggregateNoisy) {
+		recordNoisyRequest(noisyRoute, durationMs);
+		return;
+	}
+	const level = getRequestLogLevel(status, isSlow, c.req.path);
+
+	requestLogger[level](
+		{
+			status,
+			durationMs,
+			contentLength: contentLength ? Number(contentLength) : undefined,
+			route: noisyRoute,
+		},
+		isSlow ? "HTTP request slow" : "HTTP request completed",
+	);
+}
+
 // Request lifecycle logging with request IDs for easier tracing in dev/log files.
 app.use("*", async (c, next) => {
 	const requestId = c.req.header("x-request-id") ?? randomUUID();
@@ -272,36 +324,7 @@ app.use("*", async (c, next) => {
 		requestLogger.error({ err }, "Request handler threw");
 		throw err;
 	} finally {
-		const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
-		const status = c.res.status || 200;
-		const contentLength = c.res.headers.get("content-length");
-		const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
-		const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
-
-		if (shouldAggregateNoisy) {
-			recordNoisyRequest(noisyRoute, durationMs);
-		} else {
-			const level =
-				status >= 500
-					? "error"
-					: status >= 400
-						? "warn"
-						: isSlow
-							? "warn"
-							: c.req.path === "/health"
-								? "debug"
-								: "info";
-
-			requestLogger[level](
-				{
-					status,
-					durationMs,
-					contentLength: contentLength ? Number(contentLength) : undefined,
-					route: noisyRoute,
-				},
-				isSlow ? "HTTP request slow" : "HTTP request completed",
-			);
-		}
+		logRequestCompletion(c, requestLogger, noisyRoute, startedAt);
 	}
 });
 

@@ -930,6 +930,9 @@ async function spawnSongWorker(
 
 	// Fire-and-forget
 	worker.run().finally(() => {
+		// cancelSongWorker() already untracked this worker, and a replacement for
+		// the same song may be registered by now; leave both alone.
+		if (songWorkers.get(song.id) !== worker) return;
 		songWorkers.delete(song.id);
 		const set = playlistSongs.get(playlistId);
 		if (set) {
@@ -1029,6 +1032,15 @@ function clearHeartbeatTimer(playlistId: string): void {
 
 // ─── Buffer management ──────────────────────────────────────────────
 
+/** Songs to create: one to start an empty oneshot, otherwise the buffer deficit. */
+function pendingSongsToCreate(
+	isOneshot: boolean,
+	workQueue: { totalSongs: number; bufferDeficit: number },
+): number {
+	if (isOneshot) return workQueue.totalSongs === 0 ? 1 : 0;
+	return Math.max(workQueue.bufferDeficit, 0);
+}
+
 async function checkBufferDeficit(playlistId: string): Promise<void> {
 	if (bufferLocks.get(playlistId)) return; // Another check already running
 	bufferLocks.set(playlistId, true);
@@ -1049,26 +1061,20 @@ async function checkBufferDeficit(playlistId: string): Promise<void> {
 		const isOneshot = playlist.mode === "oneshot";
 		const workQueue = await songService.getWorkQueue(playlistId);
 
-		const shouldCreateSong = isOneshot
-			? workQueue.totalSongs === 0
-			: workQueue.bufferDeficit > 0;
-
-		if (shouldCreateSong) {
-			const count = isOneshot ? 1 : workQueue.bufferDeficit;
-			for (let i = 0; i < count; i++) {
-				const orderIndex = Math.ceil(workQueue.maxOrderIndex) + 1 + i;
-				await songService.createPending(playlistId, orderIndex, {
-					promptEpoch: playlist.promptEpoch ?? 0,
-				});
-				playlistLogger(playlistId).debug(
-					{
-						orderIndex,
-						deficit: workQueue.bufferDeficit,
-						epoch: playlist.promptEpoch ?? 0,
-					},
-					"Created pending song",
-				);
-			}
+		const count = pendingSongsToCreate(isOneshot, workQueue);
+		for (let i = 0; i < count; i++) {
+			const orderIndex = Math.ceil(workQueue.maxOrderIndex) + 1 + i;
+			await songService.createPending(playlistId, orderIndex, {
+				promptEpoch: playlist.promptEpoch ?? 0,
+			});
+			playlistLogger(playlistId).debug(
+				{
+					orderIndex,
+					deficit: workQueue.bufferDeficit,
+					epoch: playlist.promptEpoch ?? 0,
+				},
+				"Created pending song",
+			);
 		}
 
 		// Oneshot auto-close: if no transient work remains
@@ -1230,13 +1236,7 @@ async function handleSongStatusChanged(data: {
 		await checkBufferDeficit(playlistId);
 
 		// Also trigger persona scan if overdue
-		const now = Date.now();
-		if (forcePersonaScan || now - lastPersonaScanAt > PERSONA_SCAN_INTERVAL) {
-			forcePersonaScan = false;
-			getSettings()
-				.then((settings) => runPersonaScan(settings))
-				.catch((err) => logger.error({ err }, "Persona scan error"));
-		}
+		schedulePersonaScanIfDue();
 	}
 
 	// Song entered retry_pending → auto-retry
@@ -1281,18 +1281,32 @@ async function handleSongStatusChanged(data: {
 
 	// Closing playlist: check if all transient work is done
 	if (to === "ready" || to === "error") {
-		const playlist = await playlistService.getById(playlistId);
-		if (playlist?.status === "closing") {
-			const workQueue = await songService.getWorkQueue(playlistId);
-			if (workQueue.transientCount === 0) {
-				playlistLogger(playlistId).info(
-					"Playlist closing complete, setting to closed",
-				);
-				await playlistService.updateStatus(playlistId, "closed");
-				cancelPlaylistWorkers(playlistId);
-				clearHeartbeatTimer(playlistId);
-				playlistEpochs.delete(playlistId);
-			}
+		await closePlaylistIfDrained(playlistId);
+	}
+}
+
+function schedulePersonaScanIfDue(): void {
+	const now = Date.now();
+	if (forcePersonaScan || now - lastPersonaScanAt > PERSONA_SCAN_INTERVAL) {
+		forcePersonaScan = false;
+		getSettings()
+			.then((settings) => runPersonaScan(settings))
+			.catch((err) => logger.error({ err }, "Persona scan error"));
+	}
+}
+
+async function closePlaylistIfDrained(playlistId: string): Promise<void> {
+	const playlist = await playlistService.getById(playlistId);
+	if (playlist?.status === "closing") {
+		const workQueue = await songService.getWorkQueue(playlistId);
+		if (workQueue.transientCount === 0) {
+			playlistLogger(playlistId).info(
+				"Playlist closing complete, setting to closed",
+			);
+			await playlistService.updateStatus(playlistId, "closed");
+			cancelPlaylistWorkers(playlistId);
+			clearHeartbeatTimer(playlistId);
+			playlistEpochs.delete(playlistId);
 		}
 	}
 }
@@ -1458,33 +1472,47 @@ async function handleSettingsChanged(_data: { key: string }) {
 
 // ─── Stale song cleanup (periodic) ─────────────────────────────────
 
+/**
+ * Cancel each stuck song's worker, then reset radio album tracks for retry
+ * and delete everything else. `logPrefix` tags the log lines (e.g. "[startup] ").
+ */
+async function recoverStaleSongs(
+	staleSongs: Awaited<
+		ReturnType<typeof songService.getWorkQueue>
+	>["staleSongs"],
+	playlistId: string,
+	logPrefix: string,
+): Promise<void> {
+	for (const stale of staleSongs) {
+		const w = songWorkers.get(stale.id);
+		if (w) w.cancel();
+		if (stale.radioEligible && stale.albumId) {
+			songLogger(stale.id, playlistId).info(
+				{
+					title: stale.title,
+					status: stale.status,
+					albumId: stale.albumId,
+				},
+				`${logPrefix}Resetting stale radio album track for retry`,
+			);
+			await songService.revertTransient(stale.id);
+		} else {
+			songLogger(stale.id, playlistId).info(
+				{ title: stale.title, status: stale.status },
+				`${logPrefix}Removing stuck song`,
+			);
+			await songService.deleteSong(stale.id);
+		}
+	}
+}
+
 async function staleSongCleanup(): Promise<void> {
 	try {
 		const activePlaylists = await playlistService.listActive();
 		for (const playlist of activePlaylists) {
 			const workQueue = await songService.getWorkQueue(playlist.id);
 			if (workQueue.staleSongs.length > 0) {
-				for (const stale of workQueue.staleSongs) {
-					const w = songWorkers.get(stale.id);
-					if (w) w.cancel();
-					if (stale.radioEligible && stale.albumId) {
-						songLogger(stale.id, playlist.id).info(
-							{
-								title: stale.title,
-								status: stale.status,
-								albumId: stale.albumId,
-							},
-							"Resetting stale radio album track for retry",
-						);
-						await songService.revertTransient(stale.id);
-					} else {
-						songLogger(stale.id, playlist.id).info(
-							{ title: stale.title, status: stale.status },
-							"Removing stuck song",
-						);
-						await songService.deleteSong(stale.id);
-					}
-				}
+				await recoverStaleSongs(workQueue.staleSongs, playlist.id, "");
 			}
 		}
 	} catch (err) {
@@ -1517,39 +1545,42 @@ async function reconcileAceState() {
 		}
 
 		for (const song of songs) {
-			if (!song.aceTaskId) {
-				await songService.revertTransient(song.id);
-				songLogger(song.id).info("Reverted — no ACE task ID");
-				continue;
-			}
-			const status = aceStatus.get(song.aceTaskId);
-			if (
-				!status ||
-				status.status === "not_found" ||
-				status.status === "failed"
-			) {
-				await songService.revertTransient(song.id);
-				songLogger(song.id).info(
-					{ aceTaskId: song.aceTaskId },
-					"Reverted — ACE task is gone",
-				);
-			} else if (status.status === "succeeded" && status.audioPath) {
-				songLogger(song.id).info(
-					{ aceTaskId: song.aceTaskId },
-					"ACE task already done — SongWorker will save",
-				);
-			} else {
-				songLogger(song.id).info(
-					{ aceTaskId: song.aceTaskId },
-					"ACE task still running — will resume",
-				);
-			}
+			await reconcileSongWithAce(song, aceStatus);
 		}
 	} else {
 		for (const song of songs) {
 			await songService.revertTransient(song.id);
 			songLogger(song.id).info("Reverted — no ACE task ID");
 		}
+	}
+}
+
+async function reconcileSongWithAce(
+	song: SongWire,
+	aceStatus: Map<string, { status: string; audioPath?: string }>,
+): Promise<void> {
+	if (!song.aceTaskId) {
+		await songService.revertTransient(song.id);
+		songLogger(song.id).info("Reverted — no ACE task ID");
+		return;
+	}
+	const status = aceStatus.get(song.aceTaskId);
+	if (!status || status.status === "not_found" || status.status === "failed") {
+		await songService.revertTransient(song.id);
+		songLogger(song.id).info(
+			{ aceTaskId: song.aceTaskId },
+			"Reverted — ACE task is gone",
+		);
+	} else if (status.status === "succeeded" && status.audioPath) {
+		songLogger(song.id).info(
+			{ aceTaskId: song.aceTaskId },
+			"ACE task already done — SongWorker will save",
+		);
+	} else {
+		songLogger(song.id).info(
+			{ aceTaskId: song.aceTaskId },
+			"ACE task still running — will resume",
+		);
 	}
 }
 
@@ -1562,85 +1593,69 @@ async function startupSweep() {
 	);
 
 	for (const playlist of activePlaylists) {
-		playlistEpochs.set(playlist.id, playlist.promptEpoch ?? 0);
+		await sweepPlaylistAtStartup(playlist);
+	}
+}
 
-		// Start heartbeat timer for active playlists
-		if (playlist.status === "active" && playlist.mode !== "radio") {
-			resetHeartbeatTimer(playlist.id);
-		}
+async function sweepPlaylistAtStartup(playlist: PlaylistWire): Promise<void> {
+	playlistEpochs.set(playlist.id, playlist.promptEpoch ?? 0);
 
-		const workQueue = await songService.getWorkQueue(playlist.id);
-		const currentEpoch = playlist.promptEpoch ?? 0;
+	// Start heartbeat timer for active playlists
+	if (playlist.status === "active" && playlist.mode !== "radio") {
+		resetHeartbeatTimer(playlist.id);
+	}
 
-		// Spawn workers for actionable songs
-		const actionableSongs = uniqueSongWires([
-			workQueue.pending,
-			workQueue.metadataReady,
-			workQueue.generatingAudio,
-			workQueue.needsRecovery,
-			workQueue.needsCover,
-		]).sort((a, b) => {
-			// Prioritize current-epoch songs
-			const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
-			const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
-			return aEpoch - bEpoch;
-		});
+	const workQueue = await songService.getWorkQueue(playlist.id);
+	const currentEpoch = playlist.promptEpoch ?? 0;
 
-		for (const song of actionableSongs) {
-			await spawnSongWorker(song, playlist, workQueue);
-		}
+	// Spawn workers for actionable songs
+	const actionableSongs = uniqueSongWires([
+		workQueue.pending,
+		workQueue.metadataReady,
+		workQueue.generatingAudio,
+		workQueue.needsRecovery,
+		workQueue.needsCover,
+	]).sort((a, b) => {
+		// Prioritize current-epoch songs
+		const aEpoch = (a.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
+		const bEpoch = (b.promptEpoch ?? 0) === currentEpoch ? 0 : 1;
+		return aEpoch - bEpoch;
+	});
 
-		// Handle stale songs
-		if (!aceReachableDuringStartup && workQueue.staleSongs.length > 0) {
-			playlistLogger(playlist.id).warn(
-				{ count: workQueue.staleSongs.length },
-				"[startup] Skipping stale cleanup because ACE reconciliation failed",
-			);
-		} else if (workQueue.staleSongs.length > 0) {
-			for (const stale of workQueue.staleSongs) {
-				const w = songWorkers.get(stale.id);
-				if (w) w.cancel();
-				if (stale.radioEligible && stale.albumId) {
-					songLogger(stale.id, playlist.id).info(
-						{
-							title: stale.title,
-							status: stale.status,
-							albumId: stale.albumId,
-						},
-						"[startup] Resetting stale radio album track for retry",
-					);
-					await songService.revertTransient(stale.id);
-				} else {
-					songLogger(stale.id, playlist.id).info(
-						{ title: stale.title, status: stale.status },
-						"[startup] Removing stuck song",
-					);
-					await songService.deleteSong(stale.id);
-				}
-			}
-		}
+	for (const song of actionableSongs) {
+		await spawnSongWorker(song, playlist, workQueue);
+	}
 
-		// Process retries
-		for (const song of workQueue.retryPending) {
-			songLogger(song.id, playlist.id).info(
-				{ retryCount: (song.retryCount || 0) + 1 },
-				"[startup] Retrying song",
-			);
-			await songService.retryErrored(song.id);
-		}
+	// Handle stale songs
+	if (!aceReachableDuringStartup && workQueue.staleSongs.length > 0) {
+		playlistLogger(playlist.id).warn(
+			{ count: workQueue.staleSongs.length },
+			"[startup] Skipping stale cleanup because ACE reconciliation failed",
+		);
+	} else if (workQueue.staleSongs.length > 0) {
+		await recoverStaleSongs(workQueue.staleSongs, playlist.id, "[startup] ");
+	}
 
-		// Check buffer deficit for active playlists
-		if (playlist.status === "active") {
-			await checkBufferDeficit(playlist.id);
-		}
+	// Process retries
+	for (const song of workQueue.retryPending) {
+		songLogger(song.id, playlist.id).info(
+			{ retryCount: (song.retryCount || 0) + 1 },
+			"[startup] Retrying song",
+		);
+		await songService.retryErrored(song.id);
+	}
 
-		// Closing check
-		if (playlist.status === "closing" && workQueue.transientCount === 0) {
-			playlistLogger(playlist.id).info(
-				"[startup] Playlist closing complete, setting to closed",
-			);
-			await playlistService.updateStatus(playlist.id, "closed");
-		}
+	// Check buffer deficit for active playlists
+	if (playlist.status === "active") {
+		await checkBufferDeficit(playlist.id);
+	}
+
+	// Closing check
+	if (playlist.status === "closing" && workQueue.transientCount === 0) {
+		playlistLogger(playlist.id).info(
+			"[startup] Playlist closing complete, setting to closed",
+		);
+		await playlistService.updateStatus(playlist.id, "closed");
 	}
 }
 

@@ -21,6 +21,21 @@ function createDeferred<T>(): Deferred<T> & { resolve(value: T): void } {
 	};
 }
 
+interface ScriptedPollResult {
+	status: "running" | "succeeded";
+	audioPath?: string;
+}
+
+/** Poll mock that replays each task's scripted results in call order, then reports running. */
+function createScriptedPoll(scripts: Record<string, ScriptedPollResult[]>) {
+	const pollCount = new Map<string, number>();
+	return vi.fn(async (taskId: string): Promise<ScriptedPollResult> => {
+		const count = (pollCount.get(taskId) ?? 0) + 1;
+		pollCount.set(taskId, count);
+		return scripts[taskId]?.[count - 1] ?? { status: "running" };
+	});
+}
+
 describe("queue actors", () => {
 	describe("RequestResponseQueue", () => {
 		it("executes pending items by priority, then FIFO for ties", async () => {
@@ -97,6 +112,47 @@ describe("queue actors", () => {
 			await Promise.all([pendingLate, pendingEarly]);
 
 			expect(order).toEqual(["pending-late", "pending-early"]);
+		});
+
+		it("runs at most one task per song and keeps the concurrency count", async () => {
+			const queue = new RequestResponseQueue<string>("llm", 2);
+			const firstGate = createDeferred<string>();
+			const started: string[] = [];
+
+			const first = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => {
+					started.push("a-1");
+					return firstGate.promise;
+				},
+			});
+			const retry = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => {
+					started.push("a-2");
+					return "a-2";
+				},
+			});
+			const other = queue.enqueue({
+				songId: "song-b",
+				priority: 2,
+				execute: async () => {
+					started.push("b");
+					return "b";
+				},
+			});
+
+			await expect(other).resolves.toMatchObject({ result: "b" });
+			expect(started).toEqual(["a-1", "b"]);
+			expect(queue.getStatus()).toMatchObject({ active: 1, pending: 1 });
+
+			firstGate.resolve("a-1");
+			await expect(first).resolves.toMatchObject({ result: "a-1" });
+			await expect(retry).resolves.toMatchObject({ result: "a-2" });
+			expect(started).toEqual(["a-1", "b", "a-2"]);
+			expect(queue.getStatus()).toMatchObject({ active: 0, pending: 0 });
 		});
 	});
 
@@ -179,34 +235,51 @@ describe("queue actors", () => {
 			expect(pollAudio).toHaveBeenCalledTimes(1);
 		});
 
-		it("honors a configured single active slot", async () => {
-			const pollCount = new Map<string, number>();
+		it("keeps a respawned task when the cancelled submission fails late", async () => {
+			const pollAudio = vi.fn(async () => ({
+				status: "succeeded" as const,
+				audioPath: "/tmp/task-audio.mp3",
+			}));
+			const staleSubmit = createDeferred<never>();
+			const queue = new AudioQueue(pollAudio, 1);
 
-			const pollAudio = vi.fn(async (taskId: string) => {
-				const count = (pollCount.get(taskId) ?? 0) + 1;
-				pollCount.set(taskId, count);
+			const cancelled = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: () => staleSubmit.promise,
+			});
+			await Promise.resolve();
+			queue.cancelSong("song-a");
+			await expect(cancelled).rejects.toThrow("Cancelled");
 
-				if (taskId === "task-a" && count === 1) {
-					return {
-						status: "running" as const,
-					};
-				}
-				if (taskId === "task-a" && count === 2) {
-					return {
-						status: "succeeded" as const,
-						audioPath: "/tmp/task-a.mp3",
-					};
-				}
-				if (taskId === "task-b" && count === 1) {
-					return {
-						status: "succeeded" as const,
-						audioPath: "/tmp/task-b.mp3",
-					};
-				}
-
-				return {
+			const respawned = queue.enqueue({
+				songId: "song-a",
+				priority: 1,
+				execute: async () => ({
+					taskId: "task-new",
 					status: "running" as const,
-				};
+					submitProcessingMs: 1,
+				}),
+			});
+			await Promise.resolve();
+			staleSubmit.reject(new Error("socket hang up"));
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(queue.getStatus()).toMatchObject({ active: 1 });
+			await queue.tickPolls();
+			await expect(respawned).resolves.toMatchObject({
+				result: { status: "succeeded", taskId: "task-new" },
+			});
+		});
+
+		it("honors a configured single active slot", async () => {
+			const pollAudio = createScriptedPoll({
+				"task-a": [
+					{ status: "running" },
+					{ status: "succeeded", audioPath: "/tmp/task-a.mp3" },
+				],
+				"task-b": [{ status: "succeeded", audioPath: "/tmp/task-b.mp3" }],
 			});
 
 			const executeA = vi.fn(async () => {

@@ -23,14 +23,58 @@ interface InternalQueueActiveItem {
 	endpoint?: string;
 }
 
-const compareQueueItems = <T>(
-	a: InternalQueueItem<T>,
-	b: InternalQueueItem<T>,
-) => {
+interface PendingQueueItem {
+	songId: string;
+	priority: number;
+	enqueuedAt: number;
+	reject: (error: Error) => void;
+}
+
+const compareQueueItems = (a: PendingQueueItem, b: PendingQueueItem) => {
 	const priorityDiff = a.priority - b.priority;
 	if (priorityDiff !== 0) return priorityDiff;
 	return a.enqueuedAt - b.enqueuedAt;
 };
+
+/**
+ * Remove and return the next pending item whose song has no active task.
+ * Keeping one task per song stops a retried or respawned worker from
+ * overwriting the active entry and running past the concurrency limit.
+ */
+function takeNextRunnable<Item extends { songId: string }>(
+	pending: Item[],
+	active: Map<string, unknown>,
+): Item | undefined {
+	const index = pending.findIndex((item) => !active.has(item.songId));
+	return index === -1 ? undefined : pending.splice(index, 1)[0];
+}
+
+/** Drop every pending item for a song and reject each as cancelled. */
+function rejectPendingForSong<Item extends PendingQueueItem>(
+	state: { pending: Item[] },
+	songId: string,
+): void {
+	const removed = state.pending.filter((item) => item.songId === songId);
+	if (removed.length > 0) {
+		state.pending = state.pending.filter((item) => item.songId !== songId);
+		for (const item of removed) {
+			item.reject(new Error("Cancelled"));
+		}
+	}
+}
+
+/** Give a song's pending item a new priority and restore queue order. */
+function reprioritizePending(
+	pending: PendingQueueItem[],
+	songId: string,
+	newPriority: number,
+): void {
+	const item = pending.find((p) => p.songId === songId);
+	if (item) {
+		item.priority = newPriority;
+		pending.sort(compareQueueItems);
+	}
+}
 
 interface RequestResponseQueueEvent<T> {
 	type:
@@ -73,174 +117,159 @@ export class RequestResponseQueue<T> implements IEndpointQueue<T> {
 
 		this.actor = createActor(
 			fromCallback<RequestResponseQueueEvent<T>>(({ receive }) => {
-				const executeItem = async (
-					item: InternalQueueItem<T>,
-				): Promise<void> => {
-					const abortController = new AbortController();
-					const startedAt = Date.now();
-					const waitMs = startedAt - item.enqueuedAt;
-
-					const activeItem: InternalQueueActiveItem = {
-						abortController,
-						priority: item.priority,
-						startedAt,
-						endpoint: item.endpoint,
-					};
-					this.state.active.set(item.songId, activeItem);
-
-					logger.debug(
-						{
-							queueType: this.state.queueType,
-							songId: item.songId,
-							endpoint: item.endpoint,
-							priority: item.priority,
-							waitMs,
-							pendingAfterDequeue: this.state.pending.length,
-							activeCount: this.state.active.size,
-						},
-						"Queue item started",
-					);
-
-					try {
-						const result = await item.execute(abortController.signal);
-						const processingMs = Date.now() - startedAt;
-						recordCompletion(this.state.completionHistory, processingMs);
-						this.state.totalCompleted++;
-						logger.debug(
-							{
-								queueType: this.state.queueType,
-								songId: item.songId,
-								endpoint: item.endpoint,
-								priority: item.priority,
-								waitMs,
-								processingMs,
-								activeCount: this.state.active.size,
-							},
-							"Queue item completed",
-						);
-						item.resolve({ result, processingMs });
-					} catch (error: unknown) {
-						this.state.errorCount += 1;
-						const message =
-							error instanceof Error ? error.message : String(error);
-						this.state.lastErrorMessage = message;
-						const processingMs = Date.now() - startedAt;
-
-						if (message === "Cancelled") {
-							logger.debug(
-								{
-									queueType: this.state.queueType,
-									songId: item.songId,
-									endpoint: item.endpoint,
-									priority: item.priority,
-									waitMs,
-									processingMs,
-								},
-								"Queue item cancelled",
-							);
-						} else {
-							logger.warn(
-								{
-									queueType: this.state.queueType,
-									songId: item.songId,
-									endpoint: item.endpoint,
-									priority: item.priority,
-									waitMs,
-									processingMs,
-									err: error,
-								},
-								"Queue item failed",
-							);
-						}
-
-						item.reject(
-							error instanceof Error ? error : new Error(String(error)),
-						);
-					} finally {
-						this.state.active.delete(item.songId);
-						logger.debug(
-							{
-								queueType: this.state.queueType,
-								songId: item.songId,
-								pendingCount: this.state.pending.length,
-								activeCount: this.state.active.size,
-							},
-							"Queue slot released",
-						);
-						this.actor.send({ type: "drain" });
-					}
-				};
-
-				const drain = () => {
-					while (
-						this.state.active.size < this.state.maxConcurrency &&
-						this.state.pending.length > 0
-					) {
-						const item = this.state.pending.shift();
-						if (!item) return;
-						void executeItem(item);
-					}
-				};
-
-				receive((event) => {
-					switch (event.type) {
-						case "enqueue":
-							if (event.item) {
-								this.state.pending.push(event.item);
-								this.state.pending.sort(compareQueueItems);
-								drain();
-							}
-							break;
-						case "cancelSong":
-							if (!event.songId) return;
-							{
-								const removed = this.state.pending.filter(
-									(item) => item.songId === event.songId,
-								);
-								if (removed.length > 0) {
-									this.state.pending = this.state.pending.filter(
-										(item) => item.songId !== event.songId,
-									);
-									for (const item of removed) {
-										item.reject(new Error("Cancelled"));
-									}
-								}
-
-								const active = this.state.active.get(event.songId);
-								if (active) {
-									active.abortController.abort();
-								}
-							}
-							break;
-						case "refreshConcurrency":
-							if (event.maxConcurrency && event.maxConcurrency > 0) {
-								this.state.maxConcurrency = event.maxConcurrency;
-								drain();
-							}
-							break;
-						case "updatePendingPriority":
-							if (event.songId && event.newPriority !== undefined) {
-								const item = this.state.pending.find(
-									(p) => p.songId === event.songId,
-								);
-								if (item) {
-									item.priority = event.newPriority;
-									this.state.pending.sort(compareQueueItems);
-								}
-							}
-							break;
-						case "resortPending":
-							this.state.pending.sort(compareQueueItems);
-							break;
-						case "drain":
-							drain();
-							break;
-					}
-				});
+				receive((event) => this.handleEvent(event));
 			}),
 			{ inspect: getWorkerInspectObserver() },
 		);
 		this.actor.start();
+	}
+
+	private async executeItem(item: InternalQueueItem<T>): Promise<void> {
+		const abortController = new AbortController();
+		const startedAt = Date.now();
+		const waitMs = startedAt - item.enqueuedAt;
+
+		const activeItem: InternalQueueActiveItem = {
+			abortController,
+			priority: item.priority,
+			startedAt,
+			endpoint: item.endpoint,
+		};
+		this.state.active.set(item.songId, activeItem);
+
+		logger.debug(
+			{
+				queueType: this.state.queueType,
+				songId: item.songId,
+				endpoint: item.endpoint,
+				priority: item.priority,
+				waitMs,
+				pendingAfterDequeue: this.state.pending.length,
+				activeCount: this.state.active.size,
+			},
+			"Queue item started",
+		);
+
+		try {
+			const result = await item.execute(abortController.signal);
+			const processingMs = Date.now() - startedAt;
+			recordCompletion(this.state.completionHistory, processingMs);
+			this.state.totalCompleted++;
+			logger.debug(
+				{
+					queueType: this.state.queueType,
+					songId: item.songId,
+					endpoint: item.endpoint,
+					priority: item.priority,
+					waitMs,
+					processingMs,
+					activeCount: this.state.active.size,
+				},
+				"Queue item completed",
+			);
+			item.resolve({ result, processingMs });
+		} catch (error: unknown) {
+			this.state.errorCount += 1;
+			const message = error instanceof Error ? error.message : String(error);
+			this.state.lastErrorMessage = message;
+			const processingMs = Date.now() - startedAt;
+
+			if (message === "Cancelled") {
+				logger.debug(
+					{
+						queueType: this.state.queueType,
+						songId: item.songId,
+						endpoint: item.endpoint,
+						priority: item.priority,
+						waitMs,
+						processingMs,
+					},
+					"Queue item cancelled",
+				);
+			} else {
+				logger.warn(
+					{
+						queueType: this.state.queueType,
+						songId: item.songId,
+						endpoint: item.endpoint,
+						priority: item.priority,
+						waitMs,
+						processingMs,
+						err: error,
+					},
+					"Queue item failed",
+				);
+			}
+
+			item.reject(error instanceof Error ? error : new Error(String(error)));
+		} finally {
+			if (this.state.active.get(item.songId) === activeItem) {
+				this.state.active.delete(item.songId);
+			}
+			logger.debug(
+				{
+					queueType: this.state.queueType,
+					songId: item.songId,
+					pendingCount: this.state.pending.length,
+					activeCount: this.state.active.size,
+				},
+				"Queue slot released",
+			);
+			this.actor.send({ type: "drain" });
+		}
+	}
+
+	private drain(): void {
+		while (this.state.active.size < this.state.maxConcurrency) {
+			const item = takeNextRunnable(this.state.pending, this.state.active);
+			if (!item) return;
+			void this.executeItem(item);
+		}
+	}
+
+	private cancelQueuedSong(songId: string): void {
+		rejectPendingForSong(this.state, songId);
+
+		const active = this.state.active.get(songId);
+		if (active) {
+			active.abortController.abort();
+		}
+	}
+
+	private handleEvent(event: RequestResponseQueueEvent<T>): void {
+		switch (event.type) {
+			case "enqueue":
+				if (event.item) {
+					this.state.pending.push(event.item);
+					this.state.pending.sort(compareQueueItems);
+					this.drain();
+				}
+				break;
+			case "cancelSong":
+				if (event.songId) this.cancelQueuedSong(event.songId);
+				break;
+			case "refreshConcurrency":
+				if (event.maxConcurrency && event.maxConcurrency > 0) {
+					this.state.maxConcurrency = event.maxConcurrency;
+					this.drain();
+				}
+				break;
+			case "updatePendingPriority":
+				if (event.songId && event.newPriority !== undefined) {
+					reprioritizePending(
+						this.state.pending,
+						event.songId,
+						event.newPriority,
+					);
+				}
+				break;
+			case "resortPending":
+				this.state.pending.sort(compareQueueItems);
+				break;
+			case "drain":
+				this.drain();
+				break;
+		}
 	}
 
 	get type(): "llm" | "image" {
@@ -366,6 +395,7 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 		completionHistory: [] as number[],
 		totalCompleted: 0,
 	};
+	private pollInFlight = false;
 	private readonly pollFn: (
 		taskId: string,
 		signal: AbortSignal,
@@ -391,332 +421,318 @@ export class AudioQueue implements IEndpointQueue<AudioTaskResult> {
 
 		this.actor = createActor(
 			fromCallback<AudioQueueEvent>(({ receive }) => {
-				let pollInFlight = false;
+				receive((event) => this.handleEvent(event));
+			}),
+			{ inspect: getWorkerInspectObserver() },
+		);
+		this.actor.start();
+	}
 
-				const clearSlot = (songId: string) => {
-					this.state.active.delete(songId);
-					this.actor.send({ type: "drain" });
-				};
+	private clearSlot(slot: AudioActiveSlot): void {
+		// A cancelled slot can settle after a new task for the same song
+		// started; only release the slot that is still registered.
+		if (this.state.active.get(slot.songId) !== slot) return;
+		this.state.active.delete(slot.songId);
+		this.actor.send({ type: "drain" });
+	}
 
-				const startSlot = (item: AudioQueueItem): void => {
-					const abortController = new AbortController();
-					const startedAt = Date.now();
-					const waitMs = startedAt - item.enqueuedAt;
+	private startSlot(item: AudioQueueItem): void {
+		const abortController = new AbortController();
+		const startedAt = Date.now();
+		const waitMs = startedAt - item.enqueuedAt;
 
-					if (item.resumeTaskId) {
-						this.state.active.set(item.songId, {
-							songId: item.songId,
-							taskId: item.resumeTaskId,
-							submittedAt: item.resumeSubmittedAt || Date.now(),
-							startedAt,
-							waitMs,
-							submitProcessingMs: 0,
-							priority: item.priority,
-							resolve: item.resolve,
-							reject: item.reject,
-							abortController,
-						});
+		if (item.resumeTaskId) {
+			this.state.active.set(item.songId, {
+				songId: item.songId,
+				taskId: item.resumeTaskId,
+				submittedAt: item.resumeSubmittedAt || Date.now(),
+				startedAt,
+				waitMs,
+				submitProcessingMs: 0,
+				priority: item.priority,
+				resolve: item.resolve,
+				reject: item.reject,
+				abortController,
+			});
 
-						logger.debug(
-							{
-								queueType: this.type,
-								songId: item.songId,
-								taskId: item.resumeTaskId,
-								priority: item.priority,
-								waitMs,
-								pendingAfterDequeue: this.state.pending.length,
-							},
-							"Audio queue resumed task",
-						);
-						return;
-					}
+			logger.debug(
+				{
+					queueType: this.type,
+					songId: item.songId,
+					taskId: item.resumeTaskId,
+					priority: item.priority,
+					waitMs,
+					pendingAfterDequeue: this.state.pending.length,
+				},
+				"Audio queue resumed task",
+			);
+			return;
+		}
 
-					const submittedAt = Date.now();
-					const activeSlot: AudioActiveSlot = {
+		const submittedAt = Date.now();
+		const activeSlot: AudioActiveSlot = {
+			songId: item.songId,
+			taskId: "",
+			submittedAt,
+			startedAt,
+			waitMs,
+			submitProcessingMs: 0,
+			priority: item.priority,
+			resolve: item.resolve,
+			reject: item.reject,
+			abortController,
+		};
+		this.state.active.set(item.songId, activeSlot);
+
+		logger.debug(
+			{
+				queueType: this.type,
+				songId: item.songId,
+				priority: item.priority,
+				waitMs,
+				pendingAfterDequeue: this.state.pending.length,
+			},
+			"Audio queue submission started",
+		);
+
+		item
+			.execute(abortController.signal)
+			.then((result: AudioTaskResult) => {
+				if (abortController.signal.aborted) return;
+				const slot = this.state.active.get(item.songId);
+				if (slot !== activeSlot) return;
+				slot.taskId = result.taskId;
+				slot.submittedAt = Date.now();
+				slot.submitProcessingMs = Date.now() - submittedAt;
+				logger.debug(
+					{
+						queueType: this.type,
 						songId: item.songId,
-						taskId: "",
-						submittedAt,
-						startedAt,
-						waitMs,
-						submitProcessingMs: 0,
+						taskId: result.taskId,
 						priority: item.priority,
-						resolve: item.resolve,
-						reject: item.reject,
-						abortController,
-					};
-					this.state.active.set(item.songId, activeSlot);
+						waitMs,
+						submitProcessingMs: slot.submitProcessingMs,
+					},
+					"Audio queue submission complete, polling started",
+				);
+			})
+			.catch((error: unknown) => {
+				if (this.state.active.get(item.songId) !== activeSlot) return;
 
+				const message = error instanceof Error ? error.message : String(error);
+				this.state.errorCount += 1;
+				this.state.lastErrorMessage = message;
+				const processingMs = Date.now() - submittedAt;
+
+				if (message === "Cancelled") {
 					logger.debug(
 						{
 							queueType: this.type,
 							songId: item.songId,
 							priority: item.priority,
 							waitMs,
-							pendingAfterDequeue: this.state.pending.length,
+							submitProcessingMs: processingMs,
 						},
-						"Audio queue submission started",
+						"Audio queue submission cancelled",
 					);
+					item.reject(new Error("Cancelled"));
+				} else {
+					logger.warn(
+						{
+							queueType: this.type,
+							songId: item.songId,
+							priority: item.priority,
+							waitMs,
+							submitProcessingMs: processingMs,
+							err: error,
+						},
+						"Audio queue submission failed",
+					);
+					item.reject(
+						error instanceof Error ? error : new Error(String(error)),
+					);
+				}
 
-					item
-						.execute(abortController.signal)
-						.then((result: AudioTaskResult) => {
-							if (abortController.signal.aborted) return;
-							const slot = this.state.active.get(item.songId);
-							if (!slot) return;
-							slot.taskId = result.taskId;
-							slot.submittedAt = Date.now();
-							slot.submitProcessingMs = Date.now() - submittedAt;
-							logger.debug(
-								{
-									queueType: this.type,
-									songId: item.songId,
-									taskId: result.taskId,
-									priority: item.priority,
-									waitMs,
-									submitProcessingMs: slot.submitProcessingMs,
-								},
-								"Audio queue submission complete, polling started",
-							);
-						})
-						.catch((error: unknown) => {
-							const slot = this.state.active.get(item.songId);
-							if (!slot) return;
+				this.clearSlot(activeSlot);
+			});
+	}
 
-							const message =
-								error instanceof Error ? error.message : String(error);
-							this.state.errorCount += 1;
-							this.state.lastErrorMessage = message;
-							const processingMs = Date.now() - submittedAt;
+	private drain(): void {
+		while (this.state.active.size < this.state.maxConcurrency) {
+			const item = takeNextRunnable(this.state.pending, this.state.active);
+			if (!item) return;
+			this.startSlot(item);
+		}
+	}
 
-							if (message === "Cancelled") {
-								logger.debug(
-									{
-										queueType: this.type,
-										songId: item.songId,
-										priority: item.priority,
-										waitMs,
-										submitProcessingMs: processingMs,
-									},
-									"Audio queue submission cancelled",
-								);
-								item.reject(new Error("Cancelled"));
-							} else {
-								logger.warn(
-									{
-										queueType: this.type,
-										songId: item.songId,
-										priority: item.priority,
-										waitMs,
-										submitProcessingMs: processingMs,
-										err: error,
-									},
-									"Audio queue submission failed",
-								);
-								item.reject(
-									error instanceof Error ? error : new Error(String(error)),
-								);
-							}
+	private async pollSlot(slot: AudioActiveSlot): Promise<void> {
+		if (!slot.taskId) return;
+		if (slot.abortController.signal.aborted) {
+			this.clearSlot(slot);
+			return;
+		}
 
-							clearSlot(item.songId);
-						});
-				};
+		try {
+			const pollResult = await this.pollFn(
+				slot.taskId,
+				slot.abortController.signal,
+			);
+			if (slot.abortController.signal.aborted) return;
 
-				const drain = () => {
-					while (
-						this.state.active.size < this.state.maxConcurrency &&
-						this.state.pending.length > 0
-					) {
-						const item = this.state.pending.shift();
-						if (!item) return;
-						startSlot(item);
-					}
-				};
-
-				const pollSlot = async (slot: AudioActiveSlot) => {
-					if (!slot.taskId) return;
-					if (slot.abortController.signal.aborted) {
-						clearSlot(slot.songId);
-						return;
-					}
-
-					try {
-						const pollResult = await this.pollFn(
-							slot.taskId,
-							slot.abortController.signal,
-						);
-						if (slot.abortController.signal.aborted) return;
-
-						if (pollResult.status === "succeeded") {
-							logger.debug(
-								{
-									queueType: this.type,
-									songId: slot.songId,
-									taskId: slot.taskId,
-									priority: slot.priority,
-									waitMs: slot.waitMs,
-									submitProcessingMs: slot.submitProcessingMs,
-									pollingMs: Date.now() - slot.submittedAt,
-									totalMs: Date.now() - slot.startedAt,
-								},
-								"Audio queue task completed",
-							);
-							const completionMs = Date.now() - slot.submittedAt;
-							recordCompletion(this.state.completionHistory, completionMs);
-							this.state.totalCompleted++;
-							slot.resolve({
-								result: {
-									taskId: slot.taskId,
-									status: "succeeded",
-									audioPath: pollResult.audioPath,
-									submitProcessingMs: slot.submitProcessingMs,
-								},
-								processingMs: completionMs,
-							});
-							clearSlot(slot.songId);
-						} else if (pollResult.status === "failed") {
-							const message = pollResult.error || "Audio generation failed";
-							this.state.errorCount += 1;
-							this.state.lastErrorMessage = message;
-							logger.warn(
-								{
-									queueType: this.type,
-									songId: slot.songId,
-									taskId: slot.taskId,
-									priority: slot.priority,
-									waitMs: slot.waitMs,
-									submitProcessingMs: slot.submitProcessingMs,
-									pollingMs: Date.now() - slot.submittedAt,
-									totalMs: Date.now() - slot.startedAt,
-									error: message,
-								},
-								"Audio queue task failed",
-							);
-							slot.resolve({
-								result: {
-									taskId: slot.taskId,
-									status: "failed",
-									error: message,
-									submitProcessingMs: slot.submitProcessingMs,
-								},
-								processingMs: Date.now() - slot.submittedAt,
-							});
-							clearSlot(slot.songId);
-						} else if (pollResult.status === "not_found") {
-							const elapsed = Date.now() - slot.submittedAt;
-							if (elapsed >= NOT_FOUND_GRACE_MS) {
-								logger.warn(
-									{
-										queueType: this.type,
-										songId: slot.songId,
-										taskId: slot.taskId,
-										priority: slot.priority,
-										waitMs: slot.waitMs,
-										submitProcessingMs: slot.submitProcessingMs,
-										pollingMs: elapsed,
-										totalMs: Date.now() - slot.startedAt,
-									},
-									"Audio queue task not found after grace period",
-								);
-								slot.resolve({
-									result: {
-										taskId: slot.taskId,
-										status: "not_found",
-										submitProcessingMs: slot.submitProcessingMs,
-									},
-									processingMs: elapsed,
-								});
-								clearSlot(slot.songId);
-							}
-						}
-					} catch (error: unknown) {
-						if (slot.abortController.signal.aborted) return;
-						logger.error(
-							{ err: error, taskId: slot.taskId },
-							"Audio queue poll error",
-						);
-					}
-				};
-
-				const pollActive = async () => {
-					if (pollInFlight) return;
-					pollInFlight = true;
-					try {
-						const activeSlots = Array.from(this.state.active.values());
-						await Promise.all(activeSlots.map((slot) => pollSlot(slot)));
-					} finally {
-						pollInFlight = false;
-					}
-				};
-
-				receive((event) => {
-					switch (event.type) {
-						case "enqueue":
-						case "resume":
-							if (event.item) {
-								this.state.pending.push(event.item);
-								this.state.pending.sort(compareQueueItems);
-								drain();
-							}
-							break;
-						case "tickPolls":
-							void pollActive().finally(event.done);
-							break;
-						case "cancelSong":
-							if (!event.songId) return;
-							{
-								const removed = this.state.pending.filter(
-									(item) => item.songId === event.songId,
-								);
-								if (removed.length > 0) {
-									this.state.pending = this.state.pending.filter(
-										(item) => item.songId !== event.songId,
-									);
-									for (const item of removed) {
-										item.reject(new Error("Cancelled"));
-									}
-								}
-
-								const active = this.state.active.get(event.songId);
-								if (active) {
-									active.abortController.abort();
-									active.reject(new Error("Cancelled"));
-									clearSlot(event.songId);
-								}
-							}
-							break;
-						case "refreshConcurrency":
-							if (event.maxConcurrency && event.maxConcurrency > 0) {
-								this.state.maxConcurrency = Math.max(
-									1,
-									Math.trunc(event.maxConcurrency),
-								);
-								drain();
-							}
-							break;
-						case "resortPending":
-							this.state.pending.sort(compareQueueItems);
-							break;
-						case "updatePendingPriority":
-							if (!event.songId || event.newPriority === undefined) return;
-							{
-								const item = this.state.pending.find(
-									(p) => p.songId === event.songId,
-								);
-								if (item) {
-									item.priority = event.newPriority;
-									this.state.pending.sort(compareQueueItems);
-								}
-							}
-							break;
-						case "drain":
-							drain();
-							break;
-					}
+			if (pollResult.status === "succeeded") {
+				logger.debug(
+					{
+						queueType: this.type,
+						songId: slot.songId,
+						taskId: slot.taskId,
+						priority: slot.priority,
+						waitMs: slot.waitMs,
+						submitProcessingMs: slot.submitProcessingMs,
+						pollingMs: Date.now() - slot.submittedAt,
+						totalMs: Date.now() - slot.startedAt,
+					},
+					"Audio queue task completed",
+				);
+				const completionMs = Date.now() - slot.submittedAt;
+				recordCompletion(this.state.completionHistory, completionMs);
+				this.state.totalCompleted++;
+				slot.resolve({
+					result: {
+						taskId: slot.taskId,
+						status: "succeeded",
+						audioPath: pollResult.audioPath,
+						submitProcessingMs: slot.submitProcessingMs,
+					},
+					processingMs: completionMs,
 				});
-			}),
-			{ inspect: getWorkerInspectObserver() },
-		);
-		this.actor.start();
+				this.clearSlot(slot);
+			} else if (pollResult.status === "failed") {
+				const message = pollResult.error || "Audio generation failed";
+				this.state.errorCount += 1;
+				this.state.lastErrorMessage = message;
+				logger.warn(
+					{
+						queueType: this.type,
+						songId: slot.songId,
+						taskId: slot.taskId,
+						priority: slot.priority,
+						waitMs: slot.waitMs,
+						submitProcessingMs: slot.submitProcessingMs,
+						pollingMs: Date.now() - slot.submittedAt,
+						totalMs: Date.now() - slot.startedAt,
+						error: message,
+					},
+					"Audio queue task failed",
+				);
+				slot.resolve({
+					result: {
+						taskId: slot.taskId,
+						status: "failed",
+						error: message,
+						submitProcessingMs: slot.submitProcessingMs,
+					},
+					processingMs: Date.now() - slot.submittedAt,
+				});
+				this.clearSlot(slot);
+			} else if (pollResult.status === "not_found") {
+				const elapsed = Date.now() - slot.submittedAt;
+				if (elapsed >= NOT_FOUND_GRACE_MS) {
+					logger.warn(
+						{
+							queueType: this.type,
+							songId: slot.songId,
+							taskId: slot.taskId,
+							priority: slot.priority,
+							waitMs: slot.waitMs,
+							submitProcessingMs: slot.submitProcessingMs,
+							pollingMs: elapsed,
+							totalMs: Date.now() - slot.startedAt,
+						},
+						"Audio queue task not found after grace period",
+					);
+					slot.resolve({
+						result: {
+							taskId: slot.taskId,
+							status: "not_found",
+							submitProcessingMs: slot.submitProcessingMs,
+						},
+						processingMs: elapsed,
+					});
+					this.clearSlot(slot);
+				}
+			}
+		} catch (error: unknown) {
+			if (slot.abortController.signal.aborted) return;
+			logger.error(
+				{ err: error, taskId: slot.taskId },
+				"Audio queue poll error",
+			);
+		}
+	}
+
+	private async pollActive(): Promise<void> {
+		if (this.pollInFlight) return;
+		this.pollInFlight = true;
+		try {
+			const activeSlots = Array.from(this.state.active.values());
+			await Promise.all(activeSlots.map((slot) => this.pollSlot(slot)));
+		} finally {
+			this.pollInFlight = false;
+		}
+	}
+
+	private cancelQueuedSong(songId: string): void {
+		rejectPendingForSong(this.state, songId);
+
+		const active = this.state.active.get(songId);
+		if (active) {
+			active.abortController.abort();
+			active.reject(new Error("Cancelled"));
+			this.clearSlot(active);
+		}
+	}
+
+	private handleEvent(event: AudioQueueEvent): void {
+		switch (event.type) {
+			case "enqueue":
+			case "resume":
+				if (event.item) {
+					this.state.pending.push(event.item);
+					this.state.pending.sort(compareQueueItems);
+					this.drain();
+				}
+				break;
+			case "tickPolls":
+				void this.pollActive().finally(event.done);
+				break;
+			case "cancelSong":
+				if (event.songId) this.cancelQueuedSong(event.songId);
+				break;
+			case "refreshConcurrency":
+				if (event.maxConcurrency && event.maxConcurrency > 0) {
+					this.state.maxConcurrency = Math.max(
+						1,
+						Math.trunc(event.maxConcurrency),
+					);
+					this.drain();
+				}
+				break;
+			case "resortPending":
+				this.state.pending.sort(compareQueueItems);
+				break;
+			case "updatePendingPriority":
+				if (event.songId && event.newPriority !== undefined) {
+					reprioritizePending(
+						this.state.pending,
+						event.songId,
+						event.newPriority,
+					);
+				}
+				break;
+			case "drain":
+				this.drain();
+				break;
+		}
 	}
 
 	enqueue(

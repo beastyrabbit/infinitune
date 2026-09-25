@@ -154,6 +154,43 @@ export function announceCreated(id: string) {
 	emit("playlist.created", { playlistId: id });
 }
 
+interface ParamPatchEntry {
+	value: unknown;
+	touches?: "llmProfile" | "lyricsLanguage";
+}
+
+/** Normalize one param for the patch, or return null to leave it unset. */
+function toParamPatchEntry(
+	key: string,
+	value: unknown,
+): ParamPatchEntry | null {
+	switch (key) {
+		case "llmProvider":
+			if (typeof value !== "string") return null;
+			return {
+				value: normalizeLlmProvider(value.trim()),
+				touches: "llmProfile",
+			};
+		case "llmModel":
+			if (value === null) return { value: "", touches: "llmProfile" };
+			if (typeof value !== "string") return null;
+			return { value: value.trim(), touches: "llmProfile" };
+		case "lyricsLanguage":
+			return {
+				value: normalizeLyricsLanguage(
+					typeof value === "string" ? value : undefined,
+				),
+				touches: "lyricsLanguage",
+			};
+		case "aceModel":
+			return {
+				value: typeof value === "string" ? normalizeAceModel(value) : null,
+			};
+		default:
+			return { value };
+	}
+}
+
 export async function updateParams(
 	id: string,
 	params: Record<string, unknown>,
@@ -185,36 +222,11 @@ export async function updateParams(
 	let touchedLlmProfile = false;
 	for (const key of allowedKeys) {
 		if (params[key] === undefined) continue;
-		if (key === "llmProvider") {
-			if (typeof params[key] !== "string") continue;
-			patch[key] = normalizeLlmProvider(params[key].trim());
-			touchedLlmProfile = true;
-			continue;
-		}
-		if (key === "llmModel") {
-			if (params[key] === null) {
-				patch[key] = "";
-				touchedLlmProfile = true;
-				continue;
-			}
-			if (typeof params[key] !== "string") continue;
-			patch[key] = params[key].trim();
-			touchedLlmProfile = true;
-			continue;
-		}
-		if (key === "lyricsLanguage") {
-			patch[key] = normalizeLyricsLanguage(
-				typeof params[key] === "string" ? params[key] : undefined,
-			);
-			touchedLyricsLanguage = true;
-			continue;
-		}
-		if (key === "aceModel") {
-			patch[key] =
-				typeof params[key] === "string" ? normalizeAceModel(params[key]) : null;
-			continue;
-		}
-		patch[key] = params[key];
+		const entry = toParamPatchEntry(key, params[key]);
+		if (!entry) continue;
+		patch[key] = entry.value;
+		if (entry.touches === "llmProfile") touchedLlmProfile = true;
+		if (entry.touches === "lyricsLanguage") touchedLyricsLanguage = true;
 	}
 
 	if (touchedLlmProfile || touchedLyricsLanguage) {

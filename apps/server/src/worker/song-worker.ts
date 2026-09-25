@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeImageProvider } from "@infinitune/shared/inference-sh-image-models";
@@ -147,6 +148,50 @@ interface SongMachineContext {
 	outcome?: SongMachineOutcome;
 }
 
+type SongMachineState = "metadata" | "audio" | SongMachineOutcome;
+
+/** Outcome for a machine that reached a final state; undefined for any other state. */
+function finalMachineOutcome(
+	state: SongMachineState,
+	context: SongMachineContext,
+): SongMachineOutcome | undefined {
+	if (state !== "completed" && state !== "errored" && state !== "cancelled") {
+		return undefined;
+	}
+	if (context.outcome) return context.outcome;
+	return state;
+}
+
+/** Interrupts and oneshots stay faithful to the prompt; endless songs drift close or general. */
+function pickPromptDistance(
+	isInterrupt: boolean,
+	isOneshot: boolean,
+): PromptDistance {
+	if (isInterrupt || isOneshot) return "faithful";
+	return randomInt(10) < 6 ? "close" : "general";
+}
+
+/** Descriptive song fields for the NFS copy, with placeholders for missing text. */
+function nfsSongDetails(song: SongWire) {
+	return {
+		title: song.title || "Unknown",
+		artistName: song.artistName || "Unknown",
+		genre: song.genre || "Unknown",
+		subGenre: song.subGenre || song.genre || "Unknown",
+		lyrics: song.lyrics || "",
+		caption: song.caption || "",
+		vocalStyle: song.vocalStyle ?? undefined,
+		coverPrompt: song.coverPrompt ?? undefined,
+		mood: song.mood ?? undefined,
+		energy: song.energy ?? undefined,
+		era: song.era ?? undefined,
+		instruments: song.instruments,
+		tags: song.tags,
+		themes: song.themes,
+		language: song.language ?? undefined,
+	};
+}
+
 // ─── Duplicate Detection ─────────────────────────────────────────────
 
 function isDuplicate(
@@ -232,21 +277,12 @@ function needsManagerRefresh(
 	);
 }
 
-export function buildAceSubmitInput({
-	song,
-	playlist,
-	settings,
-	srcAudioFile,
-	signal,
-}: {
-	song: SongWire;
-	playlist: PlaylistWire;
-	settings: SongWorkerSettings;
-	/** Resolved source audio path for reimagine (ACE cover) tasks */
-	srcAudioFile?: string;
-	signal?: AbortSignal;
-}): ProviderTaskPorts["submitAudio"] {
-	const playlistAceModel = playlist.aceModel;
+/** Song-level ACE inputs: task type, reference audio, lyrics and musical shape. */
+function buildAceSongInput(
+	song: SongWire,
+	playlist: PlaylistWire,
+	srcAudioFile: string | undefined,
+) {
 	const radioDuration = song.radioEligible ? 180 : undefined;
 	return {
 		aceTaskType: song.aceTaskType ?? undefined,
@@ -260,6 +296,16 @@ export function buildAceSubmitInput({
 		timeSignature: song.timeSignature || "4/4",
 		audioDuration:
 			radioDuration ?? song.audioDuration ?? playlist.audioDuration ?? 240,
+	};
+}
+
+/** Model and sampler ACE inputs: playlist overrides, falling back to global settings. */
+function buildAceGenerationInput(
+	playlist: PlaylistWire,
+	settings: SongWorkerSettings,
+) {
+	const playlistAceModel = playlist.aceModel;
+	return {
 		aceModel: playlistAceModel === null ? settings.aceModel : playlistAceModel,
 		inferenceSteps: playlist.inferenceSteps ?? settings.aceInferenceSteps,
 		vocalLanguage: toAceVocalLanguageCode(playlist.lyricsLanguage),
@@ -278,6 +324,26 @@ export function buildAceSubmitInput({
 		aceDcwHighScaler: playlist.aceDcwHighScaler ?? settings.aceDcwHighScaler,
 		aceDcwWavelet: playlist.aceDcwWavelet ?? settings.aceDcwWavelet,
 		aceThinking: playlist.aceThinking ?? settings.aceThinking,
+	};
+}
+
+export function buildAceSubmitInput({
+	song,
+	playlist,
+	settings,
+	srcAudioFile,
+	signal,
+}: {
+	song: SongWire;
+	playlist: PlaylistWire;
+	settings: SongWorkerSettings;
+	/** Resolved source audio path for reimagine (ACE cover) tasks */
+	srcAudioFile?: string;
+	signal?: AbortSignal;
+}): ProviderTaskPorts["submitAudio"] {
+	return {
+		...buildAceSongInput(song, playlist, srcAudioFile),
+		...buildAceGenerationInput(playlist, settings),
 		aceAutoDuration: song.radioEligible
 			? false
 			: (playlist.aceAutoDuration ?? settings.aceAutoDuration),
@@ -548,23 +614,11 @@ export class SongWorker {
 					next: (snapshot) => {
 						if (snapshot.status !== "done") return;
 
-						const nextState = snapshot.value as
-							| "metadata"
-							| "audio"
-							| "completed"
-							| "errored"
-							| "cancelled";
-						if (
-							nextState === "completed" ||
-							nextState === "errored" ||
-							nextState === "cancelled"
-						) {
-							const context = snapshot.context as SongMachineContext;
-							if (context.outcome) resolve(context.outcome);
-							else if (nextState === "errored") resolve("errored");
-							else if (nextState === "cancelled") resolve("cancelled");
-							else resolve("completed");
-						}
+						const outcome = finalMachineOutcome(
+							snapshot.value as SongMachineState,
+							snapshot.context as SongMachineContext,
+						);
+						if (outcome) resolve(outcome);
 					},
 					error: (error) => {
 						this.lastError =
@@ -797,6 +851,7 @@ export class SongWorker {
 					await this.saveAndFinalize(
 						this.song.aceAudioPath,
 						this.song.audioProcessingMs ?? 0,
+						this.song.aceTaskId ?? null,
 					);
 					break;
 				}
@@ -880,10 +935,7 @@ export class SongWorker {
 		const isOneshot = this.ctx.playlist.mode === "oneshot";
 		const currentEpoch = this.getCurrentEpoch();
 
-		let promptDistance: PromptDistance = "faithful";
-		if (!isInterrupt && !isOneshot) {
-			promptDistance = Math.random() < 0.6 ? "close" : "general";
-		}
+		const promptDistance = pickPromptDistance(isInterrupt, isOneshot);
 
 		this.ensurePlaylistManagerRefresh(
 			currentEpoch,
@@ -1013,15 +1065,22 @@ export class SongWorker {
 				"Metadata complete",
 			);
 		} catch (error: unknown) {
-			if (this.aborted) return;
-			const msg = error instanceof Error ? error.message : String(error);
-			if (msg === "Cancelled") return;
+			const msg = this.failureMessage(error);
+			if (msg === null) return;
 			songLogger(this.songId).error(
 				{ error: msg },
 				"Metadata generation failed",
 			);
 			throw error;
 		}
+	}
+
+	/** Message for a failed step, or null when the worker was aborted or the step was cancelled. */
+	private failureMessage(error: unknown): string | null {
+		if (this.aborted) return null;
+		const msg = error instanceof Error ? error.message : String(error);
+		if (msg === "Cancelled") return null;
+		return msg;
 	}
 
 	/** True once a cover job was enqueued by this worker — the metadata and
@@ -1348,7 +1407,7 @@ export class SongWorker {
 		processingMs: number,
 	): Promise<void> {
 		if (status === "succeeded" && audioResult.audioPath) {
-			await this.saveAndFinalize(audioResult.audioPath, processingMs);
+			await this.saveAndFinalize(audioResult.audioPath, processingMs, taskId);
 		} else if (status === "failed") {
 			songLogger(this.songId).error(
 				{ error: audioResult.error },
@@ -1368,9 +1427,56 @@ export class SongWorker {
 		}
 	}
 
+	/**
+	 * Cover data for the NFS copy: prefer the captured base64 (and free it),
+	 * otherwise read the cover file from local disk.
+	 */
+	private takeCoverBase64ForNfs(): string | null {
+		const captured = this.coverBase64;
+		this.coverBase64 = null; // free memory
+		const pngUrl = this.song.cover?.pngUrl;
+		if (captured || !pngUrl || pngUrl.startsWith("data:")) return captured;
+		try {
+			const coversDir = path.resolve(import.meta.dirname, "../../data/covers");
+			const coverFile = path.join(coversDir, path.basename(pngUrl));
+			if (fs.existsSync(coverFile)) {
+				return fs.readFileSync(coverFile).toString("base64");
+			}
+		} catch (err) {
+			songLogger(this.songId).warn({ err }, "Failed to read cover for NFS");
+		}
+		return captured;
+	}
+
+	/** Write ID3 tags to the saved MP3; tagging is best-effort. */
+	private tagSavedMp3(storagePath: string): void {
+		try {
+			const mp3Path = path.join(storagePath, "audio.mp3");
+			const coverPath = path.join(storagePath, "cover.png");
+			tagMp3(mp3Path, {
+				title: this.song.title || "Untitled",
+				artist: this.song.artistName || "Infinitune",
+				album: this.ctx.playlist.name,
+				genre: this.song.genre || "Electronic",
+				subGenre: this.song.subGenre ?? null,
+				bpm: this.song.bpm ?? null,
+				year: new Date().getFullYear().toString(),
+				trackNumber: this.song.orderIndex + 1,
+				lyrics: this.song.lyrics ?? null,
+				comment: this.song.caption ?? null,
+				mood: this.song.mood ?? null,
+				energy: this.song.energy ?? null,
+				coverPath: fs.existsSync(coverPath) ? coverPath : null,
+			});
+		} catch (err) {
+			songLogger(this.songId).warn({ err }, "ID3 tagging failed");
+		}
+	}
+
 	private async saveAndFinalize(
 		audioPath: string,
 		audioProcessingMs: number,
+		aceTaskId: string | null,
 	): Promise<void> {
 		songLogger(this.songId).info(
 			{ title: this.song.title },
@@ -1390,49 +1496,10 @@ export class SongWorker {
 
 		// Save to NFS
 		try {
-			// Determine cover data for NFS — prefer captured base64, fallback to reading from disk
-			let coverBase64ForNfs: string | null = this.coverBase64;
-			this.coverBase64 = null; // free memory
-			if (
-				!coverBase64ForNfs &&
-				this.song.cover?.pngUrl &&
-				!this.song.cover.pngUrl.startsWith("data:")
-			) {
-				try {
-					// Cover is on local disk — read it directly
-					const coversDir = path.resolve(
-						import.meta.dirname,
-						"../../data/covers",
-					);
-					const coverFile = path.join(
-						coversDir,
-						path.basename(this.song.cover.pngUrl),
-					);
-					if (fs.existsSync(coverFile)) {
-						coverBase64ForNfs = fs.readFileSync(coverFile).toString("base64");
-					}
-				} catch (err) {
-					songLogger(this.songId).warn({ err }, "Failed to read cover for NFS");
-				}
-			}
-
+			const coverBase64ForNfs = this.takeCoverBase64ForNfs();
 			const saveResult = await saveSongToNfs({
 				songId: this.songId,
-				title: this.song.title || "Unknown",
-				artistName: this.song.artistName || "Unknown",
-				genre: this.song.genre || "Unknown",
-				subGenre: this.song.subGenre || this.song.genre || "Unknown",
-				lyrics: this.song.lyrics || "",
-				caption: this.song.caption || "",
-				vocalStyle: this.song.vocalStyle ?? undefined,
-				coverPrompt: this.song.coverPrompt ?? undefined,
-				mood: this.song.mood ?? undefined,
-				energy: this.song.energy ?? undefined,
-				era: this.song.era ?? undefined,
-				instruments: this.song.instruments,
-				tags: this.song.tags,
-				themes: this.song.themes,
-				language: this.song.language ?? undefined,
+				...nfsSongDetails(this.song),
 				bpm: this.song.bpm || 120,
 				keyScale: this.song.keyScale || "C major",
 				timeSignature: this.song.timeSignature || "4/4",
@@ -1441,6 +1508,9 @@ export class SongWorker {
 				cover: this.song.cover ?? null,
 				coverPngBase64: coverBase64ForNfs,
 			});
+			// Cancelled during the (possibly slow) save: a replacement worker may
+			// own this song now, so leave its storage metadata alone.
+			if (this.aborted) return;
 			await songService.updateStoragePath(
 				this.songId,
 				saveResult.storagePath,
@@ -1454,28 +1524,7 @@ export class SongWorker {
 				);
 			}
 
-			// Write ID3 tags to the MP3
-			try {
-				const mp3Path = path.join(saveResult.storagePath, "audio.mp3");
-				const coverPath = path.join(saveResult.storagePath, "cover.png");
-				tagMp3(mp3Path, {
-					title: this.song.title || "Untitled",
-					artist: this.song.artistName || "Infinitune",
-					album: this.ctx.playlist.name,
-					genre: this.song.genre || "Electronic",
-					subGenre: this.song.subGenre ?? null,
-					bpm: this.song.bpm ?? null,
-					year: new Date().getFullYear().toString(),
-					trackNumber: this.song.orderIndex + 1,
-					lyrics: this.song.lyrics ?? null,
-					comment: this.song.caption ?? null,
-					mood: this.song.mood ?? null,
-					energy: this.song.energy ?? null,
-					coverPath: fs.existsSync(coverPath) ? coverPath : null,
-				});
-			} catch (err) {
-				songLogger(this.songId).warn({ err }, "ID3 tagging failed");
-			}
+			this.tagSavedMp3(saveResult.storagePath);
 		} catch (e: unknown) {
 			this.song = {
 				...this.song,
@@ -1491,7 +1540,15 @@ export class SongWorker {
 		if (this.aborted) return;
 
 		const audioUrl = `/api/songs/${this.songId}/audio`;
-		await songService.markReady(this.songId, audioUrl, audioProcessingMs);
+		if (
+			!(await songService.markReady(
+				this.songId,
+				audioUrl,
+				audioProcessingMs,
+				aceTaskId,
+			))
+		)
+			return;
 		await playlistService.incrementGenerated(this.ctx.playlist.id);
 		queueMicrotask(() => {
 			scheduleMemoryCurator({
