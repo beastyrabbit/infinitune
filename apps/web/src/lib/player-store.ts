@@ -1,3 +1,4 @@
+import { shallow, useSelector } from "@tanstack/react-store";
 import { Store } from "@tanstack/store";
 
 // ─── Local Storage Persistence ──────────────────────────────────────
@@ -81,6 +82,11 @@ export const playerStore = new Store<PlayerState>({
 	playlistId: null,
 	isMuted: persisted.isMuted,
 });
+
+/** Subscribes a component to the player state; it re-renders only when a field changes. */
+export function usePlayerState(): PlayerState {
+	return useSelector(playerStore, (state) => state, { compare: shallow });
+}
 
 export function setPlaying(isPlaying: boolean) {
 	playerStore.setState((state) => ({ ...state, isPlaying }));

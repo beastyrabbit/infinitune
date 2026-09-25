@@ -1,4 +1,3 @@
-import { useStore } from "@tanstack/react-store";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	useCreatePending,
@@ -8,7 +7,12 @@ import {
 	useUpdateSongStatus,
 } from "@/integrations/api/hooks";
 import { pickNextSong } from "@/lib/pick-next-song";
-import { playerStore, setCurrentSong, setPlaylist } from "@/lib/player-store";
+import {
+	playerStore,
+	setCurrentSong,
+	setPlaylist,
+	usePlayerState,
+} from "@/lib/player-store";
 import { useAudioPlayer } from "./useAudioPlayer";
 import { useAutoplay } from "./useAutoplay";
 import { usePlaybackTracking } from "./usePlaybackTracking";
@@ -19,7 +23,7 @@ export function useAutoplayer(playlistId: string | null) {
 	const songs = useSongQueue(playlistId);
 	const playlist = usePlaylist(playlistId);
 
-	const { currentSongId, isPlaying, currentTime } = useStore(playerStore);
+	const { currentSongId, isPlaying, currentTime } = usePlayerState();
 	const updateSongStatus = useUpdateSongStatus();
 	const createPending = useCreatePending();
 	const setRatingMut = useSetRating();

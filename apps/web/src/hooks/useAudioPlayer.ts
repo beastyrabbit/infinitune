@@ -1,4 +1,3 @@
-import { useStore } from "@tanstack/react-store";
 import { useCallback, useEffect, useRef } from "react";
 import { resolveApiMediaUrl } from "@/lib/endpoints";
 import {
@@ -6,12 +5,13 @@ import {
 	playerStore,
 	setCurrentTime,
 	setPlaying,
+	usePlayerState,
 } from "@/lib/player-store";
 
 export function useAudioPlayer(onEnded?: () => void) {
 	const onEndedRef = useRef(onEnded);
 	const currentUrlRef = useRef<string | null>(null);
-	const { isPlaying, volume, isMuted } = useStore(playerStore);
+	const { isPlaying, volume, isMuted } = usePlayerState();
 
 	// Keep onEnded ref up to date without recreating Audio element
 	useEffect(() => {
