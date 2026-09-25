@@ -47,7 +47,10 @@ describe("saveSongToNfs", () => {
 	}
 
 	const pendingFiles = () =>
-		fs.readdirSync(songDir).filter((name) => name.startsWith(".audio-"));
+		fs
+			.readdirSync(songDir)
+			.filter((name) => /^\.(audio|trimmed)-/.test(name))
+			.sort();
 
 	beforeEach(() => {
 		storageDir = fs.mkdtempSync(path.join(os.tmpdir(), "infinitune-save-"));
@@ -122,16 +125,31 @@ describe("saveSongToNfs", () => {
 
 	it("removes pending audio a crashed save left, but not a live save's", async () => {
 		fs.mkdirSync(songDir, { recursive: true });
-		const orphan = path.join(songDir, ".audio-crashed.mp3");
-		const live = path.join(songDir, ".audio-live.mp3");
-		fs.writeFileSync(orphan, "partial");
-		fs.writeFileSync(live, "downloading");
 		const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000);
-		fs.utimesSync(orphan, twentyMinutesAgo, twentyMinutesAgo);
+		const writeFile = (name: string, aged: boolean) => {
+			const file = path.join(songDir, name);
+			fs.writeFileSync(file, "data");
+			if (aged) fs.utimesSync(file, twentyMinutesAgo, twentyMinutesAgo);
+		};
+		// A crash can strand the private audio or the trim's second-pass output.
+		writeFile(".audio-0b6b3c4e-5f1a-4d2b-9c3e-1a2b3c4d5e6f.mp3", true);
+		writeFile(".trimmed-1790000000000.mp3", true);
+		// Live saves and files this code did not create stay.
+		writeFile(".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3", false);
+		writeFile(".trimmed-1790000900000.mp3", false);
+		writeFile(".trimmed-user.mp3", true);
+		writeFile(".trimmed-123.mp3", true);
+		writeFile(".audio-00000000-0000-0000-0000-000000000000.mp3", true);
 
 		await save();
 
-		expect(pendingFiles()).toEqual([".audio-live.mp3"]);
+		expect(pendingFiles()).toEqual([
+			".audio-00000000-0000-0000-0000-000000000000.mp3",
+			".audio-7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f.mp3",
+			".trimmed-123.mp3",
+			".trimmed-1790000900000.mp3",
+			".trimmed-user.mp3",
+		]);
 	});
 
 	it("removes the pending audio when the download fails", async () => {
