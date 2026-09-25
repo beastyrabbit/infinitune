@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
 	type RadioCoverSource,
+	type RadioSourcesResponse,
 	useAddRadioSource,
 	useDeleteRadioSource,
 	useRadioSources,
@@ -62,6 +63,12 @@ const STATUS_CLASS: Record<RadioCoverSource["status"], string> = {
 	used: "border-emerald-300/40 text-emerald-200",
 	failed: "border-red-400/40 text-red-300",
 };
+
+function nasFilesValue(nas: RadioSourcesResponse["nas"] | undefined) {
+	if (!nas?.configured) return "off";
+	if (nas.error) return "scan error";
+	return nas.exists ? nas.fileCount : "missing dir";
+}
 
 function SourcesPage() {
 	const data = useRadioSources();
@@ -149,15 +156,7 @@ function SourcesPage() {
 					/>
 					<Stat
 						label="NAS files"
-						value={
-							nas?.configured
-								? nas.error
-									? "scan error"
-									: nas.exists
-										? nas.fileCount
-										: "missing dir"
-								: "off"
-						}
+						value={nasFilesValue(nas)}
 						tone={
 							nas?.configured && (!nas.exists || nas.error) ? "warn" : "default"
 						}

@@ -1,18 +1,20 @@
+import type { Song } from "@infinitune/shared/types";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useStore } from "@tanstack/react-store";
 import {
 	AlertTriangle,
 	ArrowLeft,
 	Download,
-	Pause,
-	Play,
 	RefreshCw,
-	Volume2,
-	VolumeX,
 	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CoverArt } from "@/components/autoplayer/CoverArt";
+import {
+	OneshotTransport,
+	OneshotVolume,
+	oneshotPhaseLabel,
+} from "@/components/autoplayer/OneshotPlayback";
 import { ShareButton } from "@/components/autoplayer/ShareButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,22 +26,19 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { useOneshot } from "@/hooks/useOneshot";
+import { type OneshotPhase, useOneshot } from "@/hooks/useOneshot";
 import { usePlaylistHeartbeat } from "@/hooks/usePlaylistHeartbeat";
 import { useVolumeSync } from "@/hooks/useVolumeSync";
 import {
 	useCreateRawOneshot,
 	usePlaylistByKey,
 } from "@/integrations/api/hooks";
-import { formatTime } from "@/lib/format-time";
 import {
 	getGlobalAudio,
 	playerStore,
 	setCurrentSong,
 	setDuration,
 	setPlaying,
-	setVolume,
-	toggleMute,
 } from "@/lib/player-store";
 import {
 	generatePlaylistKey,
@@ -61,6 +60,158 @@ const DURATION_OPTIONS = [
 
 const GENERATE_LABEL = "»»» SEND TO ACE-STEP «««";
 const GENERATE_ANOTHER_LABEL = "»»» GENERATE ANOTHER «««";
+
+interface OneshotResultProps {
+	song: Song;
+	playlistId: string | null;
+	isCurrentSong: boolean | null;
+	isPlaying: boolean;
+	currentTime: number;
+	audioDuration: number;
+	volume: number;
+	isMuted: boolean;
+	onPlayPause: () => void;
+	onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+	onGenerateAnother: () => void;
+}
+
+function OneshotResult({
+	song,
+	playlistId,
+	isCurrentSong,
+	isPlaying,
+	currentTime,
+	audioDuration,
+	volume,
+	isMuted,
+	onPlayPause,
+	onSeek,
+	onGenerateAnother,
+}: OneshotResultProps) {
+	return (
+		<div>
+			<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">
+				<div className="border-b-4 sm:border-b-0 sm:border-r-4 border-white/10">
+					<CoverArt
+						title={song.title || "UNTITLED"}
+						artistName={song.artistName || "ONESHOT"}
+						cover={song.cover}
+						size="md"
+						spinning={!!isCurrentSong && isPlaying}
+					/>
+				</div>
+
+				<div className="flex flex-col">
+					<div className="p-4 border-b-2 border-white/10 flex-1">
+						<h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight">
+							{song.title || "UNTITLED"}
+						</h2>
+						<p className="text-sm font-bold uppercase text-white/50 mt-1">
+							{song.caption || "RAW ONESHOT"}
+						</p>
+					</div>
+
+					<div className="p-4 space-y-3">
+						<OneshotTransport
+							isCurrentSong={isCurrentSong}
+							isPlaying={isPlaying}
+							currentTime={currentTime}
+							audioDuration={audioDuration}
+							onPlayPause={onPlayPause}
+							onSeek={onSeek}
+							playButtonClassName="shrink-0 h-10 w-10 border-2 border-yellow-500 flex items-center justify-center text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors"
+							progressBarClassName="h-full bg-yellow-500 transition-all"
+						/>
+
+						<div className="flex items-center justify-between">
+							<OneshotVolume volume={volume} isMuted={isMuted} />
+
+							<div className="flex items-center gap-2">
+								{playlistId && (
+									<ShareButton
+										resourceType="playlist"
+										resourceId={playlistId}
+										label="Share this oneshot"
+									/>
+								)}
+								{song.audioUrl && (
+									<a
+										href={song.audioUrl}
+										download={`${song.title || "oneshot"}.mp3`}
+										className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
+									>
+										<Download className="h-3.5 w-3.5" />
+										DOWNLOAD
+									</a>
+								)}
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div className="p-4">
+				<Button
+					className="w-full h-12 rounded-none border-4 border-yellow-500/30 bg-transparent font-mono text-base font-black uppercase text-yellow-500 hover:bg-yellow-500 hover:text-black hover:border-yellow-500"
+					onClick={onGenerateAnother}
+				>
+					<RefreshCw className="h-4 w-4 mr-2" />
+					{GENERATE_ANOTHER_LABEL}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+function OneshotOutput({
+	phase,
+	song,
+	...resultProps
+}: Omit<OneshotResultProps, "song"> & {
+	phase: OneshotPhase;
+	song: Song | null;
+}) {
+	return (
+		<div className="border-4 border-t-0 border-yellow-500/20 bg-black">
+			{(phase === "creating" || phase === "generating") && (
+				<div className="p-6 flex items-center gap-3">
+					<Zap className="h-5 w-5 text-yellow-500 animate-pulse" />
+					<span className="text-sm font-black uppercase tracking-widest text-yellow-500/80">
+						{(song?.status && STATUS_PROGRESS_TEXT[song.status]) ||
+							"SUBMITTING..."}
+					</span>
+				</div>
+			)}
+
+			{phase === "error" && (
+				<div className="p-6">
+					<div className="flex items-center gap-3 text-red-500 mb-3">
+						<AlertTriangle className="h-5 w-5" />
+						<span className="text-sm font-black uppercase tracking-widest">
+							GENERATION FAILED
+						</span>
+					</div>
+					{song?.errorMessage && (
+						<p className="text-xs font-bold uppercase text-white/40 mb-4">
+							{song.errorMessage}
+						</p>
+					)}
+					<Button
+						className="w-full h-12 rounded-none border-4 border-yellow-500/30 bg-yellow-500 font-mono text-base font-black uppercase text-black hover:bg-white"
+						onClick={resultProps.onGenerateAnother}
+					>
+						<RefreshCw className="h-4 w-4 mr-2" />
+						{">>> TRY AGAIN <<<"}
+					</Button>
+				</div>
+			)}
+
+			{phase === "ready" && song && (
+				<OneshotResult song={song} {...resultProps} />
+			)}
+		</div>
+	);
+}
 
 function RawOneshotPage() {
 	const navigate = useNavigate();
@@ -169,10 +320,6 @@ function RawOneshotPage() {
 
 	const isCurrentSong = song && playerStore.state.currentSongId === song.id;
 	const showOutput = phase !== "idle" || submitting;
-	const progress =
-		audioDuration > 0 && isCurrentSong
-			? (currentTime / audioDuration) * 100
-			: 0;
 
 	return (
 		<div className="font-mono min-h-screen bg-gray-950 text-white flex flex-col">
@@ -301,186 +448,20 @@ function RawOneshotPage() {
 
 					{/* ─── OUTPUT ─── */}
 					{showOutput && (
-						<div className="border-4 border-t-0 border-yellow-500/20 bg-black">
-							{(phase === "creating" || phase === "generating") && (
-								<div className="p-6 flex items-center gap-3">
-									<Zap className="h-5 w-5 text-yellow-500 animate-pulse" />
-									<span className="text-sm font-black uppercase tracking-widest text-yellow-500/80">
-										{(song?.status && STATUS_PROGRESS_TEXT[song.status]) ||
-											"SUBMITTING..."}
-									</span>
-								</div>
-							)}
-
-							{phase === "error" && (
-								<div className="p-6">
-									<div className="flex items-center gap-3 text-red-500 mb-3">
-										<AlertTriangle className="h-5 w-5" />
-										<span className="text-sm font-black uppercase tracking-widest">
-											GENERATION FAILED
-										</span>
-									</div>
-									{song?.errorMessage && (
-										<p className="text-xs font-bold uppercase text-white/40 mb-4">
-											{song.errorMessage}
-										</p>
-									)}
-									<Button
-										className="w-full h-12 rounded-none border-4 border-yellow-500/30 bg-yellow-500 font-mono text-base font-black uppercase text-black hover:bg-white"
-										onClick={handleGenerateAnother}
-									>
-										<RefreshCw className="h-4 w-4 mr-2" />
-										{">>> TRY AGAIN <<<"}
-									</Button>
-								</div>
-							)}
-
-							{phase === "ready" && song && (
-								<div>
-									<div className="grid grid-cols-1 sm:grid-cols-[200px_1fr] border-b-4 border-white/10">
-										<div className="border-b-4 sm:border-b-0 sm:border-r-4 border-white/10">
-											<CoverArt
-												title={song.title || "UNTITLED"}
-												artistName={song.artistName || "ONESHOT"}
-												cover={song.cover}
-												size="md"
-												spinning={!!isCurrentSong && isPlaying}
-											/>
-										</div>
-
-										<div className="flex flex-col">
-											<div className="p-4 border-b-2 border-white/10 flex-1">
-												<h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight">
-													{song.title || "UNTITLED"}
-												</h2>
-												<p className="text-sm font-bold uppercase text-white/50 mt-1">
-													{song.caption || "RAW ONESHOT"}
-												</p>
-											</div>
-
-											<div className="p-4 space-y-3">
-												<div className="flex items-center gap-3">
-													<button
-														type="button"
-														className="shrink-0 h-10 w-10 border-2 border-yellow-500 flex items-center justify-center text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors"
-														onClick={handlePlayPause}
-													>
-														{isCurrentSong && isPlaying ? (
-															<Pause className="h-4 w-4" />
-														) : (
-															<Play className="h-4 w-4" />
-														)}
-													</button>
-
-													<div className="flex-1 flex items-center gap-2">
-														<span className="text-[10px] font-bold text-white/40 shrink-0 w-8 text-right">
-															{isCurrentSong ? formatTime(currentTime) : "0:00"}
-														</span>
-														{/* biome-ignore lint/a11y/useSemanticElements: div used for custom seek bar */}
-														<div
-															role="button"
-															tabIndex={0}
-															className="flex-1 h-2 border-2 border-white/20 bg-black cursor-pointer"
-															onClick={handleSeek}
-															onKeyDown={(e) => {
-																if (e.key === "Enter" || e.key === " ") {
-																	e.preventDefault();
-																}
-															}}
-														>
-															<div
-																className="h-full bg-yellow-500 transition-all"
-																style={{ width: `${progress}%` }}
-															/>
-														</div>
-														<span className="text-[10px] font-bold text-white/40 shrink-0 w-8">
-															{isCurrentSong && audioDuration > 0
-																? formatTime(audioDuration)
-																: "--:--"}
-														</span>
-													</div>
-												</div>
-
-												<div className="flex items-center justify-between">
-													<div className="flex items-center gap-2">
-														<button
-															type="button"
-															onClick={toggleMute}
-															className="text-white/50 hover:text-white transition-colors"
-														>
-															{isMuted ? (
-																<VolumeX className="h-3.5 w-3.5" />
-															) : (
-																<Volume2 className="h-3.5 w-3.5" />
-															)}
-														</button>
-														{/* biome-ignore lint/a11y/useSemanticElements: div used for custom volume bar */}
-														<div
-															role="button"
-															tabIndex={0}
-															className="h-1.5 w-16 border border-white/20 bg-black cursor-pointer"
-															onClick={(e) => {
-																const rect =
-																	e.currentTarget.getBoundingClientRect();
-																const pct = Math.max(
-																	0,
-																	Math.min(
-																		1,
-																		(e.clientX - rect.left) / rect.width,
-																	),
-																);
-																setVolume(pct);
-															}}
-															onKeyDown={(e) => {
-																if (e.key === "Enter" || e.key === " ")
-																	e.preventDefault();
-															}}
-														>
-															<div
-																className="h-full bg-white"
-																style={{
-																	width: `${(isMuted ? 0 : volume) * 100}%`,
-																}}
-															/>
-														</div>
-													</div>
-
-													<div className="flex items-center gap-2">
-														{playlistId && (
-															<ShareButton
-																resourceType="playlist"
-																resourceId={playlistId}
-																label="Share this oneshot"
-															/>
-														)}
-														{song.audioUrl && (
-															<a
-																href={song.audioUrl}
-																download={`${song.title || "oneshot"}.mp3`}
-																className="flex items-center gap-1 text-xs font-bold uppercase text-white/40 hover:text-yellow-500 transition-colors"
-															>
-																<Download className="h-3.5 w-3.5" />
-																DOWNLOAD
-															</a>
-														)}
-													</div>
-												</div>
-											</div>
-										</div>
-									</div>
-
-									<div className="p-4">
-										<Button
-											className="w-full h-12 rounded-none border-4 border-yellow-500/30 bg-transparent font-mono text-base font-black uppercase text-yellow-500 hover:bg-yellow-500 hover:text-black hover:border-yellow-500"
-											onClick={handleGenerateAnother}
-										>
-											<RefreshCw className="h-4 w-4 mr-2" />
-											{GENERATE_ANOTHER_LABEL}
-										</Button>
-									</div>
-								</div>
-							)}
-						</div>
+						<OneshotOutput
+							phase={phase}
+							song={song}
+							playlistId={playlistId}
+							isCurrentSong={isCurrentSong}
+							isPlaying={isPlaying}
+							currentTime={currentTime}
+							audioDuration={audioDuration}
+							volume={volume}
+							isMuted={isMuted}
+							onPlayPause={handlePlayPause}
+							onSeek={handleSeek}
+							onGenerateAnother={handleGenerateAnother}
+						/>
 					)}
 				</div>
 			</main>
@@ -492,13 +473,7 @@ function RawOneshotPage() {
 						<Zap className="h-3 w-3 text-yellow-500/60" />
 						RAW ONESHOT {"//"} TEXT → ACE-STEP, NO LLM
 					</span>
-					<span className="text-yellow-500/40">
-						{phase === "idle"
-							? "READY"
-							: phase === "ready"
-								? "COMPLETE"
-								: phase.toUpperCase()}
-					</span>
+					<span className="text-yellow-500/40">{oneshotPhaseLabel(phase)}</span>
 				</div>
 			</footer>
 		</div>
