@@ -263,6 +263,46 @@ app.use(
 	}),
 );
 
+function getRequestLogLevel(
+	status: number,
+	isSlow: boolean,
+	requestPath: string,
+): "error" | "warn" | "debug" | "info" {
+	if (status >= 500) return "error";
+	if (status >= 400) return "warn";
+	if (isSlow) return "warn";
+	return requestPath === "/health" ? "debug" : "info";
+}
+
+function logRequestCompletion(
+	c: Context,
+	requestLogger: typeof logger,
+	noisyRoute: string | undefined,
+	startedAt: number,
+): void {
+	const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+	const status = c.res.status || 200;
+	const contentLength = c.res.headers.get("content-length");
+	const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
+	const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
+
+	if (shouldAggregateNoisy) {
+		recordNoisyRequest(noisyRoute, durationMs);
+		return;
+	}
+	const level = getRequestLogLevel(status, isSlow, c.req.path);
+
+	requestLogger[level](
+		{
+			status,
+			durationMs,
+			contentLength: contentLength ? Number(contentLength) : undefined,
+			route: noisyRoute,
+		},
+		isSlow ? "HTTP request slow" : "HTTP request completed",
+	);
+}
+
 // Request lifecycle logging with request IDs for easier tracing in dev/log files.
 app.use("*", async (c, next) => {
 	const requestId = c.req.header("x-request-id") ?? randomUUID();
@@ -284,36 +324,7 @@ app.use("*", async (c, next) => {
 		requestLogger.error({ err }, "Request handler threw");
 		throw err;
 	} finally {
-		const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
-		const status = c.res.status || 200;
-		const contentLength = c.res.headers.get("content-length");
-		const isSlow = durationMs >= REQUEST_LOG_SLOW_MS;
-		const shouldAggregateNoisy = noisyRoute && status < 400 && !isSlow;
-
-		if (shouldAggregateNoisy) {
-			recordNoisyRequest(noisyRoute, durationMs);
-		} else {
-			const level =
-				status >= 500
-					? "error"
-					: status >= 400
-						? "warn"
-						: isSlow
-							? "warn"
-							: c.req.path === "/health"
-								? "debug"
-								: "info";
-
-			requestLogger[level](
-				{
-					status,
-					durationMs,
-					contentLength: contentLength ? Number(contentLength) : undefined,
-					route: noisyRoute,
-				},
-				isSlow ? "HTTP request slow" : "HTTP request completed",
-			);
-		}
+		logRequestCompletion(c, requestLogger, noisyRoute, startedAt);
 	}
 });
 

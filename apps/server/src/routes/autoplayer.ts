@@ -48,7 +48,7 @@ import {
 	saveOpenRouterApiKey,
 	saveOpenRouterApiKeyForUser,
 } from "../external/openrouter-auth";
-import { getServiceUrls } from "../external/service-urls";
+import { getServiceUrls, type ServiceUrls } from "../external/service-urls";
 import { logger } from "../logger";
 import {
 	credentialMutationLimiter,
@@ -72,14 +72,16 @@ interface CodexModelResponse {
 
 type AutoplayerProvider = LlmProvider;
 
+interface AceInventoryModel {
+	name?: string;
+	is_default?: boolean;
+	is_loaded?: boolean;
+	supported_task_types?: string[];
+}
+
 interface AceModelInventoryResponse {
 	data?: {
-		models?: {
-			name?: string;
-			is_default?: boolean;
-			is_loaded?: boolean;
-			supported_task_types?: string[];
-		}[];
+		models?: AceInventoryModel[];
 		default_model?: string;
 	};
 }
@@ -108,6 +110,100 @@ async function parseAceJson<T>(
 		);
 		return null;
 	}
+}
+
+interface AceModelEntry {
+	name: string;
+	displayName?: string;
+	is_default?: boolean;
+	is_loaded?: boolean;
+	supportedTaskTypes?: string[];
+}
+
+function mergeRawAceModels(
+	seen: Map<string, AceModelEntry>,
+	rawModels: { id?: string; name?: string }[],
+	defaultModel: string | undefined,
+	loadedModel: string | undefined,
+): void {
+	for (const m of rawModels) {
+		const name = m.id || m.name || "unknown";
+		const key = getAceModelKey(name);
+		seen.set(key, {
+			...seen.get(key),
+			name,
+			displayName: m.name,
+			is_default: getAceModelKey(name) === getAceModelKey(defaultModel),
+			is_loaded: getAceModelKey(name) === getAceModelKey(loadedModel),
+		});
+	}
+}
+
+function mergeInventoryAceModels(
+	seen: Map<string, AceModelEntry>,
+	inventoryModels: AceInventoryModel[],
+	defaultModel: string | undefined,
+	loadedModel: string | undefined,
+): void {
+	for (const model of inventoryModels) {
+		if (!model.name) continue;
+		const key = getAceModelKey(model.name);
+		seen.set(key, {
+			...seen.get(key),
+			name: model.name,
+			displayName: model.name,
+			is_default:
+				model.is_default ??
+				getAceModelKey(model.name) === getAceModelKey(defaultModel),
+			is_loaded:
+				model.is_loaded ??
+				getAceModelKey(model.name) === getAceModelKey(loadedModel),
+			supportedTaskTypes: model.supported_task_types,
+		});
+	}
+}
+
+function buildAceModelList(
+	knownModels: AceModelEntry[],
+	inventory: AceModelInventoryResponse | null,
+	health: AceHealthResponse | null,
+	modelsData: AceModelsResponse | null,
+): AceModelEntry[] {
+	const rawModels = modelsData?.data || modelsData?.models || [];
+	const inventoryModels = inventory?.data?.models || [];
+	const defaultModel =
+		inventory?.data?.default_model || modelsData?.default_model || undefined;
+	const loadedModel = health?.data?.loaded_model;
+	const seen = new Map<string, AceModelEntry>();
+
+	for (const model of knownModels) {
+		seen.set(getAceModelKey(model.name), model);
+	}
+
+	mergeRawAceModels(seen, rawModels, defaultModel, loadedModel);
+	mergeInventoryAceModels(seen, inventoryModels, defaultModel, loadedModel);
+
+	if (loadedModel) {
+		const loadedKey = getAceModelKey(loadedModel);
+		const existing = seen.get(loadedKey);
+		seen.set(loadedKey, {
+			...existing,
+			name: existing?.name || loadedModel,
+			is_loaded: true,
+		});
+	}
+
+	if (defaultModel) {
+		const defaultKey = getAceModelKey(defaultModel);
+		const existing = seen.get(defaultKey);
+		seen.set(defaultKey, {
+			...existing,
+			name: existing?.name || defaultModel,
+			is_default: true,
+		});
+	}
+
+	return Array.from(seen.values());
 }
 
 interface SourceSong {
@@ -209,12 +305,7 @@ function parseOptionalNumber(value: unknown): number | undefined {
 		: undefined;
 }
 
-function buildAlbumPrompt(req: AlbumTrackRequest): string {
-	const lines: string[] = [];
-	lines.push(`PLAYLIST CONTEXT: ${req.playlistPrompt}`);
-	lines.push("");
-
-	const source = req.sourceSong;
+function appendSourceSongLines(lines: string[], source: SourceSong): void {
 	lines.push("SOURCE SONG (the album is derived from this track):");
 	lines.push(`  Title: "${source.title}" by ${source.artistName}`);
 	lines.push(`  Genre: ${source.genre} / ${source.subGenre}`);
@@ -232,7 +323,9 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 	if (source.lyrics)
 		lines.push(`  Lyrics excerpt: ${source.lyrics.slice(0, 500)}`);
 	lines.push("");
+}
 
+function appendPersonaLines(lines: string[], req: AlbumTrackRequest): void {
 	if (req.personaExtracts?.length) {
 		lines.push("LISTENER TASTE PROFILE (from liked songs this session):");
 		for (const persona of req.personaExtracts) lines.push(`  - ${persona}`);
@@ -251,47 +344,72 @@ function buildAlbumPrompt(req: AlbumTrackRequest): string {
 		);
 		lines.push("");
 	}
+}
 
-	if (req.likedSongs?.length) {
-		lines.push(
-			"LIKED SONGS (listener preferences — use as additional flavor guidance):",
-		);
-		for (const song of req.likedSongs.slice(0, 10)) {
-			const parts = [`"${song.title}" by ${song.artistName}`, song.genre];
-			if (song.mood) parts.push(song.mood);
-			if (song.vocalStyle) parts.push(song.vocalStyle);
-			lines.push(`  - ${parts.join(" / ")}`);
-		}
-		lines.push("");
+function appendLikedSongLines(
+	lines: string[],
+	likedSongs: LikedSong[] | undefined,
+): void {
+	if (!likedSongs?.length) return;
+	lines.push(
+		"LIKED SONGS (listener preferences — use as additional flavor guidance):",
+	);
+	for (const song of likedSongs.slice(0, 10)) {
+		const parts = [`"${song.title}" by ${song.artistName}`, song.genre];
+		if (song.mood) parts.push(song.mood);
+		if (song.vocalStyle) parts.push(song.vocalStyle);
+		lines.push(`  - ${parts.join(" / ")}`);
 	}
+	lines.push("");
+}
 
-	if (req.previousAlbumTracks?.length) {
+function appendPreviousAlbumTrackLines(
+	lines: string[],
+	previousAlbumTracks: SongMetadata[] | undefined,
+): void {
+	if (!previousAlbumTracks?.length) return;
+	lines.push(
+		"ALREADY GENERATED ALBUM TRACKS (create something DIFFERENT from these):",
+	);
+	for (const track of previousAlbumTracks) {
 		lines.push(
-			"ALREADY GENERATED ALBUM TRACKS (create something DIFFERENT from these):",
+			`  - "${track.title}" by ${track.artistName} — ${track.genre}/${track.subGenre}, ${track.mood}, ${track.energy} energy, ${track.vocalStyle}, BPM ${track.bpm}`,
 		);
-		for (const track of req.previousAlbumTracks) {
-			lines.push(
-				`  - "${track.title}" by ${track.artistName} — ${track.genre}/${track.subGenre}, ${track.mood}, ${track.energy} energy, ${track.vocalStyle}, BPM ${track.bpm}`,
-			);
-		}
-		lines.push("");
 	}
+	lines.push("");
+}
+
+function getAlbumPositionHint(
+	trackNumber: number,
+	totalTracks: number,
+): string {
+	if (trackNumber === 1) {
+		return "This is the ALBUM OPENER — high energy, attention-grabbing, sets the tone.";
+	}
+	if (trackNumber === totalTracks) {
+		return "This is the ALBUM CLOSER — reflective, emotionally resonant, lasting impression.";
+	}
+	if (trackNumber <= 3) {
+		return "Early album track — build momentum and establish album identity.";
+	}
+	if (trackNumber >= totalTracks - 2) {
+		return "Late album track — wind down energy and prepare for the closing.";
+	}
+	return "Mid-album track — take creative risks within the genre.";
+}
+
+function buildAlbumPrompt(req: AlbumTrackRequest): string {
+	const lines: string[] = [];
+	lines.push(`PLAYLIST CONTEXT: ${req.playlistPrompt}`);
+	lines.push("");
+
+	appendSourceSongLines(lines, req.sourceSong);
+	appendPersonaLines(lines, req);
+	appendLikedSongLines(lines, req.likedSongs);
+	appendPreviousAlbumTrackLines(lines, req.previousAlbumTracks);
 
 	const { trackNumber, totalTracks } = req;
-	let positionHint = "Mid-album track — take creative risks within the genre.";
-	if (trackNumber === 1) {
-		positionHint =
-			"This is the ALBUM OPENER — high energy, attention-grabbing, sets the tone.";
-	} else if (trackNumber === totalTracks) {
-		positionHint =
-			"This is the ALBUM CLOSER — reflective, emotionally resonant, lasting impression.";
-	} else if (trackNumber <= 3) {
-		positionHint =
-			"Early album track — build momentum and establish album identity.";
-	} else if (trackNumber >= totalTracks - 2) {
-		positionHint =
-			"Late album track — wind down energy and prepare for the closing.";
-	}
+	const positionHint = getAlbumPositionHint(trackNumber, totalTracks);
 	lines.push(
 		`TRACK POSITION: ${trackNumber} of ${totalTracks}. ${positionHint}`,
 	);
@@ -580,76 +698,12 @@ app.get("/ace-models", async (c) => {
 			});
 		}
 
-		const rawModels = modelsData?.data || modelsData?.models || [];
-		const inventoryModels = inventory?.data?.models || [];
-		const defaultModel =
-			inventory?.data?.default_model || modelsData?.default_model || undefined;
-		const loadedModel = health?.data?.loaded_model;
-		const seen = new Map<
-			string,
-			{
-				name: string;
-				displayName?: string;
-				is_default?: boolean;
-				is_loaded?: boolean;
-				supportedTaskTypes?: string[];
-			}
-		>();
-
-		for (const model of knownModels) {
-			seen.set(getAceModelKey(model.name), model);
-		}
-
-		for (const m of rawModels) {
-			const name = m.id || m.name || "unknown";
-			const key = getAceModelKey(name);
-			seen.set(key, {
-				...seen.get(key),
-				name,
-				displayName: m.name,
-				is_default: getAceModelKey(name) === getAceModelKey(defaultModel),
-				is_loaded: getAceModelKey(name) === getAceModelKey(loadedModel),
-			});
-		}
-
-		for (const model of inventoryModels) {
-			if (!model.name) continue;
-			const key = getAceModelKey(model.name);
-			seen.set(key, {
-				...seen.get(key),
-				name: model.name,
-				displayName: model.name,
-				is_default:
-					model.is_default ??
-					getAceModelKey(model.name) === getAceModelKey(defaultModel),
-				is_loaded:
-					model.is_loaded ??
-					getAceModelKey(model.name) === getAceModelKey(loadedModel),
-				supportedTaskTypes: model.supported_task_types,
-			});
-		}
-
-		if (loadedModel) {
-			const loadedKey = getAceModelKey(loadedModel);
-			const existing = seen.get(loadedKey);
-			seen.set(loadedKey, {
-				...existing,
-				name: existing?.name || loadedModel,
-				is_loaded: true,
-			});
-		}
-
-		if (defaultModel) {
-			const defaultKey = getAceModelKey(defaultModel);
-			const existing = seen.get(defaultKey);
-			seen.set(defaultKey, {
-				...existing,
-				name: existing?.name || defaultModel,
-				is_default: true,
-			});
-		}
-
-		const models = Array.from(seen.values());
+		const models = buildAceModelList(
+			knownModels,
+			inventory,
+			health,
+			modelsData,
+		);
 
 		return c.json({ available: true, models });
 	} catch (error: unknown) {
@@ -1248,6 +1302,165 @@ app.post("/codex-auth/upload-cache", credentialMutationAccess, async (c) => {
 	}
 });
 
+type RouteContext = Parameters<typeof requireUserActor>[0];
+
+async function testOllamaConnection(
+	c: RouteContext,
+	urls: ServiceUrls,
+): Promise<Response> {
+	const response = await fetch(`${urls.ollamaUrl}/api/tags`, {
+		signal: AbortSignal.timeout(5000),
+	});
+	if (!response.ok) {
+		logger.warn(
+			{ provider: "ollama", status: response.status },
+			"Connection test failed",
+		);
+		return c.json({
+			ok: false,
+			error: `Ollama returned ${response.status}`,
+		});
+	}
+	const data = (await response.json()) as { models?: unknown[] };
+	const count = data.models?.length ?? 0;
+	return c.json({
+		ok: true,
+		message: `Connected — ${count} models available`,
+	});
+}
+
+async function testInferenceShConnection(c: RouteContext): Promise<Response> {
+	await testInferenceShImageProvider();
+	return c.json({
+		ok: true,
+		message: "Inference.sh CLI ready",
+	});
+}
+
+async function testOpenRouterConnection(c: RouteContext): Promise<Response> {
+	const apiKey = await getOpenRouterApiKey();
+	if (!apiKey) {
+		return c.json({
+			ok: false,
+			error: "No OpenRouter API key configured",
+		});
+	}
+	const response = await fetch("https://openrouter.ai/api/v1/key", {
+		headers: { Authorization: `Bearer ${apiKey}` },
+		signal: AbortSignal.timeout(8_000),
+	});
+	if (!response.ok) {
+		return c.json({
+			ok: false,
+			error: `OpenRouter rejected the credential (${response.status})`,
+		});
+	}
+	return c.json({ ok: true, message: "OpenRouter credential is valid" });
+}
+
+async function testCodexImagegenConnection(c: RouteContext): Promise<Response> {
+	const message = await testCodexImagegenProvider();
+	return c.json({
+		ok: true,
+		message: message || "Codex CLI ready",
+	});
+}
+
+async function testOpenAiCodexConnection(c: RouteContext): Promise<Response> {
+	const account = await codexAppServerClient.readAccount();
+	if (!account.account || account.account.type !== "chatgpt") {
+		return c.json({
+			ok: false,
+			error:
+				"Not authenticated with ChatGPT. Start Codex device auth in Settings.",
+		});
+	}
+	const models = await codexAppServerClient.listModels();
+	return c.json({
+		ok: true,
+		message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
+	});
+}
+
+async function testAceStepConnection(
+	c: RouteContext,
+	urls: ServiceUrls,
+): Promise<Response> {
+	const [inventoryResponse, healthResponse, modelsResponse] = await Promise.all(
+		[
+			fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
+				signal: AbortSignal.timeout(5000),
+			}).catch(() => null),
+			fetch(`${urls.aceStepUrl}/health`, {
+				signal: AbortSignal.timeout(5000),
+			}).catch(() => null),
+			fetch(`${urls.aceStepUrl}/v1/models`, {
+				signal: AbortSignal.timeout(5000),
+			}).catch(() => null),
+		],
+	);
+	const [inventory, health, modelsData] = await Promise.all([
+		parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
+		parseAceJson<AceHealthResponse>(healthResponse, "health"),
+		parseAceJson<AceModelsResponse>(modelsResponse, "models"),
+	]);
+
+	if (!inventory && !health && !modelsData) {
+		const failedResponse =
+			inventoryResponse || healthResponse || modelsResponse;
+		logger.warn(
+			{ provider: "ace-step", status: failedResponse?.status },
+			"Connection test failed",
+		);
+		return c.json({
+			ok: false,
+			error: failedResponse
+				? `ACE-Step returned ${failedResponse.status}`
+				: "ACE-Step unavailable",
+		});
+	}
+
+	const rawModels = modelsData?.data || modelsData?.models || [];
+	const inventoryModels = inventory?.data?.models || [];
+	const loadedModel = health?.data?.loaded_model;
+	const defaultModel =
+		inventory?.data?.default_model || modelsData?.default_model;
+	const modelCount = Math.max(
+		rawModels.length,
+		inventoryModels.length,
+		loadedModel ? 1 : 0,
+	);
+	return c.json({
+		ok: true,
+		message: `Connected — ${modelCount} model(s)${
+			defaultModel ? `, default ${defaultModel}` : ""
+		}${loadedModel ? `, loaded ${loadedModel}` : ""}`,
+	});
+}
+
+async function testProviderConnection(
+	c: RouteContext,
+	provider: string,
+	urls: ServiceUrls,
+): Promise<Response> {
+	switch (provider) {
+		case "ollama":
+			return testOllamaConnection(c, urls);
+		case "inference-sh":
+			return testInferenceShConnection(c);
+		case "openrouter":
+			return testOpenRouterConnection(c);
+		case "codex-imagegen":
+			return testCodexImagegenConnection(c);
+		case "openai-codex":
+			return testOpenAiCodexConnection(c);
+		case "ace-step":
+			return testAceStepConnection(c, urls);
+		default:
+			return c.json({ ok: false, error: `Unknown provider: ${provider}` }, 400);
+	}
+}
+
 // ─── POST /test-connection ──────────────────────────────────────────
 app.post("/test-connection", llmLimiter, async (c) => {
 	try {
@@ -1264,134 +1477,7 @@ app.post("/test-connection", llmLimiter, async (c) => {
 		}
 		const urls = await getServiceUrls();
 
-		if (provider === "ollama") {
-			const response = await fetch(`${urls.ollamaUrl}/api/tags`, {
-				signal: AbortSignal.timeout(5000),
-			});
-			if (!response.ok) {
-				logger.warn(
-					{ provider: "ollama", status: response.status },
-					"Connection test failed",
-				);
-				return c.json({
-					ok: false,
-					error: `Ollama returned ${response.status}`,
-				});
-			}
-			const data = (await response.json()) as { models?: unknown[] };
-			const count = data.models?.length ?? 0;
-			return c.json({
-				ok: true,
-				message: `Connected — ${count} models available`,
-			});
-		}
-
-		if (provider === "inference-sh") {
-			await testInferenceShImageProvider();
-			return c.json({
-				ok: true,
-				message: "Inference.sh CLI ready",
-			});
-		}
-
-		if (provider === "openrouter") {
-			const apiKey = await getOpenRouterApiKey();
-			if (!apiKey) {
-				return c.json({
-					ok: false,
-					error: "No OpenRouter API key configured",
-				});
-			}
-			const response = await fetch("https://openrouter.ai/api/v1/key", {
-				headers: { Authorization: `Bearer ${apiKey}` },
-				signal: AbortSignal.timeout(8_000),
-			});
-			if (!response.ok) {
-				return c.json({
-					ok: false,
-					error: `OpenRouter rejected the credential (${response.status})`,
-				});
-			}
-			return c.json({ ok: true, message: "OpenRouter credential is valid" });
-		}
-
-		if (provider === "codex-imagegen") {
-			const message = await testCodexImagegenProvider();
-			return c.json({
-				ok: true,
-				message: message || "Codex CLI ready",
-			});
-		}
-
-		if (provider === "openai-codex") {
-			const account = await codexAppServerClient.readAccount();
-			if (!account.account || account.account.type !== "chatgpt") {
-				return c.json({
-					ok: false,
-					error:
-						"Not authenticated with ChatGPT. Start Codex device auth in Settings.",
-				});
-			}
-			const models = await codexAppServerClient.listModels();
-			return c.json({
-				ok: true,
-				message: `Connected — ${models.length} model(s) (${account.account.planType ?? "chatgpt"})`,
-			});
-		}
-
-		if (provider === "ace-step") {
-			const [inventoryResponse, healthResponse, modelsResponse] =
-				await Promise.all([
-					fetch(`${urls.aceStepUrl}/v1/model_inventory`, {
-						signal: AbortSignal.timeout(5000),
-					}).catch(() => null),
-					fetch(`${urls.aceStepUrl}/health`, {
-						signal: AbortSignal.timeout(5000),
-					}).catch(() => null),
-					fetch(`${urls.aceStepUrl}/v1/models`, {
-						signal: AbortSignal.timeout(5000),
-					}).catch(() => null),
-				]);
-			const [inventory, health, modelsData] = await Promise.all([
-				parseAceJson<AceModelInventoryResponse>(inventoryResponse, "inventory"),
-				parseAceJson<AceHealthResponse>(healthResponse, "health"),
-				parseAceJson<AceModelsResponse>(modelsResponse, "models"),
-			]);
-
-			if (!inventory && !health && !modelsData) {
-				const failedResponse =
-					inventoryResponse || healthResponse || modelsResponse;
-				logger.warn(
-					{ provider: "ace-step", status: failedResponse?.status },
-					"Connection test failed",
-				);
-				return c.json({
-					ok: false,
-					error: failedResponse
-						? `ACE-Step returned ${failedResponse.status}`
-						: "ACE-Step unavailable",
-				});
-			}
-
-			const rawModels = modelsData?.data || modelsData?.models || [];
-			const inventoryModels = inventory?.data?.models || [];
-			const loadedModel = health?.data?.loaded_model;
-			const defaultModel =
-				inventory?.data?.default_model || modelsData?.default_model;
-			const modelCount = Math.max(
-				rawModels.length,
-				inventoryModels.length,
-				loadedModel ? 1 : 0,
-			);
-			return c.json({
-				ok: true,
-				message: `Connected — ${modelCount} model(s)${
-					defaultModel ? `, default ${defaultModel}` : ""
-				}${loadedModel ? `, loaded ${loadedModel}` : ""}`,
-			});
-		}
-
-		return c.json({ ok: false, error: `Unknown provider: ${provider}` }, 400);
+		return await testProviderConnection(c, provider, urls);
 	} catch (error: unknown) {
 		const message =
 			error instanceof Error && error.name === "TimeoutError"

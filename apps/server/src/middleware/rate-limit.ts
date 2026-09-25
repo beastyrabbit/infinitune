@@ -89,6 +89,32 @@ interface TrustedProxyMatcher {
 	matches: (address: string) => boolean;
 }
 
+/** Adds one trusted proxy entry; returns whether it was accepted. */
+function addTrustedProxyEntry(blockList: BlockList, entry: string): boolean {
+	const parts = entry.trim().split("/");
+	if (parts.length > 2) return false;
+	const address = normalizeIp(parts[0]);
+	if (!address) return false;
+	const version = isIP(address);
+
+	try {
+		if (parts.length === 1) {
+			blockList.addAddress(address, version === 6 ? "ipv6" : "ipv4");
+		} else {
+			const prefix = Number(parts[1]);
+			const maxPrefix = version === 6 ? 128 : 32;
+			if (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) {
+				return false;
+			}
+			blockList.addSubnet(address, prefix, version === 6 ? "ipv6" : "ipv4");
+		}
+		return true;
+	} catch {
+		// Ignore malformed subnet bases and continue with valid entries.
+		return false;
+	}
+}
+
 function createTrustedProxyMatcher(
 	entries: readonly string[],
 ): TrustedProxyMatcher {
@@ -96,27 +122,7 @@ function createTrustedProxyMatcher(
 	let configured = false;
 
 	for (const entry of entries) {
-		const parts = entry.trim().split("/");
-		if (parts.length > 2) continue;
-		const address = normalizeIp(parts[0]);
-		if (!address) continue;
-		const version = isIP(address);
-
-		try {
-			if (parts.length === 1) {
-				blockList.addAddress(address, version === 6 ? "ipv6" : "ipv4");
-			} else {
-				const prefix = Number(parts[1]);
-				const maxPrefix = version === 6 ? 128 : 32;
-				if (!Number.isInteger(prefix) || prefix < 0 || prefix > maxPrefix) {
-					continue;
-				}
-				blockList.addSubnet(address, prefix, version === 6 ? "ipv6" : "ipv4");
-			}
-			configured = true;
-		} catch {
-			// Ignore malformed subnet bases and continue with valid entries.
-		}
+		if (addTrustedProxyEntry(blockList, entry)) configured = true;
 	}
 
 	return {

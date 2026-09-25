@@ -11,30 +11,35 @@ const IDLE_ROOM_MANUAL_TOP_UP_COUNT = 5;
 
 // ─── Wire → Protocol conversion ─────────────────────────────────────
 
+/** Map a nullable wire field to an optional protocol field. */
+function optional<T>(value: T | null | undefined): T | undefined {
+	return value ?? undefined;
+}
+
 /** Convert a SongWire (DB wire format) to the lightweight SongData protocol type. */
 function toSongData(s: SongWire): SongData {
 	return {
 		id: s.id,
-		title: s.title ?? undefined,
-		artistName: s.artistName ?? undefined,
-		genre: s.genre ?? undefined,
-		subGenre: s.subGenre ?? undefined,
-		cover: s.cover ?? undefined,
-		audioUrl: s.audioUrl ?? undefined,
+		title: optional(s.title),
+		artistName: optional(s.artistName),
+		genre: optional(s.genre),
+		subGenre: optional(s.subGenre),
+		cover: optional(s.cover),
+		audioUrl: optional(s.audioUrl),
 		status: s.status,
 		orderIndex: s.orderIndex,
-		isInterrupt: s.isInterrupt ?? undefined,
-		promptEpoch: s.promptEpoch ?? undefined,
+		isInterrupt: optional(s.isInterrupt),
+		promptEpoch: optional(s.promptEpoch),
 		createdAt: s.createdAt,
-		audioDuration: s.audioDuration ?? undefined,
-		mood: s.mood ?? undefined,
-		energy: s.energy ?? undefined,
-		era: s.era ?? undefined,
-		vocalStyle: s.vocalStyle ?? undefined,
-		userRating: (s.userRating as "up" | "down" | undefined) ?? undefined,
-		bpm: s.bpm ?? undefined,
-		keyScale: s.keyScale ?? undefined,
-		lyrics: s.lyrics ?? undefined,
+		audioDuration: optional(s.audioDuration),
+		mood: optional(s.mood),
+		energy: optional(s.energy),
+		era: optional(s.era),
+		vocalStyle: optional(s.vocalStyle),
+		userRating: optional(s.userRating as "up" | "down" | undefined),
+		bpm: optional(s.bpm),
+		keyScale: optional(s.keyScale),
+		lyrics: optional(s.lyrics),
 	};
 }
 
