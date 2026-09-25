@@ -8,7 +8,10 @@ const { trimTrailingSilence, getServiceUrls } = vi.hoisted(() => ({
 	getServiceUrls: vi.fn(),
 }));
 
-vi.mock("../external/audio-processing", () => ({ trimTrailingSilence }));
+vi.mock("../external/audio-processing", () => ({
+	FFMPEG_PASS_TIMEOUT_MS: 2 * 60 * 1000,
+	trimTrailingSilence,
+}));
 vi.mock("../external/service-urls", () => ({ getServiceUrls }));
 
 import { saveSongToNfs } from "../external/storage";

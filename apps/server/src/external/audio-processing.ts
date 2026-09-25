@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { logger } from "../logger";
 
 const execFileAsync = promisify(execFile);
+/** Per ffmpeg pass; bounds how long a save holds its pending audio file. */
+export const FFMPEG_PASS_TIMEOUT_MS = 2 * 60 * 1000;
 
 interface TrimResult {
 	trimmed: boolean;
@@ -29,15 +31,19 @@ export async function trimTrailingSilence(
 
 	try {
 		// Pass 1: detect silence boundaries
-		const { stderr } = await execFileAsync("ffmpeg", [
-			"-i",
-			audioFilePath,
-			"-af",
-			"silencedetect=noise=-50dB:d=2",
-			"-f",
-			"null",
-			"-",
-		]);
+		const { stderr } = await execFileAsync(
+			"ffmpeg",
+			[
+				"-i",
+				audioFilePath,
+				"-af",
+				"silencedetect=noise=-50dB:d=2",
+				"-f",
+				"null",
+				"-",
+			],
+			{ timeout: FFMPEG_PASS_TIMEOUT_MS },
+		);
 
 		// Parse duration from ffmpeg output
 		const durationMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
@@ -89,16 +95,25 @@ export async function trimTrailingSilence(
 		const dir = path.dirname(audioFilePath);
 		const tmpFile = path.join(dir, `.trimmed-${Date.now()}.mp3`);
 
-		await execFileAsync("ffmpeg", [
-			"-i",
-			audioFilePath,
-			"-t",
-			trimPoint.toFixed(3),
-			"-c",
-			"copy",
-			"-y",
-			tmpFile,
-		]);
+		try {
+			await execFileAsync(
+				"ffmpeg",
+				[
+					"-i",
+					audioFilePath,
+					"-t",
+					trimPoint.toFixed(3),
+					"-c",
+					"copy",
+					"-y",
+					tmpFile,
+				],
+				{ timeout: FFMPEG_PASS_TIMEOUT_MS },
+			);
+		} catch (error) {
+			fs.rmSync(tmpFile, { force: true });
+			throw error;
+		}
 
 		// Atomic rename over original
 		fs.renameSync(tmpFile, audioFilePath);

@@ -5,13 +5,20 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { SongCover } from "@infinitune/shared/types";
-import { trimTrailingSilence } from "./audio-processing";
+import {
+	FFMPEG_PASS_TIMEOUT_MS,
+	trimTrailingSilence,
+} from "./audio-processing";
 import { getServiceUrls } from "./service-urls";
 
 const ACE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
-/** Longer than any live save holds its pending audio (download deadline plus trimming). */
-const PENDING_AUDIO_MAX_AGE_MS = 15 * 60 * 1000;
+/**
+ * Twice the longest time a live save holds its pending audio: the download
+ * deadline plus the two ffmpeg passes of the silence trim.
+ */
+const PENDING_AUDIO_MAX_AGE_MS =
+	2 * (ACE_DOWNLOAD_TIMEOUT_MS + 2 * FFMPEG_PASS_TIMEOUT_MS);
 const PENDING_AUDIO_FILE = /^\.audio-.+\.mp3$/;
 
 /** Stream ACE audio to disk with a deadline and a hard size cap. */
