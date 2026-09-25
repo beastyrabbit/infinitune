@@ -1,5 +1,5 @@
 # ── Stage 1: base ──────────────────────────────────────────────
-FROM node:22-slim AS base
+FROM node:26-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
@@ -7,7 +7,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 make g++ && \
     rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+# Node 25+ no longer ships corepack; keep in sync with packageManager.
+RUN npm install -g pnpm@10.28.2
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -32,7 +33,7 @@ FROM base AS prod-deps
 RUN pnpm install --frozen-lockfile --prod
 
 # ── Stage 4: runtime ───────────────────────────────────────────
-FROM node:22-slim AS runtime
+FROM node:26-slim AS runtime
 ENV NODE_ENV=production
 ENV INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
 
