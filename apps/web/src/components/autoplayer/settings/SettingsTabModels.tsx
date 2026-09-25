@@ -295,7 +295,7 @@ function TextModelField({
 	codexTextModels,
 	openrouterModels,
 	openrouterLoading,
-}: {
+}: Readonly<{
 	textProvider: LlmProvider;
 	textModel: string;
 	setTextModel: (v: string) => void;
@@ -303,7 +303,7 @@ function TextModelField({
 	codexTextModels: ModelOption[];
 	openrouterModels: ModelOption[];
 	openrouterLoading: boolean;
-}) {
+}>) {
 	if (textProvider === "openrouter") {
 		return (
 			<OpenRouterModelInput
@@ -367,7 +367,7 @@ function PersonaModelField({
 	codexTextModels,
 	openrouterModels,
 	openrouterLoading,
-}: {
+}: Readonly<{
 	personaProvider: LlmProvider;
 	personaModel: string;
 	setPersonaModel: (v: string) => void;
@@ -375,7 +375,7 @@ function PersonaModelField({
 	codexTextModels: ModelOption[];
 	openrouterModels: ModelOption[];
 	openrouterLoading: boolean;
-}) {
+}>) {
 	if (personaProvider === "openrouter") {
 		return (
 			<OpenRouterModelInput
