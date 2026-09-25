@@ -13,6 +13,7 @@ import {
 	ShareLinkLimitError,
 	type ShareResourceType,
 } from "../services/share-link-service";
+import { pathParam } from "./path-param";
 
 const app = new Hono();
 
@@ -81,14 +82,14 @@ app.get("/", shareLinkLimiter, async (c) => {
 
 // GET /api/share/:token — resolve into a read-only public snapshot
 app.get("/:token", shareReadLimiter, async (c) => {
-	const resolved = await resolveShareLink(c.req.param("token"));
+	const resolved = await resolveShareLink(pathParam(c, "token"));
 	if (!resolved) return c.json({ error: "Share link not found" }, 404);
 	return c.json(resolved);
 });
 
 // DELETE /api/share/:id — revoke a link
 app.delete("/:id", shareLinkLimiter, async (c) => {
-	const id = c.req.param("id");
+	const id = pathParam(c, "id");
 	const link = await getShareLinkById(id);
 	if (
 		!link ||

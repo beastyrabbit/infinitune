@@ -24,6 +24,7 @@ import { generationLimiter, llmLimiter } from "../middleware/limiters";
 import * as playlistService from "../services/playlist-service";
 import { RADIO_PLAYLIST_KEY } from "../services/radio-constants";
 import { type PlaylistWire, playlistToWire } from "../wire";
+import { pathParam } from "./path-param";
 
 const app = new Hono();
 const ANONYMOUS_PLAYLIST_TTL_MS = 24 * 60 * 60 * 1000;
@@ -86,7 +87,7 @@ async function loadAccessiblePlaylist(
 	c: Context,
 ): Promise<{ actor: RequestActor; playlist: PlaylistWire } | Response> {
 	const actor = await getRequestActor(c);
-	const playlist = await playlistService.getById(c.req.param("id"));
+	const playlist = await playlistService.getById(pathParam(c, "id"));
 	if (!playlist) return c.json(null, 404);
 	const wire = playlistToWire(playlist);
 	if (!canAccessPlaylist(actor, wire)) {
@@ -99,7 +100,7 @@ async function loadPlaybackAccessiblePlaylist(
 	c: Context,
 ): Promise<{ actor: RequestActor; playlist: PlaylistWire } | Response> {
 	const access = await getPlaybackAccess(c);
-	const playlist = await playlistService.getById(c.req.param("id"));
+	const playlist = await playlistService.getById(pathParam(c, "id"));
 	if (!playlist) return c.json(null, 404);
 	const wire = playlistToWire(playlist);
 	if (!canPlaybackAccessPlaylist(access, wire)) {
@@ -258,7 +259,7 @@ app.post(
 		if (!result.success) return c.json({ error: result.error.message }, 400);
 		return c.json(
 			await postHumanChat({
-				playlistId: c.req.param("id"),
+				playlistId: pathParam(c, "id"),
 				content: result.data.content,
 				threadId: result.data.threadId,
 				commitDirection: result.data.commitDirection,
@@ -286,7 +287,7 @@ app.post("/:id/agent-chat/answer", llmLimiter, async (c) => {
 	try {
 		return c.json(
 			await answerDirectorQuestion({
-				playlistId: c.req.param("id"),
+				playlistId: pathParam(c, "id"),
 				questionId: result.data.questionId,
 				content: result.data.content,
 			}),
@@ -456,7 +457,7 @@ app.patch("/:id/prompt", generationLimiter, async (c) => {
 	if (!result.success) {
 		return c.json({ error: result.error.message }, 400);
 	}
-	await playlistService.steer(c.req.param("id"), result.data.prompt);
+	await playlistService.steer(pathParam(c, "id"), result.data.prompt);
 	return c.json({ ok: true });
 });
 

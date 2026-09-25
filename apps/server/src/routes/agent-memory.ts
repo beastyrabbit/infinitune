@@ -16,6 +16,7 @@ import {
 import { getRequestActor, type RequestActor } from "../auth/actor";
 import * as playlistService from "../services/playlist-service";
 import { type PlaylistWire, playlistToWire } from "../wire";
+import { pathParam } from "./path-param";
 
 const app = new Hono();
 
@@ -114,7 +115,7 @@ async function getAuthorizedMemoryEntry(c: Context): Promise<
 	| Response
 > {
 	const actor = await getRequestActor(c);
-	const entry = await getMemory(c.req.param("id"));
+	const entry = await getMemory(pathParam(c, "id"));
 	if (!entry) return c.json({ error: "Memory entry not found" }, 404);
 	if (!(await canReadMemoryEntry(actor, entry))) {
 		return c.json({ error: "Memory entry not found" }, 404);

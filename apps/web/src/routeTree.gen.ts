@@ -9,40 +9,40 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as HouseRouteImport } from './routes/house'
-import { Route as AutoplayerRouteImport } from './routes/autoplayer'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShareTokenRouteImport } from './routes/share_.$token'
-import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
-import { Route as AutoplayerSourcesRouteImport } from './routes/autoplayer_.sources'
-import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
-import { Route as AutoplayerReimagineRouteImport } from './routes/autoplayer_.reimagine'
-import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
-import { Route as AutoplayerPlaylistsRouteImport } from './routes/autoplayer_.playlists'
-import { Route as AutoplayerOrchestratorRouteImport } from './routes/autoplayer_.orchestrator'
-import { Route as AutoplayerOneshotRouteImport } from './routes/autoplayer_.oneshot'
-import { Route as AutoplayerMiniRouteImport } from './routes/autoplayer_.mini'
+import { Route as AutoplayerRouteImport } from './routes/autoplayer'
+import { Route as HouseRouteImport } from './routes/house'
 import { Route as AutoplayerLibraryRouteImport } from './routes/autoplayer_.library'
-import { Route as AutoplayerTestlabIndexRouteImport } from './routes/autoplayer_.testlab.index'
-import { Route as AutoplayerTestlabLlmRouteImport } from './routes/autoplayer_.testlab.llm'
-import { Route as AutoplayerTestlabConnectionsRouteImport } from './routes/autoplayer_.testlab.connections'
-import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.autoplayer.test-connection'
-import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
-import { Route as ApiAutoplayerPromptContractRouteImport } from './routes/api.autoplayer.prompt-contract'
-import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
-import { Route as ApiAutoplayerOpenrouterAuthRouteImport } from './routes/api.autoplayer.openrouter-auth'
-import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
-import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
-import { Route as ApiAutoplayerGenerateAlbumTrackRouteImport } from './routes/api.autoplayer.generate-album-track'
-import { Route as ApiAutoplayerExtractPersonaRouteImport } from './routes/api.autoplayer.extract-persona'
-import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
-import { Route as ApiAutoplayerEnhanceRequestRouteImport } from './routes/api.autoplayer.enhance-request'
-import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
+import { Route as AutoplayerMiniRouteImport } from './routes/autoplayer_.mini'
+import { Route as AutoplayerOneshotRouteImport } from './routes/autoplayer_.oneshot'
+import { Route as AutoplayerOrchestratorRouteImport } from './routes/autoplayer_.orchestrator'
+import { Route as AutoplayerPlaylistsRouteImport } from './routes/autoplayer_.playlists'
+import { Route as AutoplayerQueueRouteImport } from './routes/autoplayer_.queue'
+import { Route as AutoplayerReimagineRouteImport } from './routes/autoplayer_.reimagine'
+import { Route as AutoplayerSettingsRouteImport } from './routes/autoplayer_.settings'
+import { Route as AutoplayerSourcesRouteImport } from './routes/autoplayer_.sources'
+import { Route as AutoplayerTestlabRouteImport } from './routes/autoplayer_.testlab'
+import { Route as ShareTokenRouteImport } from './routes/share_.$token'
 import { Route as ApiAutoplayerAceModelsRouteImport } from './routes/api.autoplayer.ace-models'
+import { Route as ApiAutoplayerEnhancePromptRouteImport } from './routes/api.autoplayer.enhance-prompt'
+import { Route as ApiAutoplayerEnhanceRequestRouteImport } from './routes/api.autoplayer.enhance-request'
+import { Route as ApiAutoplayerEnhanceSessionRouteImport } from './routes/api.autoplayer.enhance-session'
+import { Route as ApiAutoplayerExtractPersonaRouteImport } from './routes/api.autoplayer.extract-persona'
+import { Route as ApiAutoplayerGenerateAlbumTrackRouteImport } from './routes/api.autoplayer.generate-album-track'
+import { Route as ApiAutoplayerGenerateSongRouteImport } from './routes/api.autoplayer.generate-song'
+import { Route as ApiAutoplayerOllamaModelsRouteImport } from './routes/api.autoplayer.ollama-models'
+import { Route as ApiAutoplayerOpenrouterAuthRouteImport } from './routes/api.autoplayer.openrouter-auth'
+import { Route as ApiAutoplayerOpenrouterModelsRouteImport } from './routes/api.autoplayer.openrouter-models'
+import { Route as ApiAutoplayerPromptContractRouteImport } from './routes/api.autoplayer.prompt-contract'
+import { Route as ApiAutoplayerRefinePromptRouteImport } from './routes/api.autoplayer.refine-prompt'
+import { Route as ApiAutoplayerTestConnectionRouteImport } from './routes/api.autoplayer.test-connection'
+import { Route as AutoplayerTestlabIndexRouteImport } from './routes/autoplayer_.testlab.index'
+import { Route as AutoplayerTestlabConnectionsRouteImport } from './routes/autoplayer_.testlab.connections'
+import { Route as AutoplayerTestlabLlmRouteImport } from './routes/autoplayer_.testlab.llm'
 
-const HouseRoute = HouseRouteImport.update({
-  id: '/house',
-  path: '/house',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerRoute = AutoplayerRouteImport.update({
@@ -50,59 +50,9 @@ const AutoplayerRoute = AutoplayerRouteImport.update({
   path: '/autoplayer',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShareTokenRoute = ShareTokenRouteImport.update({
-  id: '/share_/$token',
-  path: '/share/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
-  id: '/autoplayer_/testlab',
-  path: '/autoplayer/testlab',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerSourcesRoute = AutoplayerSourcesRouteImport.update({
-  id: '/autoplayer_/sources',
-  path: '/autoplayer/sources',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
-  id: '/autoplayer_/settings',
-  path: '/autoplayer/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerReimagineRoute = AutoplayerReimagineRouteImport.update({
-  id: '/autoplayer_/reimagine',
-  path: '/autoplayer/reimagine',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerQueueRoute = AutoplayerQueueRouteImport.update({
-  id: '/autoplayer_/queue',
-  path: '/autoplayer/queue',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerPlaylistsRoute = AutoplayerPlaylistsRouteImport.update({
-  id: '/autoplayer_/playlists',
-  path: '/autoplayer/playlists',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerOrchestratorRoute = AutoplayerOrchestratorRouteImport.update({
-  id: '/autoplayer_/orchestrator',
-  path: '/autoplayer/orchestrator',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerOneshotRoute = AutoplayerOneshotRouteImport.update({
-  id: '/autoplayer_/oneshot',
-  path: '/autoplayer/oneshot',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoplayerMiniRoute = AutoplayerMiniRouteImport.update({
-  id: '/autoplayer_/mini',
-  path: '/autoplayer/mini',
+const HouseRoute = HouseRouteImport.update({
+  id: '/house',
+  path: '/house',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AutoplayerLibraryRoute = AutoplayerLibraryRouteImport.update({
@@ -110,80 +60,65 @@ const AutoplayerLibraryRoute = AutoplayerLibraryRouteImport.update({
   path: '/autoplayer/library',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AutoplayerTestlabIndexRoute = AutoplayerTestlabIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AutoplayerTestlabRoute,
+const AutoplayerMiniRoute = AutoplayerMiniRouteImport.update({
+  id: '/autoplayer_/mini',
+  path: '/autoplayer/mini',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AutoplayerTestlabLlmRoute = AutoplayerTestlabLlmRouteImport.update({
-  id: '/llm',
-  path: '/llm',
-  getParentRoute: () => AutoplayerTestlabRoute,
+const AutoplayerOneshotRoute = AutoplayerOneshotRouteImport.update({
+  id: '/autoplayer_/oneshot',
+  path: '/autoplayer/oneshot',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AutoplayerTestlabConnectionsRoute =
-  AutoplayerTestlabConnectionsRouteImport.update({
-    id: '/connections',
-    path: '/connections',
-    getParentRoute: () => AutoplayerTestlabRoute,
-  } as any)
-const ApiAutoplayerTestConnectionRoute =
-  ApiAutoplayerTestConnectionRouteImport.update({
-    id: '/api/autoplayer/test-connection',
-    path: '/api/autoplayer/test-connection',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerRefinePromptRoute =
-  ApiAutoplayerRefinePromptRouteImport.update({
-    id: '/api/autoplayer/refine-prompt',
-    path: '/api/autoplayer/refine-prompt',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerPromptContractRoute =
-  ApiAutoplayerPromptContractRouteImport.update({
-    id: '/api/autoplayer/prompt-contract',
-    path: '/api/autoplayer/prompt-contract',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerOpenrouterModelsRoute =
-  ApiAutoplayerOpenrouterModelsRouteImport.update({
-    id: '/api/autoplayer/openrouter-models',
-    path: '/api/autoplayer/openrouter-models',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerOpenrouterAuthRoute =
-  ApiAutoplayerOpenrouterAuthRouteImport.update({
-    id: '/api/autoplayer/openrouter-auth',
-    path: '/api/autoplayer/openrouter-auth',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerOllamaModelsRoute =
-  ApiAutoplayerOllamaModelsRouteImport.update({
-    id: '/api/autoplayer/ollama-models',
-    path: '/api/autoplayer/ollama-models',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerGenerateSongRoute =
-  ApiAutoplayerGenerateSongRouteImport.update({
-    id: '/api/autoplayer/generate-song',
-    path: '/api/autoplayer/generate-song',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerGenerateAlbumTrackRoute =
-  ApiAutoplayerGenerateAlbumTrackRouteImport.update({
-    id: '/api/autoplayer/generate-album-track',
-    path: '/api/autoplayer/generate-album-track',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerExtractPersonaRoute =
-  ApiAutoplayerExtractPersonaRouteImport.update({
-    id: '/api/autoplayer/extract-persona',
-    path: '/api/autoplayer/extract-persona',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAutoplayerEnhanceSessionRoute =
-  ApiAutoplayerEnhanceSessionRouteImport.update({
-    id: '/api/autoplayer/enhance-session',
-    path: '/api/autoplayer/enhance-session',
+const AutoplayerOrchestratorRoute = AutoplayerOrchestratorRouteImport.update({
+  id: '/autoplayer_/orchestrator',
+  path: '/autoplayer/orchestrator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerPlaylistsRoute = AutoplayerPlaylistsRouteImport.update({
+  id: '/autoplayer_/playlists',
+  path: '/autoplayer/playlists',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerQueueRoute = AutoplayerQueueRouteImport.update({
+  id: '/autoplayer_/queue',
+  path: '/autoplayer/queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerReimagineRoute = AutoplayerReimagineRouteImport.update({
+  id: '/autoplayer_/reimagine',
+  path: '/autoplayer/reimagine',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerSettingsRoute = AutoplayerSettingsRouteImport.update({
+  id: '/autoplayer_/settings',
+  path: '/autoplayer/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerSourcesRoute = AutoplayerSourcesRouteImport.update({
+  id: '/autoplayer_/sources',
+  path: '/autoplayer/sources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoplayerTestlabRoute = AutoplayerTestlabRouteImport.update({
+  id: '/autoplayer_/testlab',
+  path: '/autoplayer/testlab',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share_/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAutoplayerAceModelsRoute = ApiAutoplayerAceModelsRouteImport.update({
+  id: '/api/autoplayer/ace-models',
+  path: '/api/autoplayer/ace-models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAutoplayerEnhancePromptRoute =
+  ApiAutoplayerEnhancePromptRouteImport.update({
+    id: '/api/autoplayer/enhance-prompt',
+    path: '/api/autoplayer/enhance-prompt',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiAutoplayerEnhanceRequestRoute =
@@ -192,16 +127,81 @@ const ApiAutoplayerEnhanceRequestRoute =
     path: '/api/autoplayer/enhance-request',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiAutoplayerEnhancePromptRoute =
-  ApiAutoplayerEnhancePromptRouteImport.update({
-    id: '/api/autoplayer/enhance-prompt',
-    path: '/api/autoplayer/enhance-prompt',
+const ApiAutoplayerEnhanceSessionRoute =
+  ApiAutoplayerEnhanceSessionRouteImport.update({
+    id: '/api/autoplayer/enhance-session',
+    path: '/api/autoplayer/enhance-session',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiAutoplayerAceModelsRoute = ApiAutoplayerAceModelsRouteImport.update({
-  id: '/api/autoplayer/ace-models',
-  path: '/api/autoplayer/ace-models',
-  getParentRoute: () => rootRouteImport,
+const ApiAutoplayerExtractPersonaRoute =
+  ApiAutoplayerExtractPersonaRouteImport.update({
+    id: '/api/autoplayer/extract-persona',
+    path: '/api/autoplayer/extract-persona',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerGenerateAlbumTrackRoute =
+  ApiAutoplayerGenerateAlbumTrackRouteImport.update({
+    id: '/api/autoplayer/generate-album-track',
+    path: '/api/autoplayer/generate-album-track',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerGenerateSongRoute =
+  ApiAutoplayerGenerateSongRouteImport.update({
+    id: '/api/autoplayer/generate-song',
+    path: '/api/autoplayer/generate-song',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerOllamaModelsRoute =
+  ApiAutoplayerOllamaModelsRouteImport.update({
+    id: '/api/autoplayer/ollama-models',
+    path: '/api/autoplayer/ollama-models',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerOpenrouterAuthRoute =
+  ApiAutoplayerOpenrouterAuthRouteImport.update({
+    id: '/api/autoplayer/openrouter-auth',
+    path: '/api/autoplayer/openrouter-auth',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerOpenrouterModelsRoute =
+  ApiAutoplayerOpenrouterModelsRouteImport.update({
+    id: '/api/autoplayer/openrouter-models',
+    path: '/api/autoplayer/openrouter-models',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerPromptContractRoute =
+  ApiAutoplayerPromptContractRouteImport.update({
+    id: '/api/autoplayer/prompt-contract',
+    path: '/api/autoplayer/prompt-contract',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerRefinePromptRoute =
+  ApiAutoplayerRefinePromptRouteImport.update({
+    id: '/api/autoplayer/refine-prompt',
+    path: '/api/autoplayer/refine-prompt',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAutoplayerTestConnectionRoute =
+  ApiAutoplayerTestConnectionRouteImport.update({
+    id: '/api/autoplayer/test-connection',
+    path: '/api/autoplayer/test-connection',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AutoplayerTestlabIndexRoute = AutoplayerTestlabIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AutoplayerTestlabRoute,
+} as any)
+const AutoplayerTestlabConnectionsRoute =
+  AutoplayerTestlabConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AutoplayerTestlabRoute,
+  } as any)
+const AutoplayerTestlabLlmRoute = AutoplayerTestlabLlmRouteImport.update({
+  id: '/llm',
+  path: '/llm',
+  getParentRoute: () => AutoplayerTestlabRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -430,11 +430,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/house': {
-      id: '/house'
-      path: '/house'
-      fullPath: '/house'
-      preLoaderRoute: typeof HouseRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer': {
@@ -444,81 +444,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutoplayerRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/share_/$token': {
-      id: '/share_/$token'
-      path: '/share/$token'
-      fullPath: '/share/$token'
-      preLoaderRoute: typeof ShareTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/testlab': {
-      id: '/autoplayer_/testlab'
-      path: '/autoplayer/testlab'
-      fullPath: '/autoplayer/testlab'
-      preLoaderRoute: typeof AutoplayerTestlabRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/sources': {
-      id: '/autoplayer_/sources'
-      path: '/autoplayer/sources'
-      fullPath: '/autoplayer/sources'
-      preLoaderRoute: typeof AutoplayerSourcesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/settings': {
-      id: '/autoplayer_/settings'
-      path: '/autoplayer/settings'
-      fullPath: '/autoplayer/settings'
-      preLoaderRoute: typeof AutoplayerSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/reimagine': {
-      id: '/autoplayer_/reimagine'
-      path: '/autoplayer/reimagine'
-      fullPath: '/autoplayer/reimagine'
-      preLoaderRoute: typeof AutoplayerReimagineRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/queue': {
-      id: '/autoplayer_/queue'
-      path: '/autoplayer/queue'
-      fullPath: '/autoplayer/queue'
-      preLoaderRoute: typeof AutoplayerQueueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/playlists': {
-      id: '/autoplayer_/playlists'
-      path: '/autoplayer/playlists'
-      fullPath: '/autoplayer/playlists'
-      preLoaderRoute: typeof AutoplayerPlaylistsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/orchestrator': {
-      id: '/autoplayer_/orchestrator'
-      path: '/autoplayer/orchestrator'
-      fullPath: '/autoplayer/orchestrator'
-      preLoaderRoute: typeof AutoplayerOrchestratorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/oneshot': {
-      id: '/autoplayer_/oneshot'
-      path: '/autoplayer/oneshot'
-      fullPath: '/autoplayer/oneshot'
-      preLoaderRoute: typeof AutoplayerOneshotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/autoplayer_/mini': {
-      id: '/autoplayer_/mini'
-      path: '/autoplayer/mini'
-      fullPath: '/autoplayer/mini'
-      preLoaderRoute: typeof AutoplayerMiniRouteImport
+    '/house': {
+      id: '/house'
+      path: '/house'
+      fullPath: '/house'
+      preLoaderRoute: typeof HouseRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/autoplayer_/library': {
@@ -528,102 +458,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AutoplayerLibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/autoplayer_/testlab/': {
-      id: '/autoplayer_/testlab/'
-      path: '/'
-      fullPath: '/autoplayer/testlab/'
-      preLoaderRoute: typeof AutoplayerTestlabIndexRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
-    '/autoplayer_/testlab/llm': {
-      id: '/autoplayer_/testlab/llm'
-      path: '/llm'
-      fullPath: '/autoplayer/testlab/llm'
-      preLoaderRoute: typeof AutoplayerTestlabLlmRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
-    '/autoplayer_/testlab/connections': {
-      id: '/autoplayer_/testlab/connections'
-      path: '/connections'
-      fullPath: '/autoplayer/testlab/connections'
-      preLoaderRoute: typeof AutoplayerTestlabConnectionsRouteImport
-      parentRoute: typeof AutoplayerTestlabRoute
-    }
-    '/api/autoplayer/test-connection': {
-      id: '/api/autoplayer/test-connection'
-      path: '/api/autoplayer/test-connection'
-      fullPath: '/api/autoplayer/test-connection'
-      preLoaderRoute: typeof ApiAutoplayerTestConnectionRouteImport
+    '/autoplayer_/mini': {
+      id: '/autoplayer_/mini'
+      path: '/autoplayer/mini'
+      fullPath: '/autoplayer/mini'
+      preLoaderRoute: typeof AutoplayerMiniRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/refine-prompt': {
-      id: '/api/autoplayer/refine-prompt'
-      path: '/api/autoplayer/refine-prompt'
-      fullPath: '/api/autoplayer/refine-prompt'
-      preLoaderRoute: typeof ApiAutoplayerRefinePromptRouteImport
+    '/autoplayer_/oneshot': {
+      id: '/autoplayer_/oneshot'
+      path: '/autoplayer/oneshot'
+      fullPath: '/autoplayer/oneshot'
+      preLoaderRoute: typeof AutoplayerOneshotRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/prompt-contract': {
-      id: '/api/autoplayer/prompt-contract'
-      path: '/api/autoplayer/prompt-contract'
-      fullPath: '/api/autoplayer/prompt-contract'
-      preLoaderRoute: typeof ApiAutoplayerPromptContractRouteImport
+    '/autoplayer_/orchestrator': {
+      id: '/autoplayer_/orchestrator'
+      path: '/autoplayer/orchestrator'
+      fullPath: '/autoplayer/orchestrator'
+      preLoaderRoute: typeof AutoplayerOrchestratorRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/openrouter-models': {
-      id: '/api/autoplayer/openrouter-models'
-      path: '/api/autoplayer/openrouter-models'
-      fullPath: '/api/autoplayer/openrouter-models'
-      preLoaderRoute: typeof ApiAutoplayerOpenrouterModelsRouteImport
+    '/autoplayer_/playlists': {
+      id: '/autoplayer_/playlists'
+      path: '/autoplayer/playlists'
+      fullPath: '/autoplayer/playlists'
+      preLoaderRoute: typeof AutoplayerPlaylistsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/openrouter-auth': {
-      id: '/api/autoplayer/openrouter-auth'
-      path: '/api/autoplayer/openrouter-auth'
-      fullPath: '/api/autoplayer/openrouter-auth'
-      preLoaderRoute: typeof ApiAutoplayerOpenrouterAuthRouteImport
+    '/autoplayer_/queue': {
+      id: '/autoplayer_/queue'
+      path: '/autoplayer/queue'
+      fullPath: '/autoplayer/queue'
+      preLoaderRoute: typeof AutoplayerQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/ollama-models': {
-      id: '/api/autoplayer/ollama-models'
-      path: '/api/autoplayer/ollama-models'
-      fullPath: '/api/autoplayer/ollama-models'
-      preLoaderRoute: typeof ApiAutoplayerOllamaModelsRouteImport
+    '/autoplayer_/reimagine': {
+      id: '/autoplayer_/reimagine'
+      path: '/autoplayer/reimagine'
+      fullPath: '/autoplayer/reimagine'
+      preLoaderRoute: typeof AutoplayerReimagineRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/generate-song': {
-      id: '/api/autoplayer/generate-song'
-      path: '/api/autoplayer/generate-song'
-      fullPath: '/api/autoplayer/generate-song'
-      preLoaderRoute: typeof ApiAutoplayerGenerateSongRouteImport
+    '/autoplayer_/settings': {
+      id: '/autoplayer_/settings'
+      path: '/autoplayer/settings'
+      fullPath: '/autoplayer/settings'
+      preLoaderRoute: typeof AutoplayerSettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/generate-album-track': {
-      id: '/api/autoplayer/generate-album-track'
-      path: '/api/autoplayer/generate-album-track'
-      fullPath: '/api/autoplayer/generate-album-track'
-      preLoaderRoute: typeof ApiAutoplayerGenerateAlbumTrackRouteImport
+    '/autoplayer_/sources': {
+      id: '/autoplayer_/sources'
+      path: '/autoplayer/sources'
+      fullPath: '/autoplayer/sources'
+      preLoaderRoute: typeof AutoplayerSourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/extract-persona': {
-      id: '/api/autoplayer/extract-persona'
-      path: '/api/autoplayer/extract-persona'
-      fullPath: '/api/autoplayer/extract-persona'
-      preLoaderRoute: typeof ApiAutoplayerExtractPersonaRouteImport
+    '/autoplayer_/testlab': {
+      id: '/autoplayer_/testlab'
+      path: '/autoplayer/testlab'
+      fullPath: '/autoplayer/testlab'
+      preLoaderRoute: typeof AutoplayerTestlabRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/enhance-session': {
-      id: '/api/autoplayer/enhance-session'
-      path: '/api/autoplayer/enhance-session'
-      fullPath: '/api/autoplayer/enhance-session'
-      preLoaderRoute: typeof ApiAutoplayerEnhanceSessionRouteImport
+    '/share_/$token': {
+      id: '/share_/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/enhance-request': {
-      id: '/api/autoplayer/enhance-request'
-      path: '/api/autoplayer/enhance-request'
-      fullPath: '/api/autoplayer/enhance-request'
-      preLoaderRoute: typeof ApiAutoplayerEnhanceRequestRouteImport
+    '/api/autoplayer/ace-models': {
+      id: '/api/autoplayer/ace-models'
+      path: '/api/autoplayer/ace-models'
+      fullPath: '/api/autoplayer/ace-models'
+      preLoaderRoute: typeof ApiAutoplayerAceModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/autoplayer/enhance-prompt': {
@@ -633,12 +542,103 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAutoplayerEnhancePromptRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/autoplayer/ace-models': {
-      id: '/api/autoplayer/ace-models'
-      path: '/api/autoplayer/ace-models'
-      fullPath: '/api/autoplayer/ace-models'
-      preLoaderRoute: typeof ApiAutoplayerAceModelsRouteImport
+    '/api/autoplayer/enhance-request': {
+      id: '/api/autoplayer/enhance-request'
+      path: '/api/autoplayer/enhance-request'
+      fullPath: '/api/autoplayer/enhance-request'
+      preLoaderRoute: typeof ApiAutoplayerEnhanceRequestRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/enhance-session': {
+      id: '/api/autoplayer/enhance-session'
+      path: '/api/autoplayer/enhance-session'
+      fullPath: '/api/autoplayer/enhance-session'
+      preLoaderRoute: typeof ApiAutoplayerEnhanceSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/extract-persona': {
+      id: '/api/autoplayer/extract-persona'
+      path: '/api/autoplayer/extract-persona'
+      fullPath: '/api/autoplayer/extract-persona'
+      preLoaderRoute: typeof ApiAutoplayerExtractPersonaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/generate-album-track': {
+      id: '/api/autoplayer/generate-album-track'
+      path: '/api/autoplayer/generate-album-track'
+      fullPath: '/api/autoplayer/generate-album-track'
+      preLoaderRoute: typeof ApiAutoplayerGenerateAlbumTrackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/generate-song': {
+      id: '/api/autoplayer/generate-song'
+      path: '/api/autoplayer/generate-song'
+      fullPath: '/api/autoplayer/generate-song'
+      preLoaderRoute: typeof ApiAutoplayerGenerateSongRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/ollama-models': {
+      id: '/api/autoplayer/ollama-models'
+      path: '/api/autoplayer/ollama-models'
+      fullPath: '/api/autoplayer/ollama-models'
+      preLoaderRoute: typeof ApiAutoplayerOllamaModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/openrouter-auth': {
+      id: '/api/autoplayer/openrouter-auth'
+      path: '/api/autoplayer/openrouter-auth'
+      fullPath: '/api/autoplayer/openrouter-auth'
+      preLoaderRoute: typeof ApiAutoplayerOpenrouterAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/openrouter-models': {
+      id: '/api/autoplayer/openrouter-models'
+      path: '/api/autoplayer/openrouter-models'
+      fullPath: '/api/autoplayer/openrouter-models'
+      preLoaderRoute: typeof ApiAutoplayerOpenrouterModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/prompt-contract': {
+      id: '/api/autoplayer/prompt-contract'
+      path: '/api/autoplayer/prompt-contract'
+      fullPath: '/api/autoplayer/prompt-contract'
+      preLoaderRoute: typeof ApiAutoplayerPromptContractRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/refine-prompt': {
+      id: '/api/autoplayer/refine-prompt'
+      path: '/api/autoplayer/refine-prompt'
+      fullPath: '/api/autoplayer/refine-prompt'
+      preLoaderRoute: typeof ApiAutoplayerRefinePromptRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/autoplayer/test-connection': {
+      id: '/api/autoplayer/test-connection'
+      path: '/api/autoplayer/test-connection'
+      fullPath: '/api/autoplayer/test-connection'
+      preLoaderRoute: typeof ApiAutoplayerTestConnectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/autoplayer_/testlab/': {
+      id: '/autoplayer_/testlab/'
+      path: '/'
+      fullPath: '/autoplayer/testlab/'
+      preLoaderRoute: typeof AutoplayerTestlabIndexRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
+    }
+    '/autoplayer_/testlab/connections': {
+      id: '/autoplayer_/testlab/connections'
+      path: '/connections'
+      fullPath: '/autoplayer/testlab/connections'
+      preLoaderRoute: typeof AutoplayerTestlabConnectionsRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
+    }
+    '/autoplayer_/testlab/llm': {
+      id: '/autoplayer_/testlab/llm'
+      path: '/llm'
+      fullPath: '/autoplayer/testlab/llm'
+      preLoaderRoute: typeof AutoplayerTestlabLlmRouteImport
+      parentRoute: typeof AutoplayerTestlabRoute
     }
   }
 }

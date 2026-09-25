@@ -6,6 +6,7 @@ import { stream } from "hono/streaming";
 import { logger } from "../../logger";
 import * as songService from "../../services/song-service";
 import { songToWire } from "../../wire";
+import { pathParam } from "../path-param";
 import {
 	requirePlaybackPlaylistAccess,
 	requirePlaylistAccess,
@@ -135,7 +136,7 @@ app.get("/:id/audio", async (c) => {
 
 // GET /api/songs/:id
 app.get("/:id", requireSongAccess, async (c) => {
-	const song = await songService.getById(c.req.param("id"));
+	const song = await songService.getById(pathParam(c, "id"));
 	if (!song) return c.json(null, 404);
 	return c.json(songToWire(song));
 });
