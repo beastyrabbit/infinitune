@@ -1507,10 +1507,11 @@ export class SongWorker {
 				aceAudioPath: audioPath,
 				cover: this.song.cover ?? null,
 				coverPngBase64: coverBase64ForNfs,
+				isCancelled: () => this.aborted,
 			});
 			// Cancelled during the (possibly slow) save: a replacement worker may
-			// own this song now, so leave its storage metadata alone.
-			if (this.aborted) return;
+			// own this song now, so leave its files and storage metadata alone.
+			if (!saveResult || this.aborted) return;
 			await songService.updateStoragePath(
 				this.songId,
 				saveResult.storagePath,
@@ -1524,6 +1525,7 @@ export class SongWorker {
 				);
 			}
 
+			if (this.aborted) return;
 			this.tagSavedMp3(saveResult.storagePath);
 		} catch (e: unknown) {
 			this.song = {

@@ -1,14 +1,25 @@
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { SongCover } from "@infinitune/shared/types";
-import { trimTrailingSilence } from "./audio-processing";
+import {
+	FFMPEG_PASS_TIMEOUT_MS,
+	trimTrailingSilence,
+} from "./audio-processing";
 import { getServiceUrls } from "./service-urls";
 
 const ACE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_ACE_AUDIO_BYTES = 100 * 1024 * 1024;
+/**
+ * Twice the longest time a live save holds its pending audio: the download
+ * deadline plus the two ffmpeg passes of the silence trim.
+ */
+const PENDING_AUDIO_MAX_AGE_MS =
+	2 * (ACE_DOWNLOAD_TIMEOUT_MS + 2 * FFMPEG_PASS_TIMEOUT_MS);
+const PENDING_AUDIO_FILE = /^\.audio-.+\.mp3$/;
 
 /** Stream ACE audio to disk with a deadline and a hard size cap. */
 export async function downloadAceAudio(
@@ -70,6 +81,20 @@ function resolveLocalAudioPath(aceAudioPath: string): string | null {
 		return fs.existsSync(localPath) ? localPath : null;
 	} catch {
 		return null;
+	}
+}
+
+/** Remove pending audio that a crashed save left in the song folder. */
+function removeStalePendingAudio(songDir: string): void {
+	const cutoff = Date.now() - PENDING_AUDIO_MAX_AGE_MS;
+	for (const name of fs.readdirSync(songDir)) {
+		if (!PENDING_AUDIO_FILE.test(name)) continue;
+		const file = path.join(songDir, name);
+		try {
+			if (fs.statSync(file).mtimeMs < cutoff) fs.rmSync(file, { force: true });
+		} catch {
+			// Another save removed or committed it in the meantime.
+		}
 	}
 }
 
@@ -141,11 +166,13 @@ export async function saveSongToNfs(options: {
 	aceAudioPath: string;
 	cover?: SongCover | null;
 	coverPngBase64?: string | null;
+	/** Checked before any file in the song folder changes. */
+	isCancelled?: () => boolean;
 }): Promise<{
 	storagePath: string;
 	audioFile: string;
 	effectiveDuration?: number;
-}> {
+} | null> {
 	const {
 		songId,
 		title,
@@ -170,6 +197,7 @@ export async function saveSongToNfs(options: {
 		aceAudioPath,
 		cover,
 		coverPngBase64,
+		isCancelled,
 	} = options;
 
 	const storagePath =
@@ -188,24 +216,40 @@ export async function saveSongToNfs(options: {
 
 	const songDir = path.join(storagePath, genreDir, subGenreDir, songFolder);
 	fs.mkdirSync(songDir, { recursive: true });
+	removeStalePendingAudio(songDir);
 
-	linkSongDirById(storagePath, songId, songDir);
-
-	// Try to copy from local NAS mount first (ACE writes to same NAS share)
-	const localAudioPath = resolveLocalAudioPath(aceAudioPath);
+	// Prepare the audio under a private name: a replacement worker for the
+	// same song may save into this folder while this download is running.
 	const audioFile = path.join(songDir, "audio.mp3");
+	const pendingAudioFile = path.join(songDir, `.audio-${randomUUID()}.mp3`);
+	let trimResult: Awaited<ReturnType<typeof trimTrailingSilence>>;
+	try {
+		// Try to copy from local NAS mount first (ACE writes to same NAS share)
+		const localAudioPath = resolveLocalAudioPath(aceAudioPath);
+		if (localAudioPath) {
+			fs.copyFileSync(localAudioPath, pendingAudioFile);
+		} else {
+			// Fall back to HTTP download from ACE if local file isn't found
+			const urls = await getServiceUrls();
+			const aceUrl = urls.aceStepUrl;
+			await downloadAceAudio(`${aceUrl}${aceAudioPath}`, pendingAudioFile);
+		}
 
-	if (localAudioPath) {
-		fs.copyFileSync(localAudioPath, audioFile);
-	} else {
-		// Fall back to HTTP download from ACE if local file isn't found
-		const urls = await getServiceUrls();
-		const aceUrl = urls.aceStepUrl;
-		await downloadAceAudio(`${aceUrl}${aceAudioPath}`, audioFile);
+		// Trim trailing silence from audio
+		trimResult = await trimTrailingSilence(pendingAudioFile);
+	} catch (error) {
+		fs.rmSync(pendingAudioFile, { force: true });
+		throw error;
 	}
 
-	// Trim trailing silence from audio
-	const trimResult = await trimTrailingSilence(audioFile);
+	// From here on everything is synchronous, so a cancellation cannot slip in
+	// between this check and the writes that replace the folder's files.
+	if (isCancelled?.()) {
+		fs.rmSync(pendingAudioFile, { force: true });
+		return null;
+	}
+	fs.renameSync(pendingAudioFile, audioFile);
+	linkSongDirById(storagePath, songId, songDir);
 
 	saveSongCover(songDir, cover, coverPngBase64);
 
