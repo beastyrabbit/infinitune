@@ -2,8 +2,9 @@
 export function sanitizeLlmText(text: string, maxLength = 2000): string {
 	let s = text.trim();
 	// Remove markdown code fences
-	const fenced = s.match(/^```(?:\w+)?\s*([\s\S]*?)```$/);
-	if (fenced) s = fenced[1].trim();
+	if (s.length >= 6 && s.startsWith("```") && s.endsWith("```")) {
+		s = s.slice(3, -3).replace(/^\w+/, "").trim();
+	}
 	// Remove surrounding quotes
 	if (
 		(s.startsWith('"') && s.endsWith('"')) ||

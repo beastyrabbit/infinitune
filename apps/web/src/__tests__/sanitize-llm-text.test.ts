@@ -8,6 +8,19 @@ describe("sanitizeLlmText", () => {
 	it("strips markdown code fences", () => {
 		expect(sanitizeLlmText("```\nsome text\n```")).toBe("some text");
 	});
+	it.each([
+		["```text\nsome text\n```", "some text"],
+		["``````", ""],
+		["```unfinished", "```unfinished"],
+		["`````", "`````"],
+		["```\na ``` b\n```", "a ``` b"],
+	])("handles fence boundaries in %s", (input, expected) => {
+		expect(sanitizeLlmText(input)).toBe(expected);
+	});
+	it("handles a long unfinished fence without backtracking", () => {
+		const input = `\`\`\`${"a".repeat(100_000)}`;
+		expect(sanitizeLlmText(input, 20)).toBe(input.slice(0, 20));
+	});
 	it("strips surrounding quotes", () => {
 		expect(sanitizeLlmText('"quoted text"')).toBe("quoted text");
 	});

@@ -51,6 +51,33 @@ describe("agent network guards", () => {
 		setPublicHttpRequestOverrideForTests(null);
 	});
 
+	it.each([
+		[
+			"before <b>bold</b> &quot;yes&quot; &amp; &#039;ok&#039;",
+			"before bold \"yes\" & 'ok'",
+		],
+		[
+			"before <script>ignored</script><style>ignored</style> after",
+			"before after",
+		],
+		["before <> after <<b>bold</b>", "before <> after bold"],
+		["before <unfinished", "before <unfinished"],
+	])("extracts text from %s", async (body, expected) => {
+		lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+		setPublicHttpRequestOverrideForTests(async () => bufferResponse(body));
+		expect((await webFetchUrl("https://example.com/page")).text).toBe(expected);
+	});
+
+	it("handles many unclosed tag openers within the fetch limit", async () => {
+		lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+		setPublicHttpRequestOverrideForTests(async () =>
+			bufferResponse("<".repeat(100_000)),
+		);
+		const result = await webFetchUrl("https://example.com/page");
+		expect(result.text).toBe("<".repeat(5000));
+		expect(result.truncated).toBe(true);
+	});
+
 	it("blocks IPv4-mapped private IPv6 DNS answers for web fetch", async () => {
 		lookupMock.mockResolvedValue([{ address: "::ffff:127.0.0.1", family: 6 }]);
 

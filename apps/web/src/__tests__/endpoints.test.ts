@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { assertProductionAppOrigin, selectApiUrls } from "../lib/endpoints";
 
 describe("API URL selection", () => {
+	it("preserves internal slashes and removes only trailing slashes", () => {
+		expect(
+			selectApiUrls({ viteApiUrl: " https://api.example.com//v1/// " })
+				.publicApiUrl,
+		).toBe("https://api.example.com//v1");
+		const base = `https://api.example.com/${"/".repeat(100_000)}path`;
+		expect(selectApiUrls({ viteApiUrl: base }).publicApiUrl).toBe(base);
+	});
 	it("keeps browser requests and media URLs on the browser origin", () => {
 		expect(
 			selectApiUrls({

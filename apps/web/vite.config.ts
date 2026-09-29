@@ -11,10 +11,10 @@ export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), "");
 	const VITE_API_URL = process.env.VITE_API_URL || env.VITE_API_URL;
 	const devServerPort = Number.parseInt(process.env.PORT ?? "", 10);
-	const apiProxyTarget = (VITE_API_URL || "http://localhost:5175").replace(
-		/\/+$/,
-		"",
-	);
+	const apiBase = VITE_API_URL || "http://localhost:5175";
+	let end = apiBase.length;
+	while (end > 0 && apiBase[end - 1] === "/") end--;
+	const apiProxyTarget = apiBase.slice(0, end);
 
 	return {
 		server: {

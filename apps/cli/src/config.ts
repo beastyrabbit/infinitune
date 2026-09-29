@@ -138,11 +138,18 @@ export function saveConfig(next: InfiConfig): void {
 	const configPath = getConfigPath();
 	fs.mkdirSync(path.dirname(configPath), { recursive: true });
 	const sanitized = sanitize(next);
-	fs.writeFileSync(
-		configPath,
-		`${JSON.stringify(sanitized, null, 2)}\n`,
-		"utf8",
-	);
+	const configFd = fs.openSync(configPath, "w", 0o600);
+	try {
+		// Restrict existing files before writing a saved device token.
+		fs.fchmodSync(configFd, 0o600);
+		fs.writeFileSync(
+			configFd,
+			`${JSON.stringify(sanitized, null, 2)}\n`,
+			"utf8",
+		);
+	} finally {
+		fs.closeSync(configFd);
+	}
 }
 
 export function patchConfig(

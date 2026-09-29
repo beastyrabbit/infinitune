@@ -51,13 +51,30 @@ function removeElements(value: string, tag: string): string {
 	return result + value.slice(cursor);
 }
 
+function removeTags(value: string): string {
+	let result = "";
+	let cursor = 0;
+	while (cursor < value.length) {
+		const open = value.indexOf("<", cursor);
+		if (open === -1) break;
+		const close = value.indexOf(">", open + 1);
+		if (close === -1) break;
+		if (close === open + 1) {
+			result += value.slice(cursor, close + 1);
+		} else {
+			result += `${value.slice(cursor, open)} `;
+		}
+		cursor = close + 1;
+	}
+	return result + value.slice(cursor);
+}
+
 function stripHtml(value: string): string {
-	return removeElements(removeElements(value, "script"), "style")
-		.replace(/<[^>]+>/g, " ")
-		.replace(/&quot;/g, '"')
-		.replace(/&#039;/g, "'")
-		.replace(/&amp;/g, "&")
-		.replace(/&nbsp;/g, " ")
+	return removeTags(removeElements(removeElements(value, "script"), "style"))
+		.replaceAll("&quot;", '"')
+		.replaceAll("&#039;", "'")
+		.replaceAll("&amp;", "&")
+		.replaceAll("&nbsp;", " ")
 		.replace(/\s+/g, " ")
 		.trim();
 }
@@ -77,12 +94,12 @@ function assertNoLyricLookup(query: string): void {
 
 function decodeHtml(value: string): string {
 	return value
-		.replace(/&amp;/g, "&")
-		.replace(/&quot;/g, '"')
-		.replace(/&#x27;/g, "'")
-		.replace(/&#039;/g, "'")
-		.replace(/&lt;/g, "<")
-		.replace(/&gt;/g, " ");
+		.replaceAll("&amp;", "&")
+		.replaceAll("&quot;", '"')
+		.replaceAll("&#x27;", "'")
+		.replaceAll("&#039;", "'")
+		.replaceAll("&lt;", "<")
+		.replaceAll("&gt;", " ");
 }
 
 function publicHttpUrl(rawUrl: string): URL {
