@@ -5,6 +5,7 @@ import {
 	heartbeatPlaylist,
 	listPlaylists,
 	listSongsByPlaylist,
+	normalizeServerUrl,
 	rateSong,
 	updatePlaylistPosition,
 	updateSongStatus,
@@ -30,6 +31,21 @@ const song = {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+});
+
+describe("server URL normalization", () => {
+	it.each([
+		["", ""],
+		["///", ""],
+		["https://music.example.com//v1///", "https://music.example.com//v1"],
+		["https://music.example.com/path", "https://music.example.com/path"],
+	])("normalizes %s", (input, expected) => {
+		expect(normalizeServerUrl(input)).toBe(expected);
+	});
+	it("handles a long internal slash run without backtracking", () => {
+		const input = `https://music.example.com/${"/".repeat(100_000)}path`;
+		expect(normalizeServerUrl(input)).toBe(input);
+	});
 });
 
 describe("legacy playback API authentication", () => {

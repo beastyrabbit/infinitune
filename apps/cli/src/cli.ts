@@ -1868,7 +1868,15 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 `;
-			fs.writeFileSync(unitPath, unitFile, "utf8");
+			const unitFd = fs.openSync(unitPath, "w", 0o600);
+			try {
+				// Existing units may be world-readable. Restrict them before
+				// writing a device token, including when reinstalling the service.
+				fs.fchmodSync(unitFd, 0o600);
+				fs.writeFileSync(unitFd, unitFile, "utf8");
+			} finally {
+				fs.closeSync(unitFd);
+			}
 			systemctlUser(["daemon-reload"]);
 			systemctlUser(["enable", "--now", unitName]);
 			console.log(`Installed and started ${unitName}.`);

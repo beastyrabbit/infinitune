@@ -13,7 +13,9 @@ import type { Playlist, Song, SongStatus } from "@infinitune/shared/types";
 import z from "zod";
 
 export function normalizeServerUrl(serverUrl: string): string {
-	return serverUrl.replace(/\/+$/, "");
+	let end = serverUrl.length;
+	while (end > 0 && serverUrl[end - 1] === "/") end--;
+	return serverUrl.slice(0, end);
 }
 
 export function toRoomWsUrl(serverUrl: string): string {

@@ -161,7 +161,9 @@ function flushNoisyRequestSummary(reason: "interval" | "shutdown"): void {
 
 function isWorkerAdmin(c: Context): boolean {
 	if (!WORKER_ADMIN_TOKEN && process.env.NODE_ENV !== "production") return true;
-	const bearer = c.req.header("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+	const bearer = c.req
+		.header("authorization")
+		?.match(/^Bearer\s+(\S.*)$/i)?.[1];
 	const supplied = c.req.header("x-admin-token") ?? bearer;
 	return !!WORKER_ADMIN_TOKEN && supplied === WORKER_ADMIN_TOKEN;
 }

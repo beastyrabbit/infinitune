@@ -341,11 +341,11 @@ async function getSettings(): Promise<SongWorkerSettings> {
 	);
 	const hasExplicitPersonaModel =
 		Boolean(all.personaModel) && all.personaModel !== "__fallback__";
+	const fallbackPersonaModel =
+		personaProvider === textProvider ? textModel : "";
 	const personaModel = hasExplicitPersonaModel
 		? all.personaModel || ""
-		: personaProvider === textProvider
-			? textModel
-			: "";
+		: fallbackPersonaModel;
 	const aceModel = resolveAceModelSetting(
 		all.aceModel,
 		all.aceModel !== undefined,
@@ -769,48 +769,32 @@ function getWorkerRuntime() {
 	workerRuntime = createWorkerRuntime({
 		handlers: {
 			handleSongCreated: async (event) => {
-				await Promise.resolve(
-					routeSongEventToActor({ type: "song.created", ...event }),
-				);
+				routeSongEventToActor({ type: "song.created", ...event });
 			},
 			handleSongStatusChanged: async (event) => {
-				await Promise.resolve(
-					routeSongEventToActor({ type: "song.status_changed", ...event }),
-				);
+				routeSongEventToActor({ type: "song.status_changed", ...event });
 			},
 			handleSongDeleted,
 			handlePlaylistCreated: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({ type: "playlist.created", ...event }),
-				);
+				routePlaylistEventToActor({ type: "playlist.created", ...event });
 			},
 			handlePlaylistSteered: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({ type: "playlist.steered", ...event }),
-				);
+				routePlaylistEventToActor({ type: "playlist.steered", ...event });
 			},
 			handlePlaylistHeartbeat: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({ type: "playlist.heartbeat", ...event }),
-				);
+				routePlaylistEventToActor({ type: "playlist.heartbeat", ...event });
 			},
 			handlePlaylistUpdated: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({ type: "playlist.updated", ...event }),
-				);
+				routePlaylistEventToActor({ type: "playlist.updated", ...event });
 			},
 			handlePlaylistDeleted: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({ type: "playlist.deleted", ...event }),
-				);
+				routePlaylistEventToActor({ type: "playlist.deleted", ...event });
 			},
 			handlePlaylistStatusChanged: async (event) => {
-				await Promise.resolve(
-					routePlaylistEventToActor({
-						type: "playlist.status_changed",
-						...event,
-					}),
-				);
+				routePlaylistEventToActor({
+					type: "playlist.status_changed",
+					...event,
+				});
 			},
 			handleSettingsChanged,
 			reconcileAceState,
@@ -1354,7 +1338,7 @@ async function handlePlaylistSteered(data: {
 	);
 	for (const song of oldPending) {
 		const w = songWorkers.get(song.id);
-		if (w) w.cancel();
+		w?.cancel();
 		await songService.deleteSong(song.id);
 		songLogger(song.id, playlistId).debug(
 			{ songEpoch: song.promptEpoch ?? 0, newEpoch },
@@ -1485,7 +1469,7 @@ async function recoverStaleSongs(
 ): Promise<void> {
 	for (const stale of staleSongs) {
 		const w = songWorkers.get(stale.id);
-		if (w) w.cancel();
+		w?.cancel();
 		if (stale.radioEligible && stale.albumId) {
 			songLogger(stale.id, playlistId).info(
 				{

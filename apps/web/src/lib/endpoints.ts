@@ -29,7 +29,10 @@ const APP_ORIGIN_ERROR =
 
 function cleanBaseUrl(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
-	return trimmed ? trimmed.replace(/\/+$/, "") : undefined;
+	if (!trimmed) return undefined;
+	let end = trimmed.length;
+	while (end > 0 && trimmed[end - 1] === "/") end--;
+	return trimmed.slice(0, end);
 }
 
 export function assertProductionAppOrigin(
