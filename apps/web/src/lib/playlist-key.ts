@@ -2,7 +2,8 @@
 export function generatePlaylistKey(): string {
 	const chars = "0123456789abcdefghijklmnopqrstuvwxyz";
 	const random = new Uint32Array(1);
-	const limit = 0x1_0000_0000 - (0x1_0000_0000 % chars.length);
+	const uint32Range = 2 ** 32;
+	const limit = uint32Range - (uint32Range % chars.length);
 	let key = "";
 	for (let i = 0; i < 8; i++) {
 		do {
