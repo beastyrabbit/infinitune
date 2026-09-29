@@ -1442,7 +1442,10 @@ export function useSongsAll(): Song[] | undefined {
 }
 
 export function useSongsBatch(ids: string[]): Song[] | undefined {
-	const key = ids.slice().sort().join(",");
+	const key = ids
+		.slice()
+		.sort((left, right) => left.localeCompare(right))
+		.join(",");
 	const { data } = useQuery({
 		queryKey: ["songs", "batch", key],
 		queryFn: async () =>

@@ -56,9 +56,8 @@ export class FfplayEngine {
 		this.startAtOffset(0, localStartAt);
 	}
 
-	preload(songId: string, url: string): void {
+	preload(songId: string, _url: string): void {
 		this.preloadSongId = songId;
-		void url;
 	}
 
 	play(): void {

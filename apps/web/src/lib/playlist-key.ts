@@ -1,9 +1,14 @@
-/** Generate a random 8-character base36 playlist key */
+/** Generate an unpredictable 8-character base36 playlist key. */
 export function generatePlaylistKey(): string {
 	const chars = "0123456789abcdefghijklmnopqrstuvwxyz";
+	const random = new Uint32Array(1);
+	const limit = 0x1_0000_0000 - (0x1_0000_0000 % chars.length);
 	let key = "";
 	for (let i = 0; i < 8; i++) {
-		key += chars[Math.floor(Math.random() * chars.length)];
+		do {
+			globalThis.crypto.getRandomValues(random);
+		} while (random[0] >= limit);
+		key += chars[random[0] % chars.length];
 	}
 	return key;
 }
