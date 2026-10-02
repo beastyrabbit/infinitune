@@ -38,7 +38,7 @@
     "@tanstack/router-plugin": "^1.168.40",
     "@tanstack/store": "^0.11.1",
     "amqplib": "^0.10.9",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
