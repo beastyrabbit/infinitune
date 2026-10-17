@@ -16,6 +16,10 @@
 
 </div>
 
+Maintainer notes for local toolchains and releases live in
+[development notes](docs/development-notes.md) and
+[release and review workflow](docs/releasing.md).
+
 
 ## At a glance
 
