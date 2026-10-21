@@ -12,6 +12,7 @@ import {
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { assertProductionAppOrigin } from "@/lib/endpoints";
+import { getLegalResponse } from "@/lib/legal/pages.server";
 
 assertProductionAppOrigin({
 	nodeEnv: process.env.NODE_ENV,
@@ -37,6 +38,8 @@ export function createServerEntry(entry: ServerEntry): ServerEntry {
 		async fetch(...args) {
 			try {
 				const request = args[0];
+				const legalResponse = getLegalResponse(request);
+				if (legalResponse) return legalResponse;
 				const pathname = new URL(request.url).pathname;
 				const operation = pathname.startsWith("/_serverFn/")
 					? "server-function"

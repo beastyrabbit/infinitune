@@ -27,6 +27,23 @@ import server, { createServerEntry } from "../../server";
 
 beforeEach(() => vi.clearAllMocks());
 
+it.each(["/impressum", "/datenschutz", "/legal-notice", "/privacy"])(
+	"serves %s before app rendering, loaders and request telemetry",
+	async (path) => {
+		const fetch = vi.fn(async () => {
+			throw new Error("The app renderer is unavailable");
+		});
+		const response = await createServerEntry({ fetch }).fetch(
+			new Request(`http://localhost${path}`),
+		);
+		expect(response.status).toBe(200);
+		expect(await response.text()).toContain("Tobias Heer");
+		expect(fetch).not.toHaveBeenCalled();
+		expect(telemetry.render).not.toHaveBeenCalled();
+		expect(telemetry.withTelemetrySpan).not.toHaveBeenCalled();
+	},
+);
+
 it.each([
 	["/health", "browser"],
 	["/", "kube-probe/1.35"],
