@@ -2,6 +2,31 @@ import { expect, test } from "@playwright/test";
 
 const origin = "http://127.0.0.1:4471";
 
+test("public path aliases stop before the SSR app and server functions", async ({ request }) => {
+	for (const path of [
+		"/_serverFn/x/..%2F..%2Fprivacy",
+		"/_serverFn/x/..%252F..%252Fprivacy",
+		"/privacy/",
+		"//privacy",
+		"/a/%2e%2e/privacy",
+		"/x/../privacy",
+		"/_serverFn/x/..%5C..%5Cprivacy",
+	]) {
+		const url = `${origin}${path}`;
+		const response = await request.get(url);
+		expect(response.status()).toBe(200);
+		expect(response.headers()["content-security-policy"]).toContain("default-src 'none'");
+		expect(await response.text()).toContain("<h1>Privacy Policy</h1>");
+		expect(await response.text()).not.toContain("<script");
+		const head = await request.head(url);
+		expect(head.status()).toBe(200);
+		expect(await head.body()).toHaveLength(0);
+		const post = await request.post(url);
+		expect(post.status()).toBe(405);
+		expect(post.headers().allow).toBe("GET, HEAD");
+	}
+});
+
 for (const viewport of [
 	{ width: 1280, height: 900 },
 	{ width: 390, height: 844 },

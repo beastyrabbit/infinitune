@@ -98,6 +98,36 @@ describe("standalone legal pages", () => {
 		},
 	);
 
+	it.each([
+		["/_serverFn/x/..%2F..%2Fprivacy", "/privacy"],
+		["/_serverFn/x/..%252F..%252Fprivacy", "/privacy"],
+		["/_serverFn/x/..%25252F..%25252Fprivacy", "/privacy"],
+		["/privacy/", "/privacy"],
+		["//privacy", "/privacy"],
+		["/a/..%2Fprivacy", "/privacy"],
+		["/a/%2e%2e/privacy", "/privacy"],
+		["/x/../impressum", "/impressum"],
+		["/_serverFn/x/..%5C..%5Cprivacy", "/privacy"],
+		["/a%255c..%255cdatenschutz", "/datenschutz"],
+		["/%/..%2Flegal-notice", "/legal-notice"],
+		["/%FF/..%2Fprivacy", "/privacy"],
+		["/..%2F..%2Fprivacy", "/privacy"],
+	])("serves only static legal HTML for alias %s", async (alias, canonical) => {
+		for (const method of ["GET", "HEAD", "POST"]) {
+			const response = getLegalResponse(
+				new Request(`https://infinitune.heerlab.com${alias}`, { method }),
+			);
+			const expected = getLegalResponse(
+				new Request(`https://infinitune.heerlab.com${canonical}`, { method }),
+			);
+			expect(response).toBeDefined();
+			if (!response || !expected) throw new Error("Missing legal response");
+			expect(response.status).toBe(expected.status);
+			expect([...response.headers]).toEqual([...expected.headers]);
+			expect(await response.text()).toBe(await expected.text());
+		}
+	});
+
 	it("handles HEAD and rejects mutations without expanding the public paths", async () => {
 		const head = getLegalResponse(
 			new Request("https://infinitune.heerlab.com/privacy", { method: "HEAD" }),
@@ -111,7 +141,10 @@ describe("standalone legal pages", () => {
 		expect(post?.headers.get("Allow")).toBe("GET, HEAD");
 		for (const path of [
 			"/privacy/child",
-			"/privacy/",
+			"/privacy-extra",
+			"/privacy/settings",
+			"/Privacy",
+			"/privacy%",
 			"/api/privacy",
 			"/constructor",
 		]) {

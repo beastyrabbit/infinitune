@@ -63,8 +63,29 @@ const pages = new Map(
 	]),
 );
 
+function normalizeLegalPath(pathname: string): string {
+	// Match at least the decoding and dot resolution used by Pangolin. Decode
+	// bytes individually so malformed escapes cannot hide encoded separators.
+	// Each changing pass shortens the input, bounding even nested %25 escapes.
+	for (let remaining = pathname.length; remaining > 0; remaining--) {
+		const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
+			String.fromCharCode(Number.parseInt(hex, 16)),
+		);
+		if (decoded === pathname) break;
+		pathname = decoded;
+	}
+	const segments: string[] = [];
+	for (const segment of pathname.split(/[/\\]+/)) {
+		if (segment === "..") segments.pop();
+		else if (segment && segment !== ".") segments.push(segment);
+	}
+	return `/${segments.join("/")}`;
+}
+
 export function getLegalResponse(request: Request): Response | undefined {
-	const html = pages.get(new URL(request.url).pathname);
+	// Serve aliases directly, so every public legal-path alias stops here before
+	// any Start loader or server function can run, without a redirect round trip.
+	const html = pages.get(normalizeLegalPath(new URL(request.url).pathname));
 	if (html === undefined) return undefined;
 	const allowed = request.method === "GET" || request.method === "HEAD";
 	return new Response(
