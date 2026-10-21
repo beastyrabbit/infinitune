@@ -16,6 +16,7 @@ describe("browser SDK gating", () => {
 		document.head.innerHTML = "";
 		vi.resetModules();
 		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 	});
 	it("never loads analytics in dev or without an allowed domain", async () => {
 		const { startAnalytics } = await import("./browser");
@@ -30,6 +31,28 @@ describe("browser SDK gating", () => {
 		await expect(
 			startBrowserSentry({ ...config, dsn: "" }),
 		).resolves.toBeUndefined();
+	});
+	it("loads analytics without consulting a replay policy or starting the recorder", async () => {
+		vi.stubEnv("DEV", false);
+		const fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				enabled: true,
+				replayEnabled: true,
+				heatmapEnabled: true,
+			}),
+		});
+		vi.stubGlobal("fetch", fetch);
+		const { startAnalytics } = await import("./browser");
+		startAnalytics({ ...config, umamiDomains: [location.hostname] });
+		const script = document.querySelector("script");
+		expect(script?.src).toBe("https://umami.example.com/script.js");
+		script?.dispatchEvent(new Event("load"));
+		await Promise.resolve();
+		expect(fetch).not.toHaveBeenCalled();
+		expect([...document.scripts].map((entry) => entry.src)).toEqual([
+			"https://umami.example.com/script.js",
+		]);
 	});
 	it("masks replay text, attributes and full URLs independently of server policy", () => {
 		const result = sanitizeRecording({

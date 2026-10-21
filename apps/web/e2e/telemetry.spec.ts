@@ -11,11 +11,13 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	const sends: Array<Record<string, unknown>> = [];
 	const envelopes: string[] = [];
 	let scriptRequests = 0;
+	const recordingRequests: string[] = [];
 	await context.route("**/*", async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
 		const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*" };
 		if (url.hostname === "umami.heerlab.com") {
+			if (/recorder|\/api\/record/.test(url.pathname)) recordingRequests.push(url.pathname);
 			if (url.pathname === "/script.js") { scriptRequests++; return route.fulfill({ contentType: "application/javascript", body: script }); }
 			if (url.pathname === "/api/send") { if (request.method() === "POST") sends.push(request.postDataJSON()); return route.fulfill({ headers, json: { cache: "e2e-cache" } }); }
 			if (url.pathname.endsWith("/recorder")) return route.fulfill({ headers, json: { enabled: true, replayEnabled: true, heatmapEnabled: true, sampleRate: 1, heatmapSampleRate: 1, maskLevel: "strict", blockSelector: "input,textarea,select,[data-telemetry-private]" } });
@@ -64,7 +66,7 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	const beforeBack = sends.length;
 	await page.goBack();
 	await expect.poll(() => sends.slice(beforeBack).some((event) => (event.payload as { url?: string }).url === "/autoplayer/settings")).toBe(true);
-	await expect.poll(async () => page.evaluate(() => [...document.querySelectorAll("script[src]")].some((script) => (script as HTMLScriptElement).src.includes("recorder.js")))).toBe(true);
+	expect(await page.evaluate(() => [...document.querySelectorAll("script[src]")].some((script) => (script as HTMLScriptElement).src.includes("recorder.js")))).toBe(false);
 	// Wait for the lazily imported SDK before throwing an unhandled error.
 	await page.waitForFunction(() => {
 		const sentry = (window as Window & {
@@ -91,6 +93,7 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	// enabled Sentry integrations keep their state in memory. No identity/replay
 	// Sentry integration or Umami distinct ID is enabled.
 	expect(storage.local).toEqual([]);
+	expect(recordingRequests).toEqual([]);
 	expect(storage.session.sort()).toEqual(["infinitune-radio-listener-id", "tsr-scroll-restoration-v1_3"]);
 	await context.close();
 });
