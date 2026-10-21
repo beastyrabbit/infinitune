@@ -130,11 +130,32 @@ jobs:
       - name: Create release, upload maps and finalize
         env:
           SENTRY_AUTH_TOKEN: ${{ env.GLITCHTIP_AUTH_TOKEN }}
-          SENTRY_URL: http://192.168.60.68:8000
+          SENTRY_URL: http://127.0.0.1:18765
           SENTRY_ORG: beasty-rabbit
           SENTRY_PROJECT: infinitune
           SENTRY_RELEASE: ${{ steps.release.outputs.version }}
         run: |
+          # Pinned node:26-slim, v26.12.0.
+          docker run -d --rm --name glitchtip-lan-proxy --network host \
+            -v "$PWD/scripts/glitchtip-lan-proxy.mjs:/proxy.mjs:ro" \
+            node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
+            node /proxy.mjs http://192.168.60.68:8000 18765
+          trap 'docker stop glitchtip-lan-proxy >/dev/null' EXIT
+          for attempt in $(seq 1 30); do
+            if docker exec glitchtip-lan-proxy node -e '
+              const socket = require("node:net").connect(18765, "127.0.0.1");
+              socket.setTimeout(1000, () => process.exit(1));
+              socket.on("connect", () => socket.end());
+              socket.on("error", () => process.exit(1));
+            '; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "GlitchTip LAN proxy did not start" >&2
+              exit 1
+            fi
+            sleep 1
+          done
           docker run --rm --network host \
             -e SENTRY_AUTH_TOKEN -e SENTRY_URL -e SENTRY_ORG -e SENTRY_PROJECT -e SENTRY_RELEASE \
             -v "$PWD/sourcemaps:/sourcemaps:ro" \

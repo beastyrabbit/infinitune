@@ -183,6 +183,12 @@ then finalizes the release. The upload uses the injected debug IDs. The build
 injects them with the same CLI version. Release values enter only the runtime
 stage, so new releases reuse dependency installs and the source-map build.
 
+The upload job uses a loopback-only LAN proxy because GlitchTip advertises its
+public, SSO-protected chunk-upload URL. The proxy forwards to the LAN API and
+rewrites that URL to itself so artifact bundles bypass the SSO login redirect.
+It can be removed once GlitchTip advertises a LAN or relative URL, or Pangolin
+allows the token-authenticated upload paths.
+
 Run `pnpm check`, `pnpm typecheck`, `pnpm test` and
 `pnpm --filter @infinitune/web test:e2e`. E2E builds and starts production Nitro,
 mocks the captured tracker and GlitchTip envelopes, and blocks remote Node and
