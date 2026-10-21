@@ -68,3 +68,40 @@ it("counts each room/role once per hook lifetime across reconnects", () => {
 	act(() => FakeWebSocket.instances.at(-1)?.open());
 	expect(trackEvent).toHaveBeenCalledTimes(4);
 });
+
+it("tracks room skips only after the command is transmitted", () => {
+	const { result, unmount } = renderHook(() =>
+		useRoomConnection("room", "Test device", "controller"),
+	);
+	const socket = FakeWebSocket.instances[0];
+	act(() => result.current.sendCommand("skip"));
+	expect(socket.send).not.toHaveBeenCalled();
+	expect(trackEvent).not.toHaveBeenCalled();
+
+	act(() => socket.open());
+	vi.mocked(trackEvent).mockClear();
+	socket.send.mockClear();
+	act(() => result.current.sendCommand("skip"));
+	expect(socket.send).toHaveBeenCalledExactlyOnceWith(
+		JSON.stringify({ type: "command", action: "skip" }),
+	);
+	expect(trackEvent).toHaveBeenCalledExactlyOnceWith("song_skip", {
+		source: "room",
+	});
+
+	vi.mocked(trackEvent).mockClear();
+	socket.send.mockClear();
+	act(() => result.current.sendCommand("pause"));
+	expect(socket.send).toHaveBeenCalledOnce();
+	expect(trackEvent).not.toHaveBeenCalled();
+
+	// CLOSING can precede the close event, while connected still reads true.
+	socket.readyState = 2;
+	act(() => result.current.sendCommand("skip"));
+	expect(trackEvent).not.toHaveBeenCalled();
+	act(() => socket.close());
+	act(() => result.current.sendCommand("skip"));
+	expect(socket.send).toHaveBeenCalledOnce();
+	expect(trackEvent).not.toHaveBeenCalled();
+	unmount();
+});

@@ -140,10 +140,12 @@ export function useRoomConnection(
 		roomIdRef.current = roomId;
 	}, [roomId]);
 
-	const send = useCallback((msg: ClientMessage) => {
+	const send = useCallback((msg: ClientMessage): boolean => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current.send(JSON.stringify(msg));
+			return true;
 		}
+		return false;
 	}, []);
 
 	const trackRoomJoin = useCallback(() => {
@@ -320,8 +322,9 @@ export function useRoomConnection(
 			payload?: Record<string, unknown>,
 			targetDeviceId?: string,
 		) => {
-			send({ type: "command", action, payload, targetDeviceId });
-			if (action === "skip") trackEvent("song_skip", { source: "room" });
+			const sent = send({ type: "command", action, payload, targetDeviceId });
+			if (sent && action === "skip")
+				trackEvent("song_skip", { source: "room" });
 		},
 		[send],
 	);
