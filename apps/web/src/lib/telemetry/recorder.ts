@@ -11,6 +11,7 @@ export function sanitizeRecording(value: unknown, key = ""): unknown {
 		if (/^(url|href|src)$/.test(key)) {
 			try {
 				const url = new URL(value, location.origin);
+				if (url.protocol !== "http:" && url.protocol !== "https:") return "";
 				return `${url.origin}${analyticsPath(url.href)}`;
 			} catch {
 				return "";

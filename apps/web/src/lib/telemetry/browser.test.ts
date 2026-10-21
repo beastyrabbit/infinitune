@@ -48,4 +48,41 @@ describe("browser SDK gating", () => {
 			url: "https://music.example.com/",
 		});
 	});
+	it.each([
+		"data:image/png;base64,private-cover-image",
+		"blob:https://music.example.com/private-blob-id",
+		"javascript:alert('private')",
+		"file:///private/cover.png",
+		"mailto:private@example.com",
+	])("removes non-HTTP replay URLs: %s", (url) => {
+		expect(
+			sanitizeRecording({
+				url,
+				href: url,
+				src: url,
+				attributes: { src: url, href: url },
+			}),
+		).toEqual({
+			url: "",
+			href: "",
+			src: "",
+			attributes: { src: "", href: "" },
+		});
+	});
+	it.each([
+		[
+			"http://music.example.com/cover.png?token=private#private",
+			"http://music.example.com/cover.png",
+		],
+		[
+			"https://music.example.com/cover.png?token=private#private",
+			"https://music.example.com/cover.png",
+		],
+		[
+			"/covers/cover.png?token=private#private",
+			`${location.origin}/covers/cover.png`,
+		],
+	])("keeps sanitized HTTP replay URLs: %s", (url, expected) => {
+		expect(sanitizeRecording({ src: url })).toEqual({ src: expected });
+	});
 });
