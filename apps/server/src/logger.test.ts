@@ -1,4 +1,4 @@
-import {
+import fsPromises, {
 	mkdir,
 	mkdtemp,
 	readdir,
@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { expireLogFiles, trimLogFile } from "./logger";
 
 const hour = 60 * 60 * 1000;
@@ -20,6 +20,7 @@ const cutoff = now - 14 * 24 * hour + hour;
 const session = "server-2026-10-01T00-00-00-000Z.ndjson";
 let directory: string;
 afterEach(async () => {
+	vi.restoreAllMocks();
 	if (directory) await rm(directory, { recursive: true, force: true });
 });
 
@@ -124,6 +125,31 @@ it("empties an expired active destination without replacing its open inode", asy
 	await expireLogFiles(directory, now, file);
 	expect(await readFile(file, "utf8")).toBe("");
 	expect((await stat(file)).ino).toBe(inode);
+});
+
+it("continues expiring inactive files after a file cannot be statted", async () => {
+	directory = await mkdtemp(path.join(os.tmpdir(), "infinitune-logs-"));
+	for (const name of [session, "server-2026-10-02T00-00-00-000Z.ndjson"])
+		await writeFile(
+			path.join(directory, name),
+			`${JSON.stringify({ time: 0 })}\n`,
+		);
+	const error = Object.assign(new Error("Permission denied"), {
+		code: "EACCES",
+	});
+	const statSpy = vi.spyOn(fsPromises, "stat").mockRejectedValueOnce(error);
+	const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+	await expireLogFiles(directory, now);
+
+	expect(statSpy).toHaveBeenCalledTimes(2);
+	expect(await readdir(directory)).toEqual([
+		path.basename(statSpy.mock.calls[0][0] as string),
+	]);
+	expect(errorSpy).toHaveBeenCalledExactlyOnceWith(
+		"Failed to expire server log files",
+		error,
+	);
 });
 
 it("deletes empty inactive files and preserves unrelated files, symlinks and directories", async () => {

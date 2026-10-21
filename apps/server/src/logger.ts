@@ -100,11 +100,15 @@ export async function expireLogFiles(
 				)
 			)
 				continue;
-			await expireLogFile(
-				path.join(directory, entry.name),
-				now - LOG_FILE_RETENTION_MS + LOG_FILE_EXPIRY_INTERVAL_MS,
-				activeFile,
-			);
+			try {
+				await expireLogFile(
+					path.join(directory, entry.name),
+					now - LOG_FILE_RETENTION_MS + LOG_FILE_EXPIRY_INTERVAL_MS,
+					activeFile,
+				);
+			} catch (error) {
+				console.error("Failed to expire server log files", error);
+			}
 		}
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
