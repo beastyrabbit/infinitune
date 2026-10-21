@@ -24,7 +24,6 @@ export function initNodeTelemetry(
 		integrations: [
 			Sentry.onUncaughtExceptionIntegration(),
 			Sentry.onUnhandledRejectionIntegration(),
-			Sentry.dedupeIntegration(),
 			Sentry.linkedErrorsIntegration(),
 			...(runtime === "frontend"
 				? [Sentry.captureConsoleIntegration({ levels: ["error"] })]

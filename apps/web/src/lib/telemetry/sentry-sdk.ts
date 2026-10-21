@@ -16,7 +16,10 @@ export function initialize(config: TelemetryConfig) {
 		release: config.release,
 		sendDefaultPii: false,
 		tracesSampleRate: config.tracesSampleRate,
-		integrations: [
+		integrations: (defaults) => [
+			...defaults.filter(
+				(integration) => integration.name !== "BrowserSession",
+			),
 			captureConsoleIntegration({ levels: ["error"] }),
 			browserTracingIntegration(),
 		],

@@ -2,6 +2,7 @@ import { telemetryConfig } from "@infinitune/shared/telemetry";
 import { captureError } from "@infinitune/shared/telemetry-node";
 import { on } from "../events/event-bus";
 import * as playlistService from "../services/playlist-service";
+import * as settingsService from "../services/settings-service";
 import * as songService from "../services/song-service";
 import { trackServerEvent } from "./umami";
 
@@ -25,9 +26,18 @@ export function startTelemetryEvents(): void {
 		const song = await songService.getById(songId);
 		if (!song) return;
 		const playlist = await playlistService.getById(playlistId);
-		const stage = song.erroredAtStatus || from;
-		const provider = song.llmProvider || playlist?.llmProvider || "unknown";
-		const model = song.llmModel || playlist?.llmModel || "unknown";
+		const stage = started ? to : song.erroredAtStatus || from;
+		const audio = ["submitting_to_ace", "generating_audio", "saving"].includes(
+			stage,
+		);
+		const provider = audio
+			? "ace-step"
+			: song.llmProvider || playlist?.llmProvider || "unknown";
+		const model = audio
+			? playlist?.aceModel ||
+				(await settingsService.get("aceModel")) ||
+				"default"
+			: song.llmModel || playlist?.llmModel || "unknown";
 		trackServerEvent(
 			started
 				? "song_generation_started"
@@ -47,8 +57,10 @@ export function startTelemetryEvents(): void {
 				...(failed ? { error_class: "PipelineError", status: to } : {}),
 			},
 		);
-		if (failed)
-			captureError(new Error("Song pipeline failed"), {
+		if (failed) {
+			const error = new Error("Song pipeline failed");
+			error.name = "PipelineError";
+			captureError(error, {
 				songId,
 				playlistId,
 				stage,
@@ -56,5 +68,6 @@ export function startTelemetryEvents(): void {
 				model,
 				status: to,
 			});
+		}
 	});
 }
