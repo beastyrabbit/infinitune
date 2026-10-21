@@ -511,6 +511,10 @@ const originalListeners = httpServer.listeners("upgrade").slice();
 
 httpServer.removeAllListeners("upgrade");
 httpServer.on("upgrade", (request, socket, head) => {
+	if (hasUnsafeRawPath(request.url ?? "/")) {
+		socket.destroy();
+		return;
+	}
 	const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
 
 	if (url.pathname === "/ws/playlist") {

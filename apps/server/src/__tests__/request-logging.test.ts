@@ -14,6 +14,15 @@ const mocks = vi.hoisted(() => {
 	const requestWarn = vi.fn();
 	const requestDebug = vi.fn();
 	return {
+		upgrade: null as
+			| ((
+					request: { url?: string },
+					socket: { destroy: () => void },
+					head: Buffer,
+			  ) => void)
+			| null,
+		wsUpgrade: vi.fn(),
+		originalUpgrade: vi.fn(),
 		fetch: null as
 			| ((
 					request: Request,
@@ -71,8 +80,10 @@ vi.mock("@hono/node-server", () => ({
 		(options: { fetch: (request: Request) => Promise<Response> }) => {
 			mocks.fetch = options.fetch;
 			return {
-				listeners: vi.fn(() => []),
-				on: vi.fn(),
+				listeners: vi.fn(() => [mocks.originalUpgrade]),
+				on: vi.fn((event: string, handler: typeof mocks.upgrade) => {
+					if (event === "upgrade") mocks.upgrade = handler;
+				}),
 				removeAllListeners: vi.fn(),
 			};
 		},
@@ -92,7 +103,7 @@ vi.mock("ws", () => ({
 	WebSocketServer: class {
 		close = vi.fn();
 		emit = vi.fn();
-		handleUpgrade = vi.fn();
+		handleUpgrade = mocks.wsUpgrade;
 		on = vi.fn();
 	},
 }));
@@ -217,6 +228,8 @@ describe("request logging", () => {
 	});
 
 	beforeEach(() => {
+		mocks.wsUpgrade.mockClear();
+		mocks.originalUpgrade.mockClear();
 		mocks.telemetryRequests.mockClear();
 		mocks.rootError.mockClear();
 		mocks.child.mockClear();
@@ -228,6 +241,60 @@ describe("request logging", () => {
 
 	afterAll(() => {
 		vi.unstubAllEnvs();
+	});
+
+	it.each([
+		"/x/../ws/playlist",
+		"/./ws/radio",
+		"/ws/%2e%2e/ws/playlist",
+		"/ws%2fplaylist",
+		"/ws%5Cradio",
+		"/ws%252Fplaylist",
+		"/ws\\radio",
+	])("destroys unsafe upgrade target %s before dispatch", (url) => {
+		if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
+		const socket = { destroy: vi.fn() };
+		mocks.upgrade({ url }, socket, Buffer.alloc(0));
+		expect(socket.destroy).toHaveBeenCalledOnce();
+		expect(mocks.wsUpgrade).not.toHaveBeenCalled();
+		expect(mocks.originalUpgrade).not.toHaveBeenCalled();
+	});
+
+	it.each(["/ws/playlist", "/ws/radio"])(
+		"allows canonical upgrade %s and structural characters in queries",
+		(path) => {
+			if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
+			const socket = { destroy: vi.fn() };
+			const head = Buffer.alloc(0);
+			for (const url of [path, `${path}?next=%2F%5C%25%2E/../`]) {
+				const request = { url };
+				mocks.upgrade(request, socket, head);
+				expect(mocks.wsUpgrade).toHaveBeenLastCalledWith(
+					request,
+					socket,
+					head,
+					expect.any(Function),
+				);
+			}
+			expect(mocks.wsUpgrade).toHaveBeenCalledTimes(2);
+			expect(socket.destroy).not.toHaveBeenCalled();
+			expect(mocks.originalUpgrade).not.toHaveBeenCalled();
+		},
+	);
+
+	it("preserves upgrade fallback to Hono", () => {
+		if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
+		const request = { url: "/ws?next=%2F%25/../" };
+		const socket = { destroy: vi.fn() };
+		const head = Buffer.alloc(0);
+		mocks.upgrade(request, socket, head);
+		expect(mocks.originalUpgrade).toHaveBeenCalledExactlyOnceWith(
+			request,
+			socket,
+			head,
+		);
+		expect(socket.destroy).not.toHaveBeenCalled();
+		expect(mocks.wsUpgrade).not.toHaveBeenCalled();
 	});
 
 	it.each([
