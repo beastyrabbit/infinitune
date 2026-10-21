@@ -14,17 +14,37 @@ import ApiProvider from "../integrations/api/provider";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
-	loader: () => getTelemetryConfig(),
+	loader: async () => {
+		try {
+			return await getTelemetryConfig();
+		} catch {
+			return null;
+		}
+	},
+	staleTime: Infinity,
+	shouldReload: false,
 	errorComponent: function RootError({ error, reset }) {
 		useEffect(() => {
 			captureBrowserError(error);
 		}, [error]);
 		return (
-			<div role="alert">
-				Something went wrong.{" "}
-				<button type="button" onClick={reset}>
-					Try again
-				</button>
+			<div
+				role="alert"
+				className="font-mono min-h-screen bg-gray-950 text-white flex items-center justify-center"
+			>
+				<div className="text-center">
+					<p className="text-6xl font-black">ERROR</p>
+					<p className="text-sm uppercase tracking-widest text-white/40 mt-2">
+						Something went wrong
+					</p>
+					<button
+						type="button"
+						onClick={reset}
+						className="inline-block mt-6 border-2 border-white/20 px-4 py-2 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors"
+					>
+						Try again
+					</button>
+				</div>
 			</div>
 		);
 	},
