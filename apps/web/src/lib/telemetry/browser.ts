@@ -4,7 +4,6 @@ import {
 	sanitizeProps,
 	type TelemetryConfig,
 } from "@infinitune/shared/telemetry";
-import { guardRecordingTransport } from "./recorder";
 
 export interface Umami {
 	track(
@@ -104,7 +103,6 @@ export function startAnalytics(config: TelemetryConfig): void {
 	script.referrerPolicy = "no-referrer";
 	script.onload = () => {
 		tracker.flush();
-		void startRecorder(config);
 	};
 	document.head.append(script);
 	// This served tracker patches push/replaceState but omits popstate.
@@ -128,42 +126,4 @@ export function startAnalytics(config: TelemetryConfig): void {
 		},
 		{ passive: true },
 	);
-}
-
-async function startRecorder(config: TelemetryConfig): Promise<void> {
-	// This Umami release ignores masking attributes. Verify its server-side
-	// policy before loading recorder.js; never silently accept moderate masking.
-	try {
-		const response = await fetch(
-			`${config.umamiUrl}/api/websites/${encodeURIComponent(config.umamiWebsiteId)}/recorder`,
-			{
-				credentials: "omit",
-				referrerPolicy: "no-referrer",
-				signal: AbortSignal.timeout(2000),
-			},
-		);
-		if (!response.ok) return;
-		const policy = await response.json();
-		if (
-			!policy.enabled ||
-			policy.maskLevel !== "strict" ||
-			!policy.blockSelector?.includes("[data-telemetry-private]")
-		)
-			return;
-		if (!policy.replayEnabled && !policy.heatmapEnabled) return;
-		if (
-			location.search ||
-			location.hash ||
-			/\/(share|auth|settings|devices)(\/|$)/.test(location.pathname)
-		)
-			return;
-		const script = document.createElement("script");
-		script.src = `${config.umamiUrl}/recorder.js`;
-		guardRecordingTransport(config.umamiUrl);
-		script.dataset.websiteId = config.umamiWebsiteId;
-		script.referrerPolicy = "no-referrer";
-		document.head.append(script);
-	} catch {
-		/* Analytics must never affect the player. */
-	}
 }

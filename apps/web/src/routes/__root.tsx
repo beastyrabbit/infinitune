@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { LegalFooter } from "@/components/LegalFooter";
 import { getTelemetryConfig } from "@/lib/telemetry/config";
 import { captureBrowserError } from "@/lib/telemetry/sentry";
 import { Telemetry } from "@/lib/telemetry/Telemetry";
@@ -110,9 +111,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<head>
 				<HeadContent />
 			</head>
-			<body className="rr-mask bg-gray-950 text-white overflow-x-clip">
+			<body className="bg-gray-950 text-white overflow-x-clip">
 				{config && <Telemetry config={config} />}
 				<ApiProvider>{children}</ApiProvider>
+				<LegalFooter />
 				<Toaster theme="dark" position="bottom-right" richColors />
 				<Scripts />
 			</body>

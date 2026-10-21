@@ -1,4 +1,5 @@
 import "./lib/telemetry/instrument.server";
+import { hasUnsafeRawPath } from "@infinitune/shared/raw-path-guard";
 import { shouldTraceRequest } from "@infinitune/shared/telemetry";
 import {
 	captureError,
@@ -12,6 +13,7 @@ import {
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { assertProductionAppOrigin } from "@/lib/endpoints";
+import { getLegalResponse, getRawRequestPath } from "@/lib/legal/pages.server";
 
 assertProductionAppOrigin({
 	nodeEnv: process.env.NODE_ENV,
@@ -37,6 +39,22 @@ export function createServerEntry(entry: ServerEntry): ServerEntry {
 		async fetch(...args) {
 			try {
 				const request = args[0];
+				const rawPath = getRawRequestPath(request);
+				// Both server entries reject structure-changing paths before dispatch.
+				// This prevents proxy decoding from exposing app routes through the
+				// public legal-page allow rules. Benign legal aliases stay static here.
+				if (hasUnsafeRawPath(rawPath)) {
+					return new Response("Bad Request", {
+						status: 400,
+						headers: {
+							"Content-Type": "text/plain; charset=utf-8",
+							"X-Robots-Tag": "noindex",
+							"X-Content-Type-Options": "nosniff",
+						},
+					});
+				}
+				const legalResponse = getLegalResponse(request);
+				if (legalResponse) return legalResponse;
 				const pathname = new URL(request.url).pathname;
 				const operation = pathname.startsWith("/_serverFn/")
 					? "server-function"

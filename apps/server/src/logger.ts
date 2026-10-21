@@ -27,6 +27,10 @@ const LOG_FILE_TRIM_INTERVAL_MS = parsePositiveInt(
 );
 
 const LOGS_DIR = path.resolve(import.meta.dirname, "../../../data/logs/server");
+const LOG_FILE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+const LOG_FILE_EXPIRY_INTERVAL_MS = 60 * 60 * 1000;
+const LOG_FILE_NAME_PATTERN =
+	/^server-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.ndjson$/;
 const LOG_SESSION_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 	? path.join(LOGS_DIR, `server-${LOG_SESSION_ID}.ndjson`)
@@ -34,17 +38,106 @@ const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 
 if (LOG_FILE_PATH) {
 	fs.mkdirSync(LOGS_DIR, { recursive: true });
+	// Start maintenance without making importers wait for a full directory scan.
+	queueMicrotask(() => {
+		void trimLogFile();
+		void expireLogFiles();
+	});
 }
 
-async function trimLogFile() {
-	if (!LOG_FILE_PATH || LOG_FILE_MAX_LINES <= 0) return;
+function logSessionStart(file: string, mtimeMs: number): number {
+	const match = LOG_FILE_NAME_PATTERN.exec(path.basename(file));
+	if (!match) return mtimeMs;
+	const [, date, hours, minutes, seconds, milliseconds] = match;
+	const start = Date.parse(
+		`${date}T${hours}:${minutes}:${seconds}.${milliseconds}Z`,
+	);
+	return Number.isFinite(start) ? start : mtimeMs;
+}
+
+function retainLogLine(
+	line: string,
+	sessionStart: number,
+	cutoff: number,
+): boolean {
 	try {
-		const data = await fsPromises.readFile(LOG_FILE_PATH, "utf8");
+		const time: unknown = JSON.parse(line)?.time;
+		if (typeof time === "number" && Number.isFinite(time)) {
+			return time > cutoff;
+		}
+	} catch {
+		// Malformed or untimestamped lines fall back to the session's age.
+	}
+	return sessionStart > cutoff;
+}
+
+async function expireLogFile(
+	file: string,
+	cutoff: number,
+	activeFile: string | undefined,
+): Promise<void> {
+	try {
+		const stat = await fsPromises.stat(file);
+		const sessionStart = logSessionStart(file, stat.mtimeMs);
+		const data = await fsPromises.readFile(file, "utf8");
+		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
+		const retained = lines.filter((line) =>
+			retainLogLine(line, sessionStart, cutoff),
+		);
+		if (retained.length === 0 && file !== activeFile) {
+			await fsPromises.unlink(file);
+		} else if (retained.length !== lines.length) {
+			// Rewrite the same inode to keep Pino's open destination usable.
+			await fsPromises.writeFile(
+				file,
+				retained.length ? `${retained.join("\n")}\n` : "",
+				"utf8",
+			);
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+}
+
+/** Filter all session files by entry age, with one cleanup interval of margin. */
+export async function expireLogFiles(
+	directory = LOGS_DIR,
+	now = Date.now(),
+	activeFile = LOG_FILE_PATH,
+): Promise<void> {
+	try {
+		const entries = await fsPromises.readdir(directory, {
+			withFileTypes: true,
+		});
+		for (const entry of entries) {
+			if (!entry.isFile() || !LOG_FILE_NAME_PATTERN.test(entry.name)) continue;
+			try {
+				await expireLogFile(
+					path.join(directory, entry.name),
+					now - LOG_FILE_RETENTION_MS + LOG_FILE_EXPIRY_INTERVAL_MS,
+					activeFile,
+				);
+			} catch (error) {
+				console.error("Failed to expire server log files", error);
+			}
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			console.error("Failed to expire server log files", error);
+		}
+	}
+}
+
+export async function trimLogFile(file = LOG_FILE_PATH): Promise<void> {
+	if (!file || LOG_FILE_MAX_LINES <= 0) return;
+	try {
+		const data = await fsPromises.readFile(file, "utf8");
 		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
 		if (lines.length <= LOG_FILE_MAX_LINES) return;
+		const retained = lines.slice(-LOG_FILE_MAX_LINES);
 
-		const trimmed = `${lines.slice(-LOG_FILE_MAX_LINES).join("\n")}\n`;
-		await fsPromises.writeFile(LOG_FILE_PATH, trimmed, "utf8");
+		const trimmed = retained.length > 0 ? `${retained.join("\n")}\n` : "";
+		await fsPromises.writeFile(file, trimmed, "utf8");
 	} catch (error: unknown) {
 		if (
 			error instanceof Error &&
@@ -62,6 +155,13 @@ if (LOG_FILE_PATH && LOG_FILE_TRIM_INTERVAL_MS > 0) {
 		void trimLogFile();
 	}, LOG_FILE_TRIM_INTERVAL_MS);
 	trimLogTimer.unref?.();
+}
+
+if (LOG_FILE_PATH) {
+	const expiryTimer = setInterval(() => {
+		void expireLogFiles();
+	}, LOG_FILE_EXPIRY_INTERVAL_MS);
+	expiryTimer.unref?.();
 }
 
 const transportTargets: pino.TransportTargetOptions[] = [];

@@ -4,6 +4,7 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
+	Outlet,
 	type RootRouteOptions,
 	RouterProvider,
 } from "@tanstack/react-router";
@@ -68,9 +69,67 @@ it("renders root errors inside the styled document shell", async () => {
 	const html = renderToString(<RouterProvider router={router} />);
 	expect(html).toContain('<html lang="en" class="dark">');
 	expect(html).toContain("<head>");
-	expect(html).toContain('<body class="rr-mask bg-gray-950');
+	expect(html).toContain('<body class="bg-gray-950');
 	expect(html).toContain(
 		'role="alert" class="font-mono min-h-screen bg-gray-950',
 	);
 	expect(html).toContain("Try again");
+	expect(html).toContain('href="/legal-notice"');
+	expect(html).toContain('href="/privacy"');
+});
+
+it.each([
+	"/",
+	"/autoplayer",
+	"/autoplayer/settings",
+	"/share/example",
+	"/missing",
+])("keeps legal footer links in the document shell at %s", async (path) => {
+	const root = createRootRoute({
+		shellComponent: (Route.options as RootRouteOptions).shellComponent,
+		notFoundComponent: Route.options.notFoundComponent,
+		component: () => <Outlet />,
+	});
+	const router = createRouter({
+		isServer: true,
+		routeTree: root.addChildren(
+			["/", "/autoplayer", "/autoplayer/settings", "/share/example"].map(
+				(path) =>
+					createRoute({
+						getParentRoute: () => root,
+						path,
+						component: () => "App page",
+					}),
+			),
+		),
+		history: createMemoryHistory({ initialEntries: [path] }),
+	});
+	await router.load();
+	const html = renderToString(<RouterProvider router={router} />);
+	expect(html).toContain('aria-label="Legal information"');
+	expect(html).toContain('href="/legal-notice"');
+	expect(html).toContain('href="/privacy"');
+	expect(html).toContain("Legal notice");
+	expect(html).toContain("Privacy");
+});
+
+it("omits the shared footer on the compact mini surface", async () => {
+	const root = createRootRoute({
+		shellComponent: (Route.options as RootRouteOptions).shellComponent,
+	});
+	const router = createRouter({
+		isServer: true,
+		routeTree: root.addChildren([
+			createRoute({
+				getParentRoute: () => root,
+				path: "/autoplayer/mini",
+				component: () => "Mini",
+			}),
+		]),
+		history: createMemoryHistory({ initialEntries: ["/autoplayer/mini"] }),
+	});
+	await router.load();
+	expect(renderToString(<RouterProvider router={router} />)).not.toContain(
+		'aria-label="Legal information"',
+	);
 });

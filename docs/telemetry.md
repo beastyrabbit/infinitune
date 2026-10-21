@@ -1,7 +1,7 @@
 # Telemetry
 
 Infinitune uses the homelab's Umami 3 and GlitchTip 6. Both are optional.
-No consent banner, privacy-policy change or CSP is added for this private tool.
+The legal pages disclose analytics and error tracking. Session replay and heatmaps are not part of the application.
 
 ## Container configuration
 
@@ -9,7 +9,7 @@ Set these values on **both the frontend and server containers**:
 
 | Variable | Production value | Purpose |
 | --- | --- | --- |
-| `UMAMI_URL` | `https://umami.heerlab.com` | Browser tracker/recorder and server event destination. |
+| `UMAMI_URL` | `https://umami.heerlab.com` | Browser tracker and server event destination. |
 | `UMAMI_WEBSITE_ID` | `16206c2c-c965-46db-8f19-4b60bd97adb6` | Public website ID. |
 | `UMAMI_DOMAINS` | `infinitune.heerlab.com,192.168.60.30` | Exact allowed hostnames. First hostname identifies pipeline events. Exclude localhost and preview domains. |
 | `GLITCHTIP_DSN` | `https://cf49ab783f0743d391431d325861ec1b@glitchtip.heerlab.com/7` | Public DSN; not an upload token. |
@@ -84,48 +84,15 @@ stops generation.
 
 ## Replay and heatmaps
 
-Both served scripts were inspected on 2026-10-21. `script.js` supports
-`data-domains`, `data-before-send`, `data-exclude-search`, `data-exclude-hash`,
-`data-performance=true`, `track`, `identify`, `getSession` and event attributes.
-Its History API patch handles TanStack Router links. The wrapper also tracks
-`popstate`, which this served script omits, for browser back/forward navigation.
-Outbound links use our
-wrapper because this version has no automatic outbound option. Performance
-includes TTFB, FCP, LCP, CLS, INP and page duration.
+The application does not request Umami's recording policy or load `recorder.js`.
+Session replay and heatmaps are not part of the app; the recorder module and
+its sanitizer have been removed. Unit and production-browser tests verify that
+analytics load without any recording-policy, recorder-script or recording requests.
 
-`recorder.js` obtains policy from `GET /api/websites/<website-id>/recorder`.
-Script attributes cannot override its masking. The app requires `enabled`,
-`maskLevel: "strict"` and `[data-telemetry-private]` in `blockSelector` before
-loading it. The website's configured policy as of 2026-10-21 is:
-
-```json
-{
-  "enabled": true,
-  "replayEnabled": true,
-  "heatmapEnabled": true,
-  "sampleRate": 1,
-  "heatmapSampleRate": 1,
-  "maskLevel": "strict",
-  "maxDuration": 1800000,
-  "blockSelector": "input,textarea,select,[data-telemetry-private]"
-}
-```
-
-The configured policy returns HTTP 200 on the LAN at
-`http://192.168.60.67:3000/api/websites/16206c2c-c965-46db-8f19-4b60bd97adb6/recorder`.
-The public URL at `https://umami.heerlab.com/api/websites/<website-id>/recorder`
-still returns HTTP 401 because Pangolin SSO protects it. Browser replay and
-heatmaps remain disabled until the homelab operator updates the shared
-Pangolin blueprint to expose this read-only endpoint with browser CORS access.
-That infrastructure change is outside this repository. Umami owns sampling.
-
-Strict mode masks all text and inputs; the body also has `rr-mask`. A narrow
-fetch guard filters only `/api/record` requests, masks text/input payloads,
-allowlists DOM attributes and strips query/hash/share tokens from replay and
-heatmap URLs. Oversized fragmented snapshots are dropped because individual
-fragments cannot be inspected safely; this can leave gaps in large-page replay.
-Initial sensitive routes or query/hash URLs do not start recording. Mark future
-personal UI regions with `data-telemetry-private`.
+The served `script.js` supports pageviews, events and performance measurements.
+Its History API patch handles TanStack Router links; the application also tracks
+`popstate` for back/forward navigation. Outbound-link events contain only the
+hostname. Performance includes TTFB, FCP, LCP, CLS, INP and page duration.
 
 The inspected tracker sets no cookies or storage. It reads the optional
 `localStorage["umami.disabled"]` opt-out; its cache remains in memory. The
@@ -193,7 +160,6 @@ Run `pnpm check`, `pnpm typecheck`, `pnpm test` and
 `pnpm --filter @infinitune/web test:e2e`. E2E builds and starts production Nitro,
 mocks the captured tracker and GlitchTip envelopes, and blocks remote Node and
 browser transports. It overrides WebDriver only for the human-path scenarios.
-Recorder execution is stubbed; synthetic payload sanitization is unit tested.
 Tests never call AI providers or live telemetry.
 
 Production builds regenerate the tracked route tree without development-only
