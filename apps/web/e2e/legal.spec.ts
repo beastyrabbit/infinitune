@@ -1,3 +1,4 @@
+import http from "node:http";
 import { expect, test } from "@playwright/test";
 
 const origin = "http://127.0.0.1:4471";
@@ -24,6 +25,32 @@ test("public path aliases stop before the SSR app and server functions", async (
 		const post = await request.post(url);
 		expect(post.status()).toBe(405);
 		expect(post.headers().allow).toBe("GET, HEAD");
+	}
+});
+
+test("raw dot segments cannot send a public alias to Start", async () => {
+	for (const method of ["GET", "HEAD", "POST"]) {
+		const result = await new Promise<{ status: number | undefined; body: string; allow: string | undefined }>((resolve, reject) => {
+			const request = http.request({
+				hostname: "127.0.0.1",
+				port: 4471,
+				method,
+				// Keep the literal .. on the wire; URL-based clients remove it.
+				path: "/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy",
+			}, (response) => {
+				let body = "";
+				response.setEncoding("utf8");
+				response.on("data", (chunk) => { body += chunk; });
+				response.on("error", reject);
+				response.on("end", () => resolve({ status: response.statusCode, body, allow: response.headers.allow }));
+			});
+			request.on("error", reject);
+			request.end();
+		});
+		expect(result.status).toBe(method === "POST" ? 405 : 200);
+		if (method === "GET") expect(result.body).toContain("<h1>Privacy Policy</h1>");
+		if (method === "HEAD") expect(result.body).toBe("");
+		if (method === "POST") expect(result.allow).toBe("GET, HEAD");
 	}
 });
 

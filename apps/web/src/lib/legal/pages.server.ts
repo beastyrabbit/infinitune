@@ -85,7 +85,16 @@ function normalizeLegalPath(pathname: string): string {
 export function getLegalResponse(request: Request): Response | undefined {
 	// Serve aliases directly, so every public legal-path alias stops here before
 	// any Start loader or server function can run, without a redirect round trip.
-	const html = pages.get(normalizeLegalPath(new URL(request.url).pathname));
+	// srvx preserves the original Node URI here even when Request.url has already
+	// resolved literal dot segments. Decode before resolving those segments.
+	const nodeRequest = request as Request & {
+		runtime?: { node?: { req?: { url?: string } } };
+	};
+	const rawUrl = nodeRequest.runtime?.node?.req?.url ?? request.url;
+	const rawPath = rawUrl
+		.replace(/^https?:\/\/[^/?#]*/i, "")
+		.split(/[?#]/, 1)[0];
+	const html = pages.get(normalizeLegalPath(rawPath));
 	if (html === undefined) return undefined;
 	const allowed = request.method === "GET" || request.method === "HEAD";
 	return new Response(
