@@ -2038,10 +2038,12 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch(async (error) => {
+try {
+	await main();
+} catch (error) {
 	captureError(error, { runtime: "cli" });
 	await flushTelemetry();
 	const message = error instanceof Error ? error.message : String(error);
 	console.error(`Error: ${message}`);
 	process.exit(1);
-});
+}
