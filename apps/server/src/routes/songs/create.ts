@@ -1,3 +1,4 @@
+import { PlaylistKeySchema } from "@infinitune/shared/validation/playlist-schemas";
 import {
 	CompleteSongMetadataSchema,
 	CreatePendingSongSchema,
@@ -63,7 +64,7 @@ const OneshotRawSchema = z.object({
 	lyrics: z.string().min(1).max(20000),
 	style: z.string().max(1000).optional().default(""),
 	audioDuration: z.number().min(10).max(600).optional().default(180),
-	playlistKey: z.string().min(1).max(64).optional(),
+	playlistKey: PlaylistKeySchema.min(1).max(64).optional(),
 });
 
 function deriveOneshotTitle(lyrics: string): string {
@@ -130,7 +131,7 @@ const ReimagineSchema = z.object({
 	style: z.string().min(1).max(1000),
 	/** 0 = loose interpretation, 1 = closest to the source audio */
 	coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
-	playlistKey: z.string().min(1).max(64).optional(),
+	playlistKey: PlaylistKeySchema.min(1).max(64).optional(),
 });
 
 // POST /api/songs/reimagine — re-render an existing song in a new style via
@@ -208,7 +209,7 @@ const ReimagineUrlSchema = z
 		sourceTrackTitle: z.string().trim().min(1).max(300).optional(),
 		sourceArtistName: z.string().trim().min(1).max(300).optional(),
 		coverNoiseStrength: z.number().min(0).max(1).optional().default(0.5),
-		playlistKey: z.string().min(1).max(64).optional(),
+		playlistKey: PlaylistKeySchema.min(1).max(64).optional(),
 	})
 	.refine(
 		(value) =>
