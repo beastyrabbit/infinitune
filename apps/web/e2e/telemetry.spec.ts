@@ -35,6 +35,11 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	await page.goto("http://127.0.0.1:4471/telemetry-check");
 	await expect.poll(() => sends.length).toBeGreaterThan(0);
 	expect(scriptRequests).toBe(1);
+	expect(await page.evaluate(() =>
+		[undefined, null, {}, 42, "/share/test?token=test"].map((url) =>
+			window.infinituneUmamiBeforeSend?.("event", { url }).url,
+		),
+	)).toEqual(["/", "/", "/", "/", "/share/:redacted"]);
 	expect(sends[0]).toMatchObject({ type: "event", payload: { website: "16206c2c-c965-46db-8f19-4b60bd97adb6", hostname: "127.0.0.1", url: "/telemetry-check", title: "INFINITUNE" } });
 	expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
 	// Test the script's History API patch and actual TanStack Link navigation.
@@ -61,7 +66,18 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	await expect.poll(() => sends.slice(beforeBack).some((event) => (event.payload as { url?: string }).url === "/autoplayer/settings")).toBe(true);
 	await expect.poll(async () => page.evaluate(() => [...document.querySelectorAll("script[src]")].some((script) => (script as HTMLScriptElement).src.includes("recorder.js")))).toBe(true);
 	// Wait for the lazily imported SDK before throwing an unhandled error.
-	await page.waitForTimeout(1000);
+	await page.waitForFunction(() => {
+		const sentry = (window as Window & {
+			__SENTRY__?: Record<string, {
+				defaultCurrentScope?: {
+					getClient(): { getIntegrationByName(name: string): unknown } | undefined;
+				};
+			}>;
+		}).__SENTRY__;
+		return Object.values(sentry ?? {}).some((carrier) =>
+			carrier?.defaultCurrentScope?.getClient()?.getIntegrationByName("GlobalHandlers"),
+		);
+	});
 	await page.evaluate(() => { setTimeout(() => { throw new Error("Telemetry e2e private@example.com token=private-token https://example.com/?code=private-code"); }, 0); });
 	await expect.poll(() => envelopes.some((envelope) => envelope.includes("Telemetry e2e")), { timeout: 10000 }).toBe(true);
 	const envelope = envelopes.find((item) => item.includes("Telemetry e2e")) || "";
@@ -83,6 +99,16 @@ for (const [name, port, realUser] of [["missing config", 4472, true], ["domain e
 	test(`Umami stays off for ${name}`, async ({ browser }) => {
 		const context = await browser.newContext();
 		if (realUser) await context.addInitScript(() => Object.defineProperty(navigator, "webdriver", { get: () => false }));
+		// Telemetry installs this audio listener synchronously after startAnalytics
+		// returns, including when its config/automation gates disable analytics.
+		await context.addInitScript(() => {
+			const original = HTMLMediaElement.prototype.addEventListener;
+			HTMLMediaElement.prototype.addEventListener = function (...args) {
+				const result = original.apply(this, args);
+				if (args[0] === "ended") document.documentElement.dataset.telemetryReady = "true";
+				return result;
+			};
+		});
 		const telemetryRequests: string[] = [];
 		await context.route("**/*", (route) => {
 			const url = new URL(route.request().url());
@@ -94,7 +120,7 @@ for (const [name, port, realUser] of [["missing config", 4472, true], ["domain e
 		const page = await context.newPage();
 		await page.routeWebSocket("**/ws*", (ws) => ws.close());
 		await page.goto(`http://127.0.0.1:${port}/telemetry-check`);
-		await page.waitForTimeout(1000);
+		await page.waitForFunction(() => document.documentElement.dataset.telemetryReady === "true");
 		expect(telemetryRequests).toEqual([]);
 		await context.close();
 	});
