@@ -1,0 +1,70 @@
+// @vitest-environment jsdom
+import type { DeviceRole } from "@infinitune/shared/protocol";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { trackEvent } from "@/lib/telemetry/browser";
+import { useRoomConnection } from "./useRoomConnection";
+
+vi.mock("@/lib/telemetry/browser", () => ({ trackEvent: vi.fn() }));
+
+class FakeWebSocket extends EventTarget {
+	static readonly OPEN = 1;
+	static readonly CONNECTING = 0;
+	static instances: FakeWebSocket[] = [];
+	readyState = FakeWebSocket.CONNECTING;
+	send = vi.fn();
+	constructor() {
+		super();
+		FakeWebSocket.instances.push(this);
+	}
+	open() {
+		this.readyState = FakeWebSocket.OPEN;
+		this.dispatchEvent(new Event("open"));
+	}
+	close() {
+		this.readyState = 3;
+		this.dispatchEvent(new Event("close"));
+	}
+}
+
+beforeEach(() => {
+	vi.useFakeTimers();
+	vi.stubGlobal("WebSocket", FakeWebSocket);
+	FakeWebSocket.instances = [];
+	vi.clearAllMocks();
+});
+afterEach(() => {
+	cleanup();
+	vi.clearAllTimers();
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
+
+it("counts each room/role once per hook lifetime across reconnects", () => {
+	const { rerender, unmount } = renderHook(
+		({ room, role }: { room: string; role: DeviceRole }) =>
+			useRoomConnection(room, "Test device", role),
+		{ initialProps: { room: "first", role: "player" as DeviceRole } },
+	);
+	expect(trackEvent).not.toHaveBeenCalled();
+	act(() => FakeWebSocket.instances[0].open());
+	expect(trackEvent).toHaveBeenCalledExactlyOnceWith("room_join", {
+		role: "player",
+	});
+	act(() => FakeWebSocket.instances[0].close());
+	act(() => vi.advanceTimersByTime(1000));
+	act(() => FakeWebSocket.instances[1].open());
+	expect(trackEvent).toHaveBeenCalledTimes(1);
+	rerender({ room: "first", role: "controller" });
+	expect(trackEvent).toHaveBeenCalledTimes(2);
+	rerender({ room: "first", role: "player" });
+	expect(trackEvent).toHaveBeenCalledTimes(2);
+	rerender({ room: "second", role: "player" });
+	expect(trackEvent).toHaveBeenCalledTimes(2);
+	act(() => FakeWebSocket.instances.at(-1)?.open());
+	expect(trackEvent).toHaveBeenCalledTimes(3);
+	unmount();
+	renderHook(() => useRoomConnection("first", "Test device", "player"));
+	act(() => FakeWebSocket.instances.at(-1)?.open());
+	expect(trackEvent).toHaveBeenCalledTimes(4);
+});

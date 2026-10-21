@@ -129,6 +129,7 @@ export function useRoomConnection(
 	const protocolErrorRef = useRef<string | null>(null);
 	const roleRef = useRef(role);
 	const roomIdRef = useRef(roomId);
+	const joinedRoomsRef = useRef(new Set<string>());
 	const messageHandlersRef = useRef<((msg: ServerMessage) => void)[]>([]);
 
 	// Keep refs up to date
@@ -143,6 +144,15 @@ export function useRoomConnection(
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current.send(JSON.stringify(msg));
 		}
+	}, []);
+
+	const trackRoomJoin = useCallback(() => {
+		const currentRoomId = roomIdRef.current;
+		if (!currentRoomId || wsRef.current?.readyState !== WebSocket.OPEN) return;
+		const key = JSON.stringify([currentRoomId, roleRef.current]);
+		if (joinedRoomsRef.current.has(key)) return;
+		joinedRoomsRef.current.add(key);
+		trackEvent("room_join", { role: roleRef.current });
 	}, []);
 
 	// Time sync: collect pong responses and compute median offset
@@ -230,7 +240,6 @@ export function useRoomConnection(
 		wsRef.current = ws;
 
 		ws.addEventListener("open", () => {
-			trackEvent("room_join", { role: roleRef.current });
 			setConnected(true);
 			reconnectDelay.current = INITIAL_RECONNECT_DELAY;
 
@@ -248,6 +257,7 @@ export function useRoomConnection(
 				roomName: roomName || undefined,
 				protocolVersion: ROOM_PROTOCOL_VERSION,
 			});
+			trackRoomJoin();
 
 			// Start time sync pings
 			pingOffsetsRef.current = [];
@@ -279,7 +289,7 @@ export function useRoomConnection(
 			console.error("[room-ws] WebSocket error:", event);
 			// Close event will handle reconnect
 		});
-	}, [deviceName, handleMessage, send, playlistKey, roomName]);
+	}, [deviceName, handleMessage, send, playlistKey, roomName, trackRoomJoin]);
 
 	// Connect/disconnect when roomId changes
 	useEffect(() => {
@@ -300,8 +310,9 @@ export function useRoomConnection(
 	useEffect(() => {
 		if (connected && roomId) {
 			send({ type: "setRole", role });
+			trackRoomJoin();
 		}
-	}, [role, connected, roomId, send]);
+	}, [role, connected, roomId, send, trackRoomJoin]);
 
 	const sendCommand = useCallback(
 		(

@@ -1,18 +1,31 @@
 import type { TelemetryConfig } from "@infinitune/shared/telemetry";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getGlobalAudio, playerStore } from "@/lib/player-store";
 import { startAnalytics, trackEvent } from "./browser";
 import { startBrowserSentry } from "./sentry";
 
 export function Telemetry({ config }: { config: TelemetryConfig }) {
+	const lastPlayedSong = useRef<string | null>(null);
 	useEffect(() => {
 		startAnalytics(config);
 		const audio = getGlobalAudio();
 		const props = () => ({
 			song_id: playerStore.state.currentSongId || undefined,
 		});
-		const play = () => trackEvent("song_play", props());
-		const complete = () => trackEvent("song_complete", props());
+		const play = () => {
+			const songId = playerStore.state.currentSongId;
+			if (!songId || songId === lastPlayedSong.current) return;
+			lastPlayedSong.current = songId;
+			trackEvent("song_play", props());
+		};
+		const complete = () => {
+			trackEvent("song_complete", props());
+			lastPlayedSong.current = null;
+		};
+		const subscription = playerStore.subscribe(() => {
+			if (playerStore.state.currentSongId !== lastPlayedSong.current)
+				lastPlayedSong.current = null;
+		});
 		const error = () =>
 			trackEvent("playback_error", {
 				...props(),
@@ -27,6 +40,7 @@ export function Telemetry({ config }: { config: TelemetryConfig }) {
 		}, 100);
 		return () => {
 			clearTimeout(timer);
+			subscription.unsubscribe();
 			audio.removeEventListener("play", play);
 			audio.removeEventListener("ended", complete);
 			audio.removeEventListener("error", error);
