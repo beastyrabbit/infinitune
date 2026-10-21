@@ -58,10 +58,12 @@ for (const viewport of [
 			expect(response?.status()).toBe(200);
 			expect(response?.headers()["x-robots-tag"]).toBe("noindex");
 			await expect(legal.locator("main")).toContainText("c/o Impressumservice Dein-Impressum");
-			await expect(legal.locator('a[href="mailto:impressum@heerlab.com"]').first()).toBeVisible();
-			await expect(legal.locator('a[href="mailto:datenschutz@heerlab.com"]').first()).toBeVisible();
-			await expect(legal.locator('a[href="https://beastyrabbit.com/kontakt"]').first()).toBeVisible();
+			await expect(legal.locator('a[href="mailto:impressum-infinitune@heerlab.com"]').first()).toBeVisible();
+			await expect(legal.locator('a[href="mailto:datenschutz-infinitune@heerlab.com"]').first()).toBeVisible();
+			await expect(legal.locator('a[href="https://beastyrabbit.com/kontakt?from=infinitune"]').first()).toBeVisible();
 			await expect(legal.locator("body")).not.toContainText("[[");
+			await expect(legal.locator("body")).not.toContainText("TODO(user)");
+			await expect(legal.locator("body")).not.toContainText("Hetzner");
 			expect(await legal.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 		}
 		expect(requests).toEqual(["/impressum", "/datenschutz", "/legal-notice", "/privacy"].map((path) => `${origin}${path}`));

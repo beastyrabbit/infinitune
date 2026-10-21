@@ -28,9 +28,9 @@ describe("standalone legal pages", () => {
 				expect(page.body.textContent).toContain(value);
 			}
 			for (const href of [
-				"mailto:impressum@heerlab.com",
-				"mailto:datenschutz@heerlab.com",
-				"https://beastyrabbit.com/kontakt",
+				"mailto:impressum-infinitune@heerlab.com",
+				"mailto:datenschutz-infinitune@heerlab.com",
+				"https://beastyrabbit.com/kontakt?from=infinitune",
 			]) {
 				expect(page.querySelector(`a[href="${href}"]`)).not.toBeNull();
 			}
@@ -42,7 +42,7 @@ describe("standalone legal pages", () => {
 				page.querySelectorAll("script, iframe, img, link[rel=stylesheet]"),
 			).toHaveLength(0);
 			expect(page.querySelectorAll("style")).toHaveLength(1);
-			expect(html).not.toMatch(/\[\[|<!--|@import|url\(/);
+			expect(html).not.toMatch(/TODO\(user\)|\[\[|Hetzner|<!--|@import|url\(/);
 			for (const target of Object.keys(legalDocuments).filter(
 				(target) => target !== path,
 			)) {
@@ -69,6 +69,34 @@ describe("standalone legal pages", () => {
 			).toEqual(legalDocuments[english].sections.map((section) => section.id));
 		}
 	});
+	it.each(["/datenschutz", "/privacy"] as const)(
+		"keeps %s limited to the verified production integrations",
+		(path) => {
+			const html = renderLegalPage(legalDocuments[path]);
+			for (const expected of [
+				"OpenAI Ireland Limited",
+				"D01 YC43",
+				"p_session_token_s.",
+				"HttpOnly, Secure, SameSite=Lax",
+				"umami.disabled",
+			])
+				expect(html).toContain(expected);
+			for (const unused of [
+				"YouTube",
+				"SoundCloud",
+				"Bandcamp",
+				"LRCLIB",
+				"DuckDuckGo",
+				"Wikipedia",
+				"OpenRouter",
+				"Inference.sh",
+				"Shoo",
+				"Resend",
+				"infinitune-shoo-id-token",
+			])
+				expect(html).not.toContain(unused);
+		},
+	);
 
 	it("handles HEAD and rejects mutations without expanding the public paths", async () => {
 		const head = getLegalResponse(
