@@ -12,7 +12,7 @@ import {
 	defaultStreamHandler,
 } from "@tanstack/react-start/server";
 import { assertProductionAppOrigin } from "@/lib/endpoints";
-import { getLegalResponse } from "@/lib/legal/pages.server";
+import { getLegalResponse, getRawRequestPath } from "@/lib/legal/pages.server";
 
 assertProductionAppOrigin({
 	nodeEnv: process.env.NODE_ENV,
@@ -38,6 +38,25 @@ export function createServerEntry(entry: ServerEntry): ServerEntry {
 		async fetch(...args) {
 			try {
 				const request = args[0];
+				const rawPath = getRawRequestPath(request);
+				// Reject structure-changing escapes and dot segments so decoding at any
+				// level cannot create separators or dot segments. Edge normalization then
+				// equals normalizeLegalPath: drop empties and decode other escapes, so
+				// every path Pangolin allows publicly stops at the static legal page.
+				if (
+					/%(2f|5c|25|2e)/i.test(rawPath) ||
+					rawPath.includes("\\") ||
+					/(^|\/)\.\.?(\/|$)/.test(rawPath)
+				) {
+					return new Response("Bad Request", {
+						status: 400,
+						headers: {
+							"Content-Type": "text/plain; charset=utf-8",
+							"X-Robots-Tag": "noindex",
+							"X-Content-Type-Options": "nosniff",
+						},
+					});
+				}
 				const legalResponse = getLegalResponse(request);
 				if (legalResponse) return legalResponse;
 				const pathname = new URL(request.url).pathname;

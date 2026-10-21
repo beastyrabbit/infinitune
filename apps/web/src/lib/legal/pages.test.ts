@@ -99,20 +99,10 @@ describe("standalone legal pages", () => {
 	);
 
 	it.each([
-		["/_serverFn/x/..%2F..%2Fprivacy", "/privacy"],
-		["/_serverFn/x/..%252F..%252Fprivacy", "/privacy"],
-		["/_serverFn/x/..%25252F..%25252Fprivacy", "/privacy"],
-		["/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy", "/privacy"],
 		["/privacy/", "/privacy"],
 		["//privacy", "/privacy"],
-		["/a/..%2Fprivacy", "/privacy"],
-		["/a/%2e%2e/privacy", "/privacy"],
-		["/x/../impressum", "/impressum"],
-		["/_serverFn/x/..%5C..%5Cprivacy", "/privacy"],
-		["/a%255c..%255cdatenschutz", "/datenschutz"],
-		["/%/..%2Flegal-notice", "/legal-notice"],
-		["/%FF/..%2Fprivacy", "/privacy"],
-		["/..%2F..%2Fprivacy", "/privacy"],
+		["/privac%79", "/privacy"],
+		["//impressum//", "/impressum"],
 	])("serves only static legal HTML for alias %s", async (alias, canonical) => {
 		for (const method of ["GET", "HEAD", "POST"]) {
 			const request = new Request(`https://infinitune.heerlab.com${alias}`, {
@@ -131,16 +121,6 @@ describe("standalone legal pages", () => {
 			expect([...response.headers]).toEqual([...expected.headers]);
 			expect(await response.text()).toBe(await expected.text());
 		}
-	});
-	it("preserves raw dot segments when only Request.url is available", async () => {
-		const request = new Request("https://infinitune.heerlab.com/");
-		Object.defineProperty(request, "url", {
-			value:
-				"https://infinitune.heerlab.com/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy?ignored=1",
-		});
-		expect(await getLegalResponse(request)?.text()).toBe(
-			renderLegalPage(legalDocuments["/privacy"]),
-		);
 	});
 
 	it("handles HEAD and rejects mutations without expanding the public paths", async () => {

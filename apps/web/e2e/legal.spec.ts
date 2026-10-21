@@ -5,13 +5,9 @@ const origin = "http://127.0.0.1:4471";
 
 test("public path aliases stop before the SSR app and server functions", async ({ request }) => {
 	for (const path of [
-		"/_serverFn/x/..%2F..%2Fprivacy",
-		"/_serverFn/x/..%252F..%252Fprivacy",
 		"/privacy/",
 		"//privacy",
-		"/a/%2e%2e/privacy",
-		"/x/../privacy",
-		"/_serverFn/x/..%5C..%5Cprivacy",
+		"/privac%79",
 	]) {
 		const url = `${origin}${path}`;
 		const response = await request.get(url);
@@ -28,29 +24,43 @@ test("public path aliases stop before the SSR app and server functions", async (
 	}
 });
 
-test("raw dot segments cannot send a public alias to Start", async () => {
-	for (const method of ["GET", "HEAD", "POST"]) {
-		const result = await new Promise<{ status: number | undefined; body: string; allow: string | undefined }>((resolve, reject) => {
-			const request = http.request({
-				hostname: "127.0.0.1",
-				port: 4471,
-				method,
-				// Keep the literal .. on the wire; URL-based clients remove it.
-				path: "/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy",
-			}, (response) => {
-				let body = "";
-				response.setEncoding("utf8");
-				response.on("data", (chunk) => { body += chunk; });
-				response.on("error", reject);
-				response.on("end", () => resolve({ status: response.statusCode, body, allow: response.headers.allow }));
+test("raw structural aliases are rejected before Start", async () => {
+	for (const path of [
+		"/_serverFn/ID/a%5Cb%2F..%2F..%2F..%2Fprivacy",
+		"/_serverFn/ID/a%25252Fb%2F..%2F..%2F..%2Fprivacy",
+		"/a%5Cb%2F..%2Fprivacy",
+		"/_serverFn/x/..%2F..%2Fprivacy",
+		"/_serverFn/x/..%252F..%252Fprivacy",
+		"/a/%2e%2e/privacy",
+		"/x/../privacy",
+		"/_serverFn/x/..%5C..%5Cprivacy",
+		"/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy",
+		"/a\\b/../privacy",
+		"/./privacy",
+		"/privacy/..",
+	]) {
+		for (const method of ["GET", "HEAD", "POST"]) {
+			const result = await new Promise<{ status: number | undefined; body: string; contentType: string | undefined }>((resolve, reject) => {
+				const request = http.request({
+					hostname: "127.0.0.1",
+					port: 4471,
+					method,
+					// Keep the raw path on the wire; URL-based clients resolve dots.
+					path,
+				}, (response) => {
+					let body = "";
+					response.setEncoding("utf8");
+					response.on("data", (chunk) => { body += chunk; });
+					response.on("error", reject);
+					response.on("end", () => resolve({ status: response.statusCode, body, contentType: response.headers["content-type"] }));
+				});
+				request.on("error", reject);
+				request.end();
 			});
-			request.on("error", reject);
-			request.end();
-		});
-		expect(result.status).toBe(method === "POST" ? 405 : 200);
-		if (method === "GET") expect(result.body).toContain("<h1>Privacy Policy</h1>");
-		if (method === "HEAD") expect(result.body).toBe("");
-		if (method === "POST") expect(result.allow).toBe("GET, HEAD");
+			expect(result.status, `${method} ${path}`).toBe(400);
+			expect(result.contentType).toBe("text/plain; charset=utf-8");
+			expect(result.body).toBe(method === "HEAD" ? "" : "Bad Request");
+		}
 	}
 });
 

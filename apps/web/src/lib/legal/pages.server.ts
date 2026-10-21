@@ -64,36 +64,26 @@ const pages = new Map(
 );
 
 function normalizeLegalPath(pathname: string): string {
-	// Match at least the decoding and dot resolution used by Pangolin. Decode
-	// bytes individually so malformed escapes cannot hide encoded separators.
-	// Each changing pass shortens the input, bounding even nested %25 escapes.
-	for (let remaining = pathname.length; remaining > 0; remaining--) {
-		const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
-			String.fromCharCode(Number.parseInt(hex, 16)),
-		);
-		if (decoded === pathname) break;
-		pathname = decoded;
-	}
-	const segments: string[] = [];
-	for (const segment of pathname.split(/[/\\]+/)) {
-		if (segment === "..") segments.pop();
-		else if (segment && segment !== ".") segments.push(segment);
-	}
-	return `/${segments.join("/")}`;
+	// The server entry rejects escapes that could create path structure.
+	const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	);
+	return `/${decoded.split("/").filter(Boolean).join("/")}`;
 }
 
-export function getLegalResponse(request: Request): Response | undefined {
-	// Serve aliases directly, so every public legal-path alias stops here before
-	// any Start loader or server function can run, without a redirect round trip.
+export function getRawRequestPath(request: Request): string {
 	// srvx preserves the original Node URI here even when Request.url has already
-	// resolved literal dot segments. Decode before resolving those segments.
+	// resolved literal dot segments. Inspect it before any URL parsing/decoding.
 	const nodeRequest = request as Request & {
 		runtime?: { node?: { req?: { url?: string } } };
 	};
 	const rawUrl = nodeRequest.runtime?.node?.req?.url ?? request.url;
-	const rawPath = rawUrl
-		.replace(/^https?:\/\/[^/?#]*/i, "")
-		.split(/[?#]/, 1)[0];
+	return rawUrl.replace(/^https?:\/\/[^/?#]*/i, "").split(/[?#]/, 1)[0];
+}
+
+export function getLegalResponse(request: Request): Response | undefined {
+	// Serve benign aliases directly before any Start loader or server function.
+	const rawPath = getRawRequestPath(request);
 	const html = pages.get(normalizeLegalPath(rawPath));
 	if (html === undefined) return undefined;
 	const allowed = request.method === "GET" || request.method === "HEAD";
