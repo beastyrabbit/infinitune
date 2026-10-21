@@ -71,8 +71,54 @@ describe("Node Sentry initialization", () => {
 		expect(flush).toHaveBeenCalledExactlyOnceWith(1500);
 	});
 
-	it("defers song-scoped pino failures and reports the original exception once with scrubbed bounded messages", async () => {
-		const { initNodeTelemetry, captureError, captureLog } = await import(
+	it.each(["cover", "persona", "mark_error", "retry"])(
+		"captures independent %s failures once with song context from pino bindings",
+		async (stage) => {
+			const { initNodeTelemetry } = await import(
+				"@infinitune/shared/telemetry-node"
+			);
+			const { captureException, captureMessage } = await import("@sentry/node");
+			const { songLogger } = await import("../logger");
+			initNodeTelemetry(
+				"server",
+				telemetryConfig({
+					NODE_ENV: "production",
+					GLITCHTIP_DSN: "https://public@example.com/1",
+				}),
+			);
+			const error = new TypeError("Independent failure");
+			const log = songLogger("song", "playlist");
+			log.error({ err: error, stage }, "Independent failure");
+			log.error({ err: error, stage }, "Repeated log of the same error");
+			expect(captureException).toHaveBeenCalledExactlyOnceWith(error, {
+				tags: { songId: "song", playlistId: "playlist", stage },
+			});
+			expect(captureMessage).not.toHaveBeenCalled();
+		},
+	);
+
+	it("captures independent song errors from root log fields without stringifying arbitrary tags", async () => {
+		const { initNodeTelemetry } = await import(
+			"@infinitune/shared/telemetry-node"
+		);
+		const { captureException } = await import("@sentry/node");
+		const { logger } = await import("../logger");
+		initNodeTelemetry(
+			"server",
+			telemetryConfig({
+				NODE_ENV: "production",
+				GLITCHTIP_DSN: "https://public@example.com/1",
+			}),
+		);
+		const error = new Error("Playback update failed");
+		logger.error({ err: error, songId: "song", playlistId: {}, stage: [] });
+		expect(captureException).toHaveBeenCalledExactlyOnceWith(error, {
+			tags: { songId: "song" },
+		});
+	});
+
+	it("defers explicitly marked pino pipeline failures and reports the original exception once with scrubbed bounded messages", async () => {
+		const { initNodeTelemetry, captureError } = await import(
 			"@infinitune/shared/telemetry-node"
 		);
 		const { init, captureException } = await import("@sentry/node");
@@ -87,7 +133,13 @@ describe("Node Sentry initialization", () => {
 			`Provider private@example.com token=private-token ${"x".repeat(600)}`,
 		);
 		const originalStack = error.stack;
-		captureLog([{ songId: "song", err: error }]);
+		const { logger, songLogger } = await import("../logger");
+		songLogger("song").error({ err: error, pipelineFailure: true });
+		logger.error({ songId: "song", err: error, pipelineFailure: true });
+		songLogger("song").error({
+			error: "Pipeline failed",
+			pipelineFailure: true,
+		});
 		const fingerprint = ["song-pipeline", "generating_metadata", "TypeError"];
 		captureError(error, { songId: "song" }, fingerprint);
 		captureError(error, { songId: "song" }, fingerprint);

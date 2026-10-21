@@ -893,8 +893,8 @@ export class SongWorker {
 				this.lastFailureStage,
 			);
 		} catch (markErr) {
-			songLogger(this.songId).error(
-				{ err: markErr },
+			songLogger(this.songId, this.ctx.playlist.id).error(
+				{ err: markErr, stage: "mark_error" },
 				"Also failed to mark error status",
 			);
 		}
@@ -1086,7 +1086,7 @@ export class SongWorker {
 			const msg = this.failureMessage(error);
 			if (msg === null) return;
 			songLogger(this.songId).error(
-				{ error: msg },
+				{ error: msg, pipelineFailure: true },
 				"Metadata generation failed",
 			);
 			throw error;
@@ -1187,8 +1187,8 @@ export class SongWorker {
 				if (this.aborted) return;
 				const msg = error instanceof Error ? error.message : String(error);
 				if (msg === "Cancelled") return;
-				songLogger(songId).error(
-					{ error: msg },
+				songLogger(songId, this.ctx.playlist.id).error(
+					{ err: error, stage: "cover" },
 					"Cover generation failed (best-effort)",
 				);
 			});
@@ -1377,7 +1377,10 @@ export class SongWorker {
 			if (this.aborted) return;
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
-			songLogger(this.songId).error({ error: msg }, "Audio submission failed");
+			songLogger(this.songId).error(
+				{ error: msg, pipelineFailure: true },
+				"Audio submission failed",
+			);
 			throw error;
 		}
 	}
@@ -1411,7 +1414,7 @@ export class SongWorker {
 			const msg = error instanceof Error ? error.message : String(error);
 			if (msg === "Cancelled") return;
 			songLogger(this.songId).error(
-				{ error: msg },
+				{ error: msg, pipelineFailure: true },
 				"Audio poll failed after resume",
 			);
 			throw error;
@@ -1428,7 +1431,7 @@ export class SongWorker {
 			await this.saveAndFinalize(audioResult.audioPath, processingMs, taskId);
 		} else if (status === "failed") {
 			songLogger(this.songId).error(
-				{ error: audioResult.error },
+				{ error: audioResult.error, pipelineFailure: true },
 				"ACE generation failed",
 			);
 			this.lastFailureStage = await songService.revertTransient(this.songId);
@@ -1553,7 +1556,10 @@ export class SongWorker {
 				audioProcessingMs,
 			};
 			this.lastError = e instanceof Error ? e.message : String(e);
-			songLogger(this.songId).error({ err: e }, "NFS save failed");
+			songLogger(this.songId).error(
+				{ err: e, pipelineFailure: true },
+				"NFS save failed",
+			);
 			throw e;
 		}
 

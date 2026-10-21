@@ -167,6 +167,7 @@ export async function getNeedsPersona(access?: SongReadAccess) {
 		.slice(0, 20)
 		.map((song) => ({
 			id: song.id,
+			playlistId: song.playlistId,
 			title: song.title ?? "Untitled",
 			artistName: song.artistName,
 			genre: song.genre,

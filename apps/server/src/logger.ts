@@ -95,9 +95,12 @@ export const logger = pino(
 		level: LOG_LEVEL,
 		hooks: {
 			logMethod(args, method, level) {
-				// Pipeline transitions report once with stage/provider context.
-				if (level >= 50 && !this.bindings().songId)
-					captureLog(args, typeof args[1] === "string" ? args[1] : undefined);
+				if (level >= 50)
+					captureLog(
+						args,
+						typeof args[1] === "string" ? args[1] : undefined,
+						this.bindings(),
+					);
 				method.apply(this, args);
 			},
 		},

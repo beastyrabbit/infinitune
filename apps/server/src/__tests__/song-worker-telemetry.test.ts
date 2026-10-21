@@ -18,6 +18,7 @@ vi.mock("../events/event-bus", () => ({ emit: vi.fn(), on: vi.fn() }));
 
 import { playlists, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
+import { logger } from "../logger";
 import * as songService from "../services/song-service";
 import { playlistToWire, songToWire } from "../wire";
 import { SongWorker, type SongWorkerContext } from "../worker/song-worker";
@@ -60,6 +61,43 @@ async function createSong(
 		.returning();
 	return { playlist, song };
 }
+
+it("logs a best-effort cover failure once with the original error and stage without failing the song", async () => {
+	const { playlist, song } = await createSong("metadata_ready");
+	const error = new TypeError("Cover failed");
+	let finishLog!: () => void;
+	const logged = new Promise<void>((resolve) => {
+		finishLog = resolve;
+	});
+	const child = logger.child<string>({});
+	const log = vi.spyOn(child, "error").mockImplementation(() => finishLog());
+	const childLogger = vi.spyOn(logger, "child").mockReturnValue(child);
+	const worker = new SongWorker(
+		{ ...songToWire(song), coverPrompt: "Test cover" },
+		{
+			playlist: playlistToWire(playlist),
+			getSettings: async () => ({ coversEnabled: true }),
+			queues: { image: { enqueue: vi.fn().mockRejectedValue(error) } },
+		} as unknown as SongWorkerContext,
+	);
+	const stages = worker as unknown as { startCover(): void };
+	stages.startCover();
+	stages.startCover();
+	await logged;
+	expect(childLogger).toHaveBeenCalledWith({
+		songId: song.id,
+		playlistId: playlist.id,
+	});
+	expect(log).toHaveBeenCalledExactlyOnceWith(
+		{ err: error, stage: "cover" },
+		"Cover generation failed (best-effort)",
+	);
+	expect(emit).not.toHaveBeenCalled();
+	expect(await songService.getById(song.id)).toHaveProperty(
+		"status",
+		"metadata_ready",
+	);
+});
 
 it.each([
 	["generating_metadata", 0],

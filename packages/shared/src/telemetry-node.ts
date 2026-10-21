@@ -63,23 +63,32 @@ export function captureError(
 	});
 }
 
-export function captureLog(args: unknown[], message?: string): void {
+export function captureLog(
+	args: unknown[],
+	message?: string,
+	bindings: Record<string, unknown> = {},
+): void {
 	if (!initialized) return;
 	const fields = args[0];
+	const context: Record<string, unknown> = { ...bindings };
+	if (fields && typeof fields === "object") Object.assign(context, fields);
 	// Sentry's global integrations capture these with the original error/stack.
-	if (fields && typeof fields === "object" && "globalErrorHandler" in fields)
-		return;
-	// Queue failures use the root logger with songId in the log fields. Defer
-	// these too so the pipeline capture retains its stage/provider context.
-	if (fields && typeof fields === "object" && "songId" in fields) return;
-	const err =
-		fields && typeof fields === "object"
-			? (fields as { err?: unknown }).err
-			: undefined;
-	if (err instanceof Error) captureError(err);
+	if ("globalErrorHandler" in context) return;
+	// Only defer failures that will be reported by song.status_changed. Capturing
+	// their Error here would consume the identity dedupe before the tagged report.
+	if (context.pipelineFailure === true) return;
+	const tags: Record<string, string> = {};
+	for (const key of ["songId", "playlistId", "stage"]) {
+		if (typeof context[key] === "string") tags[key] = context[key];
+	}
+	const err = context.err;
+	if (err instanceof Error) captureError(err, tags);
 	// String log messages and arbitrary fields may contain provider/user content.
-	else if (!(fields && typeof fields === "object" && "status" in fields))
-		Sentry.captureMessage(message || "Server error log", "error");
+	else if (!("status" in context))
+		Sentry.captureMessage(message || "Server error log", {
+			level: "error",
+			tags: scrubTelemetry(tags),
+		});
 }
 
 export function withTelemetrySpan<T>(
