@@ -14,7 +14,15 @@ const mocks = vi.hoisted(() => {
 	const requestWarn = vi.fn();
 	const requestDebug = vi.fn();
 	return {
-		fetch: null as ((request: Request) => Promise<Response>) | null,
+		fetch: null as
+			| ((
+					request: Request,
+					env?: { incoming: { url: string } },
+			  ) => Promise<Response>)
+			| null,
+		telemetryRequests: vi.fn(async (_c: unknown, next: () => Promise<void>) =>
+			next(),
+		),
 		rootError: vi.fn(),
 		child: vi.fn(() => ({
 			error: requestError,
@@ -35,6 +43,10 @@ vi.mock("@infinitune/shared/telemetry-node", async (importOriginal) => ({
 		typeof import("@infinitune/shared/telemetry-node")
 	>()),
 	flushTelemetry: vi.fn(),
+}));
+
+vi.mock("../telemetry/requests", () => ({
+	telemetryRequests: mocks.telemetryRequests,
 }));
 
 vi.mock("../logger", () => ({
@@ -134,7 +146,11 @@ vi.mock("../routes/autoplayer", async () => {
 });
 vi.mock("../routes/playlists", async () => {
 	const { Hono } = await import("hono");
-	return { default: new Hono() };
+	return {
+		default: new Hono().get("/:id", (c) =>
+			c.json({ id: c.req.param("id"), query: c.req.query("q") }),
+		),
+	};
 });
 vi.mock("../routes/radio", async () => {
 	const { Hono } = await import("hono");
@@ -169,9 +185,16 @@ vi.mock("../routes/share", async () => {
 	return { default: app };
 });
 
-async function request(path: string, init?: RequestInit): Promise<Response> {
+async function request(
+	path: string,
+	init?: RequestInit,
+	incomingUrl?: string,
+): Promise<Response> {
 	if (!mocks.fetch) throw new Error("Server fetch handler was not captured");
-	return mocks.fetch(new Request(`http://localhost${path}`, init));
+	return mocks.fetch(
+		new Request(`http://localhost${path}`, init),
+		incomingUrl === undefined ? undefined : { incoming: { url: incomingUrl } },
+	);
 }
 
 describe("request logging", () => {
@@ -194,6 +217,7 @@ describe("request logging", () => {
 	});
 
 	beforeEach(() => {
+		mocks.telemetryRequests.mockClear();
 		mocks.rootError.mockClear();
 		mocks.child.mockClear();
 		mocks.requestError.mockClear();
@@ -204,6 +228,63 @@ describe("request logging", () => {
 
 	afterAll(() => {
 		vi.unstubAllEnvs();
+	});
+
+	it.each([
+		"/api/playlists/X%252F..%252F..%252F..%252Fprivacy",
+		"/api/playlists/X%2f..%2f..%2fprivacy",
+		"/api/playlists/X%5C..%5Cprivacy",
+		"/api/playlists/X%25252Fprivacy",
+		"/covers/a%2Eb.png",
+		"/ws%2fprivacy",
+		"/health%25",
+	])(
+		"rejects %s with or without Node bindings before telemetry and logging",
+		async (path) => {
+			for (const incomingUrl of [undefined, path]) {
+				const response = await request(path, undefined, incomingUrl);
+				expect(response.status).toBe(400);
+				expect(response.headers.get("content-type")).toBe(
+					"text/plain; charset=UTF-8",
+				);
+				expect(await response.text()).toBe("Bad Request");
+			}
+			expect(mocks.telemetryRequests).not.toHaveBeenCalled();
+			expect(mocks.child).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		"/x/../health",
+		"/a/%2e%2e/privacy",
+		"/./health",
+		"/health/.",
+		"/x\\../health",
+		"http://localhost/x/../health?next=%2F",
+	])(
+		"inspects the original Node target %s even after Request URL normalization",
+		async (rawTarget) => {
+			const response = await request("/health", undefined, rawTarget);
+			expect(response.status).toBe(400);
+			expect(mocks.telemetryRequests).not.toHaveBeenCalled();
+			expect(mocks.child).not.toHaveBeenCalled();
+		},
+	);
+
+	it("allows health, cuid API paths and structural characters in queries", async () => {
+		const id = "tz4a98xxat96iws9zmbrgj3a";
+		for (const path of ["/health", `/api/playlists/${id}`]) {
+			const target = `${path}?q=%2F%5C%25%2E/../`;
+			for (const incomingUrl of [undefined, target]) {
+				const response = await request(target, undefined, incomingUrl);
+				expect(response.status).toBe(200);
+				if (path.startsWith("/api/")) {
+					expect(await response.json()).toEqual({ id, query: "/\\%./../" });
+				}
+			}
+		}
+		expect(mocks.telemetryRequests).toHaveBeenCalledTimes(4);
+		expect(mocks.child).toHaveBeenCalledTimes(4);
 	});
 
 	it("normalizes share tokens in completed and failed request logs", async () => {

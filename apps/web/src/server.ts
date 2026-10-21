@@ -1,4 +1,5 @@
 import "./lib/telemetry/instrument.server";
+import { hasUnsafeRawPath } from "@infinitune/shared/raw-path-guard";
 import { shouldTraceRequest } from "@infinitune/shared/telemetry";
 import {
 	captureError,
@@ -39,15 +40,10 @@ export function createServerEntry(entry: ServerEntry): ServerEntry {
 			try {
 				const request = args[0];
 				const rawPath = getRawRequestPath(request);
-				// Reject structure-changing escapes and dot segments so decoding at any
-				// level cannot create separators or dot segments. Edge normalization then
-				// equals normalizeLegalPath: drop empties and decode other escapes, so
-				// every path Pangolin allows publicly stops at the static legal page.
-				if (
-					/%(2f|5c|25|2e)/i.test(rawPath) ||
-					rawPath.includes("\\") ||
-					/(^|\/)\.\.?(\/|$)/.test(rawPath)
-				) {
+				// Both server entries reject structure-changing paths before dispatch.
+				// This prevents proxy decoding from exposing app routes through the
+				// public legal-page allow rules. Benign legal aliases stay static here.
+				if (hasUnsafeRawPath(rawPath)) {
 					return new Response("Bad Request", {
 						status: 400,
 						headers: {

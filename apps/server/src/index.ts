@@ -1,9 +1,10 @@
 import "./telemetry/instrument";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { serve } from "@hono/node-server";
+import { type HttpBindings, serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
+import { hasUnsafeRawPath } from "@infinitune/shared/raw-path-guard";
 import {
 	captureError,
 	flushTelemetry,
@@ -196,7 +197,15 @@ ensureSchema();
 const roomManager = new RoomManager();
 
 // ─── Hono app ────────────────────────────────────────────────────────
-const app = new Hono();
+const app = new Hono<{ Bindings: HttpBindings }>();
+// Use Node's request target before URL normalization can erase dot segments or
+// backslashes. Reject before telemetry, logging, static files and route handlers.
+app.use("*", async (c, next) => {
+	const rawTarget = c.env?.incoming?.url ?? new URL(c.req.raw.url).pathname;
+	const rawPath = rawTarget.replace(/^https?:\/\/[^/?#]*/i, "");
+	if (hasUnsafeRawPath(rawPath)) return c.text("Bad Request", 400);
+	return next();
+});
 app.use("*", telemetryRequests);
 startTelemetryEvents();
 
