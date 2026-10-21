@@ -29,6 +29,8 @@ const LOG_FILE_TRIM_INTERVAL_MS = parsePositiveInt(
 const LOGS_DIR = path.resolve(import.meta.dirname, "../../../data/logs/server");
 const LOG_FILE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const LOG_FILE_EXPIRY_INTERVAL_MS = 60 * 60 * 1000;
+const LOG_FILE_NAME_PATTERN =
+	/^server-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.ndjson$/;
 const LOG_SESSION_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 	? path.join(LOGS_DIR, `server-${LOG_SESSION_ID}.ndjson`)
@@ -43,16 +45,30 @@ if (LOG_FILE_PATH) {
 	});
 }
 
-function retainLogLine(line: string, mtimeMs: number, cutoff: number): boolean {
+function logSessionStart(file: string, mtimeMs: number): number {
+	const match = LOG_FILE_NAME_PATTERN.exec(path.basename(file));
+	if (!match) return mtimeMs;
+	const [, date, hours, minutes, seconds, milliseconds] = match;
+	const start = Date.parse(
+		`${date}T${hours}:${minutes}:${seconds}.${milliseconds}Z`,
+	);
+	return Number.isFinite(start) ? start : mtimeMs;
+}
+
+function retainLogLine(
+	line: string,
+	sessionStart: number,
+	cutoff: number,
+): boolean {
 	try {
 		const time: unknown = JSON.parse(line)?.time;
 		if (typeof time === "number" && Number.isFinite(time)) {
 			return time > cutoff;
 		}
 	} catch {
-		// Malformed or untimestamped lines fall back to the file's age.
+		// Malformed or untimestamped lines fall back to the session's age.
 	}
-	return mtimeMs > cutoff;
+	return sessionStart > cutoff;
 }
 
 async function expireLogFile(
@@ -62,10 +78,11 @@ async function expireLogFile(
 ): Promise<void> {
 	try {
 		const stat = await fsPromises.stat(file);
+		const sessionStart = logSessionStart(file, stat.mtimeMs);
 		const data = await fsPromises.readFile(file, "utf8");
 		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
 		const retained = lines.filter((line) =>
-			retainLogLine(line, stat.mtimeMs, cutoff),
+			retainLogLine(line, sessionStart, cutoff),
 		);
 		if (retained.length === 0 && file !== activeFile) {
 			await fsPromises.unlink(file);
@@ -93,13 +110,7 @@ export async function expireLogFiles(
 			withFileTypes: true,
 		});
 		for (const entry of entries) {
-			if (
-				!entry.isFile() ||
-				!/^server-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.ndjson$/.test(
-					entry.name,
-				)
-			)
-				continue;
+			if (!entry.isFile() || !LOG_FILE_NAME_PATTERN.test(entry.name)) continue;
 			try {
 				await expireLogFile(
 					path.join(directory, entry.name),

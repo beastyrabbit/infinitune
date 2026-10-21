@@ -60,10 +60,13 @@ it.each([
 	[true, false],
 	[true, true],
 ])(
-	"uses mtime for malformed or untimestamped lines (active: %s, expired: %s)",
+	"uses session start despite fresh mtime for malformed or untimestamped lines (active: %s, expired: %s)",
 	async (active, expired) => {
 		directory = await mkdtemp(path.join(os.tmpdir(), "infinitune-logs-"));
-		const file = path.join(directory, session);
+		const sessionId = new Date(expired ? cutoff - 1 : cutoff + 1)
+			.toISOString()
+			.replace(/[:.]/g, "-");
+		const file = path.join(directory, `server-${sessionId}.ndjson`);
 		const unknown = [
 			"not json",
 			"null",
@@ -73,12 +76,26 @@ it.each([
 		];
 		const recent = JSON.stringify({ time: now });
 		await writeFile(file, `${[...unknown, recent].join("\n")}\n`);
-		const modified = new Date(expired ? cutoff : now);
+		const modified = new Date(now);
 		await utimes(file, modified, modified);
 		await expireLogFiles(directory, now, active ? file : undefined);
 		expect(await readFile(file, "utf8")).toBe(
 			`${(expired ? [recent] : [...unknown, recent]).join("\n")}\n`,
 		);
+	},
+);
+
+it.each([false, true])(
+	"falls back to mtime when the session timestamp cannot be parsed (expired: %s)",
+	async (expired) => {
+		directory = await mkdtemp(path.join(os.tmpdir(), "infinitune-logs-"));
+		const file = path.join(directory, "server-2026-13-01T00-00-00-000Z.ndjson");
+		const data = 'not json\n{"msg":"no time"}\n';
+		await writeFile(file, data);
+		const modified = new Date(expired ? cutoff : now);
+		await utimes(file, modified, modified);
+		await expireLogFiles(directory, now, file);
+		expect(await readFile(file, "utf8")).toBe(expired ? "" : data);
 	},
 );
 
