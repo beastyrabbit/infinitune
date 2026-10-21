@@ -42,7 +42,21 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
 
+      - name: Resolve release
+        id: release
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
+        id: image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -50,8 +64,64 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
 
       - name: Output image digest
         env:
-          DIGEST: ${{ steps.meta.outputs.digest }}
+          DIGEST: ${{ steps.image.outputs.digest }}
         run: echo "Image pushed with digest $DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  sourcemaps:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: arc-infinitune
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Resolve release
+        id: release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Export source maps from cached build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: sourcemaps
+          outputs: type=local,dest=sourcemaps
+          cache-from: type=gha
+          build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
+      - name: Read GlitchTip upload token
+        uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_GITHUB_ACTIONS_IDENTITY_ID }}
+          domain: "http://192.168.60.11:8080"
+          project-slug: infinitune
+          env-slug: prod
+          secret-path: /ci
+          secret-name: GLITCHTIP_AUTH_TOKEN
+          include-imports: false
+      - name: Create release, upload maps and finalize
+        env:
+          SENTRY_AUTH_TOKEN: ${{ env.GLITCHTIP_AUTH_TOKEN }}
+          SENTRY_URL: http://192.168.60.68:8000
+          SENTRY_ORG: beasty-rabbit
+          SENTRY_PROJECT: infinitune
+          SENTRY_RELEASE: ${{ steps.release.outputs.version }}
+        run: |
+          docker run --rm --network host \
+            -e SENTRY_AUTH_TOKEN -e SENTRY_URL -e SENTRY_ORG -e SENTRY_PROJECT -e SENTRY_RELEASE \
+            -v "$PWD/sourcemaps:/sourcemaps:ro" \
+            --entrypoint /bin/sh getsentry/sentry-cli:2.58.6 -ec '
+              sentry-cli releases new "$SENTRY_RELEASE"
+              sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix "~/" --validate /sourcemaps
+              sentry-cli releases finalize "$SENTRY_RELEASE"
+            '

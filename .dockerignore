@@ -8,6 +8,9 @@ node_modules
 apps/web/.output
 apps/web/node_modules
 apps/server/node_modules
+apps/cli/node_modules
+apps/web/test-results
+apps/web/playwright-report
 packages/*/node_modules
 dist
 tmp
