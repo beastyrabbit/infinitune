@@ -38,12 +38,15 @@ export function createServerEntry(entry: ServerEntry): ServerEntry {
 			try {
 				const request = args[0];
 				const pathname = new URL(request.url).pathname;
+				const operation = pathname.startsWith("/_serverFn/")
+					? "server-function"
+					: "unmatched";
 				const response = shouldTraceRequest(
 					pathname,
 					request.headers.get("user-agent") || "",
 				)
 					? await withTelemetrySpan(
-							`${request.method} ${pathname.startsWith("/_serverFn/") ? "server-function" : "unmatched"}`,
+							`${request.method} ${operation}`,
 							"http.server",
 							() => entry.fetch(...args),
 						)

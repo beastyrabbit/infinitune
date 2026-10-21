@@ -46,14 +46,11 @@ export function sanitizeRecording(value: unknown, key = ""): unknown {
 export function guardRecordingTransport(host: string): void {
 	const originalFetch = window.fetch.bind(window);
 	window.fetch = async (input, init) => {
-		const url = new URL(
-			typeof input === "string"
-				? input
-				: input instanceof URL
-					? input.href
-					: input.url,
-			location.href,
-		);
+		let rawUrl: string;
+		if (typeof input === "string") rawUrl = input;
+		else if (input instanceof URL) rawUrl = input.href;
+		else rawUrl = input.url;
+		const url = new URL(rawUrl, location.href);
 		if (url.href !== `${host}/api/record`) return originalFetch(input, init);
 		try {
 			if (typeof init?.body !== "string")

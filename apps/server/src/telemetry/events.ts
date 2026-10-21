@@ -44,25 +44,21 @@ export function startTelemetryEvents(): void {
 					(await settingsService.get("aceModel")) ||
 					"default"
 				: song.llmModel || playlist?.llmModel || "unknown";
-			trackServerEvent(
-				started
-					? "song_generation_started"
-					: completed
-						? "song_generation_completed"
-						: "song_generation_failed",
-				{
-					song_id: songId,
-					playlist_id: playlistId,
-					provider,
-					model,
-					stage,
-					duration_ms: Math.max(
-						0,
-						Date.now() - (song.generationStartedAt || song.createdAt),
-					),
-					...(failed ? { error_class: "PipelineError", status: to } : {}),
-				},
-			);
+			let event = "song_generation_failed";
+			if (started) event = "song_generation_started";
+			else if (completed) event = "song_generation_completed";
+			trackServerEvent(event, {
+				song_id: songId,
+				playlist_id: playlistId,
+				provider,
+				model,
+				stage,
+				duration_ms: Math.max(
+					0,
+					Date.now() - (song.generationStartedAt || song.createdAt),
+				),
+				...(failed ? { error_class: "PipelineError", status: to } : {}),
+			});
 			if (failed) {
 				const error = failure?.error || new Error("Song pipeline failed");
 				if (!failure?.error) error.name = "PipelineError";

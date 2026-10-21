@@ -86,7 +86,7 @@ export function startAnalytics(config: TelemetryConfig): void {
 	window.infinituneUmamiBeforeSend = (_type, payload) => ({
 		...payload,
 		title: "INFINITUNE",
-		url: analyticsPath(String(payload.url || "/")),
+		url: analyticsPath(typeof payload.url === "string" ? payload.url : "/"),
 		referrer: "",
 		...(payload.data
 			? { data: sanitizeProps(payload.data as EventProps) }
