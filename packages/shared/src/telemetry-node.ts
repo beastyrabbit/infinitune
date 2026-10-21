@@ -77,3 +77,7 @@ export function withTelemetrySpan<T>(
 export async function flushTelemetry(): Promise<void> {
 	if (initialized) await Sentry.flush(1500);
 }
+
+export function updateTelemetrySpanName(name: string): void {
+	if (initialized) Sentry.getActiveSpan()?.updateName(name);
+}

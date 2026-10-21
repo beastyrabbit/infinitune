@@ -151,3 +151,7 @@ export function analyticsPath(raw: string): string {
 		return "/";
 	}
 }
+
+export function shouldTraceRequest(pathname: string, userAgent = ""): boolean {
+	return pathname !== "/health" && !/kube-probe\//i.test(userAgent);
+}

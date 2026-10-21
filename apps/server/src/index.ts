@@ -4,10 +4,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import {
-	captureError,
-	withTelemetrySpan,
-} from "@infinitune/shared/telemetry-node";
+import { captureError } from "@infinitune/shared/telemetry-node";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -37,6 +34,7 @@ import songsRoutes from "./routes/songs/index";
 import * as playlistService from "./services/playlist-service";
 import { startRadioServiceEventSync } from "./services/radio-station-service";
 import { startTelemetryEvents } from "./telemetry/events";
+import { telemetryRequests } from "./telemetry/requests";
 import {
 	getQueues,
 	getWorkerActorGraph,
@@ -196,9 +194,7 @@ const roomManager = new RoomManager();
 
 // ─── Hono app ────────────────────────────────────────────────────────
 const app = new Hono();
-app.use("*", (_c, next) =>
-	withTelemetrySpan("Hono request", "http.server", next),
-);
+app.use("*", telemetryRequests);
 startTelemetryEvents();
 
 logger.info(
