@@ -153,13 +153,13 @@ export const privacy: LegalDocument = {
 			id: "duckduckgo",
 			title: "DuckDuckGo for music research",
 			html: `<p>Music agents can send queries derived from playlist context to DuckDuckGo. The service receives search terms, server IP and technical request data. Queries can contain details from your prompts; research results can become context for the selected text model.</p>
-<p>DuckDuckGo identifies Duck Duck Go, Inc. and states that it does not store IP-linked search histories. Its official policy describes worldwide operation but does not establish a specific transfer mechanism for these requests. The purpose is music/source research, with Art. 6(1)(f) GDPR as the intended basis. TODO(user): review actual use, necessity, full address, retention and applicable third-country safeguards. Details: <a href="https://duckduckgo.com/privacy">privacy</a>, <a href="https://duckduckgo.com/terms">terms</a>.</p>`,
+<p>DuckDuckGo identifies Duck Duck Go, Inc., 20 Paoli Pike, Paoli, Pennsylvania 19301, USA, and states that it does not store IP-linked search histories. Its official policy describes worldwide operation but does not establish a specific transfer mechanism for these requests. The purpose is music/source research, with Art. 6(1)(f) GDPR as the intended basis. TODO(user): review actual use, necessity, retention and applicable third-country safeguards. Details: <a href="https://duckduckgo.com/privacy">privacy</a>, <a href="https://duckduckgo.com/terms">terms</a>, <a href="https://duckduckgo.com/duckduckgo-help-pages/company/contact-us">official contact address</a>.</p>`,
 		},
 		{
 			id: "wikimedia",
 			title: "Wikipedia for music research",
 			html: `<p>Music agents can send queries derived from playlist context to Wikipedia search. The service receives search terms, server IP and technical request data. Queries can contain details from your prompts; research results can become context for the selected text model.</p>
-<p>Wikipedia is operated by the Wikimedia Foundation in the US. The purpose is music/source research, with Art. 6(1)(f) GDPR as the intended basis. TODO(user): review actual use, necessity, full recipient address, retention and applicable third-country safeguards. Details: <a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy">Wikimedia privacy</a>.</p>`,
+<p>Wikipedia is operated by Wikimedia Foundation, Inc., 1 Sansome Street, Suite 1895, San Francisco, California 94104, USA. The purpose is music/source research, with Art. 6(1)(f) GDPR as the intended basis. TODO(user): review actual use, necessity, retention and applicable third-country safeguards. Details: <a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy">Wikimedia privacy</a>, <a href="https://wikimediafoundation.org/about/contact/">official contact address</a>.</p>`,
 		},
 		{
 			id: "alternate-auth",

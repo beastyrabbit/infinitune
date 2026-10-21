@@ -153,13 +153,13 @@ export const privacy: LegalDocument = {
 			id: "duckduckgo",
 			title: "DuckDuckGo für Musikrecherche",
 			html: `<p>Musikagenten können Suchanfragen aus dem Playlist-Kontext an DuckDuckGo senden. Der Dienst erhält Suchbegriffe, Server-IP und technische Anfragedaten. Suchanfragen können Einzelheiten Ihrer Eingaben enthalten; Rechercheergebnisse können dem gewählten Textmodell als Kontext dienen.</p>
-<p>DuckDuckGo nennt Duck Duck Go, Inc. und erklärt, keine mit IP-Adressen verknüpften Suchverläufe zu speichern. Die offizielle Richtlinie beschreibt weltweiten Betrieb, belegt aber keinen konkreten Übermittlungsmechanismus für diese Anfragen. Zweck ist die Musik-/Quellenrecherche, vorgesehene Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO. TODO(user): tatsächliche Nutzung, Erforderlichkeit, vollständige Anschrift, Aufbewahrung und anwendbare Drittlandgarantien prüfen. Details: <a href="https://duckduckgo.com/privacy">Datenschutz</a>, <a href="https://duckduckgo.com/terms">Bedingungen</a>.</p>`,
+<p>DuckDuckGo nennt Duck Duck Go, Inc., 20 Paoli Pike, Paoli, Pennsylvania 19301, USA, und erklärt, keine mit IP-Adressen verknüpften Suchverläufe zu speichern. Die offizielle Richtlinie beschreibt weltweiten Betrieb, belegt aber keinen konkreten Übermittlungsmechanismus für diese Anfragen. Zweck ist die Musik-/Quellenrecherche, vorgesehene Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO. TODO(user): tatsächliche Nutzung, Erforderlichkeit, Aufbewahrung und anwendbare Drittlandgarantien prüfen. Details: <a href="https://duckduckgo.com/privacy">Datenschutz</a>, <a href="https://duckduckgo.com/terms">Bedingungen</a>, <a href="https://duckduckgo.com/duckduckgo-help-pages/company/contact-us">offizielle Kontaktanschrift</a>.</p>`,
 		},
 		{
 			id: "wikimedia",
 			title: "Wikipedia für Musikrecherche",
 			html: `<p>Musikagenten können Suchanfragen aus dem Playlist-Kontext an die Wikipedia-Suche senden. Der Dienst erhält Suchbegriffe, Server-IP und technische Anfragedaten. Suchanfragen können Einzelheiten Ihrer Eingaben enthalten; Rechercheergebnisse können dem gewählten Textmodell als Kontext dienen.</p>
-<p>Wikipedia wird von der Wikimedia Foundation in den USA betrieben. Zweck ist die Musik-/Quellenrecherche, vorgesehene Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO. TODO(user): tatsächliche Nutzung, Erforderlichkeit, vollständige Empfängeranschrift, Aufbewahrung und anwendbare Drittlandgarantien prüfen. Details: <a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy">Wikimedia-Datenschutz</a>.</p>`,
+<p>Wikipedia wird von Wikimedia Foundation, Inc., 1 Sansome Street, Suite 1895, San Francisco, California 94104, USA, betrieben. Zweck ist die Musik-/Quellenrecherche, vorgesehene Rechtsgrundlage Art. 6 Abs. 1 lit. f DSGVO. TODO(user): tatsächliche Nutzung, Erforderlichkeit, Aufbewahrung und anwendbare Drittlandgarantien prüfen. Details: <a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy">Wikimedia-Datenschutz</a>, <a href="https://wikimediafoundation.org/about/contact/">offizielle Kontaktanschrift</a>.</p>`,
 		},
 		{
 			id: "alternate-auth",
