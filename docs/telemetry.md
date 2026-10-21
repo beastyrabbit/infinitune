@@ -143,10 +143,11 @@ keys `infinitune-radio-listener-id` and `tsr-scroll-restoration-v1_3`.
 | `playlist_created` | Successful browser create; server bus | Browser: source, prompt_length, mode. Server: source, playlist_id. |
 | `playlist_steered` | Successful browser prompt mutation; server bus | Browser: source, playlist_id, prompt_length. Server: source, playlist_id, epoch. |
 | `playlist_status_changed` | Browser status mutation, including closed | playlist_id, status. |
-| `song_play`, `song_complete` | Global audio play/ended | song_id when available. |
+| `song_play` | First audio play for each song start; pauses/resumes do not count again | song_id. |
+| `song_complete` | Global audio ended | song_id when available. |
 | `song_skip` | Successful radio skip; room skip command | source=radio or room. |
 | `song_rate` | Successful song rating/radio feedback | song_id, rating; radio also source. |
-| `room_join` | Room WebSocket connects, join sent | role=player/controller. Reconnects count. |
+| `room_join` | First connection for each room/role during a room hook's lifetime; automatic reconnects do not count again | role=player/controller. |
 | `song_request` | Successful pending/interrupt or radio request | playlist_id, is_interrupt, prompt_length; radio: source, prompt_length. |
 | `settings_changed` | Successful settings mutation | No settings names or values. |
 | `mutation_error` | Mutation factory rejects | source category, error_class. |
@@ -176,9 +177,11 @@ Infisical `infinitune/prod/ci`. It creates the release, uploads to the LAN
 GlitchTip API and finalizes it. Failures fail that job without preventing image
 publication. Non-tag dispatch builds use no GitHub environment and never run
 the upload job. The upload token never enters a build arg, layer or artifact.
-The uploader stays on Sentry CLI 2.58.6 and uses release-file upload APIs.
-Sentry CLI 3 removed those commands. Debug IDs are injected by the same pinned
-CLI version used for upload.
+The uploader uses Sentry CLI 2.58.6 pinned by image digest. It creates the
+release, runs `sourcemaps upload --release` with URL prefix `~/` and validation,
+then finalizes the release. The upload uses the injected debug IDs. The build
+injects them with the same CLI version. Release values enter only the runtime
+stage, so new releases reuse dependency installs and the source-map build.
 
 Run `pnpm check`, `pnpm typecheck`, `pnpm test` and
 `pnpm --filter @infinitune/web test:e2e`. E2E builds and starts production Nitro,
