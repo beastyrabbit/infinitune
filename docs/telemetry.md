@@ -48,9 +48,10 @@ Hono errors, Nitro errors, failed Start requests, unhandled exceptions and
 rejections are captured. Pino error logs are captured without arbitrary fields.
 Start's global function middleware also reports errors returned by server
 functions, which can otherwise be serialized into successful HTTP responses.
-Repeated captures of the same Error object are suppressed. Song-scoped pino
-errors, including queue logs with `songId` fields, defer to the pipeline failure
-status transition. It captures the original Error and stack once with
+Repeated captures of the same Error object are suppressed. Only pino errors
+marked `pipelineFailure` defer to the pipeline failure status transition.
+Other song-scoped errors are captured immediately with songId/playlistId/stage
+tags. The pipeline transition captures the original Error and stack once with
 song/playlist/stage/provider/model/status tags and fingerprint
 `["song-pipeline", stage, error.name]`. Failures without an Error use a synthetic
 `PipelineError`. CLI errors flush before exit; the daemon flushes on shutdown.
@@ -128,8 +129,12 @@ Use source=server for complete playlist counts including CLI/API callers.
 
 ## Source maps and verification
 
-Only the client Vite environment emits hidden maps. Docker injects Sentry
-debug IDs, copies assets/maps into the `sourcemaps` stage, then removes every
+Only the client Vite environment emits hidden maps. The Sentry Vite plugin
+injects debug IDs and stamps matching IDs into the maps during that build,
+before Nitro records public asset sizes and etags. The plugin never uploads,
+uses no auth token, and disables telemetry and release operations. Docker
+checks every served JavaScript asset against its disk bytes and parses it,
+copies assets/maps into the `sourcemaps` stage, then removes every
 map from `.output` before the runtime copy. Exported JS accompanies the maps
 for artifact upload and matches the debug-ID-injected runtime JavaScript.
 
@@ -146,9 +151,9 @@ publication. Non-tag dispatch builds use no GitHub environment and never run
 the upload job. The upload token never enters a build arg, layer or artifact.
 The uploader uses Sentry CLI 2.58.6 pinned by image digest. It creates the
 release, runs `sourcemaps upload --release` with URL prefix `~/` and validation,
-then finalizes the release. The upload uses the injected debug IDs. The build
-injects them with the same CLI version. Release values enter only the runtime
-stage, so new releases reuse dependency installs and the source-map build.
+then finalizes the release. The upload uses the plugin-injected debug IDs.
+Release values enter only the runtime stage, so new releases reuse dependency
+installs and the source-map build.
 
 The upload job uses a loopback-only LAN proxy because GlitchTip advertises its
 public, SSO-protected chunk-upload URL. The proxy forwards to the LAN API and

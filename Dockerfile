@@ -28,8 +28,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm --filter @infinitune/web build
-RUN pnpm --filter @infinitune/web exec sentry-cli sourcemaps inject .output/public && \
-    mkdir /sourcemaps && cp -a apps/web/.output/public/. /sourcemaps/ && \
+RUN node scripts/verify-served-assets.mjs
+RUN mkdir /sourcemaps && cp -a apps/web/.output/public/. /sourcemaps/ && \
     find apps/web/.output -type f -name '*.map' -delete
 
 # Export separately; maps never enter the runtime image.
