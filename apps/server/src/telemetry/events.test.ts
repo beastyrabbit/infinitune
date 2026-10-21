@@ -102,4 +102,38 @@ describe("pipeline telemetry", () => {
 			}),
 		);
 	});
+	it("uses the pre-revert audio failure stage for provider, model and fingerprint", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		vi.stubEnv("VITEST", "false");
+		vi.stubEnv("GLITCHTIP_DSN", "configured");
+		startTelemetryEvents();
+		const error = new Error("ACE task not found");
+		await fixtures.handlers.get("song.status_changed")?.({
+			songId: "song",
+			playlistId: "playlist",
+			from: "metadata_ready",
+			to: "retry_pending",
+			failure: { error, stage: "generating_audio" },
+		});
+		expect(fixtures.capture).toHaveBeenCalledExactlyOnceWith(
+			error,
+			{
+				songId: "song",
+				playlistId: "playlist",
+				stage: "generating_audio",
+				provider: "ace-step",
+				model: "audio-model",
+				status: "retry_pending",
+			},
+			["song-pipeline", "generating_audio", "Error"],
+		);
+		expect(fixtures.track).toHaveBeenCalledExactlyOnceWith(
+			"song_generation_failed",
+			expect.objectContaining({
+				provider: "ace-step",
+				model: "audio-model",
+				stage: "generating_audio",
+			}),
+		);
+	});
 });

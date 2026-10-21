@@ -672,6 +672,7 @@ export class SongWorker {
 
 	private lastError: string | undefined;
 	private lastFailure: unknown;
+	private lastFailureStage: string | undefined;
 
 	private buildSongMachine() {
 		const initialState = this.getInitialMachineState();
@@ -889,6 +890,7 @@ export class SongWorker {
 				message,
 				undefined,
 				this.lastFailure instanceof Error ? this.lastFailure : undefined,
+				this.lastFailureStage,
 			);
 		} catch (markErr) {
 			songLogger(this.songId).error(
@@ -1429,7 +1431,7 @@ export class SongWorker {
 				{ error: audioResult.error },
 				"ACE generation failed",
 			);
-			await songService.revertTransient(this.songId);
+			this.lastFailureStage = await songService.revertTransient(this.songId);
 			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error(audioResult.error || "Audio generation failed");
 		} else if (status === "not_found") {
@@ -1437,7 +1439,7 @@ export class SongWorker {
 				{ aceTaskId: taskId, title: this.song.title },
 				"ACE task lost, reverting",
 			);
-			await songService.revertTransient(this.songId);
+			this.lastFailureStage = await songService.revertTransient(this.songId);
 			this.song = { ...this.song, status: "metadata_ready", aceTaskId: null };
 			throw new Error("ACE task not found");
 		}

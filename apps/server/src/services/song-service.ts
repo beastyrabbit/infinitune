@@ -456,6 +456,7 @@ export async function markError(
 	errorMessage: string,
 	erroredAtStatus?: string,
 	error?: Error,
+	failureStage?: string,
 ) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song) return;
@@ -491,7 +492,8 @@ export async function markError(
 		playlistId: song.playlistId,
 		from: fromStatus,
 		to: newStatus,
-		failure: { error, stage: effectiveErroredAtStatus },
+		// Telemetry can retain the failed stage while retries use the reverted state.
+		failure: { error, stage: failureStage || effectiveErroredAtStatus },
 	});
 }
 
@@ -550,6 +552,7 @@ export async function retryErrored(id: string) {
 	});
 }
 
+/** Revert recovery state and return the original stage for failure reporting. */
 export async function revertTransient(id: string) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song) return;
@@ -590,6 +593,7 @@ export async function revertTransient(id: string) {
 			to: newStatus,
 		});
 	}
+	return song.status;
 }
 
 export async function revertAllTransient(playlistId: string) {
