@@ -35,6 +35,7 @@ const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 
 if (LOG_FILE_PATH) {
 	fs.mkdirSync(LOGS_DIR, { recursive: true });
+	void trimLogFile();
 	void expireLogFiles();
 }
 
@@ -75,15 +76,33 @@ export async function expireLogFiles(
 	}
 }
 
-async function trimLogFile() {
-	if (!LOG_FILE_PATH || LOG_FILE_MAX_LINES <= 0) return;
+export async function trimLogFile(
+	file = LOG_FILE_PATH,
+	now = Date.now(),
+): Promise<void> {
+	if (!file || LOG_FILE_MAX_LINES <= 0) return;
 	try {
-		const data = await fsPromises.readFile(LOG_FILE_PATH, "utf8");
+		const stat = await fsPromises.stat(file);
+		const cutoff = now - LOG_FILE_RETENTION_MS;
+		const data = await fsPromises.readFile(file, "utf8");
 		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
-		if (lines.length <= LOG_FILE_MAX_LINES) return;
+		const retained = lines
+			.filter((line) => {
+				try {
+					const time: unknown = JSON.parse(line)?.time;
+					if (typeof time === "number" && Number.isFinite(time)) {
+						return time > cutoff;
+					}
+				} catch {
+					// Malformed or untimestamped lines fall back to the file's age.
+				}
+				return stat.mtimeMs > cutoff;
+			})
+			.slice(-LOG_FILE_MAX_LINES);
+		if (retained.length === lines.length) return;
 
-		const trimmed = `${lines.slice(-LOG_FILE_MAX_LINES).join("\n")}\n`;
-		await fsPromises.writeFile(LOG_FILE_PATH, trimmed, "utf8");
+		const trimmed = retained.length > 0 ? `${retained.join("\n")}\n` : "";
+		await fsPromises.writeFile(file, trimmed, "utf8");
 	} catch (error: unknown) {
 		if (
 			error instanceof Error &&
