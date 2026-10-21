@@ -78,7 +78,9 @@ stops generation.
 Both served scripts were inspected on 2026-10-21. `script.js` supports
 `data-domains`, `data-before-send`, `data-exclude-search`, `data-exclude-hash`,
 `data-performance=true`, `track`, `identify`, `getSession` and event attributes.
-Its History API patch handles TanStack Router links. Outbound links use our
+Its History API patch handles TanStack Router links. The wrapper also tracks
+`popstate`, which this served script omits, for browser back/forward navigation.
+Outbound links use our
 wrapper because this version has no automatic outbound option. Performance
 includes TTFB, FCP, LCP, CLS, INP and page duration.
 

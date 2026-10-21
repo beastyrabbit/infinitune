@@ -7,7 +7,12 @@ import {
 import { guardRecordingTransport } from "./recorder";
 
 export interface Umami {
-	track(name: string, props?: EventProps): unknown;
+	track(
+		name:
+			| string
+			| ((payload: Record<string, unknown>) => Record<string, unknown>),
+		props?: EventProps,
+	): unknown;
 	getSession?(): { cache?: string };
 }
 
@@ -102,6 +107,12 @@ export function startAnalytics(config: TelemetryConfig): void {
 		void startRecorder(config);
 	};
 	document.head.append(script);
+	// This served tracker patches push/replaceState but omits popstate.
+	window.addEventListener("popstate", () => {
+		try {
+			window.umami?.track((payload) => ({ ...payload, url: location.href }));
+		} catch {}
+	});
 	document.addEventListener(
 		"click",
 		(event) => {

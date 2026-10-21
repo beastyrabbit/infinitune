@@ -12,7 +12,7 @@ upload, push, tag or pull request was used.
 | `pnpm typecheck` | PASS, CLI/server/web. Restored the production-generated route tree to its tracked development form first. |
 | `pnpm test` | PASS, 697 tests: CLI 29, web 84, server 584; 80 test files. |
 | `pnpm --filter @infinitune/web build` | PASS, full client/SSR/Nitro build. Also run by the E2E script. |
-| `pnpm --filter @infinitune/web test:e2e` | PASS, all four production-browser scenarios, 6.5 seconds excluding build. |
+| `pnpm --filter @infinitune/web test:e2e` | PASS, all four production-browser scenarios, 6.7 seconds excluding build. |
 | Full `docker build` | PASS, `infinitune-telemetry:verified`, release `telemetry-local`. |
 | Buildx `--target sourcemaps --output type=local` | PASS, 41 maps with nonempty mappings and matching debug IDs. |
 | Runtime image artifact inspection | PASS, zero `.map` files in `.output/public`; every one of the 41 exported JS files matches the runtime file's SHA256. |
@@ -27,6 +27,7 @@ The tests demonstrate allowed-domain pageviews, TanStack navigation, query/hash
 redaction, no tracking without configuration/on excluded domains/under WebDriver,
 and an unhandled browser exception delivered to a mocked GlitchTip envelope
 endpoint with the expected release and environment and without test PII.
+Back/forward navigation is covered by an explicit browser-back assertion.
 Session envelopes are disabled. Cookies and telemetry storage remain empty;
 real app navigation adds only its existing radio and router session keys.
 
@@ -43,8 +44,8 @@ Vite reports decimal kB. Source maps are excluded from these numbers.
 
 | Asset | Before | After | Change |
 | --- | --- | --- | --- |
-| Main entry, raw | 418.55 kB | 427.84 kB | +9.29 kB, 2.22% |
-| Main entry, gzip | 133.51 kB | 136.98 kB | +3.47 kB, 2.60% |
+| Main entry, raw | 418.55 kB | 427.95 kB | +9.40 kB, 2.25% |
+| Main entry, gzip | 133.51 kB | 137.01 kB | +3.50 kB, 2.62% |
 | Deferred Sentry SDK, raw/gzip | Absent | 148.62 / 50.49 kB | Imported after the post-mount timer. |
 
 The initial namespace import produced a 484.86 kB deferred SDK chunk.

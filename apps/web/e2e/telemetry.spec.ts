@@ -49,6 +49,9 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	});
 	await expect.poll(() => sends.some((event) => (event.payload as { url?: string }).url === "/telemetry-next")).toBe(true);
 	expect(scriptRequests).toBe(documents);
+	const beforeBack = sends.length;
+	await page.goBack();
+	await expect.poll(() => sends.slice(beforeBack).some((event) => (event.payload as { url?: string }).url === "/autoplayer/settings")).toBe(true);
 	await expect.poll(async () => page.evaluate(() => [...document.querySelectorAll("script[src]")].some((script) => (script as HTMLScriptElement).src.includes("recorder.js")))).toBe(true);
 	// Wait for the lazily imported SDK before throwing an unhandled error.
 	await page.waitForTimeout(1000);
