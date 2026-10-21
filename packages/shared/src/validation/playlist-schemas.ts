@@ -22,13 +22,6 @@ const AceModelSchema = z
 	.refine(isValidAceModel, "Invalid ACE-Step model identifier");
 const AceDcwWaveletSchema = z.string().min(1).max(64);
 
-export const PlaylistKeySchema = z
-	.string()
-	.refine(
-		(key) => !/[\\/%]/.test(key) && key !== "." && key !== "..",
-		String.raw`Playlist key must not contain /, \ or % and must not be . or ..`,
-	);
-
 /** Schema for creating a playlist */
 export const CreatePlaylistSchema = z.object({
 	name: z.string().min(1),
@@ -36,7 +29,7 @@ export const CreatePlaylistSchema = z.object({
 	llmProvider: z.string().min(1),
 	llmModel: z.string(),
 	mode: z.enum(PLAYLIST_MODES).optional().default("endless"),
-	playlistKey: PlaylistKeySchema.optional(),
+	playlistKey: z.string().optional(),
 	lyricsLanguage: z.enum(SUPPORTED_LYRICS_LANGUAGES).optional(),
 	targetBpm: z.number().min(30).max(300).optional(),
 	targetKey: z.string().optional(),

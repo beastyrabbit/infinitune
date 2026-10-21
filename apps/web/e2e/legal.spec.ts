@@ -1,9 +1,8 @@
-import http from "node:http";
 import { expect, test } from "@playwright/test";
 
 const origin = "http://127.0.0.1:4471";
 
-test("public path aliases stop before the SSR app and server functions", async ({ request }) => {
+test("legal path aliases stop before the SSR app and server functions", async ({ request }) => {
 	for (const path of [
 		"/privacy/",
 		"//privacy",
@@ -21,46 +20,6 @@ test("public path aliases stop before the SSR app and server functions", async (
 		const post = await request.post(url);
 		expect(post.status()).toBe(405);
 		expect(post.headers().allow).toBe("GET, HEAD");
-	}
-});
-
-test("raw structural aliases are rejected before Start", async () => {
-	for (const path of [
-		"/_serverFn/ID/a%5Cb%2F..%2F..%2F..%2Fprivacy",
-		"/_serverFn/ID/a%25252Fb%2F..%2F..%2F..%2Fprivacy",
-		"/a%5Cb%2F..%2Fprivacy",
-		"/_serverFn/x/..%2F..%2Fprivacy",
-		"/_serverFn/x/..%252F..%252Fprivacy",
-		"/a/%2e%2e/privacy",
-		"/x/../privacy",
-		"/_serverFn/x/..%5C..%5Cprivacy",
-		"/_serverFn/x/a%2F..%2F..%2F..%2Fprivacy/../privacy",
-		"/a\\b/../privacy",
-		"/./privacy",
-		"/privacy/..",
-	]) {
-		for (const method of ["GET", "HEAD", "POST"]) {
-			const result = await new Promise<{ status: number | undefined; body: string; contentType: string | undefined }>((resolve, reject) => {
-				const request = http.request({
-					hostname: "127.0.0.1",
-					port: 4471,
-					method,
-					// Keep the raw path on the wire; URL-based clients resolve dots.
-					path,
-				}, (response) => {
-					let body = "";
-					response.setEncoding("utf8");
-					response.on("data", (chunk) => { body += chunk; });
-					response.on("error", reject);
-					response.on("end", () => resolve({ status: response.statusCode, body, contentType: response.headers["content-type"] }));
-				});
-				request.on("error", reject);
-				request.end();
-			});
-			expect(result.status, `${method} ${path}`).toBe(400);
-			expect(result.contentType).toBe("text/plain; charset=utf-8");
-			expect(result.body).toBe(method === "HEAD" ? "" : "Bad Request");
-		}
 	}
 });
 
@@ -115,8 +74,8 @@ for (const viewport of [
 		}
 		await context.close();
 
-		// Public pages must work without application JavaScript, API access, an
-		// authenticated session or any external/static dependency.
+		// Legal pages need no application JavaScript, API access or external assets.
+		// Production access is protected by Pangolin SSO.
 		const standalone = await browser.newContext({ viewport, javaScriptEnabled: false });
 		const requests: string[] = [];
 		await standalone.route("**/*", (route) => {

@@ -24,7 +24,6 @@ vi.mock("../events/event-bus", () => ({
 
 import { playlists, songs } from "../db/schema";
 import { emit } from "../events/event-bus";
-import { resetRateLimiters } from "../middleware/rate-limit";
 import createRoutes from "../routes/songs/create";
 
 const RAW_LYRICS = `[verse]
@@ -36,37 +35,13 @@ Turn it up, let the satellites align`;
 
 describe("POST /oneshot-raw", () => {
 	beforeEach(() => {
-		resetRateLimiters();
 		setupTestDb();
 		vi.mocked(emit).mockClear();
 	});
 
 	afterEach(() => {
-		resetRateLimiters();
 		teardownTestDb();
 	});
-
-	it.each([
-		["/oneshot-raw", { lyrics: "Test lyrics" }],
-		["/reimagine", { sourceSongId: "source", style: "jazz" }],
-		["/reimagine-url", { url: "https://example.com/audio", style: "jazz" }],
-	])(
-		"rejects unsafe playlist keys at %s before creating a playlist",
-		async (route, body) => {
-			for (const playlistKey of ["mix/2026", "100%", "a\\b", ".", ".."]) {
-				const res = await createRoutes.request(route, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ ...body, playlistKey }),
-				});
-				expect(res.status).toBe(400);
-				expect(await res.json()).toEqual({
-					error: expect.stringContaining("Playlist key must not contain"),
-				});
-			}
-			expect(await getTestDb().select().from(playlists)).toEqual([]);
-		},
-	);
 
 	it("creates an oneshot playlist plus a metadata_ready song with verbatim text", async () => {
 		const res = await createRoutes.request("/oneshot-raw", {

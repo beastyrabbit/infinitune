@@ -3,7 +3,6 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		"./raw-path-guard": "./src/raw-path-guard.ts",
 		"./telemetry": "./src/telemetry.ts",
 		"./telemetry-node": "./src/telemetry-node.ts",
 		"./types": "./src/types.ts",

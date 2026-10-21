@@ -131,7 +131,7 @@ describe("standalone legal pages", () => {
 		}
 	});
 
-	it("handles HEAD and rejects mutations without expanding the public paths", async () => {
+	it("handles HEAD and rejects mutations only on legal paths", async () => {
 		const head = getLegalResponse(
 			new Request("https://infinitune.heerlab.com/privacy", { method: "HEAD" }),
 		);
