@@ -30,28 +30,44 @@ function escapeHtml(value: string): string {
 	});
 }
 
+const languages = {
+	de: {
+		paths: { notice: "/impressum", privacy: "/datenschutz" },
+		notice: "Impressum",
+		privacy: "Datenschutz",
+		counterpart: "en",
+		language: "English",
+		navigation: "Rechtliche Informationen und Sprache",
+		footerNavigation: "Rechtliche Informationen",
+		updated: "Stand",
+		contact: "Kontaktformular",
+	},
+	en: {
+		paths: { notice: "/legal-notice", privacy: "/privacy" },
+		notice: "Legal notice",
+		privacy: "Privacy",
+		counterpart: "de",
+		language: "Deutsch",
+		navigation: "Legal information and language",
+		footerNavigation: "Legal information",
+		updated: "Last updated",
+		contact: "Contact form",
+	},
+} as const;
+
 export function renderLegalPage(document: LegalDocument): string {
-	const german = document.lang === "de";
-	const noticePath = german ? "/impressum" : "/legal-notice";
-	const privacyPath = german ? "/datenschutz" : "/privacy";
-	const languagePath =
-		document.kind === "notice"
-			? german
-				? "/legal-notice"
-				: "/impressum"
-			: german
-				? "/privacy"
-				: "/datenschutz";
-	const nav = `<a href="${noticePath}">${german ? "Impressum" : "Legal notice"}</a><a href="${privacyPath}">${german ? "Datenschutz" : "Privacy"}</a><a href="${languagePath}" lang="${german ? "en" : "de"}" hreflang="${german ? "en" : "de"}">${german ? "English" : "Deutsch"}</a>`;
+	const labels = languages[document.lang];
+	const languagePath = languages[labels.counterpart].paths[document.kind];
+	const nav = `<a href="${labels.paths.notice}">${labels.notice}</a><a href="${labels.paths.privacy}">${labels.privacy}</a><a href="${languagePath}" lang="${labels.counterpart}" hreflang="${labels.counterpart}">${labels.language}</a>`;
 	const sections = document.sections
-		.map(
-			(section, index) =>
-				`<section aria-labelledby="${escapeHtml(section.id)}"><h2 id="${escapeHtml(section.id)}">${document.kind === "privacy" ? `${index + 1}. ` : ""}${escapeHtml(section.title)}</h2>${section.html}</section>`,
-		)
+		.map((section, index) => {
+			const prefix = document.kind === "privacy" ? `${index + 1}. ` : "";
+			return `<section aria-labelledby="${escapeHtml(section.id)}"><h2 id="${escapeHtml(section.id)}">${prefix}${escapeHtml(section.title)}</h2>${section.html}</section>`;
+		})
 		.join("\n");
 	return `<!doctype html>
 <html lang="${document.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"><title>${escapeHtml(document.title)} · Infinitune</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"><style>${style}</style></head>
-<body><header><a class="brand" href="/">INFINITUNE</a><nav aria-label="${german ? "Rechtliche Informationen und Sprache" : "Legal information and language"}">${nav}</nav></header><main><h1>${escapeHtml(document.title)}</h1><p class="updated">${german ? "Stand" : "Last updated"}: ${escapeHtml(document.updated)}</p>${sections}</main><footer><nav aria-label="${german ? "Rechtliche Informationen" : "Legal information"}">${nav}</nav><p><a href="mailto:impressum-infinitune@heerlab.com">impressum-infinitune@heerlab.com</a> · <a href="mailto:datenschutz-infinitune@heerlab.com">datenschutz-infinitune@heerlab.com</a><br><a href="https://beastyrabbit.com/kontakt?from=infinitune">${german ? "Kontaktformular" : "Contact form"}</a></p></footer></body></html>`;
+<body><header><a class="brand" href="/">INFINITUNE</a><nav aria-label="${labels.navigation}">${nav}</nav></header><main><h1>${escapeHtml(document.title)}</h1><p class="updated">${labels.updated}: ${escapeHtml(document.updated)}</p>${sections}</main><footer><nav aria-label="${labels.footerNavigation}">${nav}</nav><p><a href="mailto:impressum-infinitune@heerlab.com">impressum-infinitune@heerlab.com</a> · <a href="mailto:datenschutz-infinitune@heerlab.com">datenschutz-infinitune@heerlab.com</a><br><a href="https://beastyrabbit.com/kontakt?from=infinitune">${labels.contact}</a></p></footer></body></html>`;
 }
 
 // Render once from authored sections. Serving never calls the API, router loader,
@@ -66,7 +82,7 @@ const pages = new Map(
 function normalizeLegalPath(pathname: string): string {
 	// The server entry rejects escapes that could create path structure.
 	const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
-		String.fromCharCode(Number.parseInt(hex, 16)),
+		String.fromCodePoint(Number.parseInt(hex, 16)),
 	);
 	return `/${decoded.split("/").filter(Boolean).join("/")}`;
 }
@@ -87,21 +103,19 @@ export function getLegalResponse(request: Request): Response | undefined {
 	const html = pages.get(normalizeLegalPath(rawPath));
 	if (html === undefined) return undefined;
 	const allowed = request.method === "GET" || request.method === "HEAD";
-	return new Response(
-		allowed ? (request.method === "HEAD" ? null : html) : "Method not allowed",
-		{
-			status: allowed ? 200 : 405,
-			headers: {
-				"Content-Type": allowed
-					? "text/html; charset=utf-8"
-					: "text/plain; charset=utf-8",
-				"X-Robots-Tag": "noindex",
-				"Content-Security-Policy":
-					"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-				"Referrer-Policy": "no-referrer",
-				"X-Content-Type-Options": "nosniff",
-				...(!allowed ? { Allow: "GET, HEAD" } : {}),
-			},
+	const body = request.method === "HEAD" ? null : html;
+	return new Response(allowed ? body : "Method not allowed", {
+		status: allowed ? 200 : 405,
+		headers: {
+			"Content-Type": allowed
+				? "text/html; charset=utf-8"
+				: "text/plain; charset=utf-8",
+			"X-Robots-Tag": "noindex",
+			"Content-Security-Policy":
+				"default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+			"Referrer-Policy": "no-referrer",
+			"X-Content-Type-Options": "nosniff",
+			...(!allowed ? { Allow: "GET, HEAD" } : {}),
 		},
-	);
+	});
 }

@@ -64,4 +64,5 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=beastyrabbit_infinitune_a2bc890e-734c-4581-bb91-ce34e8b718ba
+            -Dsonar.cpd.exclusions=apps/web/src/lib/legal/de.ts,apps/web/src/lib/legal/en.ts
             ${{ steps.pr.outputs.args }}

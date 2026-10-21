@@ -36,8 +36,50 @@ const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 
 if (LOG_FILE_PATH) {
 	fs.mkdirSync(LOGS_DIR, { recursive: true });
-	void trimLogFile();
-	void expireLogFiles();
+	// Start maintenance without making importers wait for a full directory scan.
+	queueMicrotask(() => {
+		void trimLogFile();
+		void expireLogFiles();
+	});
+}
+
+function retainLogLine(line: string, mtimeMs: number, cutoff: number): boolean {
+	try {
+		const time: unknown = JSON.parse(line)?.time;
+		if (typeof time === "number" && Number.isFinite(time)) {
+			return time > cutoff;
+		}
+	} catch {
+		// Malformed or untimestamped lines fall back to the file's age.
+	}
+	return mtimeMs > cutoff;
+}
+
+async function expireLogFile(
+	file: string,
+	cutoff: number,
+	activeFile: string | undefined,
+): Promise<void> {
+	try {
+		const stat = await fsPromises.stat(file);
+		const data = await fsPromises.readFile(file, "utf8");
+		const lines = data.split(/\r?\n/).filter((line) => line.trim().length > 0);
+		const retained = lines.filter((line) =>
+			retainLogLine(line, stat.mtimeMs, cutoff),
+		);
+		if (retained.length === 0 && file !== activeFile) {
+			await fsPromises.unlink(file);
+		} else if (retained.length !== lines.length) {
+			// Rewrite the same inode to keep Pino's open destination usable.
+			await fsPromises.writeFile(
+				file,
+				retained.length ? `${retained.join("\n")}\n` : "",
+				"utf8",
+			);
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
 }
 
 /** Filter all session files by entry age, with one cleanup interval of margin. */
@@ -58,39 +100,11 @@ export async function expireLogFiles(
 				)
 			)
 				continue;
-			const file = path.join(directory, entry.name);
-			try {
-				const stat = await fsPromises.stat(file);
-				const cutoff =
-					now - LOG_FILE_RETENTION_MS + LOG_FILE_EXPIRY_INTERVAL_MS;
-				const data = await fsPromises.readFile(file, "utf8");
-				const lines = data
-					.split(/\r?\n/)
-					.filter((line) => line.trim().length > 0);
-				const retained = lines.filter((line) => {
-					try {
-						const time: unknown = JSON.parse(line)?.time;
-						if (typeof time === "number" && Number.isFinite(time)) {
-							return time > cutoff;
-						}
-					} catch {
-						// Malformed or untimestamped lines fall back to the file's age.
-					}
-					return stat.mtimeMs > cutoff;
-				});
-				if (retained.length === 0 && file !== activeFile) {
-					await fsPromises.unlink(file);
-				} else if (retained.length !== lines.length) {
-					// Rewrite the same inode to keep Pino's open destination usable.
-					await fsPromises.writeFile(
-						file,
-						retained.length ? `${retained.join("\n")}\n` : "",
-						"utf8",
-					);
-				}
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-			}
+			await expireLogFile(
+				path.join(directory, entry.name),
+				now - LOG_FILE_RETENTION_MS + LOG_FILE_EXPIRY_INTERVAL_MS,
+				activeFile,
+			);
 		}
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
