@@ -13,6 +13,8 @@ env:
 jobs:
   build:
     runs-on: arc-infinitune
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -42,7 +44,21 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
 
+      - name: Resolve release
+        id: release
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
+        id: image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -50,8 +66,101 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
+          cache-to: type=gha,mode=max,ignore-error=true
+          build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
 
       - name: Output image digest
         env:
-          DIGEST: ${{ steps.meta.outputs.digest }}
+          DIGEST: ${{ steps.image.outputs.digest }}
         run: echo "Image pushed with digest $DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  sourcemaps:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: arc-infinitune
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve release
+        id: release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Export source maps from cached build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: sourcemaps
+          outputs: type=local,dest=sourcemaps
+          cache-from: type=gha
+      - name: Verify source maps against the published image
+        env:
+          PUBLISHED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        run: |
+          docker pull "$PUBLISHED_IMAGE"
+          container_id=$(docker create "$PUBLISHED_IMAGE")
+          trap 'docker rm "$container_id" >/dev/null' EXIT
+          mkdir published-public
+          docker cp "$container_id:/app/apps/web/.output/public/." published-public/
+          bash scripts/verify-telemetry-sourcemaps.sh sourcemaps published-public
+      - name: Read GlitchTip upload token
+        uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_GITHUB_ACTIONS_IDENTITY_ID }}
+          domain: "http://192.168.60.11:8080"
+          project-slug: infinitune
+          env-slug: prod
+          secret-path: /ci
+          secret-name: GLITCHTIP_AUTH_TOKEN
+          include-imports: false
+      - name: Create release, upload maps and finalize
+        env:
+          SENTRY_AUTH_TOKEN: ${{ env.GLITCHTIP_AUTH_TOKEN }}
+          SENTRY_URL: http://127.0.0.1:18765
+          SENTRY_ORG: beasty-rabbit
+          SENTRY_PROJECT: infinitune
+          SENTRY_RELEASE: ${{ steps.release.outputs.version }}
+        run: |
+          # Pinned node:26-slim, v26.12.0.
+          docker run -d --rm --name glitchtip-lan-proxy --network host \
+            -v "$PWD/scripts/glitchtip-lan-proxy.mjs:/proxy.mjs:ro" \
+            node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
+            node /proxy.mjs http://192.168.60.68:8000 18765
+          trap 'docker stop glitchtip-lan-proxy >/dev/null' EXIT
+          for attempt in $(seq 1 30); do
+            if docker exec glitchtip-lan-proxy node -e '
+              const socket = require("node:net").connect(18765, "127.0.0.1");
+              socket.setTimeout(1000, () => process.exit(1));
+              socket.on("connect", () => socket.end());
+              socket.on("error", () => process.exit(1));
+            '; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "GlitchTip LAN proxy did not start" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          docker run --rm --network host \
+            -e SENTRY_AUTH_TOKEN -e SENTRY_URL -e SENTRY_ORG -e SENTRY_PROJECT -e SENTRY_RELEASE \
+            -v "$PWD/sourcemaps:/sourcemaps:ro" \
+            --entrypoint /bin/sh getsentry/sentry-cli:2.58.6@sha256:2eeeadba516d1bfe0bbb7b106acbe419acf6e64944f898134f180a256d156b0b -ec '
+              sentry-cli releases new "$SENTRY_RELEASE"
+              sentry-cli sourcemaps upload --release "$SENTRY_RELEASE" --url-prefix "~/" --validate /sourcemaps
+              sentry-cli releases finalize "$SENTRY_RELEASE"
+            '

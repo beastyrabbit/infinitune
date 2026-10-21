@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
+import { captureLog } from "@infinitune/shared/telemetry-node";
 import pino from "pino";
 
 const isTest = process.env.NODE_ENV === "test" || process.env.VITEST === "true";
@@ -92,6 +93,17 @@ if (LOG_FILE_PATH) {
 export const logger = pino(
 	{
 		level: LOG_LEVEL,
+		hooks: {
+			logMethod(args, method, level) {
+				if (level >= 50)
+					captureLog(
+						args,
+						typeof args[1] === "string" ? args[1] : undefined,
+						this.bindings(),
+					);
+				method.apply(this, args);
+			},
+		},
 		base: {
 			service: "infinitune-server",
 			logSessionId: LOG_SESSION_ID,

@@ -14,6 +14,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
+COPY apps/cli/package.json apps/cli/package.json
 COPY packages/shared/package.json packages/shared/package.json
 
 # ── Stage 2: build ─────────────────────────────────────────────
@@ -27,6 +28,13 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm --filter @infinitune/web build
+RUN pnpm --filter @infinitune/web exec sentry-cli sourcemaps inject .output/public && \
+    mkdir /sourcemaps && cp -a apps/web/.output/public/. /sourcemaps/ && \
+    find apps/web/.output -type f -name '*.map' -delete
+
+# Export separately; maps never enter the runtime image.
+FROM scratch AS sourcemaps
+COPY --from=build /sourcemaps/ /
 
 # ── Stage 3: prod-deps ─────────────────────────────────────────
 FROM base AS prod-deps
@@ -35,6 +43,9 @@ RUN pnpm install --frozen-lockfile --prod
 # ── Stage 4: runtime ───────────────────────────────────────────
 FROM node:26-slim AS runtime
 ENV NODE_ENV=production
+ENV TELEMETRY_ENVIRONMENT=production
+ARG INFINITUNE_RELEASE=dev
+ENV INFINITUNE_RELEASE=${INFINITUNE_RELEASE}
 ENV INFINITUNE_PI_AGENT_DIR=/app/data/.infinitune/pi
 
 ARG YT_DLP_VERSION=2026.08.19

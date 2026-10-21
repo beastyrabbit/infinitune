@@ -259,6 +259,9 @@ The default ACE-Step profile is Preset M: `acestep-v15-xl-sft`, 50 inference ste
 
 ### Environment Variables
 
+Runtime analytics, error tracking, replay privacy and deployment variables are
+documented in [docs/telemetry.md](docs/telemetry.md).
+
 Configure in `apps/server/.env.local`:
 
 ```env

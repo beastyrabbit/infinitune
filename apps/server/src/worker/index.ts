@@ -1155,8 +1155,8 @@ async function runPersonaScan(
 				);
 			})
 			.catch((err) => {
-				songLogger(song.id).error(
-					{ err, title: song.title },
+				songLogger(song.id, song.playlistId).error(
+					{ err, title: song.title, stage: "persona" },
 					"Persona extract failed",
 				);
 			})
@@ -1232,7 +1232,10 @@ async function handleSongStatusChanged(data: {
 				"Auto-retried song",
 			);
 		} catch (err) {
-			songLogger(songId, playlistId).error({ err }, "Failed to retry song");
+			songLogger(songId, playlistId).error(
+				{ err, stage: "retry" },
+				"Failed to retry song",
+			);
 		}
 	}
 

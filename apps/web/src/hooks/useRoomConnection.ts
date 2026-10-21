@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ROOM_WS_URL } from "@/lib/endpoints";
+import { trackEvent } from "@/lib/telemetry/browser";
 
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30_000;
@@ -128,6 +129,7 @@ export function useRoomConnection(
 	const protocolErrorRef = useRef<string | null>(null);
 	const roleRef = useRef(role);
 	const roomIdRef = useRef(roomId);
+	const joinedRoomsRef = useRef(new Set<string>());
 	const messageHandlersRef = useRef<((msg: ServerMessage) => void)[]>([]);
 
 	// Keep refs up to date
@@ -138,10 +140,21 @@ export function useRoomConnection(
 		roomIdRef.current = roomId;
 	}, [roomId]);
 
-	const send = useCallback((msg: ClientMessage) => {
+	const send = useCallback((msg: ClientMessage): boolean => {
 		if (wsRef.current?.readyState === WebSocket.OPEN) {
 			wsRef.current.send(JSON.stringify(msg));
+			return true;
 		}
+		return false;
+	}, []);
+
+	const trackRoomJoin = useCallback(() => {
+		const currentRoomId = roomIdRef.current;
+		if (!currentRoomId || wsRef.current?.readyState !== WebSocket.OPEN) return;
+		const key = JSON.stringify([currentRoomId, roleRef.current]);
+		if (joinedRoomsRef.current.has(key)) return;
+		joinedRoomsRef.current.add(key);
+		trackEvent("room_join", { role: roleRef.current });
 	}, []);
 
 	// Time sync: collect pong responses and compute median offset
@@ -171,6 +184,7 @@ export function useRoomConnection(
 
 	const handleMessage = useCallback(
 		(event: MessageEvent) => {
+			if (event.currentTarget !== wsRef.current) return;
 			const msg = parseServerMessage(event.data);
 			if (!msg) return;
 			const mismatchedVersion = getMismatchedProtocolVersion(msg);
@@ -181,7 +195,7 @@ export function useRoomConnection(
 
 			switch (msg.type) {
 				case "joinAck":
-					// Join acknowledged by room server; no-op for now.
+					trackRoomJoin();
 					break;
 				case "state":
 					setPlayback(msg.playback);
@@ -213,7 +227,7 @@ export function useRoomConnection(
 				handler(msg);
 			}
 		},
-		[handleProtocolMismatch],
+		[handleProtocolMismatch, trackRoomJoin],
 	);
 
 	const connect = useCallback(() => {
@@ -307,7 +321,9 @@ export function useRoomConnection(
 			payload?: Record<string, unknown>,
 			targetDeviceId?: string,
 		) => {
-			send({ type: "command", action, payload, targetDeviceId });
+			const sent = send({ type: "command", action, payload, targetDeviceId });
+			if (sent && action === "skip")
+				trackEvent("song_skip", { source: "room" });
 		},
 		[send],
 	);

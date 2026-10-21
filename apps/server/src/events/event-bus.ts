@@ -8,6 +8,7 @@ export type EventMap = {
 		playlistId: string;
 		from: string;
 		to: string;
+		failure?: { error?: Error; stage: string };
 	};
 	"song.deleted": { songId: string; playlistId: string };
 	"song.metadata_updated": { songId: string; playlistId: string };
@@ -82,7 +83,8 @@ export function emit<K extends keyof EventMap>(
 				event,
 				sequence,
 				listenerCount: handlers?.size ?? 0,
-				payload: data,
+				// Original pipeline exceptions belong only in the scrubbed capture.
+				payload: "failure" in data ? { ...data, failure: undefined } : data,
 			},
 			"Event emitted",
 		);

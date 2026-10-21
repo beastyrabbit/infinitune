@@ -1,0 +1,201 @@
+# Telemetry
+
+Infinitune uses the homelab's Umami 3 and GlitchTip 6. Both are optional.
+No consent banner, privacy-policy change or CSP is added for this private tool.
+
+## Container configuration
+
+Set these values on **both the frontend and server containers**:
+
+| Variable | Production value | Purpose |
+| --- | --- | --- |
+| `UMAMI_URL` | `https://umami.heerlab.com` | Browser tracker/recorder and server event destination. |
+| `UMAMI_WEBSITE_ID` | `16206c2c-c965-46db-8f19-4b60bd97adb6` | Public website ID. |
+| `UMAMI_DOMAINS` | `infinitune.heerlab.com,192.168.60.30` | Exact allowed hostnames. First hostname identifies pipeline events. Exclude localhost and preview domains. |
+| `GLITCHTIP_DSN` | `https://cf49ab783f0743d391431d325861ec1b@glitchtip.heerlab.com/7` | Public DSN; not an upload token. |
+| `TELEMETRY_ENVIRONMENT` | `production` | SDK environment; image default is production, otherwise development. |
+| `GLITCHTIP_TRACES_SAMPLE_RATE` | `0.1` | Fraction from 0 to 1; zero disables sampled request/browser traces. |
+
+`INFINITUNE_RELEASE` is baked into both containers from the tag without `v`.
+Do not override it in Kubernetes. Local builds default to `dev`; workflow
+dispatch uses the commit SHA. SDK and source-map release values must match.
+The existing `APP_ORIGIN` and server trusted-proxy settings remain required.
+
+`TELEMETRY_ENABLED=true` explicitly opts non-production server/CLI processes in.
+Missing DSNs disable Sentry. Missing Umami URL, ID or domains disables analytics.
+`NODE_ENV=test` or `VITEST=true` always disables telemetry. Browser development
+builds and WebDriver automation never send browser telemetry.
+
+The frontend root loader reads an allowlist from its environment at request
+time. TanStack Start serializes only public configuration to the browser.
+The root loader catches configuration failures and returns `null`, disabling
+browser telemetry for that document. It reuses the result across client
+navigation; a full page load reads configuration again.
+There are no `VITE_*` telemetry variables. The unified server reads its own
+environment. Neither container needs admin credentials or an upload token.
+
+The CLI and daemon use **environment configuration**, not an API lookup.
+Set `GLITCHTIP_DSN`, `TELEMETRY_ENVIRONMENT=production`,
+`INFINITUNE_RELEASE=<deployed-version>`, `GLITCHTIP_TRACES_SAMPLE_RATE=0.1`
+and `TELEMETRY_ENABLED=true` in the terminal or systemd service environment.
+The CLI does not send Umami events.
+
+## SDK initialization and privacy
+
+The Hono entry imports instrumentation before application imports. The shared
+Node SDK also initializes from the frontend server entry and Nitro plugin.
+Hono errors, Nitro errors, failed Start requests, unhandled exceptions and
+rejections are captured. Pino error logs are captured without arbitrary fields.
+Start's global function middleware also reports errors returned by server
+functions, which can otherwise be serialized into successful HTTP responses.
+Repeated captures of the same Error object are suppressed. Song-scoped pino
+errors, including queue logs with `songId` fields, defer to the pipeline failure
+status transition. It captures the original Error and stack once with
+song/playlist/stage/provider/model/status tags and fingerprint
+`["song-pipeline", stage, error.name]`. Failures without an Error use a synthetic
+`PipelineError`. CLI errors flush before exit; the daemon flushes on shutdown.
+Request span names use the method and matched route pattern, without IDs or
+query strings. Both runtimes skip `/health` and `kube-probe/` user agents; Hono
+also skips `/ws`, `/ws/playlist` and `/ws/radio`. Spans collect no request bodies
+or identity headers.
+
+The browser imports `@sentry/react` dynamically after a 100 ms post-mount timer.
+It captures unhandled errors/rejections, console errors and the root router
+React error boundary. Boundary errors queue until initialization. Browser
+tracing does not propagate headers to external providers. SDK 10 supports the
+requested `sendDefaultPii: false` setting in every runtime.
+Browser session tracking is disabled because GlitchTip does not support Sentry
+session envelopes, as documented in its JavaScript SDK guide.
+
+The shared scrubber filters auth/cookie/token headers, Pangolin `Remote-*`
+headers, emails, bearer/basic tokens, JWTs, secret query parameters and share
+tokens. User objects, request bodies, extras, locals and breadcrumb data are
+filtered. Do not place user content in exception messages: a scrubber cannot
+infer arbitrary prose is a prompt. Pipeline exception messages pass through the
+scrubber and are truncated to 500 characters; their original stacks remain.
+
+Analytics properties use a scalar allowlist. Prompts become lengths; no lyrics,
+identities, device names or raw provider errors are sent. There is no identify
+call. Song/playlist IDs are random application identifiers. Pageviews have a
+static title, no referrer, query or fragment, and redacted share paths. The
+browser queue holds 50 events. Server delivery has four concurrent slots, a
+1.5-second timeout, no retry queue and an injectable transport. Failure never
+stops generation.
+
+## Replay and heatmaps
+
+Both served scripts were inspected on 2026-10-21. `script.js` supports
+`data-domains`, `data-before-send`, `data-exclude-search`, `data-exclude-hash`,
+`data-performance=true`, `track`, `identify`, `getSession` and event attributes.
+Its History API patch handles TanStack Router links. The wrapper also tracks
+`popstate`, which this served script omits, for browser back/forward navigation.
+Outbound links use our
+wrapper because this version has no automatic outbound option. Performance
+includes TTFB, FCP, LCP, CLS, INP and page duration.
+
+`recorder.js` obtains policy from `GET /api/websites/<website-id>/recorder`.
+Script attributes cannot override its masking. The app requires `enabled`,
+`maskLevel: "strict"` and `[data-telemetry-private]` in `blockSelector` before
+loading it. The website's configured policy as of 2026-10-21 is:
+
+```json
+{
+  "enabled": true,
+  "replayEnabled": true,
+  "heatmapEnabled": true,
+  "sampleRate": 1,
+  "heatmapSampleRate": 1,
+  "maskLevel": "strict",
+  "maxDuration": 1800000,
+  "blockSelector": "input,textarea,select,[data-telemetry-private]"
+}
+```
+
+The configured policy returns HTTP 200 on the LAN at
+`http://192.168.60.67:3000/api/websites/16206c2c-c965-46db-8f19-4b60bd97adb6/recorder`.
+The public URL at `https://umami.heerlab.com/api/websites/<website-id>/recorder`
+still returns HTTP 401 because Pangolin SSO protects it. Browser replay and
+heatmaps remain disabled until the homelab operator updates the shared
+Pangolin blueprint to expose this read-only endpoint with browser CORS access.
+That infrastructure change is outside this repository. Umami owns sampling.
+
+Strict mode masks all text and inputs; the body also has `rr-mask`. A narrow
+fetch guard filters only `/api/record` requests, masks text/input payloads,
+allowlists DOM attributes and strips query/hash/share tokens from replay and
+heatmap URLs. Oversized fragmented snapshots are dropped because individual
+fragments cannot be inspected safely; this can leave gaps in large-page replay.
+Initial sensitive routes or query/hash URLs do not start recording. Mark future
+personal UI regions with `data-telemetry-private`.
+
+The inspected tracker sets no cookies or storage. It reads the optional
+`localStorage["umami.disabled"]` opt-out; its cache remains in memory. The
+configured Sentry integrations also use memory and set no cookies/storage.
+The browser test first asserts empty cookie/localStorage/sessionStorage lists.
+After real app navigation, sessionStorage contains only the existing application
+keys `infinitune-radio-listener-id` and `tsr-scroll-restoration-v1_3`.
+
+## Event catalog
+
+| Name | Fired at | Properties |
+| --- | --- | --- |
+| pageview, unnamed event | Initial document and SPA navigation | Sanitized path, hostname, static title, screen, language; no referrer. |
+| performance | Umami observer | TTFB, FCP, LCP, CLS, INP, duration. |
+| `playlist_created` | Successful browser create; server bus | Browser: source, prompt_length, mode. Server: source, playlist_id. |
+| `playlist_steered` | Successful browser prompt mutation; server bus | Browser: source, playlist_id, prompt_length. Server: source, playlist_id, epoch. |
+| `playlist_status_changed` | Browser status mutation, including closed | playlist_id, status. |
+| `song_play` | First audio play for each song start; pauses/resumes do not count again | song_id. |
+| `song_complete` | Global audio ended | song_id when available. |
+| `song_skip` | Successful radio skip; room skip command | source=radio or room. |
+| `song_rate` | Successful song rating/radio feedback | song_id, rating; radio also source. |
+| `room_join` | First connection for each room/role during a room hook's lifetime; automatic reconnects do not count again | role=player/controller. |
+| `song_request` | Successful pending/interrupt or radio request | playlist_id, is_interrupt, prompt_length; radio: source, prompt_length. |
+| `settings_changed` | Successful settings mutation | No settings names or values. |
+| `mutation_error` | Mutation factory rejects | source category, error_class. |
+| `playback_error` | Audio error event | song_id, MediaError code as error_class. |
+| `outbound_link` | External HTTP(S) anchor click | hostname only. |
+| `song_generation_started` | pending to generating_metadata | source=server, song_id, playlist_id, provider, model, stage, duration_ms. |
+| `song_generation_completed` | saving to ready | Same pipeline properties. |
+| `song_generation_failed` | Any error/retry_pending transition | Same properties plus error_class=PipelineError, status. Also GlitchTip exception tags. |
+
+Use source=server for complete playlist counts including CLI/API callers.
+
+## Source maps and verification
+
+Only the client Vite environment emits hidden maps. Docker injects Sentry
+debug IDs, copies assets/maps into the `sourcemaps` stage, then removes every
+map from `.output` before the runtime copy. Exported JS accompanies the maps
+for artifact upload and matches the debug-ID-injected runtime JavaScript.
+
+The image job retains semver, major.minor, short-SHA and latest tags. A separate
+tag-only source-map job runs after publication and reuses its Buildx cache.
+Before reading the upload token, it pulls the published image by the build
+job's digest, extracts `/app/apps/web/.output/public`, and compares the complete
+JavaScript path/SHA256 sets with the export. A mismatch, missing maps or maps
+in the runtime stops the job before upload, including after a cache miss.
+It declares `environment: production`, OIDC write permission and reads only
+Infisical `infinitune/prod/ci`. It creates the release, uploads to the LAN
+GlitchTip API and finalizes it. Failures fail that job without preventing image
+publication. Non-tag dispatch builds use no GitHub environment and never run
+the upload job. The upload token never enters a build arg, layer or artifact.
+The uploader uses Sentry CLI 2.58.6 pinned by image digest. It creates the
+release, runs `sourcemaps upload --release` with URL prefix `~/` and validation,
+then finalizes the release. The upload uses the injected debug IDs. The build
+injects them with the same CLI version. Release values enter only the runtime
+stage, so new releases reuse dependency installs and the source-map build.
+
+The upload job uses a loopback-only LAN proxy because GlitchTip advertises its
+public, SSO-protected chunk-upload URL. The proxy forwards to the LAN API and
+rewrites that URL to itself so artifact bundles bypass the SSO login redirect.
+It can be removed once GlitchTip advertises a LAN or relative URL, or Pangolin
+allows the token-authenticated upload paths.
+
+Run `pnpm check`, `pnpm typecheck`, `pnpm test` and
+`pnpm --filter @infinitune/web test:e2e`. E2E builds and starts production Nitro,
+mocks the captured tracker and GlitchTip envelopes, and blocks remote Node and
+browser transports. It overrides WebDriver only for the human-path scenarios.
+Recorder execution is stubbed; synthetic payload sanitization is unit tested.
+Tests never call AI providers or live telemetry.
+
+Production builds regenerate the tracked route tree without development-only
+testlab routes. Restore that generated file before workspace typechecking,
+which includes those development route sources.
