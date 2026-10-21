@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -59,6 +60,25 @@ export default defineConfig(({ mode }) => {
 					: undefined,
 			),
 			viteReact(),
+			// Inject before Nitro records public asset sizes and etags. Uploads
+			// belong to CI; even an inherited token must not enable build uploads.
+			...sentryVitePlugin({
+				authToken: "",
+				telemetry: false,
+				sourcemaps: { disable: "disable-upload" },
+				release: {
+					name: "",
+					inject: false,
+					create: false,
+					finalize: false,
+					setCommits: false,
+					deploy: false,
+				},
+			}).map((plugin) => ({
+				...plugin,
+				apply: "build" as const,
+				applyToEnvironment: (environment) => environment.name === "client",
+			})),
 		],
 	};
 });
