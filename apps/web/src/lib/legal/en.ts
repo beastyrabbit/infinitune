@@ -99,7 +99,7 @@ export const privacy: LegalDocument = {
 		{
 			id: "umami",
 			title: "Self-hosted Umami",
-			html: `<p>Infinitune uses self-hosted Umami on the controller's own infrastructure in Germany for usage events and page views without cookies or device identifiers; there is no session recording. The legal basis is Art. 6(1)(f) GDPR; the legitimate interest is understanding use of the service and detecting technical problems. Analytics data are stored for up to 10 years.</p>`,
+			html: `<p>Infinitune uses self-hosted Umami on the controller's own infrastructure in Germany for usage events and page views without cookies or device identifiers; there is no session recording. The legal basis is Art. 6(1)(f) GDPR; the legitimate interest is understanding use of the service and detecting technical problems. Analytics data are deleted automatically after 25 months.</p>`,
 		},
 		{
 			id: "glitchtip",
