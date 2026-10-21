@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ROOM_WS_URL } from "@/lib/endpoints";
+import { trackEvent } from "@/lib/telemetry/browser";
 
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30_000;
@@ -229,6 +230,7 @@ export function useRoomConnection(
 		wsRef.current = ws;
 
 		ws.addEventListener("open", () => {
+			trackEvent("room_join", { role: roleRef.current });
 			setConnected(true);
 			reconnectDelay.current = INITIAL_RECONNECT_DELAY;
 
@@ -308,6 +310,7 @@ export function useRoomConnection(
 			targetDeviceId?: string,
 		) => {
 			send({ type: "command", action, payload, targetDeviceId });
+			if (action === "skip") trackEvent("song_skip", { source: "room" });
 		},
 		[send],
 	);

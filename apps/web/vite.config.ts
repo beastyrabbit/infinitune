@@ -17,6 +17,14 @@ export default defineConfig(({ mode }) => {
 	const apiProxyTarget = apiBase.slice(0, end);
 
 	return {
+		// Vite's import-analysis plugin reads the top-level value when rewriting
+		// entry chunks. An environment-only setting produces an empty entry map.
+		build: { sourcemap: "hidden" },
+		environments: {
+			client: { build: { sourcemap: "hidden" } },
+			ssr: { build: { sourcemap: false } },
+			nitro: { build: { sourcemap: false } },
+		},
 		server: {
 			host: process.env.HOST || undefined,
 			port: Number.isFinite(devServerPort) ? devServerPort : undefined,
@@ -30,12 +38,16 @@ export default defineConfig(({ mode }) => {
 		},
 		resolve: {
 			alias: {
+				// The pinned nitro-nightly package imports itself as nitro/app.
+				"nitro/app": fileURLToPath(
+					new URL("./node_modules/nitro/dist/runtime/app.mjs", import.meta.url),
+				),
 				"@": fileURLToPath(new URL("./src", import.meta.url)),
 			},
 		},
 		plugins: [
 			devtools(),
-			nitro(),
+			nitro({ plugins: ["./src/lib/telemetry/nitro.ts"] }),
 			// this is the plugin that enables path aliases
 			viteTsConfigPaths({
 				projects: ["./tsconfig.json"],

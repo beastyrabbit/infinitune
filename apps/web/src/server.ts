@@ -1,3 +1,8 @@
+import "./lib/telemetry/instrument.server";
+import {
+	captureError,
+	withTelemetrySpan,
+} from "@infinitune/shared/telemetry-node";
 import type { Register } from "@tanstack/react-router";
 import type { RequestHandler } from "@tanstack/react-start/server";
 import {
@@ -18,7 +23,22 @@ export type ServerEntry = { fetch: RequestHandler<Register> };
 export function createServerEntry(entry: ServerEntry): ServerEntry {
 	return {
 		async fetch(...args) {
-			return await entry.fetch(...args);
+			try {
+				const response = await withTelemetrySpan(
+					"Frontend request",
+					"http.server",
+					() => entry.fetch(...args),
+				);
+				if (response.status >= 500)
+					captureError(new Error("Frontend request failed"), {
+						runtime: "start",
+						status: String(response.status),
+					});
+				return response;
+			} catch (error) {
+				captureError(error, { runtime: "start" });
+				throw error;
+			}
 		},
 	};
 }
