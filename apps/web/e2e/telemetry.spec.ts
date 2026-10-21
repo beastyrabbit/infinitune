@@ -39,8 +39,15 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 	expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
 	// Test the script's History API patch and actual TanStack Link navigation.
 	await page.goto("http://127.0.0.1:4471/autoplayer");
+	const serverFunctionRequests: string[] = [];
+	await page.route("**/_serverFn/**", (route) => {
+		serverFunctionRequests.push(route.request().url());
+		return route.abort("failed");
+	});
 	await page.getByRole("link", { name: "Settings", exact: true }).first().click();
 	await expect.poll(() => sends.some((event) => (event.payload as { url?: string }).url === "/autoplayer/settings")).toBe(true);
+	await expect(page.getByRole("alert")).toHaveCount(0);
+	expect(serverFunctionRequests).toEqual([]);
 	const documents = scriptRequests;
 	await page.evaluate(() => {
 		const anchor = document.createElement("a"); anchor.href = "/telemetry-next?token=private-route#private-hash"; anchor.textContent = "Next";

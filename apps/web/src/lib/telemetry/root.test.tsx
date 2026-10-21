@@ -4,6 +4,7 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
+	type RootRouteOptions,
 	RouterProvider,
 } from "@tanstack/react-router";
 import { renderToString } from "react-dom/server";
@@ -32,7 +33,7 @@ it("keeps the app usable when configuration fails and reuses the root loader on 
 		}),
 		createRoute({
 			getParentRoute: () => Route,
-			path: "/settings",
+			path: "/autoplayer/settings",
 			component: () => "Settings",
 		}),
 	]);
@@ -45,7 +46,7 @@ it("keeps the app usable when configuration fails and reuses the root loader on 
 		status: "success",
 		loaderData: null,
 	});
-	await router.navigate({ to: "/settings" });
+	await router.navigate({ to: "/autoplayer/settings" });
 	await router.navigate({ to: "/" });
 	expect(getTelemetryConfig).toHaveBeenCalledOnce();
 });
@@ -55,7 +56,8 @@ it("renders root errors inside the styled document shell", async () => {
 	const router = createRouter({
 		isServer: true,
 		routeTree: createRootRoute({
-			...Route.options,
+			shellComponent: (Route.options as RootRouteOptions).shellComponent,
+			errorComponent: Route.options.errorComponent,
 			loader: () => {
 				throw new Error("Route failed");
 			},
