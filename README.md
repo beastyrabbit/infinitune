@@ -4,6 +4,9 @@
 
 # INFINITUNE
 
+Runtime analytics, error tracking, replay privacy and deployment variables are
+documented in [docs/telemetry.md](docs/telemetry.md).
+
 ### Infinite Generative Music
 
 **Describe a vibe. Get an endless stream of original AI-generated songs — lyrics, cover art, and audio, all created on the fly.**
