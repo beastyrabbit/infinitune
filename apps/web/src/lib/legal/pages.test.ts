@@ -42,7 +42,13 @@ describe("standalone legal pages", () => {
 				page.querySelectorAll("script, iframe, img, link[rel=stylesheet]"),
 			).toHaveLength(0);
 			expect(page.querySelectorAll("style")).toHaveLength(1);
-			expect(html).not.toMatch(/TODO\(user\)|\[\[|Hetzner|<!--|@import|url\(/);
+			expect(html).not.toMatch(/TODO|\[\[|Hetzner|<!--|@import|url\(/);
+			// CrowdSec's fixed disclosure retains its own three-month IP limit.
+			const applicationText = document.sections
+				.filter((section) => section.id !== "crowdsec")
+				.map((section) => section.html)
+				.join("\n");
+			expect(applicationText).not.toMatch(/drei Monate|three months/i);
 			for (const target of Object.keys(legalDocuments).filter(
 				(target) => target !== path,
 			)) {
@@ -76,9 +82,11 @@ describe("standalone legal pages", () => {
 			for (const expected of [
 				"OpenAI Ireland Limited",
 				"D01 YC43",
-				"p_session_token_s.",
-				"HttpOnly, Secure, SameSite=Lax",
-				"umami.disabled",
+				"Pangolin",
+				"ACE-Step",
+				"Ollama",
+				"Umami",
+				"GlitchTip",
 			])
 				expect(html).toContain(expected);
 			for (const unused of [
