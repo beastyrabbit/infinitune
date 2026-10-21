@@ -575,8 +575,11 @@ async function shutdown() {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("unhandledRejection", (reason) => {
-	logger.error({ reason }, "Unhandled promise rejection");
+	logger.error(
+		{ reason, globalErrorHandler: true },
+		"Unhandled promise rejection",
+	);
 });
 process.on("uncaughtException", (err) => {
-	logger.fatal({ err }, "Uncaught exception");
+	logger.fatal({ err, globalErrorHandler: true }, "Uncaught exception");
 });

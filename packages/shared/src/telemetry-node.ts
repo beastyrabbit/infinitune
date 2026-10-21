@@ -66,6 +66,9 @@ export function captureError(
 export function captureLog(args: unknown[], message?: string): void {
 	if (!initialized) return;
 	const fields = args[0];
+	// Sentry's global integrations capture these with the original error/stack.
+	if (fields && typeof fields === "object" && "globalErrorHandler" in fields)
+		return;
 	// Queue failures use the root logger with songId in the log fields. Defer
 	// these too so the pipeline capture retains its stage/provider context.
 	if (fields && typeof fields === "object" && "songId" in fields) return;
