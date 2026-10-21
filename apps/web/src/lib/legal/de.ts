@@ -99,7 +99,7 @@ export const privacy: LegalDocument = {
 		{
 			id: "umami",
 			title: "Selbst betriebenes Umami",
-			html: `<p>Infinitune verwendet selbst betriebenes Umami auf der eigenen Infrastruktur in Deutschland für Nutzungsereignisse und Seitenaufrufe ohne Cookies oder Gerätekennungen; Sitzungsaufzeichnungen finden nicht statt. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt darin, die Nutzung des Angebots zu verstehen und technische Probleme zu erkennen. Die Analysedaten werden bis zu 10 Jahre gespeichert.</p>`,
+			html: `<p>Infinitune verwendet selbst betriebenes Umami auf der eigenen Infrastruktur in Deutschland für Nutzungsereignisse und Seitenaufrufe ohne Cookies oder Gerätekennungen; Sitzungsaufzeichnungen finden nicht statt. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt darin, die Nutzung des Angebots zu verstehen und technische Probleme zu erkennen. Die Analysedaten werden nach 25 Monaten automatisch gelöscht.</p>`,
 		},
 		{
 			id: "glitchtip",
