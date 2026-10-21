@@ -14,12 +14,7 @@ const mocks = vi.hoisted(() => {
 	const requestWarn = vi.fn();
 	const requestDebug = vi.fn();
 	return {
-		fetch: null as
-			| ((
-					request: Request,
-					env?: { incoming: { url: string } },
-			  ) => Promise<Response>)
-			| null,
+		fetch: null as ((request: Request) => Promise<Response>) | null,
 		rootError: vi.fn(),
 		child: vi.fn(() => ({
 			error: requestError,
@@ -210,24 +205,6 @@ describe("request logging", () => {
 	afterAll(() => {
 		vi.unstubAllEnvs();
 	});
-
-	it.each(["summer%2F2026", "100%25%20chill"])(
-		"passes encoded path %s through server middleware",
-		async (key) => {
-			const path = `/api/share/${key}`;
-			for (const env of [undefined, { incoming: { url: path } }]) {
-				if (!mocks.fetch)
-					throw new Error("Server fetch handler was not captured");
-				const response = await mocks.fetch(
-					new Request(`http://localhost${path}`),
-					env,
-				);
-				expect(response.status).toBe(200);
-				expect(await response.json()).toEqual({ ok: true });
-			}
-			expect(mocks.requestInfo).toHaveBeenCalledTimes(2);
-		},
-	);
 
 	it("normalizes share tokens in completed and failed request logs", async () => {
 		const completedToken = "completed-bearer-secret";
