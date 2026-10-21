@@ -27,6 +27,7 @@ const LOG_FILE_TRIM_INTERVAL_MS = parsePositiveInt(
 );
 
 const LOGS_DIR = path.resolve(import.meta.dirname, "../../../data/logs/server");
+const LOG_FILE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const LOG_SESSION_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 	? path.join(LOGS_DIR, `server-${LOG_SESSION_ID}.ndjson`)
@@ -34,6 +35,44 @@ const LOG_FILE_PATH = FILE_LOGGING_ENABLED
 
 if (LOG_FILE_PATH) {
 	fs.mkdirSync(LOGS_DIR, { recursive: true });
+	void expireLogFiles();
+}
+
+/** Expire this server's session logs, measured from last write. */
+export async function expireLogFiles(
+	directory = LOGS_DIR,
+	now = Date.now(),
+	activeFile = LOG_FILE_PATH,
+): Promise<void> {
+	try {
+		const entries = await fsPromises.readdir(directory, {
+			withFileTypes: true,
+		});
+		for (const entry of entries) {
+			if (
+				!entry.isFile() ||
+				!/^server-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.ndjson$/.test(
+					entry.name,
+				)
+			)
+				continue;
+			const file = path.join(directory, entry.name);
+			try {
+				const stat = await fsPromises.stat(file);
+				if (stat.mtimeMs <= now - LOG_FILE_RETENTION_MS) {
+					// Keep Pino's open destination usable after a long idle period.
+					if (file === activeFile) await fsPromises.truncate(file, 0);
+					else await fsPromises.unlink(file);
+				}
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			}
+		}
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			console.error("Failed to expire server log files", error);
+		}
+	}
 }
 
 async function trimLogFile() {
@@ -60,6 +99,7 @@ async function trimLogFile() {
 if (LOG_FILE_PATH && LOG_FILE_TRIM_INTERVAL_MS > 0) {
 	const trimLogTimer = setInterval(() => {
 		void trimLogFile();
+		void expireLogFiles();
 	}, LOG_FILE_TRIM_INTERVAL_MS);
 	trimLogTimer.unref?.();
 }
