@@ -28,6 +28,9 @@ builds and WebDriver automation never send browser telemetry.
 
 The frontend root loader reads an allowlist from its environment at request
 time. TanStack Start serializes only public configuration to the browser.
+The root loader catches configuration failures and returns `null`, disabling
+browser telemetry for that document. It reuses the result across client
+navigation; a full page load reads configuration again.
 There are no `VITE_*` telemetry variables. The unified server reads its own
 environment. Neither container needs admin credentials or an upload token.
 
@@ -46,10 +49,15 @@ rejections are captured. Pino error logs are captured without arbitrary fields.
 Start's global function middleware also reports errors returned by server
 functions, which can otherwise be serialized into successful HTTP responses.
 Repeated captures of the same Error object are suppressed. Song-scoped pino
-errors are reported once through the pipeline failure status transition with
-song/playlist/stage/provider/model tags. CLI errors flush before exit; the
-daemon flushes on shutdown. Node request spans have fixed names and collect no
-request bodies or identity headers.
+errors, including queue logs with `songId` fields, defer to the pipeline failure
+status transition. It captures the original Error and stack once with
+song/playlist/stage/provider/model/status tags and fingerprint
+`["song-pipeline", stage, error.name]`. Failures without an Error use a synthetic
+`PipelineError`. CLI errors flush before exit; the daemon flushes on shutdown.
+Request span names use the method and matched route pattern, without IDs or
+query strings. Both runtimes skip `/health` and `kube-probe/` user agents; Hono
+also skips `/ws`, `/ws/playlist` and `/ws/radio`. Spans collect no request bodies
+or identity headers.
 
 The browser imports `@sentry/react` dynamically after a 100 ms post-mount timer.
 It captures unhandled errors/rejections, console errors and the root router
@@ -63,7 +71,8 @@ The shared scrubber filters auth/cookie/token headers, Pangolin `Remote-*`
 headers, emails, bearer/basic tokens, JWTs, secret query parameters and share
 tokens. User objects, request bodies, extras, locals and breadcrumb data are
 filtered. Do not place user content in exception messages: a scrubber cannot
-infer arbitrary prose is a prompt. Pipeline exception messages are generic.
+infer arbitrary prose is a prompt. Pipeline exception messages pass through the
+scrubber and are truncated to 500 characters; their original stacks remain.
 
 Analytics properties use a scalar allowlist. Prompts become lengths; no lyrics,
 identities, device names or raw provider errors are sent. There is no identify
@@ -87,24 +96,28 @@ includes TTFB, FCP, LCP, CLS, INP and page duration.
 `recorder.js` obtains policy from `GET /api/websites/<website-id>/recorder`.
 Script attributes cannot override its masking. The app requires `enabled`,
 `maskLevel: "strict"` and `[data-telemetry-private]` in `blockSelector` before
-loading it. Configure that website with:
+loading it. The website's configured policy as of 2026-10-21 is:
 
 ```json
 {
   "enabled": true,
   "replayEnabled": true,
   "heatmapEnabled": true,
-  "sampleRate": 0.15,
-  "heatmapSampleRate": 0.15,
+  "sampleRate": 1,
+  "heatmapSampleRate": 1,
   "maskLevel": "strict",
+  "maxDuration": 1800000,
   "blockSelector": "input,textarea,select,[data-telemetry-private]"
 }
 ```
 
-The orchestrator must expose this read-only recorder-policy endpoint through
-Pangolin with CORS access, alongside the public scripts and ingestion endpoints.
-It returned **HTTP 401** during implementation, so live replay remains off
-until fixed. No admin API was called. Umami owns sampling policy.
+The configured policy returns HTTP 200 on the LAN at
+`http://192.168.60.67:3000/api/websites/16206c2c-c965-46db-8f19-4b60bd97adb6/recorder`.
+The public URL at `https://umami.heerlab.com/api/websites/<website-id>/recorder`
+still returns HTTP 401 because Pangolin SSO protects it. Browser replay and
+heatmaps remain disabled until the homelab operator updates the shared
+Pangolin blueprint to expose this read-only endpoint with browser CORS access.
+That infrastructure change is outside this repository. Umami owns sampling.
 
 Strict mode masks all text and inputs; the body also has `rr-mask`. A narrow
 fetch guard filters only `/api/record` requests, masks text/input payloads,
@@ -154,10 +167,15 @@ for artifact upload and matches the debug-ID-injected runtime JavaScript.
 
 The image job retains semver, major.minor, short-SHA and latest tags. A separate
 tag-only source-map job runs after publication and reuses its Buildx cache.
+Before reading the upload token, it pulls the published image by the build
+job's digest, extracts `/app/apps/web/.output/public`, and compares the complete
+JavaScript path/SHA256 sets with the export. A mismatch, missing maps or maps
+in the runtime stops the job before upload, including after a cache miss.
 It declares `environment: production`, OIDC write permission and reads only
 Infisical `infinitune/prod/ci`. It creates the release, uploads to the LAN
 GlitchTip API and finalizes it. Failures fail that job without preventing image
-publication. The upload token never enters a build arg, layer or artifact.
+publication. Non-tag dispatch builds use no GitHub environment and never run
+the upload job. The upload token never enters a build arg, layer or artifact.
 The uploader stays on Sentry CLI 2.58.6 and uses release-file upload APIs.
 Sentry CLI 3 removed those commands. Debug IDs are injected by the same pinned
 CLI version used for upload.
