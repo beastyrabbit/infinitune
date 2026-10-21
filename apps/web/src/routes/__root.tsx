@@ -111,7 +111,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<head>
 				<HeadContent />
 			</head>
-			<body className="rr-mask bg-gray-950 text-white overflow-x-clip">
+			<body className="bg-gray-950 text-white overflow-x-clip">
 				{config && <Telemetry config={config} />}
 				<ApiProvider>{children}</ApiProvider>
 				<LegalFooter />

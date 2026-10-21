@@ -1,7 +1,7 @@
 # Telemetry
 
 Infinitune uses the homelab's Umami 3 and GlitchTip 6. Both are optional.
-The legal pages disclose analytics and error tracking. Session replay and heatmaps are disabled in application code.
+The legal pages disclose analytics and error tracking. Session replay and heatmaps are not part of the application.
 
 ## Container configuration
 
@@ -85,9 +85,8 @@ stops generation.
 ## Replay and heatmaps
 
 The application does not request Umami's recording policy or load `recorder.js`.
-Session replay and heatmaps remain disabled even if the server policy enables
-them. The unused recording sanitizer remains in the repository, with no runtime
-import from the analytics client. Unit and production-browser tests verify that
+Session replay and heatmaps are not part of the app; the recorder module and
+its sanitizer have been removed. Unit and production-browser tests verify that
 analytics load without any recording-policy, recorder-script or recording requests.
 
 The served `script.js` supports pageviews, events and performance measurements.
@@ -161,7 +160,6 @@ Run `pnpm check`, `pnpm typecheck`, `pnpm test` and
 `pnpm --filter @infinitune/web test:e2e`. E2E builds and starts production Nitro,
 mocks the captured tracker and GlitchTip envelopes, and blocks remote Node and
 browser transports. It overrides WebDriver only for the human-path scenarios.
-Recorder execution is stubbed; synthetic payload sanitization is unit tested.
 Tests never call AI providers or live telemetry.
 
 Production builds regenerate the tracked route tree without development-only

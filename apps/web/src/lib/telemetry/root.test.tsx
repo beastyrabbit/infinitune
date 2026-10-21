@@ -69,7 +69,7 @@ it("renders root errors inside the styled document shell", async () => {
 	const html = renderToString(<RouterProvider router={router} />);
 	expect(html).toContain('<html lang="en" class="dark">');
 	expect(html).toContain("<head>");
-	expect(html).toContain('<body class="rr-mask bg-gray-950');
+	expect(html).toContain('<body class="bg-gray-950');
 	expect(html).toContain(
 		'role="alert" class="font-mono min-h-screen bg-gray-950',
 	);

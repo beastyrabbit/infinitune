@@ -20,8 +20,6 @@ test("production telemetry, SPA pageviews, privacy, and storage", async ({ brows
 			if (/recorder|\/api\/record/.test(url.pathname)) recordingRequests.push(url.pathname);
 			if (url.pathname === "/script.js") { scriptRequests++; return route.fulfill({ contentType: "application/javascript", body: script }); }
 			if (url.pathname === "/api/send") { if (request.method() === "POST") sends.push(request.postDataJSON()); return route.fulfill({ headers, json: { cache: "e2e-cache" } }); }
-			if (url.pathname.endsWith("/recorder")) return route.fulfill({ headers, json: { enabled: true, replayEnabled: true, heatmapEnabled: true, sampleRate: 1, heatmapSampleRate: 1, maskLevel: "strict", blockSelector: "input,textarea,select,[data-telemetry-private]" } });
-			if (url.pathname === "/recorder.js") return route.fulfill({ contentType: "application/javascript", body: "/* Replay transport tested separately with synthetic rrweb payloads. */" });
 			return route.fulfill({ headers, json: {} });
 		}
 		if (url.hostname === "glitchtip.heerlab.com") {
