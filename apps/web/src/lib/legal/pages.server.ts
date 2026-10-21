@@ -80,7 +80,7 @@ const pages = new Map(
 );
 
 function normalizeLegalPath(pathname: string): string {
-	// The server entry rejects escapes that could create path structure.
+	// Decode once and tolerate empty slash segments for legal-page aliases.
 	const decoded = pathname.replace(/%([0-9a-f]{2})/gi, (_, hex: string) =>
 		String.fromCodePoint(Number.parseInt(hex, 16)),
 	);
@@ -89,7 +89,7 @@ function normalizeLegalPath(pathname: string): string {
 
 export function getRawRequestPath(request: Request): string {
 	// srvx preserves the original Node URI here even when Request.url has already
-	// resolved literal dot segments. Inspect it before any URL parsing/decoding.
+	// resolved literal dot segments. Use it when matching legal-page aliases.
 	const nodeRequest = request as Request & {
 		runtime?: { node?: { req?: { url?: string } } };
 	};
@@ -98,7 +98,7 @@ export function getRawRequestPath(request: Request): string {
 }
 
 export function getLegalResponse(request: Request): Response | undefined {
-	// Serve benign aliases directly before any Start loader or server function.
+	// Serve legal pages directly before any Start loader or server function.
 	const rawPath = getRawRequestPath(request);
 	const html = pages.get(normalizeLegalPath(rawPath));
 	if (html === undefined) return undefined;

@@ -14,24 +14,12 @@ const mocks = vi.hoisted(() => {
 	const requestWarn = vi.fn();
 	const requestDebug = vi.fn();
 	return {
-		upgrade: null as
-			| ((
-					request: { url?: string },
-					socket: { destroy: () => void },
-					head: Buffer,
-			  ) => void)
-			| null,
-		wsUpgrade: vi.fn(),
-		originalUpgrade: vi.fn(),
 		fetch: null as
 			| ((
 					request: Request,
 					env?: { incoming: { url: string } },
 			  ) => Promise<Response>)
 			| null,
-		telemetryRequests: vi.fn(async (_c: unknown, next: () => Promise<void>) =>
-			next(),
-		),
 		rootError: vi.fn(),
 		child: vi.fn(() => ({
 			error: requestError,
@@ -52,10 +40,6 @@ vi.mock("@infinitune/shared/telemetry-node", async (importOriginal) => ({
 		typeof import("@infinitune/shared/telemetry-node")
 	>()),
 	flushTelemetry: vi.fn(),
-}));
-
-vi.mock("../telemetry/requests", () => ({
-	telemetryRequests: mocks.telemetryRequests,
 }));
 
 vi.mock("../logger", () => ({
@@ -80,10 +64,8 @@ vi.mock("@hono/node-server", () => ({
 		(options: { fetch: (request: Request) => Promise<Response> }) => {
 			mocks.fetch = options.fetch;
 			return {
-				listeners: vi.fn(() => [mocks.originalUpgrade]),
-				on: vi.fn((event: string, handler: typeof mocks.upgrade) => {
-					if (event === "upgrade") mocks.upgrade = handler;
-				}),
+				listeners: vi.fn(() => []),
+				on: vi.fn(),
 				removeAllListeners: vi.fn(),
 			};
 		},
@@ -103,7 +85,7 @@ vi.mock("ws", () => ({
 	WebSocketServer: class {
 		close = vi.fn();
 		emit = vi.fn();
-		handleUpgrade = mocks.wsUpgrade;
+		handleUpgrade = vi.fn();
 		on = vi.fn();
 	},
 }));
@@ -157,11 +139,7 @@ vi.mock("../routes/autoplayer", async () => {
 });
 vi.mock("../routes/playlists", async () => {
 	const { Hono } = await import("hono");
-	return {
-		default: new Hono().get("/:id", (c) =>
-			c.json({ id: c.req.param("id"), query: c.req.query("q") }),
-		),
-	};
+	return { default: new Hono() };
 });
 vi.mock("../routes/radio", async () => {
 	const { Hono } = await import("hono");
@@ -196,16 +174,9 @@ vi.mock("../routes/share", async () => {
 	return { default: app };
 });
 
-async function request(
-	path: string,
-	init?: RequestInit,
-	incomingUrl?: string,
-): Promise<Response> {
+async function request(path: string, init?: RequestInit): Promise<Response> {
 	if (!mocks.fetch) throw new Error("Server fetch handler was not captured");
-	return mocks.fetch(
-		new Request(`http://localhost${path}`, init),
-		incomingUrl === undefined ? undefined : { incoming: { url: incomingUrl } },
-	);
+	return mocks.fetch(new Request(`http://localhost${path}`, init));
 }
 
 describe("request logging", () => {
@@ -228,9 +199,6 @@ describe("request logging", () => {
 	});
 
 	beforeEach(() => {
-		mocks.wsUpgrade.mockClear();
-		mocks.originalUpgrade.mockClear();
-		mocks.telemetryRequests.mockClear();
 		mocks.rootError.mockClear();
 		mocks.child.mockClear();
 		mocks.requestError.mockClear();
@@ -243,116 +211,23 @@ describe("request logging", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it.each([
-		"/x/../ws/playlist",
-		"/./ws/radio",
-		"/ws/%2e%2e/ws/playlist",
-		"/ws%2fplaylist",
-		"/ws%5Cradio",
-		"/ws%252Fplaylist",
-		"/ws\\radio",
-	])("destroys unsafe upgrade target %s before dispatch", (url) => {
-		if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
-		const socket = { destroy: vi.fn() };
-		mocks.upgrade({ url }, socket, Buffer.alloc(0));
-		expect(socket.destroy).toHaveBeenCalledOnce();
-		expect(mocks.wsUpgrade).not.toHaveBeenCalled();
-		expect(mocks.originalUpgrade).not.toHaveBeenCalled();
-	});
-
-	it.each(["/ws/playlist", "/ws/radio"])(
-		"allows canonical upgrade %s and structural characters in queries",
-		(path) => {
-			if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
-			const socket = { destroy: vi.fn() };
-			const head = Buffer.alloc(0);
-			for (const url of [path, `${path}?next=%2F%5C%25%2E/../`]) {
-				const request = { url };
-				mocks.upgrade(request, socket, head);
-				expect(mocks.wsUpgrade).toHaveBeenLastCalledWith(
-					request,
-					socket,
-					head,
-					expect.any(Function),
+	it.each(["summer%2F2026", "100%25%20chill"])(
+		"passes encoded path %s through server middleware",
+		async (key) => {
+			const path = `/api/share/${key}`;
+			for (const env of [undefined, { incoming: { url: path } }]) {
+				if (!mocks.fetch)
+					throw new Error("Server fetch handler was not captured");
+				const response = await mocks.fetch(
+					new Request(`http://localhost${path}`),
+					env,
 				);
-			}
-			expect(mocks.wsUpgrade).toHaveBeenCalledTimes(2);
-			expect(socket.destroy).not.toHaveBeenCalled();
-			expect(mocks.originalUpgrade).not.toHaveBeenCalled();
-		},
-	);
-
-	it("preserves upgrade fallback to Hono", () => {
-		if (!mocks.upgrade) throw new Error("Upgrade handler was not captured");
-		const request = { url: "/ws?next=%2F%25/../" };
-		const socket = { destroy: vi.fn() };
-		const head = Buffer.alloc(0);
-		mocks.upgrade(request, socket, head);
-		expect(mocks.originalUpgrade).toHaveBeenCalledExactlyOnceWith(
-			request,
-			socket,
-			head,
-		);
-		expect(socket.destroy).not.toHaveBeenCalled();
-		expect(mocks.wsUpgrade).not.toHaveBeenCalled();
-	});
-
-	it.each([
-		"/api/playlists/X%252F..%252F..%252F..%252Fprivacy",
-		"/api/playlists/X%2f..%2f..%2fprivacy",
-		"/api/playlists/X%5C..%5Cprivacy",
-		"/api/playlists/X%25252Fprivacy",
-		"/covers/a%2Eb.png",
-		"/ws%2fprivacy",
-		"/health%25",
-	])(
-		"rejects %s with or without Node bindings before telemetry and logging",
-		async (path) => {
-			for (const incomingUrl of [undefined, path]) {
-				const response = await request(path, undefined, incomingUrl);
-				expect(response.status).toBe(400);
-				expect(response.headers.get("content-type")).toBe(
-					"text/plain; charset=UTF-8",
-				);
-				expect(await response.text()).toBe("Bad Request");
-			}
-			expect(mocks.telemetryRequests).not.toHaveBeenCalled();
-			expect(mocks.child).not.toHaveBeenCalled();
-		},
-	);
-
-	it.each([
-		"/x/../health",
-		"/a/%2e%2e/privacy",
-		"/./health",
-		"/health/.",
-		"/x\\../health",
-		"http://localhost/x/../health?next=%2F",
-	])(
-		"inspects the original Node target %s even after Request URL normalization",
-		async (rawTarget) => {
-			const response = await request("/health", undefined, rawTarget);
-			expect(response.status).toBe(400);
-			expect(mocks.telemetryRequests).not.toHaveBeenCalled();
-			expect(mocks.child).not.toHaveBeenCalled();
-		},
-	);
-
-	it("allows health, cuid API paths and structural characters in queries", async () => {
-		const id = "tz4a98xxat96iws9zmbrgj3a";
-		for (const path of ["/health", `/api/playlists/${id}`]) {
-			const target = `${path}?q=%2F%5C%25%2E/../`;
-			for (const incomingUrl of [undefined, target]) {
-				const response = await request(target, undefined, incomingUrl);
 				expect(response.status).toBe(200);
-				if (path.startsWith("/api/")) {
-					expect(await response.json()).toEqual({ id, query: "/\\%./../" });
-				}
+				expect(await response.json()).toEqual({ ok: true });
 			}
-		}
-		expect(mocks.telemetryRequests).toHaveBeenCalledTimes(4);
-		expect(mocks.child).toHaveBeenCalledTimes(4);
-	});
+			expect(mocks.requestInfo).toHaveBeenCalledTimes(2);
+		},
+	);
 
 	it("normalizes share tokens in completed and failed request logs", async () => {
 		const completedToken = "completed-bearer-secret";

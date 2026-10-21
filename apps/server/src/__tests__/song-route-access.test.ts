@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
+import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PlaylistWire } from "../wire";
 import {
 	getTestDb,
 	getTestSqlite,
@@ -179,6 +181,32 @@ describe("song route ownership", () => {
 		resetRateLimiters();
 		teardownTestDb();
 	});
+
+	it.each(["summer/2026", "100% chill"])(
+		"creates and fetches a playlist with encoded key %j",
+		async (playlistKey) => {
+			const app = new Hono().route("/api/playlists", playlistsRoutes);
+			const created = await app.request("/api/playlists", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					name: "Encoded key regression",
+					prompt: "Jazz",
+					llmProvider: "openai-codex",
+					llmModel: "",
+					playlistKey,
+				}),
+			});
+			expect(created.status).toBe(200);
+			const playlist = (await created.json()) as PlaylistWire;
+			expect(playlist.playlistKey).toBe(playlistKey);
+			const response = await app.request(
+				`/api/playlists/by-key/${encodeURIComponent(playlistKey)}`,
+			);
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual(playlist);
+		},
+	);
 
 	it("filters aggregate reads and guards playlist-scoped reads", async () => {
 		expect(await responseIds(await songsRoutes.request("/"))).toEqual([
