@@ -27,7 +27,7 @@ function startServer() {
 		const timeout = setTimeout(() => reject(new Error(`Nitro startup timed out: ${logs}`)), 30_000);
 		const inspect = (data) => {
 			logs += data.toString();
-			const address = logs.match(/http:\/\/127\.0\.0\.1:\d+/);
+			const address = /http:\/\/127\.0\.0\.1:\d+/.exec(logs);
 			if (address) {
 				clearTimeout(timeout);
 				resolveReady(address[0]);
@@ -80,7 +80,7 @@ const running = externalOrigin ? undefined : startServer();
 try {
 	await verifyAssets(externalOrigin || await running.ready);
 } finally {
-	if (running && running.server.exitCode === null) {
+	if (running?.server.exitCode === null) {
 		running.server.kill("SIGTERM");
 		const timeout = setTimeout(() => running.server.kill("SIGKILL"), 5_000);
 		await running.exited;
