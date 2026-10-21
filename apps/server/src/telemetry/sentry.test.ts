@@ -82,6 +82,7 @@ describe("Node Sentry initialization", () => {
 		const options = vi.mocked(init).mock.calls[0][0];
 		const processed = await options?.beforeSend?.(
 			{
+				type: undefined,
 				fingerprint,
 				exception: {
 					values: [

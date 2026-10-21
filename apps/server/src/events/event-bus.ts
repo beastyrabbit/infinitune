@@ -83,7 +83,8 @@ export function emit<K extends keyof EventMap>(
 				event,
 				sequence,
 				listenerCount: handlers?.size ?? 0,
-				payload: data,
+				// Original pipeline exceptions belong only in the scrubbed capture.
+				payload: "failure" in data ? { ...data, failure: undefined } : data,
 			},
 			"Event emitted",
 		);
