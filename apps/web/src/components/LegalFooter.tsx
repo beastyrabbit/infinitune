@@ -7,8 +7,12 @@ export function LegalFooter() {
 	if (pathname === "/autoplayer/mini" || pathname === "/autoplayer/mini/") {
 		return null;
 	}
+	const settings =
+		pathname === "/autoplayer/settings" || pathname === "/autoplayer/settings/";
 	return (
-		<footer className="border-t border-white/10 bg-gray-950 px-4 py-5 font-mono text-xs text-white/60">
+		<footer
+			className={`border-t border-white/10 bg-gray-950 px-4 pt-5 font-mono text-xs text-white/60 ${settings ? "pb-24" : "pb-5"}`}
+		>
 			<nav
 				aria-label="Legal information"
 				className="mx-auto flex max-w-7xl flex-wrap justify-center gap-x-6 gap-y-2"

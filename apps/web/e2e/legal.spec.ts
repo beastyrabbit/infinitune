@@ -74,6 +74,18 @@ for (const viewport of [
 		});
 		const page = await context.newPage();
 		await page.routeWebSocket("**/ws*", (socket) => socket.close());
+		await page.goto(`${origin}/autoplayer/settings`);
+		await expect(page.getByRole("button", { name: "Save radio settings", exact: true })).toBeVisible();
+		await expect(page.getByRole("heading", { name: "Radio Settings", exact: true })).toBeVisible();
+		await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+		const privacy = page.getByRole("navigation", { name: "Legal information", exact: true }).getByRole("link", { name: "Privacy", exact: true });
+		await expect(privacy).toBeVisible();
+		expect(await privacy.evaluate((link) => {
+			const rect = link.getBoundingClientRect();
+			return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === link;
+		})).toBe(true);
+		await privacy.click();
+		await expect(page).toHaveURL(`${origin}/privacy`);
 		for (const [label, path, heading] of [
 			["Legal notice", "/legal-notice", "Legal Notice (Impressum)"],
 			["Privacy", "/privacy", "Privacy Policy"],
