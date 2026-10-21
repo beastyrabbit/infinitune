@@ -184,6 +184,7 @@ export function useRoomConnection(
 
 	const handleMessage = useCallback(
 		(event: MessageEvent) => {
+			if (event.currentTarget !== wsRef.current) return;
 			const msg = parseServerMessage(event.data);
 			if (!msg) return;
 			const mismatchedVersion = getMismatchedProtocolVersion(msg);
@@ -194,7 +195,7 @@ export function useRoomConnection(
 
 			switch (msg.type) {
 				case "joinAck":
-					// Join acknowledged by room server; no-op for now.
+					trackRoomJoin();
 					break;
 				case "state":
 					setPlayback(msg.playback);
@@ -226,7 +227,7 @@ export function useRoomConnection(
 				handler(msg);
 			}
 		},
-		[handleProtocolMismatch],
+		[handleProtocolMismatch, trackRoomJoin],
 	);
 
 	const connect = useCallback(() => {
@@ -259,7 +260,6 @@ export function useRoomConnection(
 				roomName: roomName || undefined,
 				protocolVersion: ROOM_PROTOCOL_VERSION,
 			});
-			trackRoomJoin();
 
 			// Start time sync pings
 			pingOffsetsRef.current = [];
@@ -291,7 +291,7 @@ export function useRoomConnection(
 			console.error("[room-ws] WebSocket error:", event);
 			// Close event will handle reconnect
 		});
-	}, [deviceName, handleMessage, send, playlistKey, roomName, trackRoomJoin]);
+	}, [deviceName, handleMessage, send, playlistKey, roomName]);
 
 	// Connect/disconnect when roomId changes
 	useEffect(() => {
@@ -312,9 +312,8 @@ export function useRoomConnection(
 	useEffect(() => {
 		if (connected && roomId) {
 			send({ type: "setRole", role });
-			trackRoomJoin();
 		}
-	}, [role, connected, roomId, send, trackRoomJoin]);
+	}, [role, connected, roomId, send]);
 
 	const sendCommand = useCallback(
 		(

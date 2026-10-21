@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
-import type { DeviceRole } from "@infinitune/shared/protocol";
+import {
+	type DeviceRole,
+	ROOM_PROTOCOL_VERSION,
+	ServerMessageSchema,
+} from "@infinitune/shared/protocol";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { trackEvent } from "@/lib/telemetry/browser";
@@ -21,6 +25,21 @@ class FakeWebSocket extends EventTarget {
 		this.readyState = FakeWebSocket.OPEN;
 		this.dispatchEvent(new Event("open"));
 	}
+	message(message: unknown) {
+		this.dispatchEvent(
+			new MessageEvent("message", {
+				data: JSON.stringify(ServerMessageSchema.parse(message)),
+			}),
+		);
+	}
+	ack(roomId = "first", protocolVersion: number = ROOM_PROTOCOL_VERSION) {
+		this.message({
+			type: "joinAck",
+			roomId,
+			deviceId: "test-device",
+			protocolVersion,
+		});
+	}
 	close() {
 		this.readyState = 3;
 		this.dispatchEvent(new Event("close"));
@@ -35,6 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
 	cleanup();
+	vi.restoreAllMocks();
 	vi.clearAllTimers();
 	vi.useRealTimers();
 	vi.unstubAllGlobals();
@@ -48,25 +68,67 @@ it("counts each room/role once per hook lifetime across reconnects", () => {
 	);
 	expect(trackEvent).not.toHaveBeenCalled();
 	act(() => FakeWebSocket.instances[0].open());
+	expect(trackEvent).not.toHaveBeenCalled();
+	act(() => FakeWebSocket.instances[0].ack());
 	expect(trackEvent).toHaveBeenCalledExactlyOnceWith("room_join", {
 		role: "player",
 	});
 	act(() => FakeWebSocket.instances[0].close());
 	act(() => vi.advanceTimersByTime(1000));
 	act(() => FakeWebSocket.instances[1].open());
+	act(() => FakeWebSocket.instances[1].ack());
+	act(() => FakeWebSocket.instances[1].ack());
 	expect(trackEvent).toHaveBeenCalledTimes(1);
 	rerender({ room: "first", role: "controller" });
+	expect(trackEvent).toHaveBeenCalledTimes(1);
+	act(() => FakeWebSocket.instances[1].close());
+	act(() => vi.advanceTimersByTime(1000));
+	act(() => FakeWebSocket.instances[2].open());
+	act(() => FakeWebSocket.instances[2].ack());
 	expect(trackEvent).toHaveBeenCalledTimes(2);
 	rerender({ room: "first", role: "player" });
 	expect(trackEvent).toHaveBeenCalledTimes(2);
 	rerender({ room: "second", role: "player" });
 	expect(trackEvent).toHaveBeenCalledTimes(2);
 	act(() => FakeWebSocket.instances.at(-1)?.open());
+	expect(trackEvent).toHaveBeenCalledTimes(2);
+	// A delayed acknowledgement from the old socket cannot count the new room.
+	act(() => FakeWebSocket.instances[2].ack());
+	expect(trackEvent).toHaveBeenCalledTimes(2);
+	act(() => FakeWebSocket.instances.at(-1)?.ack("second"));
 	expect(trackEvent).toHaveBeenCalledTimes(3);
 	unmount();
 	renderHook(() => useRoomConnection("first", "Test device", "player"));
 	act(() => FakeWebSocket.instances.at(-1)?.open());
+	act(() => FakeWebSocket.instances.at(-1)?.ack());
 	expect(trackEvent).toHaveBeenCalledTimes(4);
+});
+
+it("does not consume a room/role dedupe key for rejected joins", () => {
+	vi.spyOn(console, "error").mockImplementation(() => {});
+	renderHook(() => useRoomConnection("first", "Test device", "player"));
+	const socket = FakeWebSocket.instances[0];
+	act(() => socket.open());
+	act(() => socket.message({ type: "error", message: "Session not found" }));
+	expect(trackEvent).not.toHaveBeenCalled();
+	act(() => socket.close());
+	act(() => vi.advanceTimersByTime(1000));
+	const reconnected = FakeWebSocket.instances[1];
+	act(() => reconnected.open());
+	expect(trackEvent).not.toHaveBeenCalled();
+	act(() => reconnected.ack());
+	expect(trackEvent).toHaveBeenCalledExactlyOnceWith("room_join", {
+		role: "player",
+	});
+});
+
+it("does not count an acknowledgement with an incompatible protocol", () => {
+	vi.spyOn(console, "error").mockImplementation(() => {});
+	renderHook(() => useRoomConnection("first", "Test device", "player"));
+	const socket = FakeWebSocket.instances[0];
+	act(() => socket.open());
+	act(() => socket.ack("first", ROOM_PROTOCOL_VERSION + 1));
+	expect(trackEvent).not.toHaveBeenCalled();
 });
 
 it("tracks room skips only after the command is transmitted", () => {
