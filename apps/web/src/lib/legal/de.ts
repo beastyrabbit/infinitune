@@ -104,7 +104,7 @@ export const privacy: LegalDocument = {
 		{
 			id: "glitchtip",
 			title: "Selbst betriebenes GlitchTip",
-			html: `<p>Infinitune verwendet selbst betriebenes GlitchTip auf der eigenen Infrastruktur in Deutschland für Fehlerberichte mit Fehlerdetails, technischem Kontext und stichprobenartigen Leistungsdaten. Personenbezogene Daten werden dabei soweit wie möglich entfernt. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt in Fehlerbehebung und Betriebssicherheit, und die Daten werden nach 90 Tagen gelöscht.</p>`,
+			html: `<p>Infinitune verwendet selbst betriebenes GlitchTip auf der eigenen Infrastruktur in Deutschland für Fehlerberichte mit Fehlerdetails, technischem Kontext und stichprobenartigen Leistungsdaten. Personenbezogene Daten werden dabei soweit wie möglich entfernt. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO; das berechtigte Interesse liegt in Fehlerbehebung und Betriebssicherheit, und die Daten werden spätestens nach 90 Tagen gelöscht.</p>`,
 		},
 		{
 			id: "email",

@@ -104,7 +104,7 @@ export const privacy: LegalDocument = {
 		{
 			id: "glitchtip",
 			title: "Self-hosted GlitchTip",
-			html: `<p>Infinitune uses self-hosted GlitchTip on the controller's own infrastructure in Germany for error reports containing error details, technical context and sampled performance data. Personal data are removed as far as possible. The legal basis is Art. 6(1)(f) GDPR; the legitimate interest is debugging and operational security, and the data are deleted after 90 days.</p>`,
+			html: `<p>Infinitune uses self-hosted GlitchTip on the controller's own infrastructure in Germany for error reports containing error details, technical context and sampled performance data. Personal data are removed as far as possible. The legal basis is Art. 6(1)(f) GDPR; the legitimate interest is debugging and operational security, and the data are deleted after 90 days at the latest.</p>`,
 		},
 		{
 			id: "email",
