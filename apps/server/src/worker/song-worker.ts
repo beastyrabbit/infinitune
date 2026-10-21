@@ -621,6 +621,7 @@ export class SongWorker {
 						if (outcome) resolve(outcome);
 					},
 					error: (error) => {
+						this.lastFailure = error;
 						this.lastError =
 							error instanceof Error ? error.message : String(error);
 						reject(error);
@@ -630,6 +631,7 @@ export class SongWorker {
 				actorRef.start();
 			});
 		} catch (error) {
+			this.lastFailure = error;
 			if (
 				!(error instanceof Error && error.message === "Cancelled") &&
 				!this.aborted
@@ -652,7 +654,9 @@ export class SongWorker {
 
 		if (outcome === "errored") {
 			await this.handleErrorOutcome(
-				this.lastError ?? "Unexpected song worker failure",
+				this.lastFailure instanceof Error
+					? this.lastFailure.message
+					: (this.lastError ?? "Unexpected song worker failure"),
 			);
 		}
 	}
@@ -667,6 +671,7 @@ export class SongWorker {
 	}
 
 	private lastError: string | undefined;
+	private lastFailure: unknown;
 
 	private buildSongMachine() {
 		const initialState = this.getInitialMachineState();
@@ -697,6 +702,9 @@ export class SongWorker {
 								{
 									target: "errored",
 									actions: [
+										({ event }) => {
+											this.lastFailure = event.error;
+										},
 										assign({
 											outcome: () => "errored",
 										}),
@@ -729,6 +737,9 @@ export class SongWorker {
 								{
 									target: "errored",
 									actions: [
+										({ event }) => {
+											this.lastFailure = event.error;
+										},
 										assign({
 											outcome: () => "errored",
 										}),
@@ -873,7 +884,12 @@ export class SongWorker {
 	private async handleErrorOutcome(message: string): Promise<void> {
 		this.lastError = message;
 		try {
-			await songService.markError(this.songId, message);
+			await songService.markError(
+				this.songId,
+				message,
+				undefined,
+				this.lastFailure instanceof Error ? this.lastFailure : undefined,
+			);
 		} catch (markErr) {
 			songLogger(this.songId).error(
 				{ err: markErr },

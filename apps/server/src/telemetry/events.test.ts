@@ -63,8 +63,43 @@ describe("pipeline telemetry", () => {
 				provider: "ace-step",
 				model: "audio-model",
 			}),
+			["song-pipeline", "generating_audio", "PipelineError"],
 		);
 		expect(fixtures.track).toHaveBeenCalledTimes(2);
 		expect(JSON.stringify(fixtures.track.mock.calls)).not.toContain("private");
+	});
+
+	it("captures the original error with a stage fingerprint and full failure context", async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		vi.stubEnv("VITEST", "false");
+		vi.stubEnv("GLITCHTIP_DSN", "configured");
+		startTelemetryEvents();
+		const error = new TypeError("Provider failed");
+		await fixtures.handlers.get("song.status_changed")?.({
+			songId: "song",
+			playlistId: "playlist",
+			from: "generating_metadata",
+			to: "retry_pending",
+			failure: { error, stage: "generating_metadata" },
+		});
+		expect(fixtures.capture).toHaveBeenCalledExactlyOnceWith(
+			error,
+			{
+				songId: "song",
+				playlistId: "playlist",
+				stage: "generating_metadata",
+				provider: "ollama",
+				model: "text-model",
+				status: "retry_pending",
+			},
+			["song-pipeline", "generating_metadata", "TypeError"],
+		);
+		expect(fixtures.track).toHaveBeenCalledExactlyOnceWith(
+			"song_generation_failed",
+			expect.objectContaining({
+				error_class: "PipelineError",
+				status: "retry_pending",
+			}),
+		);
 	});
 });

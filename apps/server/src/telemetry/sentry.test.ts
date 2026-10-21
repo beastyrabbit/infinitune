@@ -54,4 +54,56 @@ describe("Node Sentry initialization", () => {
 		captureError(error);
 		expect(captureException).toHaveBeenCalledOnce();
 	});
+
+	it("defers song-scoped pino failures and reports the original exception once with scrubbed bounded messages", async () => {
+		const { initNodeTelemetry, captureError, captureLog } = await import(
+			"@infinitune/shared/telemetry-node"
+		);
+		const { init, captureException } = await import("@sentry/node");
+		initNodeTelemetry(
+			"server",
+			telemetryConfig({
+				NODE_ENV: "production",
+				GLITCHTIP_DSN: "https://public@example.com/1",
+			}),
+		);
+		const error = new TypeError(
+			`Provider private@example.com token=private-token ${"x".repeat(600)}`,
+		);
+		const originalStack = error.stack;
+		captureLog([{ songId: "song", err: error }]);
+		const fingerprint = ["song-pipeline", "generating_metadata", "TypeError"];
+		captureError(error, { songId: "song" }, fingerprint);
+		captureError(error, { songId: "song" }, fingerprint);
+		expect(captureException).toHaveBeenCalledExactlyOnceWith(error, {
+			tags: { songId: "song" },
+			fingerprint,
+		});
+		const options = vi.mocked(init).mock.calls[0][0];
+		const processed = await options?.beforeSend?.(
+			{
+				fingerprint,
+				exception: {
+					values: [
+						{
+							type: error.name,
+							value: error.message,
+							stacktrace: { frames: [{ filename: "worker.ts", lineno: 42 }] },
+						},
+					],
+				},
+			},
+			{},
+		);
+		expect(processed?.exception?.values?.[0]?.value).toHaveLength(500);
+		expect(JSON.stringify(processed)).not.toMatch(
+			/private@example|private-token/,
+		);
+		expect(processed?.exception?.values?.[0]?.stacktrace?.frames?.[0]).toEqual({
+			filename: "worker.ts",
+			lineno: 42,
+		});
+		expect(error.stack).toBe(originalStack);
+		expect(error.message).toContain("private-token");
+	});
 });

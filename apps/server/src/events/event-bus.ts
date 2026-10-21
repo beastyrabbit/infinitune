@@ -8,6 +8,7 @@ export type EventMap = {
 		playlistId: string;
 		from: string;
 		to: string;
+		failure?: { error?: Error; stage: string };
 	};
 	"song.deleted": { songId: string; playlistId: string };
 	"song.metadata_updated": { songId: string; playlistId: string };

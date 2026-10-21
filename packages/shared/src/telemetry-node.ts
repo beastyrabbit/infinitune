@@ -29,7 +29,15 @@ export function initNodeTelemetry(
 				? [Sentry.captureConsoleIntegration({ levels: ["error"] })]
 				: []),
 		],
-		beforeSend: (event) => scrubTelemetry({ ...event, user: undefined }),
+		beforeSend: (event) => {
+			const scrubbed = scrubTelemetry({ ...event, user: undefined });
+			if (scrubbed.fingerprint?.[0] === "song-pipeline") {
+				for (const exception of scrubbed.exception?.values || []) {
+					if (exception.value) exception.value = exception.value.slice(0, 500);
+				}
+			}
+			return scrubbed;
+		},
 		beforeSendTransaction: (event) =>
 			scrubTelemetry({ ...event, user: undefined }),
 		beforeBreadcrumb: (breadcrumb) => scrubTelemetry(breadcrumb),
@@ -42,18 +50,25 @@ export function initNodeTelemetry(
 export function captureError(
 	error: unknown,
 	tags: Record<string, string> = {},
+	fingerprint?: string[],
 ): void {
 	if (!initialized) return;
 	if (error && typeof error === "object") {
 		if (captured.has(error)) return;
 		captured.add(error);
 	}
-	Sentry.captureException(error, { tags: scrubTelemetry(tags) });
+	Sentry.captureException(error, {
+		tags: scrubTelemetry(tags),
+		...(fingerprint ? { fingerprint: scrubTelemetry(fingerprint) } : {}),
+	});
 }
 
 export function captureLog(args: unknown[], message?: string): void {
 	if (!initialized) return;
 	const fields = args[0];
+	// Queue failures use the root logger with songId in the log fields. Defer
+	// these too so the pipeline capture retains its stage/provider context.
+	if (fields && typeof fields === "object" && "songId" in fields) return;
 	const err =
 		fields && typeof fields === "object"
 			? (fields as { err?: unknown }).err

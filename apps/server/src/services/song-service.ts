@@ -455,6 +455,7 @@ export async function markError(
 	id: string,
 	errorMessage: string,
 	erroredAtStatus?: string,
+	error?: Error,
 ) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song) return;
@@ -490,6 +491,7 @@ export async function markError(
 		playlistId: song.playlistId,
 		from: fromStatus,
 		to: newStatus,
+		failure: { error, stage: effectiveErroredAtStatus },
 	});
 }
 
