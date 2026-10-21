@@ -46,25 +46,78 @@ export function telemetryConfig(
 	};
 }
 
-const sensitiveKey =
-	/authorization|cookie|token|password|secret|api[_-]?key|^key$|^code$|^remote[-_]|email|prompt|lyrics|^user$|^ip_address$|forwarded.for|real.ip|connecting.ip|query_string|^data$|^body$|^extra$|^vars$/i;
+const sensitiveKeyPatterns = [
+	/authorization|cookie|token|password|secret|api[_-]?key|email|prompt|lyrics|query_string/i,
+	/^(key|code|user|ip_address|data|body|extra|vars)$/i,
+	/^remote[-_]|forwarded.for|real.ip|connecting.ip/i,
+];
+
+function isSensitiveKey(key: string): boolean {
+	return sensitiveKeyPatterns.some((pattern) => pattern.test(key));
+}
+
+function scrubUserinfo(value: string): string {
+	// Scan each authority once. Colons may also occur inside either credential.
+	return value.replace(
+		/(https?:\/\/)([^/\s@]+)@/gi,
+		(raw, protocol: string, authority: string) => {
+			const colon = authority.indexOf(":", 1);
+			return colon > 0 && colon < authority.length - 1
+				? `${protocol}[Filtered]@`
+				: raw;
+		},
+	);
+}
+
+function emailDomainEnd(value: string, start: number): number {
+	const domains = /[A-Z0-9.-]+/iy;
+	domains.lastIndex = start;
+	const domain = domains.exec(value);
+	if (!domain) return 0;
+	// Preserve the original match's last dot followed by at least two letters,
+	// including partial domains such as user@example.com.123.
+	let end = 0;
+	for (const suffix of domain[0].matchAll(/\.[A-Z]{2,}/gi)) {
+		if (suffix.index > 0) {
+			end = domain.index + suffix.index + suffix[0].length;
+		}
+	}
+	return end;
+}
+
+function scrubEmails(value: string): string {
+	const localParts = /[A-Z0-9._%+-]+/gi;
+	let result = "";
+	let cursor = 0;
+	while (true) {
+		const local = localParts.exec(value);
+		if (!local) break;
+		if (value[localParts.lastIndex] === "@") {
+			const end = emailDomainEnd(value, localParts.lastIndex + 1);
+			if (end) {
+				result += `${value.slice(cursor, local.index)}[Filtered]`;
+				cursor = end;
+				localParts.lastIndex = end;
+			}
+		}
+	}
+	return result + value.slice(cursor);
+}
 
 export function scrubString(value: string): string {
-	return value
-		.replace(/https?:\/\/[^\s<>"']+/gi, (raw) => {
-			try {
-				const url = new URL(raw);
-				url.username = "";
-				url.password = "";
-				url.search = "";
-				url.hash = "";
-				return url.toString();
-			} catch {
-				return "[Filtered URL]";
-			}
-		})
-		.replace(/(https?:\/\/)[^/\s@]+:[^/\s@]+@/gi, "$1[Filtered]@")
-		.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[Filtered]")
+	const urls = value.replace(/https?:\/\/[^\s<>"']+/gi, (raw) => {
+		try {
+			const url = new URL(raw);
+			url.username = "";
+			url.password = "";
+			url.search = "";
+			url.hash = "";
+			return url.toString();
+		} catch {
+			return "[Filtered URL]";
+		}
+	});
+	const secrets = scrubEmails(scrubUserinfo(urls))
 		.replace(/\b(?:Bearer|Basic)\s+[^\s,;"']+/gi, "[Filtered]")
 		.replace(
 			/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
@@ -73,9 +126,11 @@ export function scrubString(value: string): string {
 		.replace(
 			/((?:token|key|secret|password|code|api[_-]?key|authorization|cookie)["']?\s*[:=]\s*["']?)[^\s&;,"'}]+/gi,
 			"$1[Filtered]",
-		)
-		.replace(/(https?:\/\/)[^/\s@]+:[^/\s@]+@/gi, "$1[Filtered]@")
-		.replace(/\/(share|by-key)\/[^/?#\s]+/g, "/$1/[Filtered]");
+		);
+	return scrubUserinfo(secrets).replace(
+		/\/(share|by-key)\/[^/?#\s]+/g,
+		"/$1/[Filtered]",
+	);
 }
 
 /** Keep the SDK's typed shape while walking nested request/context/breadcrumb values. */
@@ -88,14 +143,12 @@ export function scrubTelemetry<T>(value: T, depth = 0): T {
 			.map((item) => scrubTelemetry(item, depth + 1)) as T;
 	if (value && typeof value === "object") {
 		return Object.fromEntries(
-			Object.entries(value).map(([key, item]) => [
-				key,
-				sensitiveKey.test(key)
-					? typeof item === "string"
-						? "[Filtered]"
-						: undefined
-					: scrubTelemetry(item, depth + 1),
-			]),
+			Object.entries(value).map(([key, item]) => {
+				if (isSensitiveKey(key)) {
+					return [key, typeof item === "string" ? "[Filtered]" : undefined];
+				}
+				return [key, scrubTelemetry(item, depth + 1)];
+			}),
 		) as T;
 	}
 	return value;
