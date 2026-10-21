@@ -107,6 +107,23 @@ describe("standalone legal pages", () => {
 	);
 
 	it.each([
+		[
+			"/datenschutz",
+			"Die Analysedaten werden nach 25 Monaten automatisch gelöscht.",
+		],
+		["/privacy", "Analytics data are deleted automatically after 25 months."],
+	] as const)(
+		"states automatic Umami deletion after 25 months on %s",
+		(path, text) => {
+			const html = renderLegalPage(legalDocuments[path]);
+			const page = new DOMParser().parseFromString(html, "text/html");
+			expect(
+				page.querySelector('section[aria-labelledby="umami"]')?.textContent,
+			).toContain(text);
+		},
+	);
+
+	it.each([
 		["/privacy/", "/privacy"],
 		["//privacy", "/privacy"],
 		["/privac%79", "/privacy"],
