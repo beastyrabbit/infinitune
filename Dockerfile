@@ -19,8 +19,6 @@ COPY packages/shared/package.json packages/shared/package.json
 
 # ── Stage 2: build ─────────────────────────────────────────────
 FROM base AS build
-ARG INFINITUNE_RELEASE=dev
-ENV INFINITUNE_RELEASE=${INFINITUNE_RELEASE}
 
 # VITE_API_URL is baked into the client JS bundle at build time
 ARG VITE_API_URL=

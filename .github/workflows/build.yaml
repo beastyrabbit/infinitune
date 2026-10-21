@@ -66,7 +66,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
           build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
 
       - name: Output image digest
@@ -106,7 +106,6 @@ jobs:
           target: sourcemaps
           outputs: type=local,dest=sourcemaps
           cache-from: type=gha
-          build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
       - name: Verify source maps against the published image
         env:
           PUBLISHED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
@@ -139,8 +138,8 @@ jobs:
           docker run --rm --network host \
             -e SENTRY_AUTH_TOKEN -e SENTRY_URL -e SENTRY_ORG -e SENTRY_PROJECT -e SENTRY_RELEASE \
             -v "$PWD/sourcemaps:/sourcemaps:ro" \
-            --entrypoint /bin/sh getsentry/sentry-cli:2.58.6 -ec '
+            --entrypoint /bin/sh getsentry/sentry-cli:2.58.6@sha256:2eeeadba516d1bfe0bbb7b106acbe419acf6e64944f898134f180a256d156b0b -ec '
               sentry-cli releases new "$SENTRY_RELEASE"
-              sentry-cli releases files "$SENTRY_RELEASE" upload-sourcemaps --url-prefix "~/" --validate /sourcemaps
+              sentry-cli sourcemaps upload --release "$SENTRY_RELEASE" --url-prefix "~/" --validate /sourcemaps
               sentry-cli releases finalize "$SENTRY_RELEASE"
             '
