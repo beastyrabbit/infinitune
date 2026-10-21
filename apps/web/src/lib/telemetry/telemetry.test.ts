@@ -29,6 +29,14 @@ describe("telemetry privacy and gating", () => {
 			/private-|private@|my-name|private prompt|private lyrics/,
 		);
 		expect(JSON.stringify(result)).toContain("[Filtered]");
+		expect(
+			JSON.stringify(
+				scrubTelemetry({
+					url: "https://user:private-password@example.com/?email=private%40example.com&%74oken=private-token#private",
+					query_string: "email=private%40example.com",
+				}),
+			),
+		).not.toContain("private");
 	});
 
 	it("allows only the documented scalar event properties", () => {

@@ -47,10 +47,22 @@ export function telemetryConfig(
 }
 
 const sensitiveKey =
-	/authorization|cookie|token|password|secret|api[_-]?key|^key$|^code$|^remote[-_]|email|prompt|lyrics|^user$|^ip_address$|forwarded.for|real.ip|connecting.ip|^data$|^body$|^extra$|^vars$/i;
+	/authorization|cookie|token|password|secret|api[_-]?key|^key$|^code$|^remote[-_]|email|prompt|lyrics|^user$|^ip_address$|forwarded.for|real.ip|connecting.ip|query_string|^data$|^body$|^extra$|^vars$/i;
 
 export function scrubString(value: string): string {
 	return value
+		.replace(/https?:\/\/[^\s<>"']+/gi, (raw) => {
+			try {
+				const url = new URL(raw);
+				url.username = "";
+				url.password = "";
+				url.search = "";
+				url.hash = "";
+				return url.toString();
+			} catch {
+				return "[Filtered URL]";
+			}
+		})
 		.replace(/(https?:\/\/)[^/\s@]+:[^/\s@]+@/gi, "$1[Filtered]@")
 		.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[Filtered]")
 		.replace(/\b(?:Bearer|Basic)\s+[^\s,;"']+/gi, "[Filtered]")

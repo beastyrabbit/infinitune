@@ -3,6 +3,12 @@ node_modules
 *.md
 *.png
 .env*
+.mcp.json
+.codex
+.claude
+.tmp
+data
+temp-nas
 .vscode
 .idea
 apps/web/.output
