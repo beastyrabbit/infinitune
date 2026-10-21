@@ -49,7 +49,8 @@ export function telemetryConfig(
 const sensitiveKeyPatterns = [
 	/authorization|cookie|token|password|secret|api[_-]?key|email|prompt|lyrics|query_string/i,
 	/^(key|code|user|ip_address|data|body|extra|vars)$/i,
-	/^remote[-_]|forwarded.for|real.ip|connecting.ip/i,
+	/^remote[-_]/i,
+	/forwarded.for|real.ip|connecting.ip/i,
 ];
 
 function isSensitiveKey(key: string): boolean {
