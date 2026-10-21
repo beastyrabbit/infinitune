@@ -13,6 +13,8 @@ env:
 jobs:
   build:
     runs-on: arc-infinitune
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -80,11 +82,18 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Resolve release
         id: release
         env:
@@ -98,6 +107,16 @@ jobs:
           outputs: type=local,dest=sourcemaps
           cache-from: type=gha
           build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
+      - name: Verify source maps against the published image
+        env:
+          PUBLISHED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        run: |
+          docker pull "$PUBLISHED_IMAGE"
+          container_id=$(docker create "$PUBLISHED_IMAGE")
+          trap 'docker rm "$container_id" >/dev/null' EXIT
+          mkdir published-public
+          docker cp "$container_id:/app/apps/web/.output/public/." published-public/
+          bash scripts/verify-telemetry-sourcemaps.sh sourcemaps published-public
       - name: Read GlitchTip upload token
         uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
         with:
