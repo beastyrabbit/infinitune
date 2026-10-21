@@ -26,7 +26,7 @@ export const PlaylistKeySchema = z
 	.string()
 	.refine(
 		(key) => !/[\\/%]/.test(key) && key !== "." && key !== "..",
-		"Playlist key must not contain /, \\ or % and must not be . or ..",
+		String.raw`Playlist key must not contain /, \ or % and must not be . or ..`,
 	);
 
 /** Schema for creating a playlist */
