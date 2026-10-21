@@ -4,7 +4,10 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { captureError } from "@infinitune/shared/telemetry-node";
+import {
+	captureError,
+	flushTelemetry,
+} from "@infinitune/shared/telemetry-node";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -570,6 +573,7 @@ async function shutdown() {
 	} catch (err) {
 		logger.error({ err }, "Error closing SQLite");
 	}
+	await flushTelemetry();
 	process.exit(0);
 }
 process.on("SIGINT", shutdown);

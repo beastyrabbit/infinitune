@@ -54,6 +54,22 @@ describe("Node Sentry initialization", () => {
 		captureError(error);
 		expect(captureException).toHaveBeenCalledOnce();
 	});
+	it("bounds the shutdown flush to 1.5 seconds and tolerates a timeout", async () => {
+		const { initNodeTelemetry, flushTelemetry } = await import(
+			"@infinitune/shared/telemetry-node"
+		);
+		const { flush } = await import("@sentry/node");
+		initNodeTelemetry(
+			"server",
+			telemetryConfig({
+				NODE_ENV: "production",
+				GLITCHTIP_DSN: "https://public@example.com/1",
+			}),
+		);
+		vi.mocked(flush).mockResolvedValueOnce(false);
+		await expect(flushTelemetry()).resolves.toBeUndefined();
+		expect(flush).toHaveBeenCalledExactlyOnceWith(1500);
+	});
 
 	it("defers song-scoped pino failures and reports the original exception once with scrubbed bounded messages", async () => {
 		const { initNodeTelemetry, captureError, captureLog } = await import(
