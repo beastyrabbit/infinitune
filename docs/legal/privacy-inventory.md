@@ -4,14 +4,14 @@ Reviewed on 21 October 2026 for round 3 on `feat/legal-pages`. The pages use the
 
 ## Evidence and production scope
 
-- Re-read `/home/beasty/.local/share/legal-pages-rollout/facts.md`, both Impressum templates, both privacy templates and `brief.md`. Per-site contacts are impressum-infinitune@heerlab.com and datenschutz-infinitune@heerlab.com; contact-form links use https://beastyrabbit.com/kontakt?from=infinitune.
+- Re-read the operator's shared `facts.md`, both Impressum templates, both privacy templates and `brief.md`. Per-site contacts are impressum-infinitune@heerlab.com and datenschutz-infinitune@heerlab.com; contact-form links use https://beastyrabbit.com/kontakt?from=infinitune.
 - Orchestrator's live-pod inspection of version 1.3.0: textProvider/personaProvider `openai-codex`, textModel/personaModel `gpt-6-sol`; Pi credentials only for a consumer ChatGPT/Codex OAuth account, not an API account with a DPA. OpenRouter key empty. No account training-setting claim is made.
 - Live database evidence supplied by orchestrator: 1 user, 11 playlists, 206 songs, last song 2026-03-07; zero songs with source_url; zero agent runs/messages/memory, radio plays, share links or registered devices.
-- ACE-Step at `192.168.10.242:8001` and Ollama at `192.168.10.120:11434` are the operator's own LAN hardware in Germany. Audio is written to the operator's NAS at `/music/media/AI-Music`.
+- ACE-Step and Ollama run on the operator's own LAN hardware in Germany. Audio is written to the operator's NAS.
 - imageProvider `comfyui` normalizes to `inference-sh`, but no inference.sh credentials or configuration exist in the pod. Last cover write 2026-03-06. No image-provider use is represented as active.
 - Before this candidate, 112 server log files, 130 MB, dated since 2026-02-21 had no expiry. This candidate adds age cleanup at startup and hourly, separate from the existing 15-second line-cap trim job.
 - Earlier anonymous live inspection returned Unauthorized. It established neither authenticated browser storage nor HttpOnly cookies. The Pangolin cookie facts below are instead verified by the orchestrator from live config and Pangolin source.
-- Earlier read-only Umami checks found no retention settings in the deployment manifest, no live environment-variable names matching RETENTION, CLEANUP or DELETE_AFTER, and only `pangolin-crowdsec-allowlist` in the tools namespace CronJob list. The published DE/EN policy now uses the operator's decided 10-year limit for content and analytics; automatic deletion is still a PR TODO below. No secret values were printed.
+- Earlier read-only Umami checks found no retention settings in the deployment manifest, no live environment-variable names matching RETENTION, CLEANUP or DELETE_AFTER, and only an unrelated allowlist CronJob in the inspected namespace. The published DE/EN policy now uses the operator's decided 10-year limit for content and analytics; automatic deletion is still a PR TODO below. No secret values were printed.
 
 ## Active processing inventory
 
@@ -59,7 +59,7 @@ No app IndexedDB use was found. Legal pages contain no scripts or telemetry and 
 | Inference.sh | Present in code, not used in production: legacy comfyui selection normalizes to inference-sh but no credentials/config; last cover 2026-03-06 | external/cover.ts; external/inference-sh.ts |
 | Codex imagegen | Present in code, not used in production: no dedicated enablement/credentials in verified production configuration | external/codex-imagegen.ts |
 | Shoo | Present in code, not used in production: not configured, Pangolin SSO used | auth/shoo.ts; apps/web/src/integrations/api/client.ts |
-| Resend | Configured globally, not used for Infinitune: GlitchTip project 7 has zero alert rules, recipients and notifications. No Infinitune data goes to Resend; no app mail transport | Round-2 read-only project-7 inspection and GlitchTip global SMTP manifest |
+| Resend | Configured globally, not used for Infinitune: the Infinitune GlitchTip project has zero alert rules, recipients and notifications. No Infinitune data goes to Resend; no app mail transport | Round-2 read-only project inspection and GlitchTip global SMTP manifest |
 | Umami recorder / replay / heatmaps | Not part of the app. The unused recorder module, sanitizer tests, recorder mocks and body masking class have been removed. No recording-policy request, recorder script or recording transport is started | apps/web/src/lib/telemetry/browser.ts and browser.test.ts; e2e/telemetry.spec.ts |
 
 The published DE/EN pages say that further optional integrations are not in use and the policy will be updated before activation. Absence of historical rows alone is not a technical prohibition on future optional features; the operator must maintain that scope.
