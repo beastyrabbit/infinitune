@@ -45,6 +45,7 @@ An endless music generator that creates lyrics, cover art, and audio from a shor
 - **Share Links** — publish revocable permanent or timed links without exposing private playlist controls
 - **Global Radio** — run one synchronized station and switch the genre and vocal preset used for future albums
 - **Configurable AI** — choose OpenRouter or OpenAI Codex (ChatGPT subscription) for lyrics and metadata
+- **Legal Pages** — self-contained Impressum and privacy policy (German at `/impressum`, `/datenschutz`; English at `/legal-notice`, `/privacy`) that work without signing in; text lives in `apps/web/src/lib/legal/`, the data-flow inventory in `docs/legal/privacy-inventory.md`.
 
 ## Screenshots
 
@@ -259,7 +260,7 @@ The default ACE-Step profile is Preset M: `acestep-v15-xl-sft`, 50 inference ste
 
 ### Environment Variables
 
-Runtime analytics, error tracking, replay privacy and deployment variables are
+Runtime analytics, error tracking and deployment variables are
 documented in [docs/telemetry.md](docs/telemetry.md).
 
 Configure in `apps/server/.env.local`:
