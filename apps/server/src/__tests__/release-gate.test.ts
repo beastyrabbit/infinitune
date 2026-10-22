@@ -124,6 +124,37 @@ describe("main CI release gate", () => {
 		expect(fetch).toHaveBeenCalledTimes(3);
 	});
 
+	it("accepts success when the final poll returns exactly at the deadline", async () => {
+		let time = 0;
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(
+				Response.json({
+					workflow_runs: [run({ status: "in_progress", conclusion: null })],
+				}),
+			)
+			.mockImplementationOnce(async () => {
+				time = 30_000;
+				return Response.json({ workflow_runs: [run()] });
+			});
+		await expect(
+			requireMainCi({
+				repository: "o/r",
+				sha,
+				token: "token",
+				timeoutMs: 30_000,
+				intervalMs: 20_000,
+				fetch,
+				now: () => time,
+				sleep: async (ms: number) => {
+					time += ms;
+				},
+				log: vi.fn(),
+			}),
+		).resolves.toMatchObject({ id: 1 });
+		expect(fetch).toHaveBeenCalledTimes(2);
+	});
+
 	it("gives up when CI never finishes", async () => {
 		const { result, fetch } = gate(
 			[[run({ status: "in_progress", conclusion: null })]],
@@ -191,21 +222,15 @@ const version = (release: string) => Response.json({ release });
 const ok = () => new Response("<html></html>", { status: 200 });
 
 describe("post-deploy rollout check", () => {
-	it("orders semver releases", () => {
+	it("orders plain X.Y.Z releases", () => {
 		expect(compareVersions("1.4.3", "1.5.0")).toBeLessThan(0);
 		expect(compareVersions("1.10.0", "1.9.0")).toBeGreaterThan(0);
 		expect(compareVersions("1.5.0", "1.5.0")).toBe(0);
-		expect(compareVersions("1.5.0-rc.1", "1.5.0")).toBeLessThan(0);
-		expect(compareVersions("1.5.0-rc.2", "1.5.0-rc.10")).toBeLessThan(0);
-		expect(compareVersions("1.5.0-1", "1.5.0-0alpha")).toBeLessThan(0);
-		expect(compareVersions("1.5.0-rc", "1.5.0-rc.1")).toBeLessThan(0);
-		expect(compareVersions("1.5.0-B", "1.5.0-a")).toBeLessThan(0);
-		expect(compareVersions("1.5.0+build.1", "1.5.0+build.2")).toBe(0);
 		expect(compareVersions("dev", "1.5.0")).toBeNull();
 	});
 
-	it.each(["01.5.0", "1.5.0-01", "1.5.0-rc..1", "1.5.0-"])(
-		"rejects invalid semver %s",
+	it.each(["01.5.0", "1.05.0", "1.5.00", "1.5.0-rc.1", "1.5.0+build.1"])(
+		"does not compare versions outside plain X.Y.Z: %s",
 		(invalid) => {
 			expect(compareVersions(invalid, "1.5.0")).toBeNull();
 		},
@@ -231,8 +256,77 @@ describe("post-deploy rollout check", () => {
 		expect(paths.filter((path) => path === "/")).toHaveLength(2);
 		for (const [, init] of fetch.mock.calls) {
 			expect(init?.method ?? "GET").toBe("GET");
+			expect(init?.redirect).toBe("manual");
 		}
 	});
+
+	it("accepts a same-origin frontend redirect without following it", async () => {
+		const { result, fetch } = rollout({
+			"/api/version": [version("1.5.0")],
+			"/": [
+				new Response(null, {
+					status: 307,
+					headers: { location: "/autoplayer" },
+				}),
+			],
+		});
+		await expect(result).resolves.toBeUndefined();
+		expect(fetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+			"/api/version",
+			"/api/version",
+			"/",
+		]);
+	});
+
+	it("times out on an off-origin frontend redirect", async () => {
+		const { result } = rollout({
+			"/api/version": [version("1.5.0")],
+			"/": [
+				new Response(null, {
+					status: 302,
+					headers: { location: "https://infinitune.heerlab.com/autoplayer" },
+				}),
+			],
+		});
+		await expect(result).rejects.toThrow(
+			"GET / failed after rollout: HTTP 302",
+		);
+	});
+
+	it("waits through redirects from /api/version", async () => {
+		const { result } = rollout({
+			"/api/version": [
+				version("1.4.3"),
+				new Response(null, { status: 302, headers: { location: "/login" } }),
+				version("1.5.0"),
+			],
+			"/": [ok()],
+		});
+		await expect(result).resolves.toBeUndefined();
+	});
+
+	it.each([
+		["reachability", 1, 30_000],
+		["version", 2, 60_000],
+		["frontend", 3, 60_000],
+	] as const)(
+		"accepts a successful %s response at its deadline",
+		async (_stage, finalPoll, deadline) => {
+			let time = 0;
+			let requests = 0;
+			const { result } = rollout(
+				{},
+				{
+					now: () => time,
+					fetch: async (url: string) => {
+						if (++requests === finalPoll) time = deadline;
+						return new URL(url).pathname === "/" ? ok() : version("1.5.0");
+					},
+				},
+			);
+			await expect(result).resolves.toBeUndefined();
+		},
+	);
 
 	it("reports superseded instead of success when a newer release runs", async () => {
 		const { result } = rollout({
@@ -263,14 +357,6 @@ describe("post-deploy rollout check", () => {
 			"/": [ok()],
 		});
 		await expect(result).resolves.toBeUndefined();
-	});
-
-	it("requires the exact release string even when semver precedence is equal", async () => {
-		const { result } = rollout({
-			"/api/version": [version("1.5.0+other")],
-			"/": [ok()],
-		});
-		await expect(result).rejects.toThrow("Timed out waiting for 1.5.0");
 	});
 
 	it("fails fast when the runner cannot reach the deployment", async () => {
@@ -317,9 +403,12 @@ describe("post-deploy rollout check", () => {
 		).toHaveLength(1);
 	});
 
-	it("rejects a non-semver release version", async () => {
-		await expect(rollout({}, { version: "latest" }).result).rejects.toThrow(
-			"not semver",
-		);
-	});
+	it.each(["latest", "1.5.0-rc.1", "1.5.0+build.1", "01.5.0"])(
+		"rejects a release argument outside plain X.Y.Z: %s",
+		async (version) => {
+			await expect(rollout({}, { version }).result).rejects.toThrow(
+				"must be plain X.Y.Z",
+			);
+		},
+	);
 });

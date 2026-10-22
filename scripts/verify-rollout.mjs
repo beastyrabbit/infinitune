@@ -5,13 +5,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 
-const SEMVER =
-	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 function parseVersion(version) {
-	const match = typeof version === "string" ? SEMVER.exec(version) : null;
-	if (match?.[4]?.split(".").some((part) => /^0\d+$/.test(part))) return null;
-	return match;
+	return typeof version === "string" ? SEMVER.exec(version) : null;
 }
 
 // Negative when a is older than b, positive when newer, null if not semver.
@@ -20,24 +17,9 @@ export function compareVersions(a, b) {
 	const right = parseVersion(b);
 	if (!left || !right) return null;
 	for (let part = 1; part <= 3; part++) {
-		const l = BigInt(left[part]);
-		const r = BigInt(right[part]);
+		const l = Number(left[part]);
+		const r = Number(right[part]);
 		if (l !== r) return l < r ? -1 : 1;
-	}
-	if (left[4] === right[4]) return 0;
-	if (!left[4]) return 1;
-	if (!right[4]) return -1;
-	const l = left[4].split(".");
-	const r = right[4].split(".");
-	for (let i = 0; i < Math.max(l.length, r.length); i++) {
-		if (l[i] === r[i]) continue;
-		if (l[i] === undefined) return -1;
-		if (r[i] === undefined) return 1;
-		const lNumeric = /^\d+$/.test(l[i]);
-		const rNumeric = /^\d+$/.test(r[i]);
-		if (lNumeric && rNumeric) return BigInt(l[i]) < BigInt(r[i]) ? -1 : 1;
-		if (lNumeric !== rNumeric) return lNumeric ? -1 : 1;
-		return l[i] < r[i] ? -1 : 1;
 	}
 	return 0;
 }
@@ -54,16 +36,16 @@ export async function verifyRollout({
 	log = console.log,
 }) {
 	if (compareVersions(version, version) !== 0) {
-		throw new Error(`Release version "${version}" is not semver`);
+		throw new Error(`Release version "${version}" must be plain X.Y.Z`);
 	}
 	const started = now();
 	const deadline = started + timeoutMs;
 	const reachDeadline = Math.min(started + reachTimeoutMs, deadline);
-	const get = (path, until = deadline) =>
+	const get = (path) =>
 		fetch(`${origin}${path}`, {
 			cache: "no-store",
-			redirect: "error",
-			signal: AbortSignal.timeout(Math.max(1, Math.min(10_000, until - now()))),
+			redirect: "manual",
+			signal: AbortSignal.timeout(10_000),
 		});
 	const wait = async (deadline, message) => {
 		if (now() >= deadline) throw new Error(message);
@@ -74,10 +56,7 @@ export async function verifyRollout({
 	// Any HTTP answer proves the route; Recreate rollouts may briefly refuse.
 	for (;;) {
 		try {
-			await get("/api/version", reachDeadline);
-			if (now() >= reachDeadline) {
-				throw new Error("Reachability deadline exceeded");
-			}
+			await get("/api/version");
 			break;
 		} catch (error) {
 			log(`${origin} not reachable yet: ${error.message}`);
@@ -101,7 +80,7 @@ export async function verifyRollout({
 			deployed = error.message;
 		}
 		const order = compareVersions(deployed, version);
-		if (deployed === version && now() < deadline) break;
+		if (order === 0) break;
 		if (order > 0) {
 			throw new Error(
 				`Superseded: ${origin} already runs ${deployed}, newer than ${version}`,
@@ -119,7 +98,16 @@ export async function verifyRollout({
 		let problem;
 		try {
 			const response = await get("/");
-			if (response.ok && now() < deadline) break;
+			if (response.ok) break;
+			const location = response.headers.get("location");
+			if (
+				response.status >= 300 &&
+				response.status < 400 &&
+				location &&
+				new URL(location, origin).origin === new URL(origin).origin
+			) {
+				break;
+			}
 			problem = `HTTP ${response.status}`;
 		} catch (error) {
 			problem = error.message;

@@ -34,9 +34,7 @@ export async function requireMainCi({
 				authorization: `Bearer ${token}`,
 				"x-github-api-version": "2022-11-28",
 			},
-			signal: AbortSignal.timeout(
-				Math.max(1, Math.min(30_000, deadline - now())),
-			),
+			signal: AbortSignal.timeout(30_000),
 		});
 		if (!response.ok) {
 			throw new Error(`GitHub API returned ${response.status} for CI runs`);
@@ -57,12 +55,12 @@ export async function requireMainCi({
 			throw new Error(`No CI run from a push to main exists for ${sha}`);
 		}
 		log(`Newest main CI run for ${sha}: ${run.html_url}`);
-		if (now() >= deadline) {
-			throw new Error(`Main CI for ${sha} is still ${run.status}; gave up`);
-		}
 		if (run.status === "completed") {
 			if (run.conclusion === "success") return run;
 			throw new Error(`Main CI for ${sha} concluded ${run.conclusion}`);
+		}
+		if (now() >= deadline) {
+			throw new Error(`Main CI for ${sha} is still ${run.status}; gave up`);
 		}
 		log(`Main CI is ${run.status}; waiting`);
 		await sleep(Math.min(intervalMs, deadline - now()));
