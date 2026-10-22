@@ -4,6 +4,27 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 
+function newestMainRun(runs, sha) {
+	const [run] = (Array.isArray(runs) ? runs : [])
+		.filter(
+			(candidate) =>
+				candidate.head_sha === sha &&
+				candidate.event === "push" &&
+				candidate.head_branch === "main",
+		)
+		.sort(
+			(a, b) =>
+				Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id,
+		);
+	return run;
+}
+
+function assertMainRunSucceeded(run, sha) {
+	if (run.conclusion !== "success") {
+		throw new Error(`Main CI for ${sha} concluded ${run.conclusion}`);
+	}
+}
+
 export async function requireMainCi({
 	repository,
 	sha,
@@ -40,24 +61,14 @@ export async function requireMainCi({
 			throw new Error(`GitHub API returned ${response.status} for CI runs`);
 		}
 		const { workflow_runs: runs } = await response.json();
-		const [run] = (Array.isArray(runs) ? runs : [])
-			.filter(
-				(candidate) =>
-					candidate.head_sha === sha &&
-					candidate.event === "push" &&
-					candidate.head_branch === "main",
-			)
-			.sort(
-				(a, b) =>
-					Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id,
-			);
+		const run = newestMainRun(runs, sha);
 		if (!run) {
 			throw new Error(`No CI run from a push to main exists for ${sha}`);
 		}
 		log(`Newest main CI run for ${sha}: ${run.html_url}`);
 		if (run.status === "completed") {
-			if (run.conclusion === "success") return run;
-			throw new Error(`Main CI for ${sha} concluded ${run.conclusion}`);
+			assertMainRunSucceeded(run, sha);
+			return run;
 		}
 		if (now() >= deadline) {
 			throw new Error(`Main CI for ${sha} is still ${run.status}; gave up`);

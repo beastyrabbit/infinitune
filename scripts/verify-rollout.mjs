@@ -24,6 +24,48 @@ export function compareVersions(a, b) {
 	return 0;
 }
 
+async function waitUntilReachable(get, origin, reachDeadline, wait, log) {
+	// Any HTTP answer proves the route; Recreate rollouts may briefly refuse.
+	for (;;) {
+		try {
+			await get("/api/version");
+			return;
+		} catch (error) {
+			log(`${origin} not reachable yet: ${error.message}`);
+			await wait(
+				reachDeadline,
+				`Runner cannot reach ${origin}: ${error.message}`,
+			);
+		}
+	}
+}
+
+async function readDeployedVersion(get) {
+	try {
+		const response = await get("/api/version");
+		const body = response.ok ? await response.json() : null;
+		return typeof body?.release === "string"
+			? body.release
+			: `HTTP ${response.status}`;
+	} catch (error) {
+		return error.message;
+	}
+}
+
+function frontendProblem(response, origin) {
+	if (response.ok) return null;
+	const location = response.headers.get("location");
+	if (
+		response.status >= 300 &&
+		response.status < 400 &&
+		location &&
+		new URL(location, origin).origin === new URL(origin).origin
+	) {
+		return null;
+	}
+	return `HTTP ${response.status}`;
+}
+
 export async function verifyRollout({
 	origin,
 	version,
@@ -53,32 +95,10 @@ export async function verifyRollout({
 		if (now() >= deadline) throw new Error(message);
 	};
 
-	// Any HTTP answer proves the route; Recreate rollouts may briefly refuse.
-	for (;;) {
-		try {
-			await get("/api/version");
-			break;
-		} catch (error) {
-			log(`${origin} not reachable yet: ${error.message}`);
-			await wait(
-				reachDeadline,
-				`Runner cannot reach ${origin}: ${error.message}`,
-			);
-		}
-	}
+	await waitUntilReachable(get, origin, reachDeadline, wait, log);
 
 	for (;;) {
-		let deployed = "unavailable";
-		try {
-			const response = await get("/api/version");
-			const body = response.ok ? await response.json() : null;
-			deployed =
-				typeof body?.release === "string"
-					? body.release
-					: `HTTP ${response.status}`;
-		} catch (error) {
-			deployed = error.message;
-		}
+		const deployed = await readDeployedVersion(get);
 		const order = compareVersions(deployed, version);
 		if (order === 0) break;
 		if (order > 0) {
@@ -98,17 +118,8 @@ export async function verifyRollout({
 		let problem;
 		try {
 			const response = await get("/");
-			if (response.ok) break;
-			const location = response.headers.get("location");
-			if (
-				response.status >= 300 &&
-				response.status < 400 &&
-				location &&
-				new URL(location, origin).origin === new URL(origin).origin
-			) {
-				break;
-			}
-			problem = `HTTP ${response.status}`;
+			problem = frontendProblem(response, origin);
+			if (problem === null) break;
 		} catch (error) {
 			problem = error.message;
 		}
