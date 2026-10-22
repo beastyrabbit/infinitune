@@ -74,7 +74,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.2.0",
-    "concurrently": "^9.2.4",
+    "concurrently": "^10.0.5",
     "drizzle-kit": "^0.31.11",
     "jsdom": "^27.4.0",
     "portless": "^0.4.2",
