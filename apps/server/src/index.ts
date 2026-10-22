@@ -34,6 +34,7 @@ import { createRoomRoutes } from "./routes/rooms";
 import settingsRoutes from "./routes/settings";
 import shareRoutes from "./routes/share";
 import songsRoutes from "./routes/songs/index";
+import versionRoutes from "./routes/version";
 import * as playlistService from "./services/playlist-service";
 import { startRadioServiceEventSync } from "./services/radio-station-service";
 import { startTelemetryEvents } from "./telemetry/events";
@@ -356,6 +357,8 @@ app.get("/health", (c) => {
 			: {}),
 	});
 });
+
+app.route("/api/version", versionRoutes);
 
 // ─── Worker status (used by frontend queue dashboard) ────────────────
 app.get("/api/worker/status", async (c) => {
