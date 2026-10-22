@@ -16,12 +16,26 @@ jobs:
     outputs:
       digest: ${{ steps.image.outputs.digest }}
     permissions:
+      actions: read
       contents: read
       packages: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require main CI for the checked-out commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # Pinned node:26-slim, v26.12.0.
+          docker run --rm \
+            -e GITHUB_TOKEN -e GITHUB_API_URL \
+            -v "$PWD/scripts/require-main-ci.mjs:/require-main-ci.mjs:ro" \
+            node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
+            node /require-main-ci.mjs "$REPOSITORY" "$(git rev-parse HEAD)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -164,3 +178,23 @@ jobs:
               sentry-cli sourcemaps upload --release "$SENTRY_RELEASE" --url-prefix "~/" --validate /sourcemaps
               sentry-cli releases finalize "$SENTRY_RELEASE"
             '
+
+  rollout:
+    needs: [build, sourcemaps]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: arc-infinitune
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify Flux rollout and frontend
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Pinned node:26-slim, v26.12.0. GET /api/version and / only.
+          docker run --rm --network host \
+            -v "$PWD/scripts/verify-rollout.mjs:/verify.mjs:ro" \
+            node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
+            node /verify.mjs http://192.168.60.30 "${REF_NAME#v}"
