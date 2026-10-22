@@ -21,10 +21,14 @@ the gate. A newer main push can cancel an older commit's CI run, which
 must be re-run successfully before that commit can be released. Branch
 protection on main is the repository owner's choice.
 
-For version tags, the rollout smoke job polls the trusted LAN route
+Prerelease tags skip the rollout job because Flux's `>=0.0.0` ImagePolicy
+excludes prereleases.
+
+For stable version tags, the rollout smoke job polls the trusted LAN route
 `http://192.168.60.30/api/version` until it reports the exact release,
-then requires a successful `GET /` from the frontend. The overall bound
-is 20 minutes, including up to 3 minutes to establish reachability during
+then requires a 2xx response or a same-origin redirect from `GET /` without
+following redirects. The overall bound is 20 minutes, including up to
+3 minutes to establish reachability during
 a Recreate rollout. The public URL is behind Pangolin SSO. The check uses
 only GET requests and makes no generation or paid AI calls. An older or
 unavailable version keeps waiting; a newer semver release fails as

@@ -181,7 +181,7 @@ jobs:
 
   rollout:
     needs: [build, sourcemaps]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     runs-on: arc-infinitune
     timeout-minutes: 25
     permissions:
