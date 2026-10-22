@@ -28,8 +28,8 @@ For stable version tags, the rollout smoke job polls the trusted LAN route
 `http://192.168.60.30/api/version` until it reports the exact release,
 then requires a 2xx response or a same-origin redirect from `GET /` without
 following redirects. The overall bound is 20 minutes, including up to
-3 minutes to establish reachability during
-a Recreate rollout. The public URL is behind Pangolin SSO. The check uses
+8 minutes to establish reachability, covering the outage during a Recreate
+rollout. The public URL is behind Pangolin SSO. The check uses
 only GET requests and makes no generation or paid AI calls. An older or
 unavailable version keeps waiting; a newer semver release fails as
 `Superseded`, rather than counting as success.

@@ -29,13 +29,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_API_URL: ${{ github.api_url }}
           REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           # Pinned node:26-slim, v26.12.0.
           docker run --rm \
             -e GITHUB_TOKEN -e GITHUB_API_URL \
             -v "$PWD/scripts/require-main-ci.mjs:/require-main-ci.mjs:ro" \
             node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
-            node /require-main-ci.mjs "$REPOSITORY" "$(git rev-parse HEAD)"
+            node /require-main-ci.mjs "$REPOSITORY" "$COMMIT_SHA"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

@@ -27,7 +27,7 @@ export function compareVersions(a, b) {
 export async function verifyRollout({
 	origin,
 	version,
-	reachTimeoutMs = 3 * 60_000,
+	reachTimeoutMs = 8 * 60_000,
 	timeoutMs = 20 * 60_000,
 	intervalMs = 15_000,
 	fetch = globalThis.fetch,
