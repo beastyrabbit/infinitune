@@ -9,9 +9,11 @@ interface PersistedState {
 	isMuted: boolean;
 }
 
+// Only touch localStorage in the browser: Node's global getter warns during SSR.
 function loadPersistedState(): PersistedState {
+	if (typeof window === "undefined") return { volume: 0.8, isMuted: false };
 	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
+		const raw = window.localStorage.getItem(STORAGE_KEY);
 		if (raw) {
 			const parsed = JSON.parse(raw) as Partial<PersistedState>;
 			return {
@@ -26,8 +28,9 @@ function loadPersistedState(): PersistedState {
 }
 
 function persistState(state: PersistedState): void {
+	if (typeof window === "undefined") return;
 	try {
-		localStorage.setItem(
+		window.localStorage.setItem(
 			STORAGE_KEY,
 			JSON.stringify({ volume: state.volume, isMuted: state.isMuted }),
 		);
