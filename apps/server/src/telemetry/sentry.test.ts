@@ -7,6 +7,7 @@ vi.mock("@sentry/node", () => ({
 	onUnhandledRejectionIntegration: vi.fn(),
 	dedupeIntegration: vi.fn(),
 	linkedErrorsIntegration: vi.fn(),
+	captureConsoleIntegration: vi.fn(),
 	captureException: vi.fn(),
 	captureMessage: vi.fn(),
 	flush: vi.fn(),
@@ -47,6 +48,7 @@ describe("Node Sentry initialization", () => {
 				release: "1.3.0",
 				environment: "production",
 				sendDefaultPii: false,
+				registerEsmLoaderHooks: false,
 			}),
 		);
 		const error = new Error("failure");
@@ -174,5 +176,33 @@ describe("Node Sentry initialization", () => {
 		});
 		expect(error.stack).toBe(originalStack);
 		expect(error.message).toContain("private-token");
+	});
+
+	it("drops Node process warnings captured from console.error", async () => {
+		const { initNodeTelemetry } = await import(
+			"@infinitune/shared/telemetry-node"
+		);
+		const { init } = await import("@sentry/node");
+		initNodeTelemetry(
+			"frontend",
+			telemetryConfig({
+				NODE_ENV: "production",
+				GLITCHTIP_DSN: "https://public@example.com/1",
+			}),
+		);
+		const beforeSend = vi.mocked(init).mock.calls[0][0]?.beforeSend;
+		const send = (event: { logger?: string; message: string }) =>
+			beforeSend?.({ type: undefined, ...event }, {});
+		for (const message of [
+			"(node:7) [DEP0205] DeprecationWarning: `module.register()` is deprecated.",
+			"(node:7) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.",
+		])
+			expect(await send({ logger: "console", message })).toBeNull();
+		expect(
+			await send({ logger: "console", message: "SSR render failed" }),
+		).toMatchObject({ message: "SSR render failed" });
+		expect(
+			await send({ message: "(node:7) DeprecationWarning: not from console" }),
+		).not.toBeNull();
 	});
 });

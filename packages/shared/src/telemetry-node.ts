@@ -7,6 +7,9 @@ import {
 
 let initialized = false;
 const captured = new WeakSet<object>();
+// Node prints process warnings through console.error, e.g.
+// "(node:42) [DEP0205] DeprecationWarning: ...".
+const NODE_PROCESS_WARNING = /^\(node:\d+\) (\[\w+\] )?\w*Warning: /;
 
 export function initNodeTelemetry(
 	runtime: string,
@@ -21,6 +24,8 @@ export function initNodeTelemetry(
 		tracesSampleRate: config.tracesSampleRate,
 		// Avoid implicit request/body/console collection and duplicate Hono captures.
 		defaultIntegrations: false,
+		// No auto-instrumentation is used, and Node 26 deprecates module.register().
+		registerEsmLoaderHooks: false,
 		integrations: [
 			Sentry.onUncaughtExceptionIntegration(),
 			Sentry.onUnhandledRejectionIntegration(),
@@ -30,6 +35,11 @@ export function initNodeTelemetry(
 				: []),
 		],
 		beforeSend: (event) => {
+			if (
+				event.logger === "console" &&
+				NODE_PROCESS_WARNING.test(event.message ?? "")
+			)
+				return null;
 			const scrubbed = scrubTelemetry({ ...event, user: undefined });
 			if (scrubbed.fingerprint?.[0] === "song-pipeline") {
 				for (const exception of scrubbed.exception?.values || []) {
