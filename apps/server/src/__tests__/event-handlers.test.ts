@@ -72,19 +72,23 @@ vi.mock("../worker/song-worker", () => ({
 			);
 		},
 	),
-	SongWorker: vi.fn().mockImplementation(() => ({
-		run: vi.fn().mockResolvedValue(undefined),
-		cancel: vi.fn(),
-	})),
+	SongWorker: vi.fn(
+		class {
+			run = vi.fn().mockResolvedValue(undefined);
+			cancel = vi.fn();
+		},
+	),
 }));
 
 vi.mock("./queues", () => ({
-	EndpointQueues: vi.fn().mockImplementation(() => ({
-		refreshAll: vi.fn(),
-		audio: { tickPolls: vi.fn() },
-		llm: { enqueue: vi.fn() },
-		recalcPendingPriorities: vi.fn(),
-	})),
+	EndpointQueues: vi.fn(
+		class {
+			refreshAll = vi.fn();
+			audio = { tickPolls: vi.fn() };
+			llm = { enqueue: vi.fn() };
+			recalcPendingPriorities = vi.fn();
+		},
+	),
 }));
 
 // ─── Imports (after mocks) ──────────────────────────────────────────

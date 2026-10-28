@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	type Mock,
+	vi,
+} from "vitest";
 
 const lookupMock = vi.hoisted(() => vi.fn());
 
@@ -36,7 +44,7 @@ function bufferResponse(
 }
 
 describe("agent network guards", () => {
-	let requestMock: ReturnType<typeof vi.fn>;
+	let requestMock: Mock<(url: string, resolvedAddress: unknown) => void>;
 
 	beforeEach(() => {
 		lookupMock.mockReset();
