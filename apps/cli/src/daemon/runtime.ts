@@ -17,6 +17,10 @@ import {
 	ServerMessageSchema,
 	type SongData,
 } from "@infinitune/shared/protocol";
+import {
+	captureError,
+	flushTelemetry,
+} from "@infinitune/shared/telemetry-node";
 import type { Song } from "@infinitune/shared/types";
 import WebSocket from "ws";
 import { FfplayEngine } from "../audio/ffplay-engine";
@@ -1776,6 +1780,7 @@ export class DaemonRuntime {
 		if (fs.existsSync(this.runtimePaths.pidPath)) {
 			fs.unlinkSync(this.runtimePaths.pidPath);
 		}
+		await flushTelemetry();
 		process.exit(exitCode);
 	}
 }
@@ -1784,7 +1789,12 @@ export async function runDaemonRuntime(
 	options: DaemonRuntimeOptions,
 ): Promise<void> {
 	const runtime = new DaemonRuntime(options);
-	await runtime.start();
+	try {
+		await runtime.start();
+	} catch (error) {
+		captureError(error, { runtime: "daemon" });
+		throw error;
+	}
 }
 
 export function daemonActionFromCommand(command: string): DaemonAction | null {

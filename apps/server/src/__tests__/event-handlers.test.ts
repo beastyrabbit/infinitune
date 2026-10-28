@@ -72,23 +72,28 @@ vi.mock("../worker/song-worker", () => ({
 			);
 		},
 	),
-	SongWorker: vi.fn().mockImplementation(() => ({
-		run: vi.fn().mockResolvedValue(undefined),
-		cancel: vi.fn(),
-	})),
+	SongWorker: vi.fn(
+		class {
+			run = vi.fn().mockResolvedValue(undefined);
+			cancel = vi.fn();
+		},
+	),
 }));
 
 vi.mock("./queues", () => ({
-	EndpointQueues: vi.fn().mockImplementation(() => ({
-		refreshAll: vi.fn(),
-		audio: { tickPolls: vi.fn() },
-		llm: { enqueue: vi.fn() },
-		recalcPendingPriorities: vi.fn(),
-	})),
+	EndpointQueues: vi.fn(
+		class {
+			refreshAll = vi.fn();
+			audio = { tickPolls: vi.fn() };
+			llm = { enqueue: vi.fn() };
+			recalcPendingPriorities = vi.fn();
+		},
+	),
 }));
 
 // ─── Imports (after mocks) ──────────────────────────────────────────
 
+import { logger } from "../logger";
 import * as playlistService from "../services/playlist-service";
 import * as songService from "../services/song-service";
 import { _test } from "../worker/index";
@@ -182,6 +187,7 @@ function mockPlaylist(overrides: Record<string, unknown> = {}) {
 function mockPersonaCandidate() {
 	return {
 		id: "song-persona",
+		playlistId: "pl-1",
 		title: "Rated Song",
 		artistName: "Test Artist",
 		genre: "Electronic",
@@ -408,6 +414,34 @@ describe("worker event handlers", () => {
 	// ─── handleSongStatusChanged ────────────────────────────────────
 
 	describe("runPersonaScan", () => {
+		it("logs best-effort failures with their original error and song/playlist stage", async () => {
+			const error = new TypeError("Persona failed");
+			let finishLog!: () => void;
+			const logged = new Promise<void>((resolve) => {
+				finishLog = resolve;
+			});
+			const child = logger.child<string>({});
+			const hook = vi.spyOn(logger, "child");
+			vi.spyOn(child, "error").mockImplementation(() => finishLog());
+			hook.mockReturnValue(child);
+			const enqueue = mockPersonaQueue();
+			enqueue.mockImplementation(() => Promise.reject(error));
+			vi.mocked(songService.getNeedsPersona).mockResolvedValue([
+				mockPersonaCandidate(),
+			]);
+			await runPersonaScan({ personaProvider: "ollama" } as never);
+			await logged;
+			expect(hook).toHaveBeenCalledWith({
+				songId: "song-persona",
+				playlistId: "pl-1",
+			});
+			expect(child.error).toHaveBeenCalledExactlyOnceWith(
+				{ err: error, title: "Rated Song", stage: "persona" },
+				"Persona extract failed",
+			);
+			hook.mockRestore();
+		});
+
 		it.each([
 			["non-radio playlist", { mode: "endless" }],
 			[

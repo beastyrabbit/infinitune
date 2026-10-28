@@ -25,6 +25,7 @@ import {
 	type PlaylistSessionInfo,
 	PlaylistSessionInfoSchema,
 } from "@infinitune/shared/protocol";
+import type { EventProps } from "@infinitune/shared/telemetry";
 import type { Playlist, Song } from "@infinitune/shared/types";
 import {
 	type QueryClient,
@@ -35,6 +36,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import z from "zod";
 import { resolveApiMediaUrl, resolveSongCover } from "@/lib/endpoints";
+import { trackEvent } from "@/lib/telemetry/browser";
 import { api } from "./client";
 
 // Re-export types for convenience
@@ -64,7 +66,10 @@ function toastMutationError(err: unknown) {
 function createMutation<TInput, TOutput = void>(
 	mutationFn: (input: TInput) => Promise<TOutput>,
 	invalidateKeys?: string[][],
-	options?: { silent?: boolean },
+	options?: {
+		silent?: boolean;
+		event?: { name: string; props?: (input: TInput) => EventProps };
+	},
 ): () => (args: TInput) => Promise<TOutput> {
 	const silent = options?.silent ?? false;
 	return function useHook() {
@@ -73,14 +78,20 @@ function createMutation<TInput, TOutput = void>(
 			async (args: TInput): Promise<TOutput> => {
 				try {
 					const result = await mutationFn(args);
+					if (options?.event)
+						trackEvent(options.event.name, options.event.props?.(args));
 					invalidateQueryKeys(qc, invalidateKeys);
 					return result;
 				} catch (err) {
+					trackEvent("mutation_error", {
+						source: invalidateKeys?.[0]?.[0] || "unknown",
+						error_class: err instanceof Error ? err.name : "UnknownError",
+					});
 					if (!silent) toastMutationError(err);
 					throw err;
 				}
 			},
-			[qc, mutationFn, invalidateKeys],
+			[qc, mutationFn, invalidateKeys, options],
 		);
 	};
 }
@@ -676,6 +687,7 @@ export function useCodexTextModels(
 export const useSetSetting = createMutation<{ key: string; value: string }>(
 	(args) => api.post("/api/settings", args),
 	[["settings"]],
+	{ event: { name: "settings_changed" } },
 );
 
 // ─── Global Radio ───────────────────────────────────────────────────
@@ -787,6 +799,7 @@ export const useRadioSkip = createMutation<
 			await api.post<RadioSnapshot>("/api/radio/skip", args),
 		),
 	[["radio"]],
+	{ event: { name: "song_skip", props: () => ({ source: "radio" }) } },
 );
 
 export const useRadioSeek = createMutation<
@@ -810,12 +823,27 @@ export const useRadioFeedback = createMutation<
 			await api.post<RadioSnapshot>("/api/radio/feedback", args),
 		),
 	[["radio"]],
+	{
+		event: {
+			name: "song_rate",
+			props: (args) => ({
+				song_id: args.songId,
+				rating: args.kind,
+				source: "radio",
+			}),
+		},
+	},
 );
 
 export const useSubmitRadioRequest = createMutation<
 	{ prompt: string },
 	RadioRequest
->((args) => api.post<RadioRequest>("/api/radio/requests", args), [["radio"]]);
+>((args) => api.post<RadioRequest>("/api/radio/requests", args), [["radio"]], {
+	event: {
+		name: "song_request",
+		props: (args) => ({ source: "radio", prompt_length: args.prompt.length }),
+	},
+});
 
 export const useForceGenerateRadioAlbum = createMutation<
 	void,
@@ -1140,7 +1168,16 @@ export const useCreatePlaylist = createMutation<
 		initialDirectorPlan?: boolean;
 	},
 	Playlist
->((args) => api.post<Playlist>("/api/playlists", args), [["playlists"]]);
+>((args) => api.post<Playlist>("/api/playlists", args), [["playlists"]], {
+	event: {
+		name: "playlist_created",
+		props: (args) => ({
+			source: "browser",
+			prompt_length: args.prompt?.length || 0,
+			mode: args.mode,
+		}),
+	},
+});
 
 export const useUpdatePlaylistStatus = createMutation<{
 	id: string;
@@ -1149,6 +1186,12 @@ export const useUpdatePlaylistStatus = createMutation<{
 	(args) =>
 		api.patch(`/api/playlists/${args.id}/status`, { status: args.status }),
 	[["playlists"]],
+	{
+		event: {
+			name: "playlist_status_changed",
+			props: (args) => ({ playlist_id: args.id, status: args.status }),
+		},
+	},
 );
 
 export const useUpdatePlaylistParams = createMutation<
@@ -1168,6 +1211,16 @@ export const useUpdatePlaylistPrompt = createMutation<{
 	(args) =>
 		api.patch(`/api/playlists/${args.id}/prompt`, { prompt: args.prompt }),
 	[["playlists"]],
+	{
+		event: {
+			name: "playlist_steered",
+			props: (args) => ({
+				source: "browser",
+				playlist_id: args.id,
+				prompt_length: args.prompt.length,
+			}),
+		},
+	},
 );
 
 export const useTogglePlaylistStar = createMutation<{ id: string }>(
@@ -1485,6 +1538,14 @@ export const useCreatePending = createMutation<
 	[["songs"]],
 	{
 		silent: true,
+		event: {
+			name: "song_request",
+			props: (args) => ({
+				playlist_id: args.playlistId,
+				is_interrupt: args.isInterrupt ?? false,
+				prompt_length: args.interruptPrompt?.length || 0,
+			}),
+		},
 	},
 );
 
@@ -1563,6 +1624,12 @@ export const useSetRating = createMutation<{
 }>(
 	(args) => api.post(`/api/songs/${args.id}/rating`, { rating: args.rating }),
 	[["songs"]],
+	{
+		event: {
+			name: "song_rate",
+			props: (args) => ({ song_id: args.id, rating: args.rating }),
+		},
+	},
 );
 
 export const useUpdatePersonaExtract = createMutation<{

@@ -12,8 +12,6 @@ export default defineConfig({
 		exclude: ["src/routes/**"],
 		// Node 25+ defines a global localStorage that is undefined without
 		// --localstorage-file and hides jsdom's Web Storage.
-		poolOptions: {
-			forks: { execArgv: ["--no-experimental-webstorage"] },
-		},
+		execArgv: ["--no-experimental-webstorage"],
 	},
 });

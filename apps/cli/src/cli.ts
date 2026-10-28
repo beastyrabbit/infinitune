@@ -1,10 +1,15 @@
 #!/usr/bin/env node
+import "./telemetry";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+	captureError,
+	flushTelemetry,
+} from "@infinitune/shared/telemetry-node";
 import type { InfiConfig, PlaybackMode } from "./config";
 import { loadConfig, patchConfig } from "./config";
 import { runDaemonRuntime } from "./daemon/runtime";
@@ -2033,8 +2038,12 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch((error) => {
+try {
+	await main();
+} catch (error) {
+	captureError(error, { runtime: "cli" });
+	await flushTelemetry();
 	const message = error instanceof Error ? error.message : String(error);
 	console.error(`Error: ${message}`);
 	process.exit(1);
-});
+}

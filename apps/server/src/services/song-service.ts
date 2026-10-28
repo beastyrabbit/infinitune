@@ -167,6 +167,7 @@ export async function getNeedsPersona(access?: SongReadAccess) {
 		.slice(0, 20)
 		.map((song) => ({
 			id: song.id,
+			playlistId: song.playlistId,
 			title: song.title ?? "Untitled",
 			artistName: song.artistName,
 			genre: song.genre,
@@ -455,6 +456,8 @@ export async function markError(
 	id: string,
 	errorMessage: string,
 	erroredAtStatus?: string,
+	error?: Error,
+	failureStage?: string,
 ) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song) return;
@@ -490,6 +493,8 @@ export async function markError(
 		playlistId: song.playlistId,
 		from: fromStatus,
 		to: newStatus,
+		// Telemetry can retain the failed stage while retries use the reverted state.
+		failure: { error, stage: failureStage || effectiveErroredAtStatus },
 	});
 }
 
@@ -548,6 +553,7 @@ export async function retryErrored(id: string) {
 	});
 }
 
+/** Revert recovery state and return the original stage for failure reporting. */
 export async function revertTransient(id: string) {
 	const [song] = await db.select().from(songs).where(eq(songs.id, id));
 	if (!song) return;
@@ -588,6 +594,7 @@ export async function revertTransient(id: string) {
 			to: newStatus,
 		});
 	}
+	return song.status;
 }
 
 export async function revertAllTransient(playlistId: string) {
