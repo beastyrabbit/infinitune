@@ -26,8 +26,16 @@ const mocks = vi.hoisted(() => {
 		requestInfo,
 		requestWarn,
 		requestDebug,
+		shutdown: new Map<string, () => Promise<void>>(),
 	};
 });
+
+vi.mock("@infinitune/shared/telemetry-node", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("@infinitune/shared/telemetry-node")
+	>()),
+	flushTelemetry: vi.fn(),
+}));
 
 vi.mock("../logger", () => ({
 	logger: {
@@ -173,6 +181,13 @@ describe("request logging", () => {
 		const processOn = vi.spyOn(process, "on").mockReturnValue(process);
 		try {
 			await import("../index");
+			for (const signal of ["SIGINT", "SIGTERM"]) {
+				const listener = processOn.mock.calls.find(
+					([event]) => event === signal,
+				)?.[1];
+				if (listener)
+					mocks.shutdown.set(signal, listener as () => Promise<void>);
+			}
 		} finally {
 			processOn.mockRestore();
 		}
@@ -234,4 +249,49 @@ describe("request logging", () => {
 		);
 		expect(JSON.stringify(mocks.child.mock.calls)).not.toContain(linkId);
 	});
+
+	it.each(["SIGINT", "SIGTERM"])(
+		"awaits telemetry after cleanup errors and before exiting on %s",
+		async (signal) => {
+			const { flushTelemetry } = await import(
+				"@infinitune/shared/telemetry-node"
+			);
+			const { sqlite } = await import("../db/index");
+			const cleanupError = new Error("SQLite cleanup failure");
+			vi.mocked(sqlite.close).mockImplementationOnce(() => {
+				throw cleanupError;
+			});
+			let finishFlush = () => {};
+			vi.mocked(flushTelemetry).mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						finishFlush = resolve;
+					}),
+			);
+			const exit = vi
+				.spyOn(process, "exit")
+				.mockImplementation(() => undefined as never);
+			try {
+				const shutdown = mocks.shutdown.get(signal);
+				expect(shutdown).toBeDefined();
+				const stopped = shutdown?.();
+				expect(mocks.rootError).toHaveBeenCalledWith(
+					{ err: cleanupError },
+					"Error closing SQLite",
+				);
+				expect(flushTelemetry).toHaveBeenCalledOnce();
+				expect(
+					vi.mocked(sqlite.close).mock.invocationCallOrder.at(-1),
+				).toBeLessThan(vi.mocked(flushTelemetry).mock.invocationCallOrder[0]);
+				expect(exit).not.toHaveBeenCalled();
+				finishFlush();
+				await stopped;
+				expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+			} finally {
+				finishFlush();
+				exit.mockRestore();
+				vi.mocked(flushTelemetry).mockClear();
+			}
+		},
+	);
 });

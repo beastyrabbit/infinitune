@@ -10,6 +10,7 @@
 	},
 	"dependencies": {
 		"@infinitune/shared": "workspace:*",
+		"@sentry/node": "^10.76.2",
 		"ws": "^8.21.3"
 	},
 	"devDependencies": {

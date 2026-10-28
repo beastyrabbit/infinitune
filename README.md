@@ -16,6 +16,10 @@
 
 </div>
 
+Maintainer notes for local toolchains and releases live in
+[development notes](docs/development-notes.md) and
+[release and review workflow](docs/releasing.md).
+
 
 ## At a glance
 
@@ -41,6 +45,7 @@ An endless music generator that creates lyrics, cover art, and audio from a shor
 - **Share Links** — publish revocable permanent or timed links without exposing private playlist controls
 - **Global Radio** — run one synchronized station and switch the genre and vocal preset used for future albums
 - **Configurable AI** — choose OpenRouter or OpenAI Codex (ChatGPT subscription) for lyrics and metadata
+- **Legal Pages** — self-contained Impressum and privacy policy (German at `/impressum`, `/datenschutz`; English at `/legal-notice`, `/privacy`) that need no app bundle or API, behind the same SSO as the app; text lives in `apps/web/src/lib/legal/`, the data-flow inventory in `docs/legal/privacy-inventory.md`.
 
 ## Screenshots
 
@@ -254,6 +259,9 @@ Infinitune requires external AI services running on your network:
 The default ACE-Step profile is Preset M: `acestep-v15-xl-sft`, 50 inference steps, Heun sampling, ODE inference, CFG 7, Shift 1, Velocity Clamp 2, and Velocity EMA 0.1. Thinking, ADG, and DCW are off. You can change every value in Settings. XL models need more VRAM, so choose a smaller model on hosts that cannot load XL SFT. Alternate VAEs remain ACE service settings; set `ACESTEP_VAE_CHECKPOINT=scragvae` or a custom checkpoint or path on the ACE-Step server to match the app setting.
 
 ### Environment Variables
+
+Runtime analytics, error tracking and deployment variables are
+documented in [docs/telemetry.md](docs/telemetry.md).
 
 Configure in `apps/server/.env.local`:
 

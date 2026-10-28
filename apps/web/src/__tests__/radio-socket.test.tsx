@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	getTabListenerId,
 	RADIO_LISTENER_STORAGE_KEY,
+	randomUuid,
 	rejoinActiveListener,
 	useRadioSocket,
 } from "../lib/radio-socket";
@@ -141,6 +142,24 @@ describe("radio WebSocket reconnect", () => {
 		expect(defaultId).not.toBe("legacy-shared-id");
 		expect(window.sessionStorage.getItem(RADIO_LISTENER_STORAGE_KEY)).toBe(
 			defaultId,
+		);
+	});
+
+	it("creates v4 listener ids without crypto.randomUUID in insecure contexts", () => {
+		const { getRandomValues } = globalThis.crypto;
+		vi.stubGlobal("crypto", {
+			getRandomValues: getRandomValues.bind(globalThis.crypto),
+		});
+		const uuidV4 =
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+		const first = randomUuid();
+		expect(first).toMatch(uuidV4);
+		expect(randomUuid()).not.toBe(first);
+		const listenerId = getTabListenerId();
+		expect(listenerId).toMatch(uuidV4);
+		expect(window.sessionStorage.getItem(RADIO_LISTENER_STORAGE_KEY)).toBe(
+			listenerId,
 		);
 	});
 });

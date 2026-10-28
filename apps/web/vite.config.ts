@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from "node:url";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -17,6 +18,14 @@ export default defineConfig(({ mode }) => {
 	const apiProxyTarget = apiBase.slice(0, end);
 
 	return {
+		// Vite's import-analysis plugin reads the top-level value when rewriting
+		// entry chunks. An environment-only setting produces an empty entry map.
+		build: { sourcemap: "hidden" },
+		environments: {
+			client: { build: { sourcemap: "hidden" } },
+			ssr: { build: { sourcemap: false } },
+			nitro: { build: { sourcemap: false } },
+		},
 		server: {
 			host: process.env.HOST || undefined,
 			port: Number.isFinite(devServerPort) ? devServerPort : undefined,
@@ -30,12 +39,16 @@ export default defineConfig(({ mode }) => {
 		},
 		resolve: {
 			alias: {
+				// The pinned nitro-nightly package imports itself as nitro/app.
+				"nitro/app": fileURLToPath(
+					new URL("./node_modules/nitro/dist/runtime/app.mjs", import.meta.url),
+				),
 				"@": fileURLToPath(new URL("./src", import.meta.url)),
 			},
 		},
 		plugins: [
 			devtools(),
-			nitro(),
+			nitro({ plugins: ["./src/lib/telemetry/nitro.ts"] }),
 			// this is the plugin that enables path aliases
 			viteTsConfigPaths({
 				projects: ["./tsconfig.json"],
@@ -47,6 +60,25 @@ export default defineConfig(({ mode }) => {
 					: undefined,
 			),
 			viteReact(),
+			// Inject before Nitro records public asset sizes and etags. Uploads
+			// belong to CI; even an inherited token must not enable build uploads.
+			...sentryVitePlugin({
+				authToken: "",
+				telemetry: false,
+				sourcemaps: { disable: "disable-upload" },
+				release: {
+					name: "",
+					inject: false,
+					create: false,
+					finalize: false,
+					setCommits: false,
+					deploy: false,
+				},
+			}).map((plugin) => ({
+				...plugin,
+				apply: "build" as const,
+				applyToEnvironment: (environment) => environment.name === "client",
+			})),
 		],
 	};
 });

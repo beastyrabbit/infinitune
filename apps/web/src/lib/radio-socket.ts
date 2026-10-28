@@ -4,6 +4,18 @@ import { RADIO_WS_URL, resolveApiMediaUrl } from "@/lib/endpoints";
 
 export const RADIO_LISTENER_STORAGE_KEY = "infinitune-radio-listener-id";
 
+/** v4 UUID; `crypto.randomUUID` is missing outside secure contexts (plain HTTP on a LAN IP). */
+export function randomUuid(): string {
+	if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+	const bytes = crypto.getRandomValues(new Uint8Array(16));
+	bytes[6] = (bytes[6] & 0x0f) | 0x40;
+	bytes[8] = (bytes[8] & 0x3f) | 0x80;
+	const hex = Array.from(bytes, (byte) =>
+		byte.toString(16).padStart(2, "0"),
+	).join("");
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function getTabListenerId(
 	storage?: Pick<Storage, "getItem" | "setItem">,
 ): string {
@@ -11,7 +23,7 @@ export function getTabListenerId(
 	const tabStorage = storage ?? window.sessionStorage;
 	const existing = tabStorage.getItem(RADIO_LISTENER_STORAGE_KEY);
 	if (existing) return existing;
-	const next = crypto.randomUUID();
+	const next = randomUuid();
 	tabStorage.setItem(RADIO_LISTENER_STORAGE_KEY, next);
 	return next;
 }
