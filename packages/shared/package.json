@@ -20,7 +20,7 @@
 		"./validation/playlist-schemas": "./src/validation/playlist-schemas.ts"
 	},
 	"dependencies": {
-		"@sentry/node": "^10.76.2",
+		"@sentry/node": "^11.9.0",
 		"zod": "4.2.1"
 	}
 }
