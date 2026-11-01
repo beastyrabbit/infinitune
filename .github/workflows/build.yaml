@@ -38,8 +38,19 @@ jobs:
             node@sha256:e556a144463cc8dc53afe8de6d2fa0db5c132fd39ffa232c17641bd40df2bf11 \
             node /require-main-ci.mjs "$REPOSITORY" "$COMMIT_SHA"
 
-      - name: Set up Docker Buildx
+      - name: Use the persistent homelab BuildKit
+        id: buildx-remote
+        continue-on-error: true
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.arc-runners.svc.cluster.local:1234
+
+      - name: Fall back to the job's own Docker
+        if: steps.buildx-remote.outcome == 'failure'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: docker
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -80,8 +91,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max,ignore-error=true
           build-args: INFINITUNE_RELEASE=${{ steps.release.outputs.version }}
 
       - name: Output image digest
@@ -101,8 +110,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Docker Buildx
+      - name: Use the persistent homelab BuildKit
+        id: buildx-remote
+        continue-on-error: true
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: remote
+          endpoint: tcp://buildkitd.arc-runners.svc.cluster.local:1234
+      - name: Fall back to the job's own Docker
+        if: steps.buildx-remote.outcome == 'failure'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver: docker
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -120,7 +139,6 @@ jobs:
           context: .
           target: sourcemaps
           outputs: type=local,dest=sourcemaps
-          cache-from: type=gha
       - name: Verify source maps against the published image
         env:
           PUBLISHED_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
