@@ -1,0 +1,30 @@
+{
+	"$schema": "https://t3.codes/schema/t3.json",
+	"defaultThreadEnvMode": "worktree",
+	"scripts": [
+		{
+			"name": "Setup worktree",
+			"command": "bash scripts/t3code-worktree-setup.sh",
+			"icon": "configure",
+			"runOnWorktreeCreate": true,
+			"async": false
+		},
+		{
+			"name": "Dev",
+			"command": "pnpm dev",
+			"icon": "play",
+			"stopOnSettle": true,
+			"previewUrl": "https://web-infinitune.localhost:1355"
+		},
+		{
+			"name": "Check",
+			"command": "pnpm check && pnpm typecheck && pnpm test",
+			"icon": "lint"
+		},
+		{
+			"name": "Build",
+			"command": "pnpm build",
+			"icon": "build"
+		}
+	]
+}
