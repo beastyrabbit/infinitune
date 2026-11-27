@@ -43,7 +43,7 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.65.1",
-		"@sentry/cli": "^2.58.6",
+		"@sentry/cli": "^3.8.2",
 		"@sentry/vite-plugin": "^11.13.0",
 		"@tanstack/devtools-event-client": "^0.5.1",
 		"@tanstack/devtools-vite": "^0.8.6",
