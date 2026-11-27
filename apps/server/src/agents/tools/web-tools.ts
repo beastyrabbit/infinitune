@@ -1,5 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { isPrivateIp, publicHttpRequestBuffer } from "../../utils/public-http";
 import {
 	type AgentId,
