@@ -72,6 +72,7 @@ function createMutation<TInput, TOutput = void>(
 	},
 ): () => (args: TInput) => Promise<TOutput> {
 	const silent = options?.silent ?? false;
+	// biome-ignore lint/correctness/noComponentHookFactories: Module-level hook factory for API mutations.
 	return function useHook() {
 		const qc = useQueryClient();
 		return useCallback(
@@ -91,7 +92,7 @@ function createMutation<TInput, TOutput = void>(
 					throw err;
 				}
 			},
-			[qc, mutationFn, invalidateKeys, options],
+			[qc],
 		);
 	};
 }

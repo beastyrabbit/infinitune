@@ -498,7 +498,7 @@ const SONG_SCHEMA = {
 	],
 };
 
-export { SYSTEM_PROMPT, SONG_SCHEMA };
+export { SONG_SCHEMA, SYSTEM_PROMPT };
 
 interface PromptBudgetContract {
 	maxChars: number;
