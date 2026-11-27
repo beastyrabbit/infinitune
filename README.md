@@ -238,11 +238,13 @@ pnpm dev:all:fallback
 
 ### T3Code Worktrees
 
-Set T3Code's "Run automatically on worktree creation" command to:
+`t3.json` lists the T3 Code project actions: Setup worktree, Dev, Check, and Build. T3 Code does not run them from the file; they take effect once imported into the machine's T3 Code settings. The setup action runs on worktree creation:
 
 ```bash
 bash scripts/t3code-worktree-setup.sh
 ```
+
+It copies the root env files and `apps/server/.env.local` from the main checkout, then runs `pnpm install --frozen-lockfile` unless `package.json` and the lockfile are unchanged since its last run.
 
 ### Prerequisites
 

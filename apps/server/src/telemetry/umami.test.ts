@@ -32,9 +32,9 @@ describe("server Umami sender", () => {
 				data: { source: "server", provider: "ollama" },
 			},
 		});
-		expect((init?.headers as Record<string, string>)["User-Agent"]).not.toMatch(
-			/bot|spider|crawl/i,
-		);
+		expect(
+			(init?.headers as Record<string, string> | undefined)?.["User-Agent"],
+		).not.toMatch(/bot|spider|crawl/i);
 	});
 
 	it("is disabled without config or during tests", () => {

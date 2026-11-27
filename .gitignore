@@ -26,6 +26,7 @@ controller-snapshot.md
 apps/web/test-results/
 apps/web/playwright-report/
 .tmp/
+.t3code-worktree-bootstrap.json
 
 # Loose screenshots / images at repo root
 /*.png
