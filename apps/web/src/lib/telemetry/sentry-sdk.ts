@@ -14,7 +14,19 @@ export function initialize(config: TelemetryConfig) {
 		dsn: config.dsn,
 		environment: config.environment,
 		release: config.release,
-		sendDefaultPii: false,
+		dataCollection: {
+			userInfo: false,
+			cookies: false,
+			httpHeaders: false,
+			httpBodies: [],
+			urlQueryParams: false,
+			graphQL: { document: false, variables: false },
+			genAI: { inputs: false, outputs: false },
+			databaseQueryData: false,
+			queues: false,
+			stackFrameVariables: false,
+			frameContextLines: 0,
+		},
 		tracesSampleRate: config.tracesSampleRate,
 		integrations: (defaults) => [
 			...defaults.filter(
