@@ -20,12 +20,22 @@ export function initNodeTelemetry(
 		dsn: config.dsn,
 		environment: config.environment,
 		release: config.release,
-		sendDefaultPii: false,
+		dataCollection: {
+			userInfo: false,
+			cookies: false,
+			httpHeaders: false,
+			httpBodies: [],
+			urlQueryParams: false,
+			graphQL: { document: false, variables: false },
+			genAI: { inputs: false, outputs: false },
+			databaseQueryData: false,
+			queues: false,
+			stackFrameVariables: false,
+			frameContextLines: 0,
+		},
 		tracesSampleRate: config.tracesSampleRate,
 		// Avoid implicit request/body/console collection and duplicate Hono captures.
 		defaultIntegrations: false,
-		// No auto-instrumentation is used, and Node 26 deprecates module.register().
-		registerEsmLoaderHooks: false,
 		integrations: [
 			Sentry.onUncaughtExceptionIntegration(),
 			Sentry.onUnhandledRejectionIntegration(),

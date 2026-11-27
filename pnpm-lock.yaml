@@ -170,7 +170,7 @@ importers:
         version: 0.18.1
       react-doctor:
         specifier: ^0.9.23
-        version: 0.9.23(eslint@9.39.2(jiti@2.7.0))(react@19.3.1)
+        version: 0.9.23(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))(eslint@9.39.2(jiti@2.7.0))(react@19.3.1)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -190,8 +190,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@sentry/node':
-        specifier: ^10.76.2
-        version: 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))
+        specifier: ^11.9.0
+        version: 11.19.0(rollup@4.63.5)
       ws:
         specifier: ^8.23.0
         version: 8.23.0
@@ -230,8 +230,8 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
       '@sentry/node':
-        specifier: ^10.76.2
-        version: 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))
+        specifier: ^11.9.0
+        version: 11.19.0(rollup@4.63.5)
       '@statelyai/inspect':
         specifier: ^0.7.2
         version: 0.7.2(xstate@5.33.4)
@@ -294,8 +294,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@sentry/node':
-        specifier: ^10.76.2
-        version: 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))
+        specifier: ^11.9.0
+        version: 11.19.0(rollup@4.63.5)
       '@sentry/react':
         specifier: ^11.9.0
         version: 11.9.0(react@19.3.1)
@@ -427,8 +427,8 @@ importers:
   packages/shared:
     dependencies:
       '@sentry/node':
-        specifier: ^10.76.2
-        version: 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))
+        specifier: ^11.9.0
+        version: 11.19.0(rollup@4.63.5)
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -3200,6 +3200,10 @@ packages:
     resolution: {integrity: sha512-LSwGGE/GceTbkDHRoQQr3lq/dpxxA6RdooBbuGTJ/S6BdqKX2kw2FdV7Se9eJzZJJJ5AxCZum37+ejYS7N2pJg==}
     engines: {node: '>=18'}
 
+  '@sentry/node@11.19.0':
+    resolution: {integrity: sha512-9iulG8K9B1BNeXUC3R45T+zBy4dUxutADfH6h72Kdk9pFAh3cnMSlfLgeMk6oH7AS0bUtoE6pRwzFC9Oe5j7tw==}
+    engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0 <23.0.0 || >=23.2.0'}
+
   '@sentry/opentelemetry@10.76.2':
     resolution: {integrity: sha512-deqWrKJGaku3nhiZchg34z8W9v6kUwtzoQ4cmEq6CeT8/4X93X4YfeJgoh1dhbswFRpwor4pQ6kj0KttagKtfA==}
     engines: {node: '>=18'}
@@ -3207,6 +3211,12 @@ packages:
       '@opentelemetry/api': ^1.9.0
       '@opentelemetry/core': ^1.30.1 || ^2.1.0
       '@opentelemetry/sdk-trace-base': ^1.30.1 || ^2.1.0
+
+  '@sentry/opentelemetry@11.19.0':
+    resolution: {integrity: sha512-+NAMAv9/fncRvfkmUKe2YamL4zm++qVBj6KxUsBIzVt+/E7qJ1ksPnzu516rMjl5lwh6I9xtTCR2UxutuPukkg==}
+    engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0 <23.0.0 || >=23.2.0'}
+    peerDependencies:
+      '@opentelemetry/api': ^1.9.0
 
   '@sentry/react@11.9.0':
     resolution: {integrity: sha512-TiD4LxEjfE6aLRo+BlmT31gmAPeCzBJfAs+jdjB27RSfo41fKKG892JabH49wxhKFsyfWfZB2dOrWF/6Mp47YQ==}
@@ -3226,9 +3236,17 @@ packages:
     resolution: {integrity: sha512-fSM8f1skiu6+O1Mzpn3BjtjoESygA+UcZaXyLr7t/1yDNPi7ne2+pJnrXo4oIFV1UbWJHPedo2vOIBNHDLABTg==}
     engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0 <23.0.0 || >=23.2.0'}
 
+  '@sentry/server-runtime-injection@11.19.0':
+    resolution: {integrity: sha512-pscfOb2cXiJUDJ04A7p64dv3KP9xsXl/fG0qlhGZGqAqGTFlTk+jVzevKv3P/aPfPpgNrQWEm4HLJ4PPN5r4mQ==}
+    engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0 <23.0.0 || >=23.2.0'}
+
   '@sentry/server-utils@10.76.2':
     resolution: {integrity: sha512-wogj6Trj8fAu+aD7HbpvHEBlyANMOvvO9MP5NFJaiQbprLKugtCdE6rFTxDhofXvRo4nswL9m4Cvysg3k5KcvQ==}
     engines: {node: '>=18'}
+
+  '@sentry/server-utils@11.19.0':
+    resolution: {integrity: sha512-s0kv5B/qVyh8J+uXwiqmvuO65iOnTMuXIeJfYJEvFzOTbE5N27MzgA8VfG25gFA5L9bORVdHQIf/vsm4XBsQYQ==}
+    engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0 <23.0.0 || >=23.2.0'}
 
   '@sentry/vite-plugin@11.19.0':
     resolution: {integrity: sha512-t0bUcQ3vUwwC91PSCf0NSmAIAk1qw2AZ3XbyKhnN8L1rPQ8iQo4NUdVUFFpf7iw5i2F3Dkbbz/V76eozHr38rA==}
@@ -8602,7 +8620,7 @@ snapshots:
       '@sentry/core': 11.19.0
       dotenv: 17.4.2
       glob: 14.0.6
-      magic-string: 1.4.3
+      magic-string: 1.4.5
       oxc-parser: 0.152.0
       sentry: 0.50.0
     optionalDependencies:
@@ -8698,6 +8716,19 @@ snapshots:
       - '@opentelemetry/exporter-trace-otlp-http'
       - supports-color
 
+  '@sentry/node@11.19.0(rollup@4.63.5)':
+    dependencies:
+      '@opentelemetry/api': 1.10.0
+      '@sentry/bundler-plugins': 11.19.0(rollup@4.63.5)
+      '@sentry/conventions': 0.36.0
+      '@sentry/core': 11.19.0
+      '@sentry/opentelemetry': 11.19.0(@opentelemetry/api@1.10.0)
+      '@sentry/server-runtime-injection': 11.19.0
+      '@sentry/server-utils': 11.19.0
+    transitivePeerDependencies:
+      - rollup
+      - webpack
+
   '@sentry/opentelemetry@10.76.2(@opentelemetry/api@1.10.0)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))':
     dependencies:
       '@opentelemetry/api': 1.10.0
@@ -8705,6 +8736,12 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.10.0)
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.76.2
+
+  '@sentry/opentelemetry@11.19.0(@opentelemetry/api@1.10.0)':
+    dependencies:
+      '@opentelemetry/api': 1.10.0
+      '@sentry/conventions': 0.36.0
+      '@sentry/core': 11.19.0
 
   '@sentry/react@11.9.0(react@19.3.1)':
     dependencies:
@@ -8723,10 +8760,21 @@ snapshots:
       '@sentry/browser-utils': 11.9.0
       '@sentry/core': 11.9.0
 
+  '@sentry/server-runtime-injection@11.19.0':
+    dependencies:
+      '@sentry/core': 11.19.0
+      '@sentry/server-utils': 11.19.0
+
   '@sentry/server-utils@10.76.2':
     dependencies:
       '@sentry/conventions': 0.16.0
       '@sentry/core': 10.76.2
+
+  '@sentry/server-utils@11.19.0':
+    dependencies:
+      '@opentelemetry/api': 1.10.0
+      '@sentry/conventions': 0.36.0
+      '@sentry/core': 11.19.0
 
   '@sentry/vite-plugin@11.19.0(rollup@4.63.5)':
     dependencies:
@@ -11415,7 +11463,7 @@ snapshots:
       iconv-lite: 0.7.3
       unpipe: 1.0.0
 
-  react-doctor@0.9.23(eslint@9.39.2(jiti@2.7.0))(react@19.3.1):
+  react-doctor@0.9.23(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))(eslint@9.39.2(jiti@2.7.0))(react@19.3.1):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@sentry/node': 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.10.0))

@@ -47,8 +47,11 @@ describe("Node Sentry initialization", () => {
 			expect.objectContaining({
 				release: "1.3.0",
 				environment: "production",
-				sendDefaultPii: false,
-				registerEsmLoaderHooks: false,
+				dataCollection: expect.objectContaining({
+					userInfo: false,
+					cookies: false,
+					httpHeaders: false,
+				}),
 			}),
 		);
 		const error = new Error("failure");
