@@ -137,7 +137,8 @@ describe("share-link-service", () => {
 			playlistLink?.token ?? "",
 		);
 		expect(
-			(playlistShare?.payload as { songs: Array<{ id: string }> }).songs,
+			(playlistShare?.payload as { songs: Array<{ id: string }> } | undefined)
+				?.songs,
 		).toMatchObject([{ id: "song-1" }]);
 
 		const songLink = await shareService.createShareLink({
@@ -148,9 +149,9 @@ describe("share-link-service", () => {
 		const songShare = await shareService.resolveShareLink(
 			songLink?.token ?? "",
 		);
-		expect((songShare?.payload as { song: { id: string } }).song.id).toBe(
-			"song-1",
-		);
+		expect(
+			(songShare?.payload as { song: { id: string } } | undefined)?.song.id,
+		).toBe("song-1");
 	});
 
 	it("returns null for unknown tokens", async () => {
