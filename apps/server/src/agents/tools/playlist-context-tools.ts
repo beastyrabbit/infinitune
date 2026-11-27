@@ -1,8 +1,8 @@
-import { Type } from "@earendil-works/pi-ai";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PlaylistManagerPlanSlot } from "@infinitune/shared/types";
 import { normalizePlaylistManagerPlan } from "@infinitune/shared/validation/manager-plan";
 import { and, desc, eq, like } from "drizzle-orm";
+import { Type } from "typebox";
 import { db } from "../../db/index";
 import { playlists, songs } from "../../db/schema";
 import * as playlistService from "../../services/playlist-service";
