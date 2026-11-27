@@ -3,6 +3,8 @@
 ## Project Overview
 Real-time AI music generation platform with a unified API/worker server.
 
+Project knowledge lives in memex: project page `pages/projects/infinitune.md`.
+
 ## Mandatory Rules
 - Use `pnpm` monorepo commands only; do not hardcode mixed-content-breaking `VITE_API_URL` defaults in CI/docker builds.
 

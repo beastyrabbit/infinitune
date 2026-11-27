@@ -13,6 +13,8 @@ ENV_FILES=(
   ".env.development"
   ".env.test.local"
   ".env.test"
+  # The backend dev server loads this file (apps/server: tsx --env-file=.env.local).
+  "apps/server/.env.local"
 )
 
 BOOTSTRAP_KIND=""

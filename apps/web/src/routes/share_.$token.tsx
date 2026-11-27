@@ -33,7 +33,7 @@ interface SharePayload {
 }
 
 const loadShare = createServerFn({ method: "GET" })
-	.inputValidator((token: string) => token)
+	.validator((token: string) => token)
 	.handler(
 		async ({
 			data: token,
